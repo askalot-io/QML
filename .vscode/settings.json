@@ -1,0 +1,11 @@
+{
+    "files.associations": {
+        "*.qml": "yaml"
+    },
+    "yaml.schemas": {
+        "./askalot_qml/schema/qml-schema.json": "*.qml"
+    },
+    "[yaml]": {
+        "editor.defaultFormatter": "redhat.vscode-yaml"
+    }
+}
