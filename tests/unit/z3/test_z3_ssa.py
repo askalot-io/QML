@@ -43,7 +43,13 @@ Python code with reassignments to Z3 constraints.
 - Variable shadowing in branches
 - Version independence (old_x captures earlier version)
 
-Total: 25 tests covering all SSA scenarios in QML code blocks.
+### Tuple Unpacking (5 tests)
+- Two-variable and three-variable unpacking
+- Unpacking with RHS expressions
+- Unpacked variables used in subsequent code
+- Unpacking from list literals
+
+Total: 30 tests covering all SSA scenarios in QML code blocks.
 
 Key Concept: SSA ensures each variable assignment creates a new Z3 variable
 with a unique version number, allowing Z3 to track all variable states and
@@ -444,6 +450,54 @@ result = old_x + x
         self.assertEqual(solver.check(), sat)
         model = solver.model()
         self.assertEqual(model.eval(compiler.env['result']).as_long(), 15)  # 5 + 10
+
+    # ========== Tuple Unpacking ==========
+
+    def test_tuple_unpacking_basic(self):
+        """Simple two-variable tuple unpacking creates SSA variables."""
+        solver, compiler = compile_and_solve("a, b = 1, 0")
+        self.assertEqual(solver.check(), sat)
+        model = solver.model()
+        self.assertEqual(model.eval(compiler.env['a']).as_long(), 1)
+        self.assertEqual(model.eval(compiler.env['b']).as_long(), 0)
+
+    def test_tuple_unpacking_three_vars(self):
+        """Three-variable tuple unpacking."""
+        solver, compiler = compile_and_solve("x, y, z = 10, 20, 30")
+        self.assertEqual(solver.check(), sat)
+        model = solver.model()
+        self.assertEqual(model.eval(compiler.env['x']).as_long(), 10)
+        self.assertEqual(model.eval(compiler.env['y']).as_long(), 20)
+        self.assertEqual(model.eval(compiler.env['z']).as_long(), 30)
+
+    def test_tuple_unpacking_with_expressions(self):
+        """Tuple unpacking where RHS contains expressions."""
+        solver, compiler = compile_and_solve("""
+base = 5
+a, b = base + 1, base * 2
+""")
+        self.assertEqual(solver.check(), sat)
+        model = solver.model()
+        self.assertEqual(model.eval(compiler.env['a']).as_long(), 6)
+        self.assertEqual(model.eval(compiler.env['b']).as_long(), 10)
+
+    def test_tuple_unpacking_usable_later(self):
+        """Unpacked variables can be used in subsequent code."""
+        solver, compiler = compile_and_solve("""
+a, b = 3, 7
+result = a + b
+""")
+        self.assertEqual(solver.check(), sat)
+        model = solver.model()
+        self.assertEqual(model.eval(compiler.env['result']).as_long(), 10)
+
+    def test_tuple_unpacking_from_list(self):
+        """Unpacking from a list literal [1, 2]."""
+        solver, compiler = compile_and_solve("a, b = [10, 20]")
+        self.assertEqual(solver.check(), sat)
+        model = solver.model()
+        self.assertEqual(model.eval(compiler.env['a']).as_long(), 10)
+        self.assertEqual(model.eval(compiler.env['b']).as_long(), 20)
 
 
 if __name__ == '__main__':

@@ -2,6 +2,39 @@
 
 This file provides guidance to Claude Code when working with the QML (Questionnaire Markup Language) processing and validation module.
 
+## Skills
+
+Two skills handle QML work:
+
+- **`write-qml`** — QML language reference for writing new questionnaires from scratch
+- **`evaluate-questionnaire`** — 4-phase pipeline for converting imperative questionnaires (PDF/CATI) to declarative QML and producing validation analysis reports
+
+These are distinct: `write-qml` is the language guide, `evaluate-questionnaire` is the conversion/analysis workflow.
+
+## Evaluation Corpus
+
+`evaluation/` contains 18 converted questionnaires in per-questionnaire subfolders:
+
+```
+evaluation/<category>/SURVEY_NAME/
+  source.pdf                         # Original (keep original filename)
+  SURVEY_NAME_question_inventory.md  # Intermediate representation (Phase 1-2)
+  SURVEY_NAME.md                     # Analysis report (Phase 4)
+  NN_section_name.qml                # Section QML files (Phase 3)
+```
+
+Categories: `statcan-questionnaires/`, `reference-questionnaires/`, `ICS-hun/`
+
+New evaluations produce **multiple QML files per questionnaire** (one per section, prefixed `01_`, `02_`, ...), not a single monolithic file. Each section file is a complete standalone QML with its own `qmlVersion` and `codeInit`.
+
+## Running the Validator
+
+```bash
+cd /root/QML && uv run python .claude/skills/write-qml/scripts/validate_qml.py <path-to-qml> [--json]
+```
+
+Exit codes: 0 = valid, 1 = issues found, 2 = error.
+
 ## Overview
 
 The **askalot_qml** module provides Z3-driven questionnaire validation capabilities with two distinct processors:

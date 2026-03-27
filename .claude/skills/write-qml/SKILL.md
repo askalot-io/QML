@@ -172,13 +172,15 @@ Code blocks are analyzed by the Z3 SMT solver. Only use these features:
 - Comparisons: `<`, `<=`, `>`, `>=`, `==`, `!=`
 - Boolean: `and`, `or`, `not`
 - Control: `if`/`elif`/`else`, `for` with `range(n)` where n <= 20
+- Ternary: `x = 1 if condition else 0`
 - Assignment: `=`, `+=`, `-=`, `*=`, `//=`
+- Tuple unpacking: `a, b = 1, 0`
 - Membership: `in`, `not in` with literal containers like `[1, 2, 3]`
-- Built-ins: `range()`, `int()`, `bool()` only
+- Built-ins: `range()`, `int()`, `bool()`, `abs()` only
 - Outcome access: `q_item.outcome`, `qg_item.outcome[i]`, `mq_item.outcome[i][j]`
 
 **NOT allowed — these silently return 0 in the solver, creating unverifiable logic:**
-- `len()`, `sum()`, `max()`, `min()`, `abs()` — all return 0
+- `len()`, `sum()`, `max()`, `min()` — all return 0
 - `list.append()`, any method calls — return 0
 - List comprehensions, lambda, dict literals
 - String methods, subscript on regular variables

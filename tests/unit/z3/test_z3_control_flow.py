@@ -43,7 +43,15 @@ Z3 constraints with proper path satisfaction.
 - Multiple conditions in single if
 - NOT operator in conditions
 
-Total: 27 tests covering all control flow scenarios in QML code blocks and preconditions.
+### Ternary Expressions (7 tests)
+- True/false branch selection
+- Comparison conditions
+- Arithmetic in branches
+- Ternary inside larger expressions
+- Nested ternaries
+- Symbolic (predefined) variables
+
+Total: 34 tests covering all control flow scenarios in QML code blocks and preconditions.
 
 Note: These tests verify that Z3 can model different execution paths and that
 the correct path is satisfied based on the condition values.
@@ -497,6 +505,82 @@ else:
         self.assertEqual(solver.check(), sat)
         model = solver.model()
         self.assertEqual(model.eval(compiler.env['result']).as_long(), 42)
+
+    # ========== Ternary Expressions (IfExp) ==========
+
+    def test_ternary_true_branch(self):
+        """Ternary with true condition selects body."""
+        solver, compiler = compile_and_solve("""
+condition = True
+result = 42 if condition else 99
+""")
+        self.assertEqual(solver.check(), sat)
+        model = solver.model()
+        self.assertEqual(model.eval(compiler.env['result']).as_long(), 42)
+
+    def test_ternary_false_branch(self):
+        """Ternary with false condition selects orelse."""
+        solver, compiler = compile_and_solve("""
+condition = False
+result = 42 if condition else 99
+""")
+        self.assertEqual(solver.check(), sat)
+        model = solver.model()
+        self.assertEqual(model.eval(compiler.env['result']).as_long(), 99)
+
+    def test_ternary_with_comparison(self):
+        """Ternary with comparison as condition."""
+        solver, compiler = compile_and_solve("""
+x = 10
+result = 1 if x > 5 else 0
+""")
+        self.assertEqual(solver.check(), sat)
+        model = solver.model()
+        self.assertEqual(model.eval(compiler.env['result']).as_long(), 1)
+
+    def test_ternary_with_arithmetic_branches(self):
+        """Ternary branches can contain arithmetic expressions."""
+        solver, compiler = compile_and_solve("""
+x = 7
+result = x * 2 if x > 5 else x + 10
+""")
+        self.assertEqual(solver.check(), sat)
+        model = solver.model()
+        self.assertEqual(model.eval(compiler.env['result']).as_long(), 14)
+
+    def test_ternary_in_larger_expression(self):
+        """Ternary used inside a larger arithmetic expression."""
+        solver, compiler = compile_and_solve("""
+x = 3
+bonus = 10
+result = bonus + (5 if x > 2 else 0)
+""")
+        self.assertEqual(solver.check(), sat)
+        model = solver.model()
+        self.assertEqual(model.eval(compiler.env['result']).as_long(), 15)
+
+    def test_nested_ternary(self):
+        """Nested ternary: a if c1 else (b if c2 else c)."""
+        solver, compiler = compile_and_solve("""
+x = 15
+result = 1 if x > 20 else (2 if x > 10 else 3)
+""")
+        self.assertEqual(solver.check(), sat)
+        model = solver.model()
+        self.assertEqual(model.eval(compiler.env['result']).as_long(), 2)
+
+    def test_ternary_with_symbolic_variable(self):
+        """Ternary with a symbolic (predefined) variable."""
+        from z3 import Int
+        score = Int('S_q1')
+        predefined = {'S_q1': score}
+        solver, compiler = compile_and_solve("""
+category = 1 if S_q1 > 50 else 0
+""", predefined)
+        solver.add(score == 60)
+        self.assertEqual(solver.check(), sat)
+        model = solver.model()
+        self.assertEqual(model.eval(compiler.env['category']).as_long(), 1)
 
 
 if __name__ == '__main__':

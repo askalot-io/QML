@@ -45,11 +45,10 @@ class TestPragmaticZ3CompilerRobustness(unittest.TestCase):
         self.assertIn('b', compiler.env)
 
     def test_tuple_unpacking_no_crash(self):
-        """Tuple unpacking (a, b = 1, 2) should not crash."""
-        # Should log warning and skip, not raise AssertionError
+        """Tuple unpacking (a, b = 1, 2) should assign both variables."""
         compiler = compile_code("a, b = 1, 2")
-        # May or may not have the variables, but must not crash
-        self.assertIsNotNone(compiler)
+        self.assertIn('a', compiler.env)
+        self.assertIn('b', compiler.env)
 
     def test_subscript_assignment_no_crash(self):
         """Subscript assignment (arr[0] = 5) should not crash."""

@@ -112,7 +112,24 @@ class PragmaticZ3Compiler(ast.NodeVisitor):
                     else:
                         return BoolVal(False, self.ctx)
                 return BoolVal(False, self.ctx)
+            elif n.func.id == 'abs':
+                if n.args:
+                    arg = self._to_z3_int(self._e(n.args[0]))
+                    return If(arg >= 0, arg, -arg)
+                return IntVal(0, self.ctx)
         return IntVal(0, self.ctx)
+
+    def visit_IfExp(self, n: ast.IfExp):
+        """Handle ternary expressions: body if test else orelse"""
+        cond = self._to_z3_bool(self._e(n.test))
+        then_val = self._e(n.body)
+        else_val = self._e(n.orelse)
+
+        # Align types for the If branches
+        if isinstance(then_val, BoolRef) and isinstance(else_val, BoolRef):
+            return If(cond, then_val, else_val)
+        else:
+            return If(cond, self._to_z3_int(then_val), self._to_z3_int(else_val))
 
     def visit_BinOp(self, n: ast.BinOp):
         """Handle binary operations - follows Python semantics for type coercion"""
@@ -241,11 +258,21 @@ class PragmaticZ3Compiler(ast.NodeVisitor):
             self._assign_to_outcome(target, rhs_expr)
             return
 
-        # Handle tuple unpacking (a, b = 1, 2) - not supported in Z3 context
+        # Handle tuple unpacking (a, b = 1, 2)
         if isinstance(target, ast.Tuple):
-            self.logger.warning(
-                f"Tuple unpacking not supported in Z3 context for {self.item_id}, skipping"
-            )
+            if not isinstance(rhs_expr, list) or len(rhs_expr) != len(target.elts):
+                self.logger.warning(
+                    f"Tuple unpacking size mismatch or non-tuple RHS in {self.item_id}, skipping"
+                )
+                return
+            for elt, val in zip(target.elts, rhs_expr):
+                if isinstance(elt, ast.Name):
+                    self._assign_to_name(elt, val)
+                else:
+                    self.logger.warning(
+                        f"Skipping non-Name target in tuple unpacking for {self.item_id}: "
+                        f"{type(elt).__name__}"
+                    )
             return
 
         # Handle subscript (arr[0] = 5) - not supported in Z3 context

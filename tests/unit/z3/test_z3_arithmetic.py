@@ -25,6 +25,12 @@ Z3 constraints.
 - Tests SSA variable versioning with augmented operations
 - Self-referencing updates (x += 5)
 
+### abs() Built-in (7 tests)
+- abs of positive, negative, zero
+- abs of variables and expressions
+- abs with symbolic Z3 variables
+- Real-world scoring pattern: penalty = abs(expected - actual)
+
 ### Edge Cases (14 tests)
 - Division by constants and variables
 - Operations with zero (addition, multiplication, division)
@@ -33,7 +39,7 @@ Z3 constraints.
 - Order of operations and operator precedence
 - Multiple operations in single expression
 
-Total: 37 tests covering all arithmetic scenarios in QML code blocks.
+Total: 44 tests covering all arithmetic scenarios in QML code blocks.
 """
 
 import unittest
@@ -393,6 +399,73 @@ result = a + b + c + d + e
         self.assertEqual(solver.check(), sat)
         model = solver.model()
         self.assertEqual(model.eval(compiler.env['result']).as_long(), 0)
+
+    # ========== abs() Built-in ==========
+
+    def test_abs_positive(self):
+        """abs of positive number is identity."""
+        solver, compiler = compile_and_solve("result = abs(7)")
+        self.assertEqual(solver.check(), sat)
+        model = solver.model()
+        self.assertEqual(model.eval(compiler.env['result']).as_long(), 7)
+
+    def test_abs_negative(self):
+        """abs of negative number returns positive."""
+        solver, compiler = compile_and_solve("result = abs(-7)")
+        self.assertEqual(solver.check(), sat)
+        model = solver.model()
+        self.assertEqual(model.eval(compiler.env['result']).as_long(), 7)
+
+    def test_abs_zero(self):
+        """abs(0) is 0."""
+        solver, compiler = compile_and_solve("result = abs(0)")
+        self.assertEqual(solver.check(), sat)
+        model = solver.model()
+        self.assertEqual(model.eval(compiler.env['result']).as_long(), 0)
+
+    def test_abs_variable(self):
+        """abs of a variable expression."""
+        solver, compiler = compile_and_solve("""
+x = -15
+result = abs(x)
+""")
+        self.assertEqual(solver.check(), sat)
+        model = solver.model()
+        self.assertEqual(model.eval(compiler.env['result']).as_long(), 15)
+
+    def test_abs_of_expression(self):
+        """abs of an arithmetic expression."""
+        solver, compiler = compile_and_solve("""
+a = 3
+b = 10
+result = abs(a - b)
+""")
+        self.assertEqual(solver.check(), sat)
+        model = solver.model()
+        self.assertEqual(model.eval(compiler.env['result']).as_long(), 7)
+
+    def test_abs_symbolic(self):
+        """abs of a symbolic variable constrains both positive and negative."""
+        score = Int('S_q1')
+        predefined = {'S_q1': score}
+        solver, compiler = compile_and_solve("""
+diff = abs(S_q1)
+""", predefined)
+        solver.add(score == -42)
+        self.assertEqual(solver.check(), sat)
+        model = solver.model()
+        self.assertEqual(model.eval(compiler.env['diff']).as_long(), 42)
+
+    def test_abs_in_scoring(self):
+        """Real-world pattern: penalty = abs(expected - actual)."""
+        solver, compiler = compile_and_solve("""
+expected = 50
+actual = 73
+penalty = abs(expected - actual)
+""")
+        self.assertEqual(solver.check(), sat)
+        model = solver.model()
+        self.assertEqual(model.eval(compiler.env['penalty']).as_long(), 23)
 
 
 if __name__ == '__main__':
