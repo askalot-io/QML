@@ -9,7 +9,7 @@
 - **Type**: CATI (Computer-Assisted Telephone Interview) questionnaire, Appendix B
 
 ## Structure
-The questionnaire consists of a main body with lettered sections (A through Q) covering screening, spousal abuse, ex-spousal abuse, senior abuse by children, senior abuse by caregivers, and classification/demographics. An appendix contains Section V: Crime Incident Report for detailed per-incident reporting. Each abuse section (L, M, N, P) follows a parallel structure covering injury, medical attention, police involvement, reasons for not reporting, victim services, emotional impact, and advice.
+The questionnaire consists of a Control Form (household roster), a main body with lettered sections (A through Q), and an appendix (Section V). Section A covers perceptions, history, and risk. Section B is the criminal victimization screening. Sections C-D cover emotional/financial abuse and physical/sexual violence by a current spouse/partner. Sections E-F cover the same for an ex-partner. Sections G-H cover emotional abuse and physical violence by children (respondents aged 65+). Sections J-K cover emotional abuse and physical violence by a caregiver (respondents aged 65+). Sections L, M, N, P are detailed abuse report sections (parallel structure covering injury, medical attention, police involvement, reasons for not reporting, victim services, emotional impact, and advice). Section Q covers classification/demographics. Section V (appendix) is the Crime Incident Report completed for each incident in Section B. Note: The PDF skips Section I; there is no Section I.
 
 ## Question Inventory by Section
 
@@ -33,7 +33,7 @@ The questionnaire consists of a main body with lettered sections (A through Q) c
 
 ---
 
-### SECTION B: CRIME SCREENING - 30 questions
+### SECTION B: CRIME SCREENING - 40 questions
 
 1. Q_B0: Date/Time stamp - System: automatic timestamp
 2. Q_B1: (During the past 12 months) has anyone deliberately damaged or destroyed any property belonging to you or anyone in your household, such as their car or their clothing? - Single choice: (1) Yes, (3) No [Go to B3], (x) Don't know [Go to B3], (r) Refused [Go to B3]
@@ -55,30 +55,41 @@ The questionnaire consists of a main body with lettered sections (A through Q) c
 18. Q_B7: (During the past 12 months) were you personally the victim of any other type of crime? - Single choice: (1) Yes, (3) No [Go to B8A], (x) Don't know [Go to B8A], (r) Refused [Go to B8A]
 19. Q_B7A: How many times? - Numeric: [CATI: 1-97], (x) Don't know, (r) Refused
 20. Q_B7B: What happened? - Open text: [CATI: Length of field = 50], (r) Refused
-21. Q_B8A: (Not counting the incidents already mentioned, during the past 12 months) has anyone attacked you? The attack could have been anything from being hit, slapped, grabbed or knocked down, to being shot, beaten or sexually assaulted. - Single choice: (1) Yes, (3) No [Go to B9], (x) Don't know [Go to B9], (r) Refused [Go to B9]
-22. Q_B8AA: How many times? - Numeric: [CATI: 1-97], (x) Don't know, (r) Refused
-23. Q_B9: (Not counting the incidents already mentioned, during the past 12 months) has anyone threatened you with physical harm in any way? Include threats made in person, by telephone, by mail or by e-mail. - Single choice: (1) Yes, (3) No [Go to B10], (x) Don't know [Go to B10], (r) Refused [Go to B10]
-24. Q_B9A: How many times? - Numeric: [CATI: 1-97], (x) Don't know, (r) Refused
-25. Q_B10: (Not counting the incidents already mentioned, during the past 12 months) has anyone touched you against your will, grabbed you, kissed you, or fondled you against your will? - Single choice: (1) Yes, (3) No [Go to B11A], (x) Don't know [Go to B11A], (r) Refused [Go to B11A]
-26. Q_B10A: How many times? - Numeric: [CATI: 1-97], (x) Don't know, (r) Refused
-27. Q_B11A: (Not counting the incidents already mentioned, during the past 12 months) has anyone forced you or attempted to force you into any sexual activity by threatening you, holding you down, or hurting you in some way? - Single choice: (1) Yes, (3) No [Go to B11B], (x) Don't know [Go to B11B], (r) Refused [Go to B11B]
-28. Q_B11AA: How many times? - Numeric: [CATI: 1-97], (x) Don't know, (r) Refused
-29. Q_B11B: (Not counting the incidents already mentioned, during the past 12 months) has anyone subjected you to a sexual activity to which you were not able to give consent? - Single choice: (1) Yes, (3) No [Go to B12], (x) Don't know [Go to B12], (r) Refused [Go to B12]
-30. Q_B11BA: How many times? - Numeric: [CATI: 1-97], (x) Don't know, (r) Refused
+**Path for respondents under 65 (excludes acts by current/previous spouses or common-law partners):**
+
+21. Q_B8A: Now I'm going to ask you about being attacked in the past 12 months. An attack can be anything from being hit, slapped, pushed or grabbed, to being shot or beaten. Excluding acts committed by current or previous spouses or common-law partners, were you attacked by anyone? - Single choice: (1) Yes [Go to B8AA], (3) No [Go to B8B], (x) Don't know [Go to B8B], (r) Refused [Go to B8B]
+22. Q_B8AA: How many times? - Numeric: [CATI: 1-99], soft edit if >10
+23. Q_B8B: (Excluding acts by current/previous spouses or common-law partners) did anyone THREATEN to hit or attack you, or threaten you with a weapon? - Single choice: (1) Yes [Go to B8BA], (3) No [Go to B9], (x) Don't know [Go to B9], (r) Refused [Go to B9]
+24. Q_B8BA: How many times? - Numeric: [CATI: 1-99], soft edit if >10
+25. Q_B9: (Excluding incidents already mentioned) has anyone forced you or attempted to force you into any unwanted sexual activity, by threatening you, holding you down or hurting you in some way? Excludes acts by current/previous spouses or common-law partners. - Single choice: (1) Yes [Go to B9A], (3) No [Go to B10], (x) Don't know [Go to B10], (r) Refused [Go to B10]
+26. Q_B9A: How many times? - Numeric: [CATI: 1-99], soft edit if >10
+27. Q_B10: Has anyone ever touched you against your will in any sexual way? Excludes acts by current/previous spouses or common-law partners. - Single choice: (1) Yes [Go to B10A], (3) No [Go to B14], (x) Don't know [Go to B14], (r) Refused [Go to B14]
+28. Q_B10A: How many times? - Numeric: [CATI: 1-99], soft edit if >10 [Go to B14]
+
+**Path for respondents 65+ (also excludes children and caregivers):**
+CATI-B7e: Verify household roster. [If respondent >= 65 Go to B11A]
+
+29. Q_B11A: Now I'm going to ask you about being attacked in the past 12 months. Excluding acts committed by current or previous spouses or common-law partners, children, or caregivers, were you attacked by anyone? - Single choice: (1) Yes [Go to B11AA], (3) No [Go to B11B], (x) Don't know [Go to B11B], (r) Refused [Go to B11B]
+30. Q_B11AA: How many times? - Numeric: [CATI: 1-99], soft edit if >10
+31. Q_B11B: (Excluding acts by current/previous spouses, common-law partners, children or caregivers) did anyone threaten to hit or attack you, or threaten you with a weapon? - Single choice: (1) Yes [Go to B11BA], (3) No [Go to B12], (x) Don't know [Go to B12], (r) Refused [Go to B12]
+32. Q_B11BA: How many times? - Numeric: [CATI: 1-99], soft edit if >10
+33. Q_B12: (Excluding incidents already mentioned) has anyone forced you or attempted to force you into any unwanted sexual activity? Excludes acts by current/previous spouses, common-law partners or caregivers. - Single choice: (1) Yes [Go to B12A], (3) No [Go to B13], (x) Don't know [Go to B13], (r) Refused [Go to B13]
+34. Q_B12A: How many times? - Numeric: [CATI: 1-99], soft edit if >10
+35. Q_B13: Has anyone ever touched you against your will in any sexual way? Excludes acts by current/previous spouses, common-law partners or caregivers. - Single choice: (1) Yes [Go to B13A], (3) No [Go to B14], (x) Don't know [Go to B14], (r) Refused [Go to B14]
+36. Q_B13A: How many times? - Numeric: [CATI: 1-99], soft edit if >10
+
+**Common ending (all respondents):**
+
+37. Q_B14: Were there any other crimes which happened to you during the past 12 months, which may or may not have been reported to the police? - Single choice: (1) Yes [Go to B14S], (3) No [Go to CATI-B14e], (x) Don't know [Go to CATI-B14e], (r) Refused [Go to CATI-B14e]
+38. Q_B14S: What were these crimes? - Open text: [CATI: Length of field = 99], (r) Refused
+39. Q_B14A: How many were there? - Numeric: [CATI: 1-99], soft edit if >10
+40. CATI-B14e: Total the number of incidents reported in B1A, B2A, B3A, B4AA, B4BA, B4CA, B6AA, B6BA, B7A, B8AA, B8BA, B9A, B10A, B11AA, B11BA, B12A, B13A, and B14A then enter in TOTB. [If TOTB = 0, Go to C0] CATI Section B Verification Screen: I would like to confirm the information you have given me. You said you were a victim of crime on [TOTB] separate occasion(s) in the past 12 months. Is this correct? - Single choice: (1) Yes [Go to C0], (3) No [Go to VSCRNO Screen to correct appropriate questions in Section B]
 
 ---
 
-### SECTION B (continued): CRIME SCREENING - Further questions - 5 questions
+### SECTION A (Part 2): PERCEPTIONS (PDF Section A, items A1-A9) - 9 questions
 
-31. Q_B12: (Not counting the incidents already mentioned, during the past 12 months) has anyone attacked you or threatened you or stolen your personal property in incidents which you have not already mentioned? - Single choice: (1) Yes, (3) No [Go to B13], (x) Don't know [Go to B13], (r) Refused [Go to B13]
-32. Q_B12A: How many times? - Numeric: [CATI: 1-97], (x) Don't know, (r) Refused
-33. Q_B12B: Which crime type? - Open text: [CATI: Length of field = 50], (r) Refused
-34. Q_B13: (Not counting the incidents already mentioned, during the past 12 months) has anyone attacked you or threatened you or stolen personal property in any incidents not yet mentioned? - Single choice: (1) Yes, (3) No, (x) Don't know, (r) Refused
-35. Q_B13A: How many times? - Numeric: [CATI: 1-97], (x) Don't know, (r) Refused
-
----
-
-### SECTION C: PERCEPTIONS - 9 questions
+NOTE: The original inventory assigned C/D/E prefixes to these items, but they actually reside within PDF "Section A: Perceptions, History and Risk." The corresponding PDF item IDs are A0-A9. These are distinct from the real Section C (Emotional Abuse by Spouse/Partner) below.
 
 1. Q_C0: Date/Time stamp - System: automatic timestamp
 2. Q_C1: How safe do you feel from crime walking alone in your area after dark? - Single choice (READ LIST): (1) Very safe?, (2) Reasonably safe?, (3) Somewhat unsafe?, (4) Very unsafe?, (5) Do not walk alone [Go to C3], (x) Don't know, (r) Refused
@@ -92,7 +103,9 @@ The questionnaire consists of a main body with lettered sections (A through Q) c
 
 ---
 
-### SECTION D: PRECAUTIONS AND PREVENTION - 16 questions
+### SECTION A (Part 3): PRECAUTIONS AND PREVENTION (PDF Section A, items A15-A26) - 16 questions
+
+NOTE: Items below use D-prefix from the original inventory but actually correspond to PDF Section A items (A15-A26). These are distinct from the real Section D (Physical Violence by Spouse/Partner) below.
 
 1. Q_D0: Date/Time stamp - System: automatic timestamp
 2. Q_D1a-h: In the past 12 months, did you ... (READ LIST, Yes/No/Don't know/Refused for each) - Grid (8 sub-items):
@@ -114,7 +127,9 @@ The questionnaire consists of a main body with lettered sections (A through Q) c
 
 ---
 
-### SECTION E: ATTITUDES - 5 questions
+### SECTION A (Part 4): ATTITUDES (PDF Section A, items A10-A14) - 5 questions
+
+NOTE: Items below use E-prefix from the original inventory but actually correspond to PDF Section A items (A10-A14). These are distinct from the real Section E (Emotional Abuse by Ex-Partner) below.
 
 1. Q_E0: Date/Time stamp - System: automatic timestamp
 2. Q_E1: Which sentence comes closer to how you feel? In dealing with those convicted of a crime ... - Single choice (READ LIST): (1) Prison sentences are about right?, (2) Prison sentences are not harsh enough?, (3) Prison sentences are too harsh?, (x) Don't know, (r) Refused
@@ -133,103 +148,213 @@ The questionnaire consists of a main body with lettered sections (A through Q) c
 
 ---
 
-### SECTION F: SPOUSAL VIOLENCE SCREENING - 17 questions
+### SECTION C: EMOTIONAL AND FINANCIAL ABUSE BY A SPOUSE/PARTNER - 12 questions
+
+1. Q_C0: Date/Time stamp - System: automatic timestamp
+2. CATI-C0e: Verify respondent's current marital status from the household roster. [If married or living common-law or same-sex partner -> Go to C1Y; Else -> Go to E0]
+3. Q_C1Y: In what year were you married or started living together? - Numeric: [CATI: 1920-1999], (x) Don't know, (r) Refused. INT: If couple lived common-law before getting married, ask when they started living together.
+4. CATI-C1e: [If C1YEAR < 1994 or (x) or (r) then Go to C2]
+5. Q_C1M: In what month? - Numeric: [CATI: 1-12], (x) Don't know, (r) Refused
+6. Q_C2: I'm going to read a list of statements that some people have used to describe their spouse/partner. I'd like you to tell me whether or not each statement describes your spouse/partner. (Please remember that all information provided is strictly confidential.) He/She tries to limit your contact with family or friends. - Single choice: (1) Yes, (3) No, (r) Refused
+7. Q_C3: He/She puts you down or calls you names to make you feel bad. (Does this statement describe your spouse/partner?) - Single choice: (1) Yes, (3) No, (r) Refused
+8. Q_C4: He/She is jealous and doesn't want you to talk to other men/women. (Does this statement describe your spouse/partner?) - Single choice: (1) Yes, (3) No, (r) Refused
+9. Q_C5: He/She harms, or threatens to harm, someone close to you. (Does this statement describe your spouse/partner?) - Single choice: (1) Yes, (3) No, (r) Refused
+10. Q_C6: He/She demands to know who you are with and where you are at all times. (Does this statement describe your spouse/partner?) - Single choice: (1) Yes, (3) No, (r) Refused
+11. Q_C7: He/She damages or destroys your possessions or property. (Does this statement describe your spouse/partner?) - Single choice: (1) Yes, (3) No, (r) Refused
+12. Q_C8: He/She prevents you from knowing about or having access to the family income, even if you ask. (Does this statement describe your spouse/partner?) - Single choice: (1) Yes, (3) No, (r) Refused
+
+---
+
+### SECTION D: PHYSICAL AND SEXUAL VIOLENCE BY A SPOUSE/PARTNER - 23 questions
+
+1. Q_D0: Date/Time stamp - System: automatic timestamp
+2. Q_D1: It is important to hear from people themselves if we are to understand the serious problem of violence in the home. During the past 5 years, has your current spouse/partner THREATENED to hit you with his/her fist or anything else that could have hurt you? - Single choice: (1) Yes, (3) No, (r) Refused
+3. Q_D2: (During the past 5 years,) has he/she THROWN anything at you that could have hurt you? - Single choice: (1) Yes, (3) No, (r) Refused
+4. Q_D3: (During the past 5 years,) has he/she pushed, grabbed or shoved you in a way that could have hurt you? - Single choice: (1) Yes, (3) No, (r) Refused
+5. Q_D4: (During the past 5 years,) has he/she slapped you? - Single choice: (1) Yes, (3) No, (r) Refused
+6. Q_D5: (During the past 5 years,) has he/she kicked you, bit you, or hit you with his/her fist? - Single choice: (1) Yes, (3) No, (r) Refused
+7. Q_D6: (During the past 5 years,) has he/she hit you with something that could have hurt you? (Do not include hitting with fist) - Single choice: (1) Yes, (3) No, (r) Refused
+8. Q_D7: (During the past 5 years,) has he/she beaten you? - Single choice: (1) Yes, (3) No, (r) Refused
+9. Q_D8: (During the past 5 years,) has he/she choked you? - Single choice: (1) Yes, (3) No, (r) Refused
+10. Q_D9: (During the past 5 years,) has he/she USED or THREATENED TO USE a gun or knife on you? - Single choice: (1) Yes, (3) No, (r) Refused
+11. Q_D10: (During the past 5 years,) has he/she forced you into any unwanted sexual activity, by threatening you, holding you down, or hurting you in some way? - Single choice: (1) Yes, (3) No, (r) Refused
+12. CATI-D10e: [If any of D1 to D10 = (1) then SPABUSE = (1); else SPABUSE = (0) and Go to E0]
+13. Q_D11: You said yes to at least one of the previous ten questions concerning violence. During the past 5 years, has he/she been violent towards you on more than one occasion? - Single choice: (1) Yes, (3) No [Go to D14], (r) Refused [Go to D14]
+14. Q_D12: How many different times did these things happen? - Single choice: (2) Two, (3) Three, (4) Four, (5) Five, (6) Six, (7) Seven, (8) Eight, (9) Nine, (10) Ten, (11) More than ten, (x) Don't know, (r) Refused
+15. Q_D13: How many of these were in the past 12 months? - Numeric: [CATI: 0-99], (x) Don't know, (r) Refused
+16. CATI-D13e: Hard edit. [If D12 NE (11) nor (x) nor (r) then D13 must be <= D12. If not: (1) Correct D12, (3) Correct D13]
+17. Q_D14: When did this happen (the most recent happen)? - Year: [CATI: 1994-1999], (x) Don't know, (r) Refused; Month: [CATI: 1-12], (x) Don't know, (r) Refused
+18. CATI-D14e: [If C1 > 5 years then Go to D15B]
+19. Q_D15A: Did this (any of these) incident(s) in the past 5 years happen before you were married or living common-law? - Single choice: (1) Yes, (3) No, (r) Refused
+20. CATI-D15Ae: [If D11 = 3 and D15A = 1 Go to E0]
+21. Q_D15B: Did this (any of these) incident(s) in the past 5 years happen while you were married or living common-law? - Single choice: (1) Yes, (3) No, (r) Refused
+22. CATI-D15Be: [If D11 = 3 and D15B = 1 Go to E0]
+23. Q_D15C: Did this (any of these) incident(s) in the past 5 years happen while you were temporarily separated? - Single choice: (1) Yes, (3) No, (5) No, never separated, (r) Refused [Go to E0]
+
+---
+
+### SECTION E: EMOTIONAL AND FINANCIAL ABUSE BY AN EX-PARTNER - 15 questions
+
+1. Q_E0: Date/Time stamp - System: automatic timestamp
+2. CATI-E0e: Verify respondent's current marital status. [If married or living common-law or same-sex partner -> Go to E1; If widowed, divorced or separated -> Go to E0AA; Else -> Go to E0A]
+3. Q_E0A: Have you ever been married or in a common-law relationship? (By common-law we mean partners living together as a couple without being legally married.) - Single choice: (1) Yes, (3) No [Go to G0], (r) Refused [Go to G0]
+4. Q_E0AA: In the past 5 years, have you had any contact with any previous partner? (Contact includes receiving letters or telephone calls.) - Single choice: (1) Yes, (3) No [Go to G0], (r) Refused [Go to G0]
+5. Q_E0B: Now I'm going to ask you about some things that may have happened with your previous partner. I'm going to read a list of statements that some people have used to describe their partner. I'd like you to tell me whether or not each statement describes your ex-partner. (Please remember that all information provided is strictly confidential.) - Intro statement [Go to E2]
+6. Q_E1: Have you ever been in any other marriage or common-law relationship with a person other than your current spouse/partner? - Single choice: (1) Yes, (3) No [Go to G0], (r) Refused [Go to G0]
+7. Q_E1A: In the past 5 years, have you had any contact with any previous partner? (Contact includes receiving letters or telephone calls.) - Single choice: (1) Yes, (3) No [Go to G0], (r) Refused [Go to G0]
+8. Q_E1B: Now I'd like to read a list of statements that may apply to your PREVIOUS partner, and I'd like you to tell me whether each statement describes your ex-partner. (Please remember that all information provided is strictly confidential.) - Intro statement
+9. Q_E2: He/She tried to limit your contact with family or friends. - Single choice: (1) Yes, (3) No, (r) Refused
+10. Q_E3: He/She put you down or called you names to make you feel bad. (Does this statement describe your ex-partner?) - Single choice: (1) Yes, (3) No, (r) Refused
+11. Q_E4: He/She was jealous and didn't want you to talk to other men/women. (Does this statement describe your ex-partner?) - Single choice: (1) Yes, (3) No, (r) Refused
+12. Q_E5: He/She harmed, or threatened to harm, someone close to you. (Does this statement describe your ex-partner?) - Single choice: (1) Yes, (3) No, (r) Refused
+13. Q_E6: He/She demanded to know who you were with and where you were at all times. (Does this statement describe your ex-partner?) - Single choice: (1) Yes, (3) No, (r) Refused
+14. Q_E7: He/She damaged or destroyed your possessions or property. (Does this statement describe your ex-partner?) - Single choice: (1) Yes, (3) No, (r) Refused
+15. Q_E8: He/She prevented you from knowing about or having access to the family income, even if you asked. (Does this statement describe your ex-partner?) - Single choice: (1) Yes, (3) No, (r) Refused
+
+---
+
+### SECTION F: PHYSICAL AND SEXUAL VIOLENCE BY AN EX-PARTNER - 25 questions
 
 1. Q_F0: Date/Time stamp - System: automatic timestamp
-2. Q_F1: It is important to hear from people themselves if we are to understand the serious problem of violence in the home. I'm going to read a list of statements that some people have used to describe their spouse/partner. I'd like you to tell me if, during the past 5 years, your spouse/partner has ... (READ LIST) - Intro statement
-3. Q_F2a-j: Has your spouse/partner ... - Grid (10 sub-items, Yes/No/Don't know/Refused):
-   - a) Threatened to hit you with his/her fist or anything else that could hurt you? - (1)Yes, (3)No, (x)DK, (r)Ref
-   - b) Thrown anything at you that could hurt you? - (1)Yes, (3)No, (x)DK, (r)Ref
-   - c) Pushed, grabbed or shoved you? - (1)Yes, (3)No, (x)DK, (r)Ref
-   - d) Slapped you? - (1)Yes, (3)No, (x)DK, (r)Ref
-   - e) Kicked, bit or hit you with his/her fist? - (1)Yes, (3)No, (x)DK, (r)Ref
-   - f) Hit you with something that could hurt you? - (1)Yes, (3)No, (x)DK, (r)Ref
-   - g) Beaten you? - (1)Yes, (3)No, (x)DK, (r)Ref
-   - h) Choked you? - (1)Yes, (3)No, (x)DK, (r)Ref
-   - i) Used or threatened to use a gun or knife on you? - (1)Yes, (3)No, (x)DK, (r)Ref
-   - j) Forced you into any sexual activity when you did not want to by threatening you, holding you down, or hurting you in some way? - (1)Yes, (3)No, (x)DK, (r)Ref
-4. Q_F3: Not counting the incidents already mentioned, has your spouse/partner ever done anything else to you that you consider to be violent? - Single choice: (1) Yes, (3) No, (x) Don't know, (r) Refused
-5. Q_F3S: Specify - Open text: [CATI: Length of field = 50]
+2. CATI-F0e: Verify respondent's current marital status. [If married or living common-law or same-sex partner -> Go to F0B]
+3. Q_F0A: It is important to hear from people themselves if we are to understand the serious problem of violence in the home. I'm going to ask you ten short questions and I'd like you to tell me if in the past 5 years, your PREVIOUS partner did any of the following to you. - Intro statement [Go to F1]
+4. Q_F0B: The following ten short questions refer to your PREVIOUS partner. I'd like you to tell me if in the past 5 years, your PREVIOUS partner did any of the following to you. - Intro statement
+5. Q_F1: During the past 5 years, did your previous partner THREATEN to hit you with his/her fist or anything else that could have hurt you? - Single choice: (1) Yes, (3) No, (r) Refused
+6. Q_F2: (During the past 5 years,) did he/she THROW anything at you that could have hurt you? - Single choice: (1) Yes, (3) No, (r) Refused
+7. Q_F3: (During the past 5 years,) did he/she push, grab, or shove you in a way that could have hurt you? - Single choice: (1) Yes, (3) No, (r) Refused
+8. Q_F4: (During the past 5 years,) did he/she slap you? - Single choice: (1) Yes, (3) No, (r) Refused
+9. Q_F5: (During the past 5 years,) did he/she kick you, bite you, or hit you with his/her fist? - Single choice: (1) Yes, (3) No, (r) Refused
+10. Q_F6: (During the past 5 years,) did he/she hit you with something that could have hurt you? (Do not include hitting with fist) - Single choice: (1) Yes, (3) No, (r) Refused
+11. Q_F7: (During the past 5 years,) did he/she beat you? - Single choice: (1) Yes, (3) No, (r) Refused
+12. Q_F8: (During the past 5 years,) did he/she choke you? - Single choice: (1) Yes, (3) No, (r) Refused
+13. Q_F9: (During the past 5 years,) did he/she USE or THREATEN TO USE a gun or knife on you? - Single choice: (1) Yes, (3) No, (r) Refused
+14. Q_F10: (During the past 5 years,) did he/she force you into any unwanted sexual activity, by threatening you, holding you down, or hurting you in some way? - Single choice: (1) Yes, (3) No, (r) Refused
+15. CATI-F10e: [If any of F1 to F10 = (1) then EXABUSE = (1); else EXABUSE = (0) and Go to G0]
+16. Q_F11: You said yes to at least one of the previous ten questions concerning violence. During the past 5 years, was he/she violent towards you on more than one occasion? - Single choice: (1) Yes, (3) No [Go to F14], (r) Refused [Go to F14]
+17. Q_F12: How many different times did these things happen? - Single choice: (2) Two, (3) Three, (4) Four, (5) Five, (6) Six, (7) Seven, (8) Eight, (9) Nine, (10) Ten, (11) More than ten, (x) Don't know, (r) Refused
+18. Q_F13: How many of these were in the past 12 months? - Numeric: [CATI: 0-99], (x) Don't know, (r) Refused
+19. CATI-F13e: Hard edit. [If F12 NE (11) nor (x) nor (r) then F13 must be <= F12. If not: (1) Correct F12, (3) Correct F13]
+20. Q_F14: When did this happen (the most recent happen)? - Year: [CATI: 1994-1999], (x) Don't know, (r) Refused; Month: [CATI: 1-12], (x) Don't know, (r) Refused
+21. Q_F15: Did the (any of the) violence happen while you were living together? - Single choice: (1) Yes, (3) No, (x) Don't know, (r) Refused
+22. CATI-F15e: [If F11 = (3) and F15 = (1) Go to G0]
+23. Q_F16: Did any of the violence happen after you split up? - Single choice: (1) Yes, (3) No, (5) Did not separate, partner died [Go to G0], (x) Don't know [Go to G0], (r) Refused [Go to G0]
+24. CATI-F16e: [If F15 = (1) and F16 = (1) Go to F17; If F15 = (3) and F16 = (3) then CATI Error Screen; else Go to G0] CATI Error Screen: You said that during the past 5 years your ex-partner was violent towards you. You said that it didn't happen while you were living together or after you split up. Is this correct? (1) Correct F15, (2) Correct F16, (3) Accept as is [Go to G0]
+25. Q_F17: Do you think it increased after you split up? - Single choice: (1) Yes, (3) No, (x) Don't know, (r) Refused [Go to G0]
 
 ---
 
-### SECTION F (continued): EX-PARTNER SCREENING - 9 questions
-
-6. Q_F10: Has a previous spouse/partner ever been violent towards you during the past 5 years? (READ LIST for F10a-j, same structure as F2) - Grid (10 sub-items):
-   - a) through j) same violence items as F2a-j
-7. Q_F11: Not counting the incidents already mentioned, has a previous spouse/partner ever done anything else to you that you consider to be violent? - Single choice: (1) Yes, (3) No, (x) Don't know, (r) Refused
-8. Q_F11S: Specify - Open text: [CATI: Length of field = 50]
-9. Q_F12: How many times has this happened during the past 5 years? - Numeric: [CATI: 1-97], (x) Don't know, (r) Refused
-10. Q_F13: How many times in the past 12 months? - Numeric: [CATI: 0-F12 or 97], (x) Don't know, (r) Refused
-11. Q_F14: On path / off path tracking variable - System
-
----
-
-### SECTION G: SENIOR ABUSE SCREENING - 8 questions
+### SECTION G: EMOTIONAL AND FINANCIAL ABUSE BY CHILDREN - 14 questions
 
 1. Q_G0: Date/Time stamp - System: automatic timestamp
-2. Q_H1: How many children do you have? - Numeric: [CATI: 0-30], (x) Don't know, (r) Refused [If 0, Go to H5]
-3. Q_H2: Are any of them 15 years of age or over? - Single choice: (1) Yes, (3) No [Go to H5], (x) Don't know [Go to H5], (r) Refused [Go to H5]
-4. Q_H3a-j: During the past 5 years, has any of your children... - Grid (10 sub-items, same violence screening as F2):
-   - a) through j) same violence items adapted for children
-5. Q_H4: Not counting the incidents already mentioned, has any of your children ever done anything else to you that you consider to be violent? - Single choice: (1) Yes, (3) No, (x) Don't know, (r) Refused
-6. Q_H4S: Specify - Open text: [CATI: Length of field = 50]
-7. Q_H5: During the past 5 years, have you received care from a caregiver? - Single choice: (1) Yes, (3) No, (x) Don't know, (r) Refused
-8. Q_H10: How many times has this happened during the past 5 years? (violence by child) - Numeric: [CATI: 1-97], (x) Don't know, (r) Refused
-9. Q_H11: How many times in the past 12 months? - Numeric: [CATI: 0-H10 or 97]
-10. Q_H12/H13: On path / off path tracking - System
+2. CATI-G0e: Verify household roster. [If respondent < 65 Go to K15; If respondent is living with child(ren) Go to G3]
+3. Q_G1: Have you ever had any children? Include birth, step and adopted children. - Single choice: (1) Yes, (3) No [Go to J0], (r) Refused [Go to J0]
+4. Q_G2: During the past 5 years, how often did you have contact with any of your children? (Contact includes receiving letters or telephone calls.) - Single choice (READ LIST): (1) Daily, (2) At least once a week, (3) At least once a month, (4) Less than once a month, (5) Not at all [Go to J0], (6) All children deceased [Go to J0], (r) Refused [Go to J0]
+5. Q_G3: Now I'm going to ask you about some things that may have happened with your children. (Please remember that all information provided is strictly confidential.) They try to limit your contact with family or friends. - Single choice: (1) Yes, (3) No, (r) Refused
+6. Q_G4: They put you down or call you names to make you feel bad. (Does this statement describe any of your children?) - Single choice: (1) Yes, (3) No, (r) Refused
+7. Q_G5: They damage or destroy your possessions or property. (Does this statement describe any of your children?) - Single choice: (1) Yes, (3) No, (r) Refused
+8. Q_G6: They harm, or threaten to harm, someone close to you. (Does this statement describe any of your children?) - Single choice: (1) Yes, (3) No, (r) Refused
+9. Q_G8: They prevent you from knowing about or having access to your income, even if you ask. (Does this statement describe any of your children?) - Single choice: (1) Yes, (3) No, (r) Refused
+10. Q_G9: They try to force you to relinquish control over your finances when you don't want to. (Does this statement describe any of your children?) - Single choice: (1) Yes, (3) No, (r) Refused
+11. Q_G10: They try to force you to give up something of value when you don't want to. (Does this statement describe any of your children?) - Single choice: (1) Yes, (3) No, (r) Refused
+12. Q_G11: They try to force you to change your Last Will and Testament or try to obtain Power of Attorney over your finances when you don't want them to. (Does this statement describe any of your children?) (By power of attorney we mean a legal document which gives someone control over your finances and permits that person to write cheques or withdraw money from your bank account.) - Single choice: (1) Yes, (3) No, (r) Refused
+13. CATI-G11e: [If G3 to G11 all NE (1) Go to H0]
+14. Q_G12: You said yes to one of the previous statements describing your child/children. Was it a son or a daughter that one of the previous statements describes? - Single choice: (1) Son(s), (2) Daughter(s), (3) Both, (x) Don't know, (r) Refused
 
 ---
 
-### SECTION K: CAREGIVER ABUSE SCREENING - 8 questions
+### SECTION H: PHYSICAL VIOLENCE BY CHILDREN - 19 questions
 
-1. Q_K1a-j: During the past 5 years, has your caregiver... - Grid (10 sub-items, same violence screening):
-   - a) through j) same violence items adapted for caregivers
-2. Q_K2: Not counting the incidents already mentioned, has your caregiver ever done anything else to you that you consider to be violent? - Single choice: (1) Yes, (3) No, (x) Don't know, (r) Refused
-3. Q_K2S: Specify - Open text: [CATI: Length of field = 50]
-4. Q_K10: How many times has this happened during the past 5 years? - Numeric: [CATI: 1-97]
-5. Q_K11: How many times in the past 12 months? - Numeric: [CATI: 0-K10 or 97]
-6. Q_K12/K13/K14: On path / off path tracking - System
+1. Q_H0: Date/Time stamp - System: automatic timestamp
+2. CATI-H0e: Verify respondent's current marital status. [If married or living common-law or same-sex partner or E0AA = (1) Go to H0A; Else Go to H0B]
+3. Q_H0A: I'd like you to tell me whether, in the past 5 years, any of your children have done any of the following to you. Again, your responses are important whether or not you have had any of these experiences and remember that all information provided is strictly confidential. - Intro statement [Go to H1]
+4. Q_H0B: It is important to hear from people themselves if we are to understand the serious problem of violence in the home. I'd like you to tell me whether, in the past 5 years, any of your children have done any of the following to you. Please remember that all information provided is strictly confidential. - Intro statement
+5. Q_H1: During the past 5 years, have any of your children THREATENED to hit you with their fist or anything else that could have hurt you? - Single choice: (1) Yes, (3) No, (r) Refused
+6. Q_H2: (During the past 5 years,) have any of your children THROWN anything at you that could have hurt you? - Single choice: (1) Yes, (3) No, (r) Refused
+7. Q_H3: (During the past 5 years,) have they pushed, grabbed, or shoved you in a way that could have hurt you? - Single choice: (1) Yes, (3) No, (r) Refused
+8. Q_H4: (During the past 5 years,) have they slapped you? - Single choice: (1) Yes, (3) No, (r) Refused
+9. Q_H5: (During the past 5 years,) have any of your children kicked you, bit you, or hit you with their fist? - Single choice: (1) Yes, (3) No, (r) Refused
+10. Q_H6: (During the past 5 years,) have they hit you with something that could have hurt you? (Do not include hitting with fist) - Single choice: (1) Yes, (3) No, (r) Refused
+11. Q_H7: (During the past 5 years,) have they beaten you? - Single choice: (1) Yes, (3) No, (r) Refused
+12. Q_H8: (During the past 5 years,) have any of your children choked you? - Single choice: (1) Yes, (3) No, (r) Refused
+13. Q_H9: (During the past 5 years,) have they USED or THREATENED TO USE a gun or knife on you? - Single choice: (1) Yes, (3) No, (r) Refused
+14. CATI-H9e: [If any of H1 to H9 = (1) then SCABUSE = (1); else SCABUSE = (0) and Go to J0]
+15. Q_H10: During the past 5 years, have any of your children been violent towards you on more than one occasion? - Single choice: (1) Yes, (3) No [Go to H13], (r) Refused [Go to H13]
+16. Q_H11: How many different times did these things happen? - Single choice: (2) Two, (3) Three, (4) Four, (5) Five, (6) Six, (7) Seven, (8) Eight, (9) Nine, (10) Ten, (11) More than ten, (x) Don't know, (r) Refused
+17. Q_H12: How many of these were in the past 12 months? - Numeric: [CATI: 0-99], (x) Don't know, (r) Refused
+18. CATI-H12e: Hard edit. [If H11 NE (11) nor (x) nor (r) then H12 must be <= H11. If not: (1) Correct H11, (3) Correct H12]
+19. Q_H13: When did this happen (the most recent happen)? - Year: [CATI: 1994-1999], (x) Don't know, (r) Refused; Month: [CATI: 1-12], (x) Don't know, (r) Refused
 
 ---
 
-### SECTION D (continued): SPOUSAL ABUSE COUNTS - 6 questions
+### SECTION J: EMOTIONAL AND FINANCIAL ABUSE BY A CAREGIVER - 9 questions
 
-1. Q_D9: How many times has this happened during the past 5 years? (spousal violence) - Numeric: [CATI: 1-97], (x) Don't know, (r) Refused
-2. Q_D10: On how many different occasions has your spouse/partner acted in this way during the past 5 years? - Numeric: [CATI: 1-97], (x) Don't know, (r) Refused
-3. Q_D11: During the past 5 years, did any of these incidents ever happen when your spouse/partner was drinking? - Single choice: (1) Yes, (3) No, (5) Does not drink, (x) Don't know, (r) Refused
-4. Q_D12: How many times in the past 12 months? - Numeric: [CATI: 0-D10 or 97], (x) Don't know, (r) Refused
-5. Q_D13: How many times in the past 12 months? (further occurrence count) - Numeric
-6. Q_D14: On path / off path tracking - System
+1. Q_J0: Date/Time stamp - System: automatic timestamp
+2. Q_J1: (Excluding your spouse/partner/ex-partner/children) in the past 5 years, has a caregiver come into your home to assist you with everyday activities or to provide care? By this I mean anyone, either paid or unpaid, who provided you with assistance or healthcare in your home. This includes meal preparation, personal care or medical assistance. - Single choice: (1) Yes, (3) No [Go to K15], (r) Refused [Go to K15]
+3. Q_J2: Now I'm going to ask you about some things that may have happened with your caregiver. (Please remember that all information provided is strictly confidential.) They put you down or call you names to make you feel bad. - Single choice: (1) Yes, (3) No, (r) Refused
+4. Q_J3: They damage or destroy your possessions or property. (Does this statement describe your caregiver?) - Single choice: (1) Yes, (3) No, (r) Refused
+5. Q_J4: They harm, or threaten to harm, someone close to you. (Does this statement describe your caregiver?) - Single choice: (1) Yes, (3) No, (r) Refused
+6. Q_J6: They try to force you to relinquish control over your finances when you don't want to. (Does this statement describe your caregiver?) - Single choice: (1) Yes, (3) No, (r) Refused
+7. Q_J7: They try to force you to give up something of value when you don't want to. (Does this statement describe your caregiver?) - Single choice: (1) Yes, (3) No, (r) Refused
+8. Q_J8: They try to force you to change your Last Will and Testament or try to obtain Power of Attorney over your finances when you don't want them to. (Does this statement describe your caregiver?) (By power of attorney we mean a legal document which gives someone control over your finances and permits that person to write cheques or withdraw money from your bank account.) - Single choice: (1) Yes, (3) No, (r) Refused
+9. NOTE: No J5 exists in the PDF (numbering skips from J4 to J6).
 
 ---
 
-### SECTION L: SPOUSAL ABUSE REPORT - 65 questions
+### SECTION K: PHYSICAL AND SEXUAL VIOLENCE BY CAREGIVER - 24 questions
+
+1. Q_K0: Date/Time stamp - System: automatic timestamp
+2. CATI-K0e: Verify respondent's marital status. [If married or living common-law or same-sex partner or E0A = (1) or (G3 NE empty and G3 = 'On path') -> Go to K0A; Else -> Go to K0B]
+3. Q_K0A: I'd like you to tell me whether, in the past 5 years, any caregiver who has come into your home has done any of the following to you. Again, your responses are important whether or not you have had any of these experiences. Please remember that all information provided is strictly confidential. - Intro statement [Go to K1]
+4. Q_K0B: It is important to hear from people themselves if we are to understand the serious problem of violence in the home. I'd like you to tell me whether, in the past 5 years, any caregiver who has come into your home has done any of the following to you. Please remember that all information provided is strictly confidential. - Intro statement
+5. Q_K1: During the past 5 years, has any caregiver THREATENED to hit you with their fist or anything else that could have hurt you? - Single choice: (1) Yes, (3) No, (r) Refused
+6. Q_K2: (During the past 5 years,) has any caregiver THROWN anything at you that could have hurt you? - Single choice: (1) Yes, (3) No, (r) Refused
+7. Q_K3: (During the past 5 years,) has any caregiver pushed, grabbed, or shoved you in a way that could have hurt you? - Single choice: (1) Yes, (3) No, (r) Refused
+8. Q_K4: (During the past 5 years,) has any caregiver slapped you? - Single choice: (1) Yes, (3) No, (r) Refused
+9. Q_K5: (During the past 5 years,) has any caregiver kicked you, bit you, or hit you with their fist? - Single choice: (1) Yes, (3) No, (r) Refused
+10. Q_K6: (During the past 5 years,) has any caregiver hit you with something that could have hurt you? (Do not include hitting with fist) - Single choice: (1) Yes, (3) No, (r) Refused
+11. Q_K7: (During the past 5 years,) has any caregiver beaten you? - Single choice: (1) Yes, (3) No, (r) Refused
+12. Q_K8: (During the past 5 years,) has any caregiver choked you? - Single choice: (1) Yes, (3) No, (r) Refused
+13. Q_K9: (During the past 5 years,) has any caregiver USED or THREATENED TO USE a gun or knife on you? - Single choice: (1) Yes, (3) No, (r) Refused
+14. Q_K10: (During the past 5 years,) has any caregiver forced you into any unwanted sexual activity, by threatening you, holding you down, or hurting you in some way? - Single choice: (1) Yes, (3) No, (r) Refused
+15. CATI-K10e: [If any of K1 to K10 = (1) then SGABUSE = (1); else SGABUSE = (0) and Go to K15]
+16. Q_K11: During the past 5 years, has any caregiver been violent towards you on more than one occasion? - Single choice: (1) Yes, (3) No [Go to K14], (r) Refused [Go to K14]
+17. Q_K12: How many different times did these things happen? - Single choice: (2) Two, (3) Three, (4) Four, (5) Five, (6) Six, (7) Seven, (8) Eight, (9) Nine, (10) Ten, (11) More than ten, (x) Don't know, (r) Refused
+18. Q_K13: How many of these were in the past 12 months? - Numeric: [CATI: 0-99], (x) Don't know, (r) Refused
+19. CATI-K13e: Hard edit. [If K12 NE (11) nor (x) nor (r) then K13 must be <= K12. If not: (1) Correct K12, (3) Correct K13]
+20. Q_K14: When did this happen (the most recent happen)? - Year: [CATI: 1994-1999], (x) Don't know, (r) Refused; Month: [CATI: 1-12], (x) Don't know, (r) Refused
+21. Q_K15: Has anything else happened to you in your lifetime that could be considered a crime? Please remember that crime includes vandalism, theft, fraud, break and enter, assault and sexual assault. - Single choice: (1) Yes, (3) No [Go to CATI-K16e], (x) Don't know [Go to CATI-K16e], (r) Refused [Go to CATI-K16e]
+22. Q_K16: What happened? (Mark all that apply, with ages) K16A: What was your approximate age when each occurrence happened? - Grid (10 crime types with up to 4 age fields each): (1) Sexual assault, (2) Robbery/Attempted robbery, (3) Assault, (4) Break and enter/Attempt, (5) Motor vehicle theft/Attempt, (6) Theft of personal property/Attempt, (7) Fraud, (8) Theft of household property/Attempt, (9) Vandalism, (10) Other [Go to K16S]
+23. Q_K16S: Specify - Open text: [CATI: Length of field = 50]
+24. CATI-K16e: Hard edit: Verify age of respondent; all ages reported in K16A less than respondent's age. Fill in an incident report (Section V) for each incident mentioned in Section B.
+
+---
+
+### SECTION L: SPOUSAL ABUSE REPORT - 60 questions
 
 1. Q_L0: Date/Time stamp - System: automatic timestamp
-2. Q_L1: You said that during the past 5 years your spouse/partner was violent. - Statement
-3. Q_L2: During (these) this incident(s), were you (ever) physically injured in any way? - Single choice: (1) Yes, (3) No [Go to L6], (r) Refused [Go to L6]
-4. Q_L3: Did any of these incidents in which you were injured happen in the past 12 months? - Single choice: (1) Yes, (3) No, (x) Don't know, (r) Refused
-5. Q_L4: During the past 5 years, did you ever receive any medical attention at a hospital as a result of the violence? - Single choice: (1) Yes, (3) No [Go to L5], (r) Refused [Go to L5]
-6. Q_L4A: Did you stay in hospital overnight? - Single choice: (1) Yes, (3) No [Go to L6], (r) Refused [Go to L6]
-7. Q_L4B: For how many nights? - Numeric: [CATI: 0-999], (r) Refused
-8. Q_L5: During the past 5 years, did you ever receive any medical attention from a doctor or a nurse for your injuries? - Single choice: (1) Yes, (3) No, (r) Refused
-9. Q_L6: As a result of the violence (and excluding any time you spent in the hospital), did you, during the past 5 years, ever have to stay in bed for all or most of a day? - Single choice: (1) Yes, (3) No [Go to L7], (r) Refused [Go to L7]
-10. Q_L6A: For how many days? - Numeric: [CATI: 0-999], (x) Don't know, (r) Refused
-11. Q_L7: (Other than the time you spent in the hospital or at home in bed,) during the past 5 years, did you ever have to take time off from your everyday activities because of what happened to you? - Single choice: (1) Yes, (3) No, (x) Don't know, (r) Refused
-12. Q_L8: During (these) this incident(s) was your spouse/partner drinking? - Single choice: (1) Yes, (3) No, (5) Does not drink, (x) Don't know, (r) Refused
-13. Q_L9: Were you drinking? - Single choice: (1) Yes, (3) No, (5) Do not drink, (x) Don't know, (r) Refused
-14. Q_L10: During (these) this incident(s) was your spouse/partner using drugs? - Single choice: (1) Yes, (3) No, (5) Does not use drugs, (x) Don't know, (r) Refused
-15. Q_L11: Were you using drugs? - Single choice: (1) Yes, (3) No, (5) Do not use drugs, (x) Don't know, (r) Refused
-16. Q_L12: During the past 5 years, was anyone (else) ever harmed or threatened during (these) this incident(s)? - Single choice: (1) Yes, (3) No [Go to L14], (x) Don't know [Go to L14], (r) Refused [Go to L14]
-17. Q_L12A: How many persons? - Numeric: [CATI: 0-99], (x) Don't know, (r) Refused
-18. Q_L13: Were any of these people who were harmed or threatened under 15 years of age? - Single choice: (1) Yes, (3) No [Go to L14], (x) Don't know [Go to L14], (r) Refused [Go to L14]
-19. Q_L13A: How many persons? - Numeric: [CATI: 0-99], (x) Don't know, (r) Refused
-20. Q_L14: Did any of your children see or hear (any of these) this incident(s)? - Single choice: (1) Yes/think so, (3) No/don't think so, (5) No children at the time, (x) Don't know, (r) Refused
-21. Q_L15: During the past 5 years, did you ever fear that your life was in danger because of your spouse's/partner's violent or threatening behaviour? - Single choice: (1) Yes, (3) No, (r) Refused
-22. Q_L16: During the past 5 years, did you ever attempt to obtain compensation, through a civil or criminal court or a provincial compensation program, because of the violence? - Single choice: (1) Yes, (3) No [Go to L17], (r) Refused [Go to L17]
-23. Q_L16A: Did you obtain any compensation? - Single choice: (1) Yes, (3) No, (5) Not yet resolved, (r) Refused
-24. Q_L17: Did the police ever find out about the violence in any way? - Single choice: (1) Yes, (3) No [Go to L25A], (x) Don't know [Go to L27], (r) Refused [Go to L27]
+2. CATI-L0e: [If SPABUSE = (0), Go to M0]
+3. Q_L1: You said that during the past 5 years your spouse/partner was violent. - Statement
+4. Q_L2: During (these) this incident(s), were you (ever) physically injured in any way? - Single choice: (1) Yes, (3) No [Go to L6], (r) Refused [Go to L6]
+5. CATI-L2e: [If D11 = (3) or (D13 = (0) or D13 = "Off path") or ((2) LE D12 LE (10) and D13 = D12 and (D12 and D13 = "On path")), Go to L4]
+6. Q_L3: Did any of these incidents in which you were injured happen in the past 12 months? - Single choice: (1) Yes, (3) No, (x) Don't know, (r) Refused
+7. Q_L4: During the past 5 years, did you ever receive any medical attention at a hospital as a result of the violence? (Include treatment received at emergency or as an out-patient.) - Single choice: (1) Yes, (3) No [Go to L5], (r) Refused [Go to L5]
+8. Q_L4A: Did you stay in hospital overnight? - Single choice: (1) Yes, (3) No [Go to L6], (r) Refused [Go to L6]
+9. Q_L4B: For how many nights? - Numeric: [CATI: 0-999], (r) Refused [Go to L6]
+10. Q_L5: During the past 5 years, did you ever receive any medical attention from a doctor or a nurse for your injuries? - Single choice: (1) Yes, (3) No, (r) Refused
+11. Q_L6: As a result of the violence (and excluding any time you spent in the hospital), did you, during the past 5 years, ever have to stay in bed for all or most of a day? - Single choice: (1) Yes, (3) No [Go to L7], (r) Refused [Go to L7]
+12. Q_L6A: For how many days? - Numeric: [CATI: 0-999], (x) Don't know, (r) Refused
+13. Q_L7: (Other than the time you spent in the hospital or at home in bed,) during the past 5 years, did you ever have to take time off from your everyday activities because of what happened to you? - Single choice: (1) Yes, (3) No, (x) Don't know, (r) Refused
+14. Q_L8: During (these) this incident(s) was your spouse/partner drinking? - Single choice: (1) Yes, (3) No, (5) Does not drink, (x) Don't know, (r) Refused
+15. Q_L12: During the past 5 years, was anyone (else) ever harmed or threatened during (these) this incident(s)? - Single choice: (1) Yes, (3) No [Go to L14], (x) Don't know [Go to L14], (r) Refused [Go to L14]
+16. Q_L12A: How many persons? - Numeric: [CATI: 0-99], (x) Don't know, (r) Refused
+17. Q_L13: Were any of these people who were harmed or threatened under 15 years of age? - Single choice: (1) Yes, (3) No [Go to L14], (x) Don't know [Go to L14], (r) Refused [Go to L14]
+18. Q_L13A: How many persons? - Numeric: [CATI: 0-99], (x) Don't know, (r) Refused
+19. Q_L14: Did any of your children see or hear (any of these) this incident(s)? - Single choice: (1) Yes/think so, (3) No/don't think so, (5) No children at the time, (x) Don't know, (r) Refused
+20. Q_L15: During the past 5 years, did you ever fear that your life was in danger because of your spouse's/partner's violent or threatening behaviour? - Single choice: (1) Yes, (3) No, (r) Refused
+21. Q_L16: During the past 5 years, did you ever attempt to obtain compensation, through a civil or criminal court or a provincial compensation program, because of the violence? - Single choice: (1) Yes, (3) No [Go to L17], (r) Refused [Go to L17]
+22. Q_L16A: Did you obtain any compensation? - Single choice: (1) Yes, (3) No, (5) Not yet resolved, (r) Refused
+23. Q_L17: Did the police ever find out about the violence in any way? - Single choice: (1) Yes, (3) No [Go to L25A], (x) Don't know [Go to L27], (r) Refused [Go to L27]
+24. CATI-L17e: [If (D11 = (3) and (D14 is less than 12 months ago and D14 = "On path")) or (2 LE D12 LE 10 and D12 = D13 and (D12 and D13 = "On path")), Go to L19]
 25. Q_L18: Did they find out about it in the past 12 months? - Single choice: (1) Yes, (3) No, (x) Don't know, (r) Refused
 26. Q_L19: How did they learn about it? Was it from you or some other way? - Single choice: (1) Respondent, (3) Some other way [Go to L21], (x) Don't know [Go to L27], (r) Refused [Go to L27]
 27. Q_L20a-d: People have different reasons for reporting incidents to the police. Did any of the following have anything to do with why you reported the violence? Was it... (READ LIST) - Grid (4 sub-items, Yes/No/DK/Refused):
@@ -242,28 +367,30 @@ The questionnaire consists of a main body with lettered sections (A through Q) c
 30. Q_L22: How satisfied were you with the actions that the police took? Were you... - Single choice (READ LIST): (1) Very satisfied?, (2) Somewhat satisfied?, (3) Somewhat dissatisfied?, (4) Very dissatisfied?, (r) Refused
 31. Q_L23: Is there anything (else) they should have done to help you? (Mark all that apply) - Multiple choice: (n) No/nothing [Go to CATI-L23e], (1) Take the person out of the house, (2) Charge/arrest the person, (3) Respond more quickly, (4) Refer/take you to a support service, (5) Relocate you, (6) Take you to hospital, (7) Be more supportive/sympathetic, (8) Other [Go to L23S], (x) Don't know [Go to CATI-L23e], (r) Refused [Go to CATI-L23e], (0) No other; continue [Go to CATI-L23e]
 32. Q_L23S: Specify - Open text: [CATI: Length of field = 50]
-33. Q_L24: After the police were involved, did your spouse's/partner's violent or threatening behaviour towards you... - Single choice (READ LIST): (1) Increase?, (2) Decrease/stop?, (3) Stay the same?, (x) Don't know, (r) Refused [Go to L27]
-34. Q_L25A: Reason not to contact police: Because it was dealt with another way? - Single choice: (1) Yes, (3) No, (r) Refused
-35. Q_L25B: Because of fear of your spouse/partner? - Single choice: (1) Yes, (3) No, (r) Refused
-36. Q_L25C: Because the police couldn't do anything about it? - Single choice: (1) Yes, (3) No, (r) Refused
-37. Q_L25D: Because the police wouldn't help? - Single choice: (1) Yes, (3) No, (r) Refused
-38. Q_L25E: Because you didn't want to get involved with police? - Single choice: (1) Yes, (3) No, (r) Refused
-39. Q_L25X: Because you didn't want your spouse/partner arrested or jailed? - Single choice: (1) Yes, (3) No, (r) Refused
-40. Q_L25G: Because the incident was a personal matter that didn't concern the police? - Single choice: (1) Yes, (3) No, (r) Refused
-41. Q_L25Y: Because you didn't want anyone to find out about it? - Single choice: (1) Yes, (3) No, (r) Refused
-42. Q_L25H: Because of fear of publicity/news coverage? - Single choice: (1) Yes, (3) No, (r) Refused
-43. Q_L25F: Because it was not important enough to you? - Single choice: (1) Yes, (3) No, (r) Refused
-44. Q_L25K: For some other reason, not already mentioned? - Single choice: (1) Yes, (3) No [Go to CATI-L25e], (r) Refused [Go to CATI-L25e]
-45. Q_L25S: Specify - Open text: [CATI: Length of field = 50]
-46. Q_L26: What was the main reason? - Single choice: (1) Dealt with another way, (2) Fear, (3) Police couldn't do anything, (4) Police wouldn't help, (5) Did not want to get involved with police, (6) Not important enough to respondent, (7) A personal matter that did not concern the police, (8) Fear of publicity/media coverage, (11) Didn't want spouse/partner arrested or jailed, (12) Didn't want anyone to find out about it, (13) Other, (r) Refused
-47. Q_L27a-f: (Other than to the police,) did you ever talk to anyone about (these) this incident(s), such as... (READ LIST) - Grid (6 sub-items, Yes/No/DK/Refused):
+33. CATI-L23e: [If D11 = 3, Go to L27]
+34. Q_L24: After the police were involved, did your spouse's/partner's violent or threatening behaviour towards you... - Single choice (READ LIST): (1) Increase?, (2) Decrease/stop?, (3) Stay the same?, (x) Don't know, (r) Refused [Go to L27]
+35. Q_L25A: I'm going to read a list of reasons why some people choose not to contact the police. Because it was dealt with another way? - Single choice: (1) Yes, (3) No, (r) Refused
+36. Q_L25B: Because of fear of your spouse/partner? - Single choice: (1) Yes, (3) No, (r) Refused
+37. Q_L25C: Because the police couldn't do anything about it? - Single choice: (1) Yes, (3) No, (r) Refused
+38. Q_L25D: Because the police wouldn't help? - Single choice: (1) Yes, (3) No, (r) Refused
+39. Q_L25E: Because you didn't want to get involved with police? - Single choice: (1) Yes, (3) No, (r) Refused
+40. Q_L25X: Because you didn't want your spouse/partner arrested or jailed? - Single choice: (1) Yes, (3) No, (r) Refused
+41. Q_L25G: Because the incident was a personal matter that didn't concern the police? - Single choice: (1) Yes, (3) No, (r) Refused
+42. Q_L25Y: Because you didn't want anyone to find out about it? - Single choice: (1) Yes, (3) No, (r) Refused
+43. Q_L25H: Because of fear of publicity/news coverage? - Single choice: (1) Yes, (3) No, (r) Refused
+44. Q_L25F: Because it was not important enough to you? - Single choice: (1) Yes, (3) No, (r) Refused
+45. Q_L25K: For some other reason, not already mentioned? - Single choice: (1) Yes, (3) No [Go to CATI-L25e], (r) Refused [Go to CATI-L25e]
+46. Q_L25S: Specify - Open text: [CATI: Length of field = 50]
+47. CATI-L25e: [If the number of (1)'s in L25A to L25K <= 1 then Go to L27]
+48. Q_L26: What was the main reason? - Single choice: (1) Dealt with another way, (2) Fear, (3) Police couldn't do anything, (4) Police wouldn't help, (5) Did not want to get involved with police, (6) Not important enough to respondent, (7) A personal matter that did not concern the police, (8) Fear of publicity/media coverage, (11) Didn't want spouse/partner arrested or jailed, (12) Didn't want anyone to find out about it, (13) Other, (r) Refused
+49. Q_L27a-f: (Other than to the police,) did you ever talk to anyone about (these) this incident(s), such as... (READ LIST) - Grid (6 sub-items, Yes/No/DK/Refused):
    - a) Family? - (1)Yes, (3)No, (x)DK, (r)Ref
    - b) Friend or neighbour? - (1)Yes, (3)No, (x)DK, (r)Ref
    - c) Co-worker? - (1)Yes, (3)No, (x)DK, (r)Ref
    - d) Doctor or nurse? - (1)Yes, (3)No, (x)DK, (r)Ref
    - e) Lawyer? - (1)Yes, (3)No, (x)DK, (r)Ref
    - f) Minister, priest, clergy or another spiritual advisor? - (1)Yes, (3)No, (x)DK, (r)Ref
-48. Q_L28a-h: During the past 5 years, did you ever contact or use any of the following services for help because of the violence, such as... (READ LIST) - Grid (8 sub-items, Yes/No/DK/Refused):
+50. Q_L28a-h: During the past 5 years, did you ever contact or use any of the following services for help because of the violence, such as... (READ LIST) - Grid (8 sub-items, Yes/No/DK/Refused):
    - a) Crisis centre or crisis line? - (1)Yes, (3)No, (x)DK, (r)Ref
    - b) Another counsellor or psychologist? - (1)Yes, (3)No, (x)DK, (r)Ref
    - c) Community centre or family centre? - (1)Yes, (3)No, (x)DK, (r)Ref
@@ -272,65 +399,101 @@ The questionnaire consists of a main body with lettered sections (A through Q) c
    - f) Men's centre or men's support group? [CATI: only if male respondent] - (1)Yes, (3)No, (x)DK, (r)Ref
    - g) Seniors' centre? [CATI: only if respondent is 65+] - (1)Yes, (3)No, (x)DK, (r)Ref
    - h) Police-based or court-based victim services? - (1)Yes, (3)No, (x)DK, (r)Ref
-49. Q_L28A: Was this in the past 12 months? (for each L28a-h answered Yes) - Single choice: (1) Yes, (3) No, (r) Refused
-50. Q_L29: Is there any reason why you didn't use any of these services? (Mark all that apply) - Multiple choice: (1) Didn't know of any services, (2) None available, (3) Waiting list, (4) Too minor, (5) Shame/embarrassment, (6) Wouldn't be believed, (7) Offender prevented me, (8) Distance, (9) Fear of losing financial support, (10) Fear of losing the children, (11) Didn't want relationship to end, (12) Didn't want/need help, (13) Other [Go to L29S], (x) Don't know/no reason [Go to L30], (r) Refused [Go to L30], (0) No other; continue [Go to L30]
-51. Q_L29S: Specify - Open text: [CATI: Length of field = 28]
-52. Q_L30: How interested would you be in participating in a restorative justice program? Would you be... - Single choice (READ LIST): (1) Very interested?, (2) Somewhat interested?, (3) Slightly interested?, (4) Not at all interested?, (r) Refused
-53. Q_L31: At the time of the incident(s), how did this experience affect you? (Mark all that apply) - Multiple choice: (1) Afraid for children, (2) Angry, (3) Ashamed/guilty, (4) Depression/anxiety attacks, (5) Fearful, (6) Hurt/disappointment, (7) Increased self-reliance, (8) Lowered self esteem, (9) More cautious/aware, (10) Not much, (11) Problems relating to men/women, (12) Shock/disbelief, (13) Sleeping problems, (14) Upset/confused/frustrated, (15) Other [Go to L31S], (x) Don't know [Go to L32], (r) Refused [Go to L32], (0) No other; continue [Go to L32]
-54. Q_L31S: Specify - Open text: [CATI: Length of field = 50]
-55. Q_L32: From your experience, what advice, if any, would you give another person in a similar situation? - Open text: [CATI: Length of field = 50], (n) No/Nothing, (x) Don't know, (r) Refused
+51. CATI-L28e: [For each of L28a-h: If answer = (1) and (D11=(3) and D14 < 12 months and "On path") or (2 LE D12 LE 10 and D12=D13 "On path") then skip L28A, else Go to L28A then return to next L28 item]
+52. Q_L28A: Was this in the past 12 months? (for each L28a-h answered Yes) - Single choice: (1) Yes, (3) No, (r) Refused
+53. CATI-L29e: [If not all L28a-h = (3), Go to L30]
+54. Q_L29: Is there any reason why you didn't use any of these services? (Mark all that apply) - Multiple choice: (1) Didn't know of any services, (2) None available, (3) Waiting list, (4) Too minor, (5) Shame/embarrassment, (6) Wouldn't be believed, (7) Offender prevented me, (8) Distance, (9) Fear of losing financial support, (10) Fear of losing the children, (11) Didn't want relationship to end, (12) Didn't want/need help, (13) Other [Go to L29S], (x) Don't know/no reason [Go to L30], (r) Refused [Go to L30], (0) No other; continue [Go to L30]
+55. Q_L29S: Specify - Open text: [CATI: Length of field = 28]
+56. CATI-L30e: [If this is the first time the restorative justice question is asked, read conditional text 1; else read conditional text 2]
+57. Q_L30: (There are a number of ways to deal with an offence outside the normal police-court process. One way is a meeting between the victim and the offender to discuss an appropriate way the offender should be dealt with.) Would you be (have been)... - Single choice (READ LIST): (1) Very interested?, (2) Somewhat interested?, (3) Slightly interested?, (4) Not at all interested?, (r) Refused
+58. Q_L31: At the time of the incident(s), how did this experience affect you? (Mark all that apply) - Multiple choice: (1) Afraid for children, (2) Angry, (3) Ashamed/guilty, (4) Depression/anxiety attacks, (5) Fearful, (6) Hurt/disappointment, (7) Increased self-reliance, (8) Lowered self esteem, (9) More cautious/aware, (10) Not much, (11) Problems relating to men/women, (12) Shock/disbelief, (13) Sleeping problems, (14) Upset/confused/frustrated, (15) Other [Go to L31S], (x) Don't know [Go to L32], (r) Refused [Go to L32], (0) No other; continue [Go to L32]
+59. Q_L31S: Specify - Open text: [CATI: Length of field = 50]
+60. Q_L32: From your experience, what advice, if any, would you give another person in a similar situation? - Open text: [CATI: Length of field = 50], (n) No/Nothing, (x) Don't know, (r) Refused
 
 ---
 
-### SECTION M: EX-SPOUSAL ABUSE REPORT - 65 questions
+### SECTION M: EX-SPOUSAL ABUSE REPORT - 60 questions
 
 (Parallel structure to Section L, with "ex-partner" replacing "spouse/partner")
 
 1. Q_M0: Date/Time stamp - System: automatic timestamp
-2. Q_M1: You said that during the past 5 years your ex-partner was violent. - Statement
-3. Q_M2: During (these) this incident(s), were you (ever) physically injured in any way? - Single choice: (1) Yes, (3) No [Go to M6], (r) Refused [Go to M6]
-4. Q_M3: Did any of these incidents in which you were injured happen in the past 12 months? - Single choice: (1) Yes, (3) No, (x) Don't know, (r) Refused
-5. Q_M4: Medical attention at hospital? - Single choice: (1) Yes, (3) No [Go to M5], (r) Refused [Go to M5]
-6. Q_M4A: Did you stay in hospital overnight? - Single choice: (1) Yes, (3) No [Go to M6], (r) Refused [Go to M6]
-7. Q_M4B: For how many nights? - Numeric: [CATI: 0-999], (r) Refused
-8. Q_M5: Medical attention from doctor or nurse? - Single choice: (1) Yes, (3) No, (r) Refused
-9. Q_M6: Stay in bed for all or most of a day? - Single choice: (1) Yes, (3) No [Go to M7], (r) Refused [Go to M7]
-10. Q_M6A: For how many days? - Numeric: [CATI: 0-999], (x) Don't know, (r) Refused
-11. Q_M7: Take time off from everyday activities? - Single choice: (1) Yes, (3) No, (x) Don't know, (r) Refused
-12. Q_M8: Was your ex-partner drinking? - Single choice: (1) Yes, (3) No, (5) Does not drink, (x) Don't know, (r) Refused
-13. Q_M9: Were you drinking? - Single choice: (1) Yes, (3) No, (5) Do not drink, (x) Don't know, (r) Refused
-14. Q_M10: Was your ex-partner using drugs? - Single choice: (1) Yes, (3) No, (5) Does not use, (x) Don't know, (r) Refused
-15. Q_M11: Were you using drugs? - Single choice: (1) Yes, (3) No, (5) Do not use, (x) Don't know, (r) Refused
-16. Q_M12: Was anyone else harmed or threatened? - Single choice: (1) Yes, (3) No [Go to M14], (x) Don't know [Go to M14], (r) Refused [Go to M14]
-17. Q_M12A: How many persons? - Numeric: [CATI: 0-99]
-18. Q_M13: Were any under 15 years of age? - Single choice: (1) Yes, (3) No [Go to M14], (x) Don't know [Go to M14], (r) Refused [Go to M14]
-19. Q_M13A: How many persons? - Numeric: [CATI: 0-99]
-20. Q_M14: Did any of your children see or hear incident(s)? - Single choice: (1) Yes/think so, (3) No/don't think so, (5) No children at the time, (x) Don't know, (r) Refused
-21. Q_M15: Did you ever fear that your life was in danger? - Single choice: (1) Yes, (3) No, (r) Refused
-22. Q_M16: Attempt to obtain compensation? - Single choice: (1) Yes, (3) No [Go to M17], (r) Refused [Go to M17]
-23. Q_M16A: Did you obtain any compensation? - Single choice: (1) Yes, (3) No, (5) Not yet resolved, (r) Refused
-24. Q_M17: Did the police ever find out? - Single choice: (1) Yes, (3) No [Go to M25A], (x) Don't know [Go to M27], (r) Refused [Go to M27]
-25. Q_M18: Did they find out in the past 12 months? - Single choice: (1) Yes, (3) No, (x) Don't know, (r) Refused
-26. Q_M19: How did they learn about it? - Single choice: (1) Respondent, (3) Some other way [Go to M21], (x) Don't know [Go to M27], (r) Refused [Go to M27]
-27. Q_M20a-d: Reasons for reporting (grid, 4 sub-items) - Same structure as L20
-28. Q_M21: What action did the police take? (Mark all that apply) - Same structure as L21
+2. CATI-M0e: [If EXABUSE = (0), Go to N0]
+3. Q_M1: You said that during the past 5 years your ex-partner was violent. - Statement
+4. Q_M2: During (these) this incident(s), were you (ever) physically injured in any way? - Single choice: (1) Yes, (3) No [Go to M6], (r) Refused [Go to M6]
+5. CATI-M2e: [If F11 = (3) or (F13 = (0) or F13 = "Off path") or ((2) LE F12 LE (10) and F13 = F12 and (F12 and F13 = "On path")), Go to M4]
+6. Q_M3: Did any of these incidents in which you were injured happen in the past 12 months? - Single choice: (1) Yes, (3) No, (x) Don't know, (r) Refused
+7. Q_M4: During the past 5 years, did you ever receive any medical attention at a hospital as a result of the violence? (Include treatment received at emergency or as an out-patient.) - Single choice: (1) Yes, (3) No [Go to M5], (r) Refused [Go to M5]
+8. Q_M4A: Did you stay in hospital overnight? - Single choice: (1) Yes, (3) No [Go to M6], (r) Refused [Go to M6]
+9. Q_M4B: For how many nights? - Numeric: [CATI: 0-999], (r) Refused [Go to M6]
+10. Q_M5: During the past 5 years, did you ever receive any medical attention from a doctor or a nurse for your injuries? - Single choice: (1) Yes, (3) No, (r) Refused
+11. Q_M6: As a result of the violence (and excluding any time you spent in the hospital), did you, during the past 5 years, ever have to stay in bed for all or most of a day? - Single choice: (1) Yes, (3) No [Go to M7], (r) Refused [Go to M7]
+12. Q_M6A: For how many days? - Numeric: [CATI: 0-999], (x) Don't know, (r) Refused
+13. Q_M7: (Other than the time you spent in the hospital or at home in bed,) during the past 5 years, did you ever have to take time off from your everyday activities because of what happened to you? - Single choice: (1) Yes, (3) No, (x) Don't know, (r) Refused
+14. Q_M8: During (these) this incident(s) was your ex-partner drinking? - Single choice: (1) Yes, (3) No, (5) Does not drink, (x) Don't know, (r) Refused
+15. Q_M12: During the past 5 years, was anyone (else) ever harmed or threatened during (these) this incident(s)? - Single choice: (1) Yes, (3) No [Go to M14], (x) Don't know [Go to M14], (r) Refused [Go to M14]
+16. Q_M12A: How many persons? - Numeric: [CATI: 0-99], (x) Don't know, (r) Refused
+17. Q_M13: Were any of these people who were harmed or threatened under 15 years of age? - Single choice: (1) Yes, (3) No [Go to M14], (x) Don't know [Go to M14], (r) Refused [Go to M14]
+18. Q_M13A: How many persons? - Numeric: [CATI: 0-99], (x) Don't know, (r) Refused
+19. Q_M14: Did any of your children see or hear (any of these) this incident(s)? - Single choice: (1) Yes/think so, (3) No/don't think so, (5) No children at the time, (x) Don't know, (r) Refused
+20. Q_M15: During the past 5 years, did you ever fear that your life was in danger because of your ex-partner's violent or threatening behaviour? - Single choice: (1) Yes, (3) No, (r) Refused
+21. Q_M16: During the past 5 years, did you ever attempt to obtain compensation, through a civil or criminal court or a provincial compensation program, because of the violence? - Single choice: (1) Yes, (3) No [Go to M17], (r) Refused [Go to M17]
+22. Q_M16A: Did you obtain any compensation? - Single choice: (1) Yes, (3) No, (5) Not yet resolved, (r) Refused
+23. Q_M17: Did the police ever find out about the violence in any way? - Single choice: (1) Yes, (3) No [Go to M25A], (x) Don't know [Go to M27], (r) Refused [Go to M27]
+24. CATI-M17e: [If (F11 = (3) and (F14 is less than 12 months ago and F14 = "On path")) or (2 LE F12 LE 10 and F12 = F13 and (F12 and F13 = "On path")), Go to M19]
+25. Q_M18: Did they find out about it in the past 12 months? - Single choice: (1) Yes, (3) No, (x) Don't know, (r) Refused
+26. Q_M19: How did they learn about it? Was it from you or some other way? - Single choice: (1) Respondent, (3) Some other way [Go to M21], (x) Don't know [Go to M27], (r) Refused [Go to M27]
+27. Q_M20a-d: People have different reasons for reporting incidents to the police. Did any of the following have anything to do with why you reported the violence? Was it... (READ LIST) - Grid (4 sub-items, Yes/No/DK/Refused):
+   - a) To stop the violence or receive protection? - (1)Yes, (3)No, (x)DK, (r)Ref
+   - b) To arrest and punish your ex-partner? - (1)Yes, (3)No, (x)DK, (r)Ref
+   - c) Because you felt it was your duty to notify police? - (1)Yes, (3)No, (x)DK, (r)Ref
+   - d) On the recommendation of someone else? - (1)Yes, (3)No, (x)DK, (r)Ref
+28. Q_M21: What action did the police take? (Mark all that apply) - Multiple choice: (n) None [Go to M22], (1) Visited Scene, (2) Made a report/Conducted an investigation, (3) Gave warning to ex-partner, (4) Took ex-partner away, (5) Made arrest/Laid charges, (6) Put in touch with community services, (7) Other [Go to M21S], (r) Refused [Go to M22], (0) No other; continue [Go to M22]
 29. Q_M21S: Specify - Open text: [CATI: Length of field = 28]
-30. Q_M22: How satisfied with police actions? - Single choice (READ LIST): (1)-(4), (r) Refused
-31. Q_M23: Anything else they should have done? (Mark all that apply) - Same structure as L23
+30. Q_M22: How satisfied were you with the actions that the police took? Were you... - Single choice (READ LIST): (1) Very satisfied?, (2) Somewhat satisfied?, (3) Somewhat dissatisfied?, (4) Very dissatisfied?, (r) Refused
+31. Q_M23: Is there anything (else) they should have done to help you? (Mark all that apply) - Multiple choice: (n) No/nothing [Go to CATI-M23e], (1) Take the person out of the house, (2) Charge/arrest the person, (3) Respond more quickly, (4) Refer/take you to a support service, (5) Relocate you, (6) Take you to hospital, (7) Be more supportive/sympathetic, (8) Other [Go to M23S], (x) Don't know [Go to CATI-M23e], (r) Refused [Go to CATI-M23e], (0) No other; continue [Go to CATI-M23e]
 32. Q_M23S: Specify - Open text: [CATI: Length of field = 50]
-33. Q_M24: After police involved, did ex-partner's behaviour... - Single choice (READ LIST): (1) Increase?, (2) Decrease/stop?, (3) Stay the same?, (x) Don't know, (r) Refused
-34. Q_M25A-K: Reasons not to contact police (9 sub-items, same structure as L25A-K) - Each: (1) Yes, (3) No, (r) Refused
-35. Q_M25S: Specify - Open text: [CATI: Length of field = 50]
-36. Q_M26: What was the main reason? - Same structure as L26
-37. Q_M27a-f: Talked to anyone else? (grid, 6 sub-items) - Same structure as L27
-38. Q_M28a-h: Contacted victim services? (grid, 8 sub-items) - Same structure as L28
-39. Q_M28A: Was this in the past 12 months? - Single choice: (1) Yes, (3) No, (r) Refused
-40. Q_M29: Reasons for not using services (Mark all that apply) - Same structure as L29
-41. Q_M29S: Specify - Open text: [CATI: Length of field = 28]
-42. Q_M30: Interest in restorative justice program? - Same structure as L30
-43. Q_M31: How did this experience affect you? (Mark all that apply) - Same structure as L31
-44. Q_M31S: Specify - Open text: [CATI: Length of field = 50]
-45. Q_M32: Advice for another person? - Open text: [CATI: Length of field = 50]
+33. CATI-M23e: [If F11 = (3), Go to M27]
+34. Q_M24: After the police were involved, did your ex-partner's violent or threatening behaviour towards you... - Single choice (READ LIST): (1) Increase?, (2) Decrease/stop?, (3) Stay the same?, (x) Don't know, (r) Refused [Go to M27]
+35. Q_M25A: I'm going to read a list of reasons why some people choose not to contact the police. Because it was dealt with another way? - Single choice: (1) Yes, (3) No, (r) Refused
+36. Q_M25B: Because of fear of your ex-partner? - Single choice: (1) Yes, (3) No, (r) Refused
+37. Q_M25C: Because the police couldn't do anything about it? - Single choice: (1) Yes, (3) No, (r) Refused
+38. Q_M25D: Because the police wouldn't help? - Single choice: (1) Yes, (3) No, (r) Refused
+39. Q_M25E: Because you didn't want to get involved with police? - Single choice: (1) Yes, (3) No, (r) Refused
+40. Q_M25X: Because you didn't want your ex-partner arrested or jailed? - Single choice: (1) Yes, (3) No, (r) Refused
+41. Q_M25G: Because the incident was a personal matter that didn't concern the police? - Single choice: (1) Yes, (3) No, (r) Refused
+42. Q_M25Y: Because you didn't want anyone to find out about it? - Single choice: (1) Yes, (3) No, (r) Refused
+43. Q_M25H: Because of fear of publicity/news coverage? - Single choice: (1) Yes, (3) No, (r) Refused
+44. Q_M25F: Because it was not important enough to you? - Single choice: (1) Yes, (3) No, (r) Refused
+45. Q_M25K: For some other reason, not already mentioned? - Single choice: (1) Yes, (3) No [Go to CATI-M25e], (r) Refused [Go to CATI-M25e]
+46. Q_M25S: Specify - Open text: [CATI: Length of field = 50]
+47. CATI-M25e: [If the number of (1)'s in M25A to M25K <= 1 then Go to M27]
+48. Q_M26: What was the main reason? - Single choice: (1) Dealt with another way, (2) Fear, (3) Police couldn't do anything, (4) Police wouldn't help, (5) Did not want to get involved with police, (6) Not important enough to respondent, (7) A personal matter that did not concern the police, (8) Fear of publicity/media coverage, (11) Didn't want ex-partner arrested or jailed, (12) Didn't want anyone to find out about it, (13) Other, (r) Refused
+49. Q_M27a-f: (Other than to the police,) did you ever talk to anyone about (these) this incident(s), such as... (READ LIST) - Grid (6 sub-items, Yes/No/DK/Refused):
+   - a) Family? - (1)Yes, (3)No, (x)DK, (r)Ref
+   - b) Friend or neighbour? - (1)Yes, (3)No, (x)DK, (r)Ref
+   - c) Co-worker? - (1)Yes, (3)No, (x)DK, (r)Ref
+   - d) Doctor or nurse? - (1)Yes, (3)No, (x)DK, (r)Ref
+   - e) Lawyer? - (1)Yes, (3)No, (x)DK, (r)Ref
+   - f) Minister, priest, clergy or another spiritual advisor? - (1)Yes, (3)No, (x)DK, (r)Ref
+50. Q_M28a-h: During the past 5 years, did you ever contact or use any of the following services for help because of the violence, such as... (READ LIST) - Grid (8 sub-items, Yes/No/DK/Refused):
+   - a) Crisis centre or crisis line? - (1)Yes, (3)No, (x)DK, (r)Ref
+   - b) Another counsellor or psychologist? - (1)Yes, (3)No, (x)DK, (r)Ref
+   - c) Community centre or family centre? - (1)Yes, (3)No, (x)DK, (r)Ref
+   - d) Shelter or transition house? [CATI: only if female respondent] - (1)Yes, (3)No, (x)DK, (r)Ref
+   - e) Women's centre? [CATI: only if female respondent] - (1)Yes, (3)No, (x)DK, (r)Ref
+   - f) Men's centre or men's support group? [CATI: only if male respondent] - (1)Yes, (3)No, (x)DK, (r)Ref
+   - g) Seniors' centre? [CATI: only if respondent is 65+] - (1)Yes, (3)No, (x)DK, (r)Ref
+   - h) Police-based or court-based victim services? - (1)Yes, (3)No, (x)DK, (r)Ref
+51. CATI-M28e: [For each of M28a-h: If answer = (1) and (F11=(3) and F14 < 12 months and "On path") or (2 LE F12 LE 10 and F12=F13 "On path") then skip M28A, else Go to M28A then return to next M28 item]
+52. Q_M28A: Was this in the past 12 months? (for each M28a-h answered Yes) - Single choice: (1) Yes, (3) No, (r) Refused
+53. CATI-M29e: [If not all M28a-h = (3), Go to M30]
+54. Q_M29: Is there any reason why you didn't use any of these services? (Mark all that apply) - Multiple choice: (1) Didn't know of any services, (2) None available, (3) Waiting list, (4) Too minor, (5) Shame/embarrassment, (6) Wouldn't be believed, (7) Offender prevented me, (8) Distance, (9) Fear of losing financial support, (10) Fear of losing the children, (11) Didn't want relationship to end, (12) Didn't want/need help, (13) Other [Go to M29S], (x) Don't know/no reason [Go to M30], (r) Refused [Go to M30], (0) No other; continue [Go to M30]
+55. Q_M29S: Specify - Open text: [CATI: Length of field = 28]
+56. CATI-M30e: [If this is the first time the restorative justice question is asked, read conditional text 1; else read conditional text 2]
+57. Q_M30: (There are a number of ways to deal with an offence outside the normal police-court process. One way is a meeting between the victim and the offender to discuss an appropriate way the offender should be dealt with.) Would you have been (be)... - Single choice (READ LIST): (1) Very interested?, (2) Somewhat interested?, (3) Slightly interested?, (4) Not at all interested?, (r) Refused
+58. Q_M31: At the time of the incident(s), how did this experience affect you? (Mark all that apply) - Multiple choice: (1) Afraid for children, (2) Angry, (3) Ashamed/guilty, (4) Depression/anxiety attacks, (5) Fearful, (6) Hurt/disappointment, (7) Increased self-reliance, (8) Lowered self esteem, (9) More cautious/aware, (10) Not much, (11) Problems relating to men/women, (12) Shock/disbelief, (13) Sleeping problems, (14) Upset/confused/frustrated, (15) Other [Go to M31S], (x) Don't know [Go to M32], (r) Refused [Go to M32], (0) No other; continue [Go to M32]
+59. Q_M31S: Specify - Open text: [CATI: Length of field = 50]
+60. Q_M32: From your experience, what advice, if any, would you give another person in a similar situation? - Open text: [CATI: Length of field = 50], (n) No/Nothing, (x) Don't know, (r) Refused
 
 ---
 
@@ -339,7 +502,8 @@ The questionnaire consists of a main body with lettered sections (A through Q) c
 (Parallel structure to Sections L/M, with "child/children" replacing "spouse/partner")
 
 1. Q_N0: Date/Time stamp - System: automatic timestamp
-2. Q_N1: You said that during the past 5 years, one of your children was violent. - Statement
+2. CATI-N0e: [If SCABUSE = (0), Go to P0]
+3. Q_N1: You said that during the past 5 years, one of your children was violent. - Statement
 3. Q_N1A: Was it a son or daughter who did this to you? - Single choice: (1) Son(s), (2) Daughter(s), (3) Both, (x) Don't know, (r) Refused
 4. Q_N2: At the time of the incident(s), did the child/children who did this to you live with you? - Single choice: (1) Yes, during the whole period of abuse, (2) Yes, during some of the time of abuse, (3) No, (x) Don't know, (r) Refused
 5. Q_N3: Were you (ever) physically injured? - Single choice: (1) Yes, (3) No [Go to N7], (r) Refused [Go to N7]
@@ -388,7 +552,8 @@ The questionnaire consists of a main body with lettered sections (A through Q) c
 (Parallel structure to Section N, with "caregiver" replacing "child/children")
 
 1. Q_P0: Date/Time stamp - System: automatic timestamp
-2. Q_P1: You said that during the past 5 years, your caregiver was violent. - Statement
+2. CATI-P0e: [If SGABUSE = (0), Go to Q0]
+3. Q_P1: You said that during the past 5 years, your caregiver was violent. - Statement
 3. Q_P2: What is/was your caregiver's relationship to you? (Mark all that apply) - Multiple choice: (1) Son-in-law, (2) Daughter-in-law, (3) Brother, (4) Sister, (5) Caregiver from an agency/organization, (6) Healthcare worker, (7) Friend/acquaintance, (8) Neighbour, (9) Other [Go to P2S], (x) Don't know [Go to P3], (r) Refused [Go to P3], (0) No other; continue [Go to P3]
 4. Q_P2S: Specify - Open text: [CATI: Length of field = 28]
 5. Q_P3: Were you (ever) physically injured? - Single choice: (1) Yes, (3) No [Go to P7], (r) Refused [Go to P7]
@@ -652,19 +817,24 @@ The questionnaire consists of a main body with lettered sections (A through Q) c
 
 | Section | Description | Question Count |
 |---------|-------------|---------------|
-| A | Household Information | 13 |
-| B | Crime Screening | 35 |
-| C | Perceptions | 9 |
-| D | Precautions and Prevention | 16 |
-| E | Attitudes | 5 |
-| F | Spousal/Ex-Partner Violence Screening | 17 |
-| G/H | Senior Abuse Screening (Children) | 10 |
-| K | Caregiver Abuse Screening | 8 |
-| L | Spousal Abuse Report | 65 |
-| M | Ex-Spousal Abuse Report | 45 |
+| A (Part 1) | Household Information (Control Form) | 13 |
+| B | Crime Screening (incl. B14, CATI edits) | 40 |
+| A (Part 2) | Perceptions (PDF Section A) | 9 |
+| A (Part 3) | Precautions and Prevention (PDF Section A) | 16 |
+| A (Part 4) | Attitudes (PDF Section A) | 5 |
+| C | Emotional/Financial Abuse by Spouse/Partner | 12 |
+| D | Physical/Sexual Violence by Spouse/Partner | 23 |
+| E | Emotional/Financial Abuse by Ex-Partner | 15 |
+| F | Physical/Sexual Violence by Ex-Partner | 25 |
+| G | Emotional/Financial Abuse by Children | 14 |
+| H | Physical Violence by Children | 19 |
+| J | Emotional/Financial Abuse by Caregiver | 9 |
+| K | Physical/Sexual Violence by Caregiver (incl. K15-K16) | 24 |
+| L | Spousal Abuse Report (incl. CATI edits) | 60 |
+| M | Ex-Spousal Abuse Report (incl. CATI edits) | 60 |
 | N | Senior Abuse by Children Report | 42 |
 | P | Senior Abuse by Caregiver Report | 42 |
 | Q | Classification / Demographics | 80 |
 | V | Crime Incident Report (Appendix) | 106 |
 
-## TOTAL UNIQUE QUESTION NODES: ~493
+## TOTAL UNIQUE QUESTION NODES: ~614

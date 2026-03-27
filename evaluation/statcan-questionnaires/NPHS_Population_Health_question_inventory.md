@@ -251,7 +251,7 @@ Note: Questions LFS-Q3 to LFS-Q11 are done as a roster allowing up to 6 jobs to 
 5. PHP-Q3: Have you ever had a PAP smear test? - Radio: Yes, No [No -> next section], DK/R [-> next section]
 6. PHP-Q3a: When was the last time? (Do not read list. Mark one only.) - Radio: Less than 6 months ago, 6 months to less than one year ago, 1 year to less than 3 years ago, 3 years to less than 5 years ago, 5 years or more ago
 
-#### Smoking (pp. 22-23) - 8 questions
+#### Smoking (pp. 22-23) - 9 questions
 
 1. SMOK-Q1: Does anyone in this household smoke regularly inside the house? - Radio: Yes, No
 2. SMOK-Q2: At the present time do/does ... smoke cigarettes daily, occasionally or not at all? - Radio: Daily, Occasionally [-> SMOK-Q5], Not at all [-> SMOK-Q4a], DK/R [-> next section]
@@ -436,7 +436,7 @@ Note: Questions LFS-Q3 to LFS-Q11 are done as a roster allowing up to 6 jobs to 
 4. HSTAT-Q4: Are/Is you/he/she able to see well enough to recognize a friend on the other side of the street without glasses or contact lenses? - Radio: Yes [Go to HSTAT-Q6], No, DK/R [-> HSTAT-Q6]
 5. HSTAT-Q5: Are/Is you/he/she usually able to see well enough to recognize a friend on the other side of the street with glasses or contact lenses? - Radio: Yes, No
 
-#### Health Status - Hearing (pp. 38-39) - 4 questions
+#### Health Status - Hearing (pp. 38-39) - 5 questions
 
 6. HSTAT-Q6: Are/Is ... usually able to hear what is said in a group conversation with at least three other people without a hearing aid? - Radio: Yes [Go to HSTAT-Q10], No, DK/R [-> HSTAT-Q10]
 7. HSTAT-Q7: Are/Is you/he/she usually able to hear what is said in a group conversation with at least three other people with a hearing aid? - Radio: Yes [Go to HSTAT-Q8], No
@@ -595,7 +595,7 @@ During the past month, about how often did you feel:
 3. H06-CTEXT1: Do you think that the answers of the respondent were affected by someone else being there? - Radio: Yes (Specify), No
 4. H06-P2: Record language of interview - Radio: (same 20 language options)
 
-#### Manitoba Buy-in Questions (pp. 52-54) - 14 questions
+#### Manitoba Buy-in Questions (pp. 52-54) - 13 questions
 
 (Age >= 18 and non-proxy only)
 
@@ -622,7 +622,139 @@ During the past month, about how often did you feel:
 3. SPR8-Q3: How would you rate your ability to handle unexpected and difficult problems, for example, family or personal crisis? (Read list. Mark one only.) - Radio: Excellent, Very Good, Good, Fair, Poor
 4. SPR8-Q4: If an unexpected problem or situation was causing you to feel under stress, which of the following would you do? (Read list. Mark all that apply.) - Checkbox: (same 9 coping options as SPR8-Q2)
 
-## TOTAL UNIQUE QUESTION NODES: ~280
+### Appendix A: Health Component for Respondents Aged 0 to 11 Years Old (Form H06) (pp. A-1 to A-10)
+
+[Proxy only, to be completed for selected respondent only and age <= 11. Data originally collected by the National Longitudinal Survey of Children and Youth (NLSCY) and reformatted to fit NPHS processing. Question names assigned during processing to be consistent with 1996.]
+
+#### Child General Health (p. A-1) - 4 questions
+
+1. KGH-Q1: In general, would you say %FNAME%'s health is: (Read list. Mark one only.) - Radio: 1 Excellent, 2 Very good, 3 Good, 4 Fair, 5 Poor
+2. KGH-Q3: Does %FNAME% have any long-term physical or mental condition or a health problem which prevents or limits %his/her% participation in school, at play, or in any other activity for a child %his/her% age? - Radio: 1 Yes, 2 No
+3. KGH-Q4: How tall is %he/she% without shoes on? - Numeric: feet + inches OR centimetres
+4. KGH-Q5: How much does %he/she% weigh? - Numeric: amount (MIN: 1, MAX: 300), DK/R [Go to next section]
+
+[KGH-C5: Interviewer check: Was that in pounds or in kilograms? - Radio: 1 Pounds, 2 Kilograms]
+
+#### Child Health Care Utilization (p. A-2) - 3 questions
+
+1. KUT-INT: Introduction text - Now I'd like to ask about %FNAME%'s contacts with health professionals during the past 12 months, that is, from %12MOSAGO% to yesterday.
+2. KUT-Q1: In the past 12 months, has %FNAME% been an overnight patient in a hospital? - Radio: 1 Yes, 2 No
+3. KUT-Q3: (Not counting when %FNAME% was an overnight patient) In the past 12 months, how many times have you seen or talked on the telephone with a/an/any [fill category] about %his/her% physical, emotional or mental health? (Exclude at time of birth for babies.) - Numeric (for each sub-item a-h, MIN: 0):
+   - a) A general practitioner, family physician (MAX: 366)
+   - b) A pediatrician (MAX: 366)
+   - c) An other medical doctor (such as an orthopedist, or eye specialist) (MAX: 300)
+   - d) A public health nurse or nurse practitioner (MAX: 366)
+   - e) A dentist or orthodontist (MAX: 99)
+   - f) A psychiatrist or psychologist (MAX: 366)
+   - g) Child welfare worker or children's aid worker (MAX: 366)
+   - h) Any other person trained to provide treatment or counsel, for example a speech therapist, a social worker (MAX: 366)
+
+#### Child Chronic Conditions (pp. A-2 to A-3) - 7 questions
+
+[KCHR-C1: If age > 3, go to KCHR-Q4.]
+
+1. KCHR-Q1: Thinking now about illnesses, how often does %FNAME% have nose or throat infections? (Read list. Mark one only.) - Radio: 1 Almost all the time, 2 Often, 3 From time to time, 4 Rarely, 5 Never
+2. KCHR-Q2: Since %his/her% birth, has %he/she% ever had an ear infection (otitis)? - Radio: 1 Yes, 2 No [No -> KCHR-Q4], DK/R [-> KCHR-Q4]
+3. KCHR-Q3: How many times? (Do not read list. Mark one only.) - Radio: 1 Once, 2 Two times, 3 Three times, 4 Four or more times
+4. KCHR-Q4: The following questions are about asthma. Has %FNAME% ever had asthma that has been diagnosed by a health professional? - Radio: 1 Yes, 2 No [No -> KCHR1-INT], DK/R [-> KCHR1-INT]
+5. KCHR-Q5: Has %he/she% had an attack of asthma in the past 12 months? - Radio: 1 Yes, 2 No
+6. KCHR-Q6: Has %he/she% had wheezing or whistling in the chest at any time in the past 12 months? - Radio: 1 Yes, 2 No
+
+[KCHR1-INT: Introduction text - In the following questions long-term conditions refer to conditions that have lasted or are expected to last 6 months or more.]
+
+7. KCHR1-Q1: Does %FNAME% have any of the following long-term conditions that have been diagnosed by a health professional? - Checkbox (11 sub-items):
+   - a) Allergies?
+   - b) Bronchitis?
+   - c) Heart condition or disease?
+   - d) Epilepsy?
+   - e) Cerebral palsy?
+   - f) Kidney condition or disease?
+   - g) Mental handicap?
+   - h) A learning disability? (Ask only age >= 6)
+   - i) An emotional, psychological or nervous condition? (Ask only age >= 6)
+   - j) Any other long-term condition?
+   - k) None
+
+#### Child Health Status (pp. A-3 to A-8) - 31 questions
+
+[KHS-C1: If age < 4, go to next section.]
+
+[KHS-INT: Introduction text - The next set of questions asks about %you/FNAME%%r/s% day-to-day health. The questions are not about illnesses like colds that affect people for short periods of time. They are concerned about a person's usual abilities.]
+
+[KHS-INTA: Introduction text - You may feel that some of these questions do not apply to %you/him/her%, but it is important that we ask the same questions of everyone.]
+
+**Vision (p. A-4)**
+
+1. KHS-Q1: Is %he/she% usually able to see clearly, and without distortion, the words in a book without glasses or contact lenses? - Radio: 1 Yes [GOTO: KHS-Q4], 2 No
+2. KHS-Q2: Is %he/she% usually able to see clearly, and without distortion, the words in a book with glasses or contact lenses? - Radio: 1 Yes [GOTO: KHS-Q4], 2 No, 3 Doesn't wear glasses or contact lenses
+3. KHS-Q3: Is %he/she% able to see at all? - Radio: 1 Yes, 2 No [GOTO: KHS-Q6]
+4. KHS-Q4: Is %he/she% able to see well enough to recognize a friend on the other side of the street without glasses or contact lenses? - Radio: 1 Yes [GOTO: KHS-Q6], 2 No
+5. KHS-Q5: Is %he/she% usually able to see well enough to recognize a friend on the other side of the street with glasses or contact lenses? - Radio: 1 Yes, 2 No, 3 Doesn't wear glasses or contact lenses
+
+**Hearing (pp. A-4 to A-5)**
+
+6. KHS-Q6: Is %he/she% usually able to hear what is said in a group conversation with at least 3 other people without a hearing aid? - Radio: 1 Yes [GOTO: KHS-IN2], 2 No
+7. KHS-Q7: Is %he/she% usually able to hear what is said in a group conversation with at least 3 other people with a hearing aid? - Radio: 1 Yes [GOTO: KHS-Q8], 2 No, 3 Doesn't wear a hearing aid
+8. KHS-Q7A: Is %he/she% able to hear at all? - Radio: 1 Yes, 2 No [GOTO: KHS-IN2]
+9. KHS-Q8: Is %he/she% usually able to hear what is said in a conversation with one other person in a quiet room without a hearing aid? - Radio: 1 Yes [GOTO: KHS-IN2], 2 No
+10. KHS-Q9: Is %he/she% usually able to hear what is said in a conversation with one other person in a quiet room with a hearing aid? - Radio: 1 Yes, 2 No, 3 Doesn't wear a hearing aid
+
+**Speech (p. A-5)**
+
+[KHS-IN2: Introduction text - The next few questions on day-to-day health are concerned with %FNAME%'s abilities relative to other children the same age.]
+
+11. KHS-Q10: Is %he/she% usually able to be understood completely when speaking with strangers in %his/her% own language? - Radio: 1 Yes [GOTO: KHS-Q14], 2 No
+12. KHS-Q11: Is %he/she% able to be understood partially when speaking with strangers in %his/her% own language? - Radio: 1 Yes, 2 No
+13. KHS-Q12: Is %he/she% able to be understood completely when speaking with those who know %him/her% well? - Radio: 1 Yes [GOTO: KHS-Q14], 2 No
+14. KHS-Q13: Is %he/she% able to be understood partially when speaking with those who know %him/her% well? - Radio: 1 Yes, 2 No
+
+**Getting Around (pp. A-5 to A-6)**
+
+15. KHS-Q14: Is %FNAME% usually able to walk around the neighbourhood without difficulty and without mechanical support such as braces, a cane or crutches? - Radio: 1 Yes [GOTO: KHS-Q21], 2 No
+16. KHS-Q15: Is %he/she% able to walk at all? - Radio: 1 Yes, 2 No [GOTO: KHS-Q18]
+17. KHS-Q16: Does %he/she% require mechanical support such as braces, a cane or crutches to be able to walk? - Radio: 1 Yes, 2 No
+18. KHS-Q17: Does %he/she% require the help of another person to be able to walk? - Radio: 1 Yes, 2 No
+19. KHS-Q18: Does %he/she% require a wheelchair to get around? - Radio: 1 Yes, 2 No [No -> KHS-Q21]
+20. KHS-Q19: How often does %he/she% use a wheelchair? (Read list. Mark one only.) - Radio: 1 Always, 2 Often, 3 Sometimes, 4 Never
+21. KHS-Q20: Does %he/she% need the help of another person to get around in the wheelchair? - Radio: 1 Yes, 2 No
+
+**Hands and Fingers (p. A-6)**
+
+22. KHS-Q21: Is %FNAME% usually able to grasp and handle small objects such as a pencil or scissors? - Radio: 1 Yes [GOTO: KHS-Q25], 2 No
+23. KHS-Q22: Does %he/she% require the help of another person because of limitations in the use of hands or fingers? - Radio: 1 Yes, 2 No [No -> KHS-Q24]
+24. KHS-Q23: Does %he/she% require the help of another person with: (Read list. Mark one only.) - Radio: 1 Some tasks?, 2 Most tasks?, 3 Almost all tasks?, 4 All tasks?
+25. KHS-Q24: Does %he/she% require special equipment, for example, devices to assist in dressing because of limitations in the use of hands or fingers? - Radio: 1 Yes, 2 No
+
+**Feelings (p. A-7)**
+
+26. KHS-Q25: Would you describe %FNAME% as being usually: (Read list. Mark one only.) - Radio: 1 Happy and interested in life?, 2 Somewhat happy?, 3 Somewhat unhappy?, 4 Unhappy with little interest in life?, 5 So unhappy that life is not worthwhile?
+
+**Memory (p. A-7)**
+
+27. KHS-Q26: How would you describe %his/her% usual ability to remember things? (Read list. Mark one only.) - Radio: 1 Able to remember most things?, 2 Somewhat forgetful?, 3 Very forgetful?, 4 Unable to remember anything at all?
+
+**Thinking (p. A-7)**
+
+28. KHS-Q27: How would you describe %his/her% usual ability to think and solve day-to-day problems? (Read list. Mark one only.) - Radio: 1 Able to think clearly and solve problems?, 2 Having a little difficulty?, 3 Having some difficulty?, 4 Having a great deal of difficulty?, 5 Unable to think or solve problems?
+
+**Pain and Discomfort (pp. A-7 to A-8)**
+
+29. KHS-Q28: Is %FNAME% usually free of pain or discomfort? - Radio: 1 Yes [Go to next section], 2 No
+30. KHS-Q29: How would you describe the usual intensity of %his/her% pain or discomfort? (Read list. Mark one only.) - Radio: 1 Mild, 2 Moderate, 3 Severe
+31. KHS-Q30: How many activities does %his/her% pain or discomfort prevent? (Read list. Mark one only.) - Radio: 1 None, 2 A few, 3 Some, 4 Most
+
+#### Child Injuries (pp. A-8 to A-10) - 6 questions
+
+[KIN-INT: Introduction text - The following questions refer to injuries, such as a broken bone, bad cut or burn, head injury, poisoning, or a sprained ankle, which occurred in the past 12 months and were serious enough to require medical attention by a doctor, nurse, or dentist.]
+
+1. KIN-Q1: In the past 12 months, was %FNAME% injured? - Radio: 1 Yes, 2 No [No -> next section], DK/R [-> next section]
+2. KIN-Q2: How many times was %he/she% injured? - Numeric: times (MIN: 1, MAX: 30), DK/R [-> next section]
+3. KIN-Q3: (For the most serious injury,) what type of injury did %he/she% have? (Do not read list. Mark one only.) - Radio: 1 Broken or fractured bones, 2 Burn or scald, 3 Dislocation, 4 Sprain or strain, 5 Cut/scrape or bruise, 6 Concussion [GOTO: KIN-Q5] (KIN-Q4=3 was filled during processing), 7 Poisoning by substance or liquid [GOTO: KIN-Q5] (KIN-Q4=11 was filled during processing), 8 Internal injury [GOTO: KIN-Q5] (KIN-Q4=11 was filled during processing), 9 Dental injury [GOTO: KIN-Q5] (KIN-Q4=2 was filled during processing), 10 Other (Specify), 11 Multiple injuries [GOTO: KIN-Q5], DK/R [-> next section]
+4. KIN-Q4: What part of %your/his/her% body was injured? (Do not read list. Mark one only.) - Radio: 1 Eyes, 2 Face or scalp (excluding eyes), 3 Head or neck (excluding eyes and face or scalp), 4 Arms or hands, 5 Legs or feet, 6 Back or spine, 7 Trunk (excluding back or spine) (including chest, internal organs), 8 Shoulder, 9 Hip, 9 Multiple sites, 11 Systemic (category created during processing), DK/R [-> next section]
+5. KIN-Q5: Where did the injury happen, for example, at home, on the street, in the playground or at school? (Do not read list. Mark one only.) - Radio: 1 Inside own home/apartment, 2 Outside home/apartment including yard/driveway/parking lot or in shared areas related to home such as apartment hallway or laundry room, 3 In or around other private residence, 4 Inside school/daycare centre or on school/centre grounds, 5 At an indoor or outdoor sports facility (other than school), 6 Other building used by general public, 7 On sidewalk/street/highway in neighbourhood, 8 On any other sidewalk/street/highway, 9 In a playground/park (other than school), 10 Other (Specify), DK/R [-> next section]
+6. KIN-Q6: What happened? For example, was the injury the result of a fall, a motor vehicle accident, a physical assault, etc.? (Do not read list. Mark one only.) - Radio: 1 Motor vehicle collision - passenger, 2 Motor vehicle collision - pedestrian, 3 Motor vehicle collision - riding bicycle, 4 Other bicycle accident, 5 Fall (excluding bicycle or sports), 6 Sports (excluding bicycle), 7 Physical assault, 8 Scalded by hot liquids or food, 9 Accidental poisoning, 10 Self-inflicted poisoning, 11 Other intentionally self-inflicted injuries, 12 Natural/environmental factors (e.g. animal bite, sting), 13 Fire/flames or resulting fumes, 14 Near drowning, 15 Other (Specify)
+
+## TOTAL UNIQUE QUESTION NODES: ~330
 
 Breakdown by section:
 - Household Record Variables: 17
@@ -656,7 +788,12 @@ Breakdown by section:
 - Health Number: 2
 - Agreement to Share: 1
 - H06 Administration: 4
-- Manitoba Buy-in: 14 (SPR6-Q12 with 9 sub-items, SPR6-Q13 with 9 sub-items)
+- Manitoba Buy-in: 13 (SPR6-Q12 with 9 sub-items, SPR6-Q13 with 9 sub-items)
 - Alberta Buy-in: 4 (SPR8-Q2/Q4 with 9 sub-items each)
+- **Appendix A - Child General Health: 4 (plus KGH-C5 check item)**
+- **Appendix A - Child Health Care Utilization: 3 (KUT-Q3 with 8 sub-items)**
+- **Appendix A - Child Chronic Conditions: 7 (KCHR1-Q1 with 11 sub-items)**
+- **Appendix A - Child Health Status (Vision/Hearing/Speech/Getting Around/Hands/Feelings/Memory/Thinking/Pain): 31**
+- **Appendix A - Child Injuries: 6**
 
-Note: Check items (UTIL-CINT, UTIL-C9, RESTR-CINT, CHRON-CINT, EDUC-C1, EDUC-C5, LFS-C1, LFS-C2, LFS-C2A, LFS-C12, LFS-C17, LFS-C17A, LFS-C18, PHP-C2, PHYS-C1, GENHLT-C2, MHLTH-C1g, MHLTH-C14, MHLTH-C27, DRUG-C1) are routing/computation items, not respondent-facing questions.
+Note: Check items (UTIL-CINT, UTIL-C9, RESTR-CINT, CHRON-CINT, EDUC-C1, EDUC-C5, LFS-C1, LFS-C2, LFS-C2A, LFS-C12, LFS-C17, LFS-C17A, LFS-C18, PHP-C2, PHYS-C1, GENHLT-C2, MHLTH-C1g, MHLTH-C14, MHLTH-C27, DRUG-C1, KGH-C5, KCHR-C1, KHS-C1) are routing/computation items, not respondent-facing questions.

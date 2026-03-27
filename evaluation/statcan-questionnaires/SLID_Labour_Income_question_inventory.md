@@ -27,161 +27,161 @@ Pre-fill items (in square brackets) include: [respondent], [current year], [refe
 
 **Entry gate and initial employment status:**
 
-1. **START-EMPPRE**: [Internal logic] [age] = 15 or more? - Binary routing: Yes -> EMPPRE-Q1; No -> EXPRE-Q1A
+1. **START-EMPPRE** [*]: [Internal logic] [age] = 15 or more? - Yes --> GO TO EMPPRE-Q1, No --> GO TO EXPRE-Q1A
 
-2. **EMPPRE-Q1**: DID [respondent] WORK AT A JOB OR BUSINESS AT THE BEGINNING OF JANUARY OF THIS YEAR? [Interviewer: Enter a job regardless of the number of hours worked.] - Choice: Yes -> EMPPRE-J1.Q1; No -> EMPPRE-Q2; Permanently unable to work -> EMPPRE-Q5; DK/R -> EMPPRE-N12
+2. **EMPPRE-Q1**: DID [respondent] WORK AT A JOB OR BUSINESS AT THE BEGINNING OF JANUARY OF THIS YEAR? [Interviewer: Enter a job regardless of the number of hours worked.] - Yes --> GO TO EMPPRE-J1.Q1, No --> GO TO EMPPRE-Q2, Permanently unable to work --> GO TO EMPPRE-Q5, DK/R --> GO TO EMPPRE-N12
 
-3. **EMPPRE-Q2**: DID [respondent] HAVE A JOB OR BUSINESS AT WHICH HE/SHE DID NOT WORK AT THE BEGINNING OF JANUARY? - Choice: Yes -> EMPPRE-Q3; No/DK/R -> EMPPRE-Q5
+3. **EMPPRE-Q2**: DID [respondent] HAVE A JOB OR BUSINESS AT WHICH HE/SHE DID NOT WORK AT THE BEGINNING OF JANUARY? - Yes --> GO TO EMPPRE-Q3, No/DK/R --> GO TO EMPPRE-Q5
 
-4. **EMPPRE-Q3**: WHY WAS [respondent] ABSENT FROM WORK AT THE BEGINNING OF JANUARY? - Single choice: Own illness or disability; Pregnancy; Caring for own children; Caring for elder relatives; Other personal or family responsibilities; School or educational leave; Labour dispute; Temporary layoff due to seasonal conditions; Temporary layoff - non seasonal; Unpaid or partially paid vacation; Other (Specify) [If "School or educational leave" -> EMPPRE-Q5; Otherwise -> EMPPRE-Q4]
+4. **EMPPRE-Q3**: WHY WAS [respondent] ABSENT FROM WORK AT THE BEGINNING OF JANUARY? - Single choice: Own illness or disability; Pregnancy; Caring for own children; Caring for elder relatives; Other personal or family responsibilities; School or educational leave; Labour dispute; Temporary layoff due to seasonal conditions; Temporary layoff - non seasonal; Unpaid or partially paid vacation; Other (Specify) - "School or educational leave" --> GO TO EMPPRE-Q5, OTHERWISE --> GO TO EMPPRE-Q4
 
-5. **EMPPRE-Q4**: DID [respondent] RECEIVE ANY PAY FROM HIS/HER EMPLOYER FOR THIS ABSENCE? - Choice: Yes/No/DK/R
+5. **EMPPRE-Q4**: DID [respondent] RECEIVE ANY PAY FROM HIS/HER EMPLOYER FOR THIS ABSENCE? - Choice: Yes/No/DK/R --> GO TO EMPPRE-N4
 
-6. **EMPPRE-N4**: [Internal logic] EMPPRE-Q3 = Temporary Layoff? - Routing: Yes -> EMPPRE-Q8; Otherwise -> EMPPRE-J1.Q1
+6. **EMPPRE-N4** [*]: [Internal logic] EMPPRE-Q3 = Temporary Layoff? - Yes --> GO TO EMPPRE-Q8, OTHERWISE --> GO TO EMPPRE-J1.Q1
 
-7. **EMPPRE-Q5**: DID [respondent] EVER WORK AT A JOB OR BUSINESS? - Choice: Yes/DK/R -> EMPPRE-Q6; No -> EMPPRE-N7
+7. **EMPPRE-Q5**: DID [respondent] EVER WORK AT A JOB OR BUSINESS? - Yes/DK/R --> GO TO EMPPRE-Q6, No --> GO TO EMPPRE-N7
 
-8. **EMPPRE-Q6**: WHEN DID [respondent] LAST WORK AT A JOB OR BUSINESS? - Date (DD/MM/YY): Hard range: Min = current year-(age-10), Max = current year
+8. **EMPPRE-Q6**: WHEN DID [respondent] LAST WORK AT A JOB OR BUSINESS? - Date (DD/MM/YY): Hard range: Min = current year-(age-10), Max = current year --> GO TO EMPPRE-N6
 
-9. **EMPPRE-N6**: [Internal logic] Date in EMPPRE-Q6 is before January [current year] minus 5 and EMPPRE-Q1 = permanently unable to work? - Routing: Yes -> EMPPRE-N12; Otherwise -> EMPPRE-Q7
+9. **EMPPRE-N6** [*]: [Internal logic] Date in EMPPRE-Q6 is before January [current year] minus 5 AND EMPPRE-Q1 = permanently unable to work? - Yes --> GO TO EMPPRE-N12, OTHERWISE --> GO TO EMPPRE-Q7
 
-10. **EMPPRE-Q7**: WHAT WAS [respondent]'S MAIN REASON FOR LEAVING THIS JOB? - Single choice: Own illness, disability; Caring for own children; Caring for elder relatives; Other personal or family responsibilities; Going to school; Quit job for no specific reason; Lost job or laid off job - Paid workers only; Changed residence; Dissatisfied with job; Retired; Other - Specify
+10. **EMPPRE-Q7**: WHAT WAS [respondent]'S MAIN REASON FOR LEAVING THIS JOB? - Single choice: Own illness, disability; Caring for own children; Caring for elder relatives; Other personal or family responsibilities; Going to school; Quit job for no specific reason; Lost job or laid off job - Paid workers only; Changed residence; Dissatisfied with job; Retired; Other - Specify --> GO TO EMPPRE-N7
 
-11. **EMPPRE-N7**: [Internal logic] EMPPRE-Q1 = permanently unable to work? - Routing: Yes -> EMPPRE-N12; Otherwise -> EMPPRE-Q8
+11. **EMPPRE-N7** [*]: [Internal logic] EMPPRE-Q1 = permanently unable to work? - Yes --> GO TO EMPPRE-N12, Otherwise --> GO TO EMPPRE-Q8
 
-12. **EMPPRE-Q8**: DID [respondent] LOOK FOR WORK IN JANUARY OF THIS YEAR? - Choice: Yes -> EMPPRE-Q9; No/DK/R -> EMPPRE-Q10
+12. **EMPPRE-Q8**: DID [respondent] LOOK FOR WORK IN JANUARY OF THIS YEAR? - Yes --> GO TO EMPPRE-Q9, No/DK/R --> GO TO EMPPRE-Q10
 
-13. **EMPPRE-Q9**: WHAT DID [respondent] DO TO FIND WORK? - Single choice: Contacted employer directly; Friend or relative; Placed or answered newspaper ad; Employment agency; Referral from another employer; Other - specify
+13. **EMPPRE-Q9**: WHAT DID [respondent] DO TO FIND WORK? - Single choice: Contacted employer directly; Friend or relative; Placed or answered newspaper ad; Employment agency; Referral from another employer; Other - specify --> GO TO EMPPRE-Q10
 
-14. **EMPPRE-N11A**: [Internal logic] EMPPRE-Q5=no (never worked) or dates last worked (EMPPRE-Q6) is before January [reference year]? - Routing: Yes -> EMPPRE-N12; Otherwise -> EMPPRE-J1.Q1A
+14. **EMPPRE-Q10**: DID [respondent] LOOK FOR WORK AT ANY TIME IN THE 6 MONTHS BEFORE THAT? - Yes/DK/R --> GO TO EMPPRE-Q11, No --> GO TO EMPPRE-N11A
 
-15. **EMPPRE-Q10**: DID [respondent] LOOK FOR WORK AT ANY TIME IN THE 6 MONTHS BEFORE THAT? - Choice: Yes/DK/R -> EMPPRE-Q11; No -> EMPPRE-N11A
+15. **EMPPRE-Q11**: WHAT WERE THE REASONS [respondent] DID NOT LOOK FOR WORK IN JANUARY OF THIS YEAR? [Interviewer: if only answered Own illness or Personal responsibilities, probe for other reasons.] - Multiple choice: Own illness, disability; Caring for own children; Caring for elder relatives; Other personal or family responsibilities; Going to school; No longer interested in finding work; Waiting for recall (to former job); Has found new job; Waiting for replies from employers; Believes no work available (in area, or suited to skills); No reason given; Other - Specify --> GO TO EMPPRE-N11A
 
-16. **EMPPRE-Q11**: WHAT WERE THE REASONS [respondent] DID NOT LOOK FOR WORK IN JANUARY OF THIS YEAR? [Interviewer: if only answered Own illness or Personal responsibilities, probe for other reasons.] - Multiple choice: Own illness, disability; Caring for own children; Caring for elder relatives; Other personal or family responsibilities; Going to school; No longer interested in finding work; Waiting for recall (to former job); Has found new job; Waiting for replies from employers; Believes no work available (in area, or suited to skills); No reason given; Other - Specify [-> EMPPRE-N11A]
+16. **EMPPRE-N11A** [*]: [Internal logic] EMPPRE-Q5=no (never worked) or dates last worked (EMPPRE-Q6) is before January [reference year]? - Yes --> GO TO EMPPRE-N12, Otherwise --> GO TO EMPPRE-J1.Q1A
 
-17. **EMPPRE-N12**: [Internal logic] [age] is greater than 64 years? - Routing: Yes -> EXPRE-Q1; Otherwise -> EMPPRE-Q12
+17. **EMPPRE-N12** [*]: [Internal logic] [age] is greater than 64 years? - Yes --> GO TO EXPRE-Q1, Otherwise --> GO TO EMPPRE-Q12
 
-18. **EMPPRE-Q12**: IN JANUARY OF THIS YEAR, WAS [respondent] ATTENDING A SCHOOL, COLLEGE OR UNIVERSITY? - Choice: Yes -> EMPPRE-Q13; No/DK/R -> EXPRE-Q1A
+18. **EMPPRE-Q12**: IN JANUARY OF THIS YEAR, WAS [respondent] ATTENDING A SCHOOL, COLLEGE OR UNIVERSITY? - Yes --> GO TO EMPPRE-Q13, No/DK/R --> GO TO EXPRE-Q1A
 
-19. **EMPPRE-Q13**: WAS [respondent] ENROLLED AS A FULL-TIME OR PART-TIME STUDENT? - Choice: Full-time student; Part-time student; Some of each [-> EXPRE-Q1A]
+19. **EMPPRE-Q13**: WAS [respondent] ENROLLED AS A FULL-TIME OR PART-TIME STUDENT? - Choice: Full-time student; Part-time student; Some of each --> GO TO EXPRE-Q1A
 
 **Job 1 questions (J1 series):**
 
-20. **EMPPRE-J1.Q1**: I WOULD LIKE TO ASK A FEW QUESTIONS ABOUT [respondent]'S MAIN JOB OR BUSINESS IN EARLY JANUARY. FOR WHOM DID [respondent] WORK? (name of business, government department, or agency, or person) - Open text [-> EMPPRE-J1.Q2]
+20. **EMPPRE-J1.Q1**: I WOULD LIKE TO ASK A FEW QUESTIONS ABOUT [respondent]'S MAIN JOB OR BUSINESS IN EARLY JANUARY. FOR WHOM DID [respondent] WORK? (name of business, government department, or agency, or person) - Open text --> GO TO EMPPRE-J1.Q2
 
-21. **EMPPRE-J1.Q1A**: I WOULD LIKE TO ASK A FEW QUESTIONS ABOUT THE LAST JOB OR BUSINESS HELD BY [respondent] IN [reference year]. FOR WHOM DID [respondent] WORK? (name of business, government department, or agency, or person) - Open text
+21. **EMPPRE-J1.Q1A**: I WOULD LIKE TO ASK A FEW QUESTIONS ABOUT THE LAST JOB OR BUSINESS HELD BY [respondent] IN [reference year]. FOR WHOM DID [respondent] WORK? (name of business, government department, or agency, or person) - Open text --> GO TO EMPPRE-J1.Q2
 
-22. **EMPPRE-J1.Q2**: WHEN WAS THE FIRST TIME [respondent] STARTED WORKING FOR THIS EMPLOYER? - Date (DD/MM/YY): Hard range: Min = [current year]-[age]-10, Max = [current year]
+22. **EMPPRE-J1.Q2**: WHEN WAS THE FIRST TIME [respondent] STARTED WORKING FOR THIS EMPLOYER? - Date (DD/MM/YY): Hard range: Min = [current year]-[age]-10, Max = [current year] --> GO TO EMPPRE-J1.N2
 
-23. **EMPPRE-J1.N2**: [Internal logic] Date first started working (EMPPRE-J1.Q2) is before date last worked (EMPPRE-Q6)? - Routing: Yes -> EMPPRE-J1.Q3; No -> EMPPRE-J1.Q2A; Otherwise -> EMPPRE-J1.Q3
+23. **EMPPRE-J1.N2** [*]: [Internal logic] Date first started working (EMPPRE-J1.Q2) is before date last worked (EMPPRE-Q6)? - Yes --> GO TO EMPPRE-J1.Q3, No --> GO TO EMPPRE-J1.Q2A, Otherwise --> GO TO EMPPRE-J1.Q3
 
-24. **EMPPRE-J1.Q2A**: [Interviewer: Date first started working for this employer (EMPPRE-J1.Q2) is after the date last worked (EMPPRE-Q6). Go back to EMPPRE-Q6 and/or EMPPRE-J1.Q2 to correct inconsistencies, or press Enter to continue.] - Consistency check / interviewer instruction
+24. **EMPPRE-J1.Q2A**: [Interviewer: Date first started working for this employer (EMPPRE-J1.Q2) is after the date last worked (EMPPRE-Q6). Go back to EMPPRE-Q6 and/or EMPPRE-J1.Q2 to correct inconsistencies, or press Enter to continue.] - Consistency check / interviewer instruction --> GO TO EMPPRE-J1.Q3
 
-25. **EMPPRE-J1.Q3**: WHAT KIND OF BUSINESS, INDUSTRY OR SERVICE WAS THIS? (e.g., federal government, canning industry, forestry service) - Open text
+25. **EMPPRE-J1.Q3**: WHAT KIND OF BUSINESS, INDUSTRY OR SERVICE WAS THIS? (e.g., federal government, canning industry, forestry service) - Open text --> GO TO EMPPRE-J1.Q4
 
-26. **EMPPRE-J1.Q4**: WHAT KIND OF WORK WAS [respondent] DOING? (e.g., office clerk, factory worker, forestry technician) - Open text
+26. **EMPPRE-J1.Q4**: WHAT KIND OF WORK WAS [respondent] DOING? (e.g., office clerk, factory worker, forestry technician) - Open text --> GO TO EMPPRE-J1.Q5
 
-27. **EMPPRE-J1.Q5**: WHAT WERE [respondent]'S MOST IMPORTANT ACTIVITIES OR DUTIES? (e.g., filing documents, drying vegetables, forest examiner) - Open text
+27. **EMPPRE-J1.Q5**: WHAT WERE [respondent]'S MOST IMPORTANT ACTIVITIES OR DUTIES? (e.g., filing documents, drying vegetables, forest examiner) - Open text --> GO TO EMPPRE-J1.Q6
 
-28. **EMPPRE-J1.Q6**: IN THIS JOB, WAS [respondent] A PAID WORKER, SELF-EMPLOYED OR AN UNPAID FAMILY WORKER? - Single choice: Paid worker; Unpaid family worker; Self-employed Incorporated - With paid help; Self-employed Incorporated - No paid help; Self-employed Unincorporated - With paid help; Self-employed Unincorporated - No paid help [If paid worker or DK/R -> EMPPRE-J1.Q7A; Otherwise -> EMPPRE-N12]
+28. **EMPPRE-J1.Q6**: IN THIS JOB, WAS [respondent] A PAID WORKER, SELF-EMPLOYED OR AN UNPAID FAMILY WORKER? - Single choice: Paid worker; Unpaid family worker; Self-employed Incorporated - With paid help; Self-employed Incorporated - No paid help; Self-employed Unincorporated - With paid help; Self-employed Unincorporated - No paid help - Paid worker/DK/R --> GO TO EMPPRE-J1.Q7A, Otherwise --> GO TO EMPPRE-N12
 
-29. **EMPPRE-J1.Q7A**: IN WHICH MONTHS OF [reference year] DID [respondent] WORK AT THIS JOB? - Choice: All months/DK/R -> EMPPRE-J1.Q8; Started in [current year] -> EMPPRE-N12; Specify months -> EMPPRE-J1.Q7B; Last worked before [reference year] -> EMPPRE-J1.Q7B
+29. **EMPPRE-J1.Q7A**: IN WHICH MONTHS OF [reference year] DID [respondent] WORK AT THIS JOB? - All months/DK/R --> GO TO EMPPRE-J1.Q8, Started in [current year] --> GO TO EMPPRE-N12, Specify months --> GO TO EMPPRE-J1.Q7B, Last worked before [reference year] --> GO TO EMPPRE-J1.Q7B
 
-30. **EMPPRE-J1.Q7B**: [Interviewer: Specify months [respondent] worked in [reference year]] - Multiple choice (month checkboxes): January; February; March; April; May; June; July; August; September; October; November; December
+30. **EMPPRE-J1.Q7B**: [Interviewer: Specify months [respondent] worked in [reference year]] - Multiple choice (month checkboxes): January; February; March; April; May; June; July; August; September; October; November; December --> GO TO EMPPRE-J1.Q8
 
-31. **EMPPRE-J1.Q8**: AT THIS JOB, DID [respondent] USUALLY WORK EVERY WEEK OF THE MONTH? - Choice: Yes/DK/R -> EMPPRE-J1.Q10; No -> EMPPRE-J1.Q9
+31. **EMPPRE-J1.Q8**: AT THIS JOB, DID [respondent] USUALLY WORK EVERY WEEK OF THE MONTH? - Yes/DK/R --> GO TO EMPPRE-J1.Q10, No --> GO TO EMPPRE-J1.Q9
 
-32. **EMPPRE-J1.Q9**: HOW MANY WEEKS DID [respondent] USUALLY WORK EACH MONTH? - Numeric: Hard range: Min = 1, Max = 3
+32. **EMPPRE-J1.Q9**: HOW MANY WEEKS DID [respondent] USUALLY WORK EACH MONTH? - Numeric: Hard range: Min = 1, Max = 3 --> GO TO EMPPRE-J1.Q10
 
-33. **EMPPRE-J1.Q10**: HOW MANY HOURS PER WEEK DID [respondent] USUALLY GET PAID? - Numeric: Hard range: Min = 1.0, Max = 99.9
+33. **EMPPRE-J1.Q10**: HOW MANY HOURS PER WEEK DID [respondent] USUALLY GET PAID? - Numeric: Hard range: Min = 1.0, Max = 99.9 --> GO TO EMPPRE-J1.Q11A
 
-34. **EMPPRE-J1.Q11A**: AT THIS JOB, WHAT WAS [respondent]'S WAGE OR SALARY BEFORE TAXES AND DEDUCTIONS? (As of January of this year or when they last worked for this employer in [reference year]). - Numeric (currency): Hard range: Min = 0.01, Max = 999999.99
+34. **EMPPRE-J1.Q11A**: AT THIS JOB, WHAT WAS [respondent]'S WAGE OR SALARY BEFORE TAXES AND DEDUCTIONS? (As of January of this year or when they last worked for this employer in [reference year]). - Numeric (currency): Hard range: Min = 0.01, Max = 999999.99 --> GO TO EMPPRE-J1.Q11B
 
-35. **EMPPRE-J1.Q11B**: [Interviewer: Select the appropriate category for reported wage or salary] - Single choice: Hourly; Weekly; Every two weeks/twice a month; Monthly; Yearly; Other (specify) [If Other -> EMPPRE-J1.Q12; Otherwise -> EMPPRE-J1.Q13]
+35. **EMPPRE-J1.Q11B**: [Interviewer: Select the appropriate category for reported wage or salary] - Single choice: Hourly; Weekly; Every two weeks/twice a month; Monthly; Yearly; Other (specify) - Other --> GO TO EMPPRE-J1.Q12, Otherwise --> GO TO EMPPRE-J1.Q13
 
-36. **EMPPRE-J1.Q12**: WHAT WERE [respondent]'S TOTAL EARNINGS FROM THIS JOB IN [reference year]? - Numeric (currency): Hard range: Min = 0.01, Max = 999999.99
+36. **EMPPRE-J1.Q12**: WHAT WERE [respondent]'S TOTAL EARNINGS FROM THIS JOB IN [reference year]? - Numeric (currency): Hard range: Min = 0.01, Max = 999999.99 --> GO TO EMPPRE-J1.Q13
 
-37. **EMPPRE-J1.Q13**: DID [respondent] RECEIVE ANY COMMISSIONS, TIPS, BONUSES OR PAID OVERTIME FROM THIS JOB IN [reference year]? - Choice: Yes -> EMPPRE-J1.Q14; No/DK/R -> EMPPRE-J2.Q1
+37. **EMPPRE-J1.Q13**: DID [respondent] RECEIVE ANY COMMISSIONS, TIPS, BONUSES OR PAID OVERTIME FROM THIS JOB IN [reference year]? - Yes --> GO TO EMPPRE-J1.Q14, No/DK/R --> GO TO EMPPRE-J2.Q1
 
-38. **EMPPRE-J1.Q14**: WERE THESE COMMISSIONS, TIPS, BONUSES OR PAID OVERTIME INCLUDED IN THE AMOUNT JUST REPORTED? - Choice: Yes/DK/R -> EMPPRE-J2.Q1; No -> EMPPRE-J1.Q15
+38. **EMPPRE-J1.Q14**: WERE THESE COMMISSIONS, TIPS, BONUSES OR PAID OVERTIME INCLUDED IN THE AMOUNT JUST REPORTED? - Yes/DK/R --> GO TO EMPPRE-J2.Q1, No --> GO TO EMPPRE-J1.Q15
 
-39. **EMPPRE-J1.Q15**: WHAT WERE [respondent]'S TOTAL EARNINGS IN [reference year] FROM THESE COMMISSIONS, TIPS, BONUSES, OR PAID OVERTIME? - Numeric (currency): Hard range: Min = 0.01, Max = 999999.99 [-> EMPPRE-N12]
+39. **EMPPRE-J1.Q15**: WHAT WERE [respondent]'S TOTAL EARNINGS IN [reference year] FROM THESE COMMISSIONS, TIPS, BONUSES, OR PAID OVERTIME? - Numeric (currency): Hard range: Min = 0.01, Max = 999999.99 --> GO TO EMPPRE-N12
 
 **Job 2 questions (J2 series):**
 
-40. **EMPPRE-J2.Q1**: DID [respondent] HAVE MORE THAN ONE JOB OR BUSINESS IN JANUARY OF THIS YEAR? - Choice: Yes -> EMPPRE-J2.Q2; No/DK/R -> EMPPRE-N12
+40. **EMPPRE-J2.Q1**: DID [respondent] HAVE MORE THAN ONE JOB OR BUSINESS IN JANUARY OF THIS YEAR? - Yes --> GO TO EMPPRE-J2.Q2, No/DK/R --> GO TO EMPPRE-N12
 
-41. **EMPPRE-J2.Q2**: I WOULD LIKE TO ASK A FEW QUESTIONS ABOUT [respondent]'S OTHER JOB OR BUSINESS IN JANUARY OF THIS YEAR. FOR WHOM DID [respondent] WORK? (name of business, government department, or agency, or person) - Open text
+41. **EMPPRE-J2.Q2**: I WOULD LIKE TO ASK A FEW QUESTIONS ABOUT [respondent]'S OTHER JOB OR BUSINESS IN JANUARY OF THIS YEAR. FOR WHOM DID [respondent] WORK? (name of business, government department, or agency, or person) - Open text --> GO TO EMPPRE-J2.Q3
 
-42. **EMPPRE-J2.Q3**: WHEN DID [respondent] FIRST START WORKING FOR THIS EMPLOYER? - Date (DD/MM/YY): Hard range: Min = [current year]-[age]-10, Max = [current year]
+42. **EMPPRE-J2.Q3**: WHEN DID [respondent] FIRST START WORKING FOR THIS EMPLOYER? - Date (DD/MM/YY): Hard range: Min = [current year]-[age]-10, Max = [current year] --> GO TO EMPPRE-J2.Q4
 
-43. **EMPPRE-J2.Q4**: WHAT KIND OF BUSINESS, INDUSTRY OR SERVICE WAS THIS? (e.g., federal government, canning industry, forestry services) - Open text
+43. **EMPPRE-J2.Q4**: WHAT KIND OF BUSINESS, INDUSTRY OR SERVICE WAS THIS? (e.g., federal government, canning industry, forestry services) - Open text --> GO TO EMPPRE-J2.Q5
 
-44. **EMPPRE-J2.Q5**: WHAT KIND OF WORK WAS [respondent] DOING? (e.g., office clerk, factory worker, forestry technician) - Open text
+44. **EMPPRE-J2.Q5**: WHAT KIND OF WORK WAS [respondent] DOING? (e.g., office clerk, factory worker, forestry technician) - Open text --> GO TO EMPPRE-J2.Q6
 
-45. **EMPPRE-J2.Q6**: WHAT WERE [respondent]'S MOST IMPORTANT ACTIVITIES OR DUTIES? (e.g., filing documents, drying vegetables, forest examiner) - Open text
+45. **EMPPRE-J2.Q6**: WHAT WERE [respondent]'S MOST IMPORTANT ACTIVITIES OR DUTIES? (e.g., filing documents, drying vegetables, forest examiner) - Open text --> GO TO EMPPRE-J2.Q7
 
-46. **EMPPRE-J2.Q7**: IN THIS JOB, WAS [respondent] A PAID WORKER, SELF-EMPLOYED OR AN UNPAID FAMILY WORKER? - Single choice: Paid worker; Unpaid family worker; Self-employed Incorporated - With paid help; Self-employed Incorporated - No paid help; Self-employed Unincorporated - With paid help; Self-employed Unincorporated - No paid help [If paid worker or DK/R -> EMPPRE-J2.Q8A; Otherwise -> EMPPRE-Q12]
+46. **EMPPRE-J2.Q7**: IN THIS JOB, WAS [respondent] A PAID WORKER, SELF-EMPLOYED OR AN UNPAID FAMILY WORKER? - Single choice: Paid worker; Unpaid family worker; Self-employed Incorporated - With paid help; Self-employed Incorporated - No paid help; Self-employed Unincorporated - With paid help; Self-employed Unincorporated - No paid help - Paid worker/DK/R --> GO TO EMPPRE-J2.Q8A, Otherwise --> GO TO EMPPRE-Q12
 
-47. **EMPPRE-J2.Q8A**: IN WHICH MONTHS OF [reference year] DID [respondent] WORK AT THIS JOB? - Choice: All months/DK/R -> EMPPRE-J2.Q9; Started in [current year] -> EMPPRE-N12; Specify months -> EMPPRE-J2.Q8B; Last worked before [reference year] -> EMPPRE-J2.Q8B
+47. **EMPPRE-J2.Q8A**: IN WHICH MONTHS OF [reference year] DID [respondent] WORK AT THIS JOB? - All months/DK/R --> GO TO EMPPRE-J2.Q9, Started in [current year] --> GO TO EMPPRE-N12, Specify months --> GO TO EMPPRE-J2.Q8B, Last worked before [reference year] --> GO TO EMPPRE-J2.Q8B
 
-48. **EMPPRE-J2.Q8B**: [Interviewer: Specify months [respondent] worked in [reference year]?] - Multiple choice (month checkboxes): January; February; March; April; May; June; July; August; September; October; November; December
+48. **EMPPRE-J2.Q8B**: [Interviewer: Specify months [respondent] worked in [reference year]?] - Multiple choice (month checkboxes): January; February; March; April; May; June; July; August; September; October; November; December --> GO TO EMPPRE-J2.Q9
 
-49. **EMPPRE-J2.Q9**: AT THIS JOB, DID [respondent] USUALLY WORK EVERY WEEK OF THE MONTH? - Choice: Yes/DK/R -> EMPPRE-J2.Q11; No -> EMPPRE-J2.Q10
+49. **EMPPRE-J2.Q9**: AT THIS JOB, DID [respondent] USUALLY WORK EVERY WEEK OF THE MONTH? - Yes/DK/R --> GO TO EMPPRE-J2.Q11, No --> GO TO EMPPRE-J2.Q10
 
-50. **EMPPRE-J2.Q10**: HOW MANY WEEKS DID [respondent] USUALLY WORK EACH MONTH? - Numeric: Hard range: Min = 1, Max = 3
+50. **EMPPRE-J2.Q10**: HOW MANY WEEKS DID [respondent] USUALLY WORK EACH MONTH? - Numeric: Hard range: Min = 1, Max = 3 --> GO TO EMPPRE-J2.Q11
 
-51. **EMPPRE-J2.Q11**: HOW MANY HOURS PER WEEK DID [respondent] USUALLY GET PAID? - Numeric: Hard range: Min = 1.0, Max = 99.9
+51. **EMPPRE-J2.Q11**: HOW MANY HOURS PER WEEK DID [respondent] USUALLY GET PAID? - Numeric: Hard range: Min = 1.0, Max = 99.9 --> GO TO EMPPRE-J2.Q12A
 
-52. **EMPPRE-J2.Q12A**: AT THIS JOB, WHAT WAS [respondent]'S WAGE OR SALARY BEFORE TAXES AND DEDUCTIONS? - Numeric (currency): Hard range: Min = 0.01, Max = 999999.99
+52. **EMPPRE-J2.Q12A**: AT THIS JOB, WHAT WAS [respondent]'S WAGE OR SALARY BEFORE TAXES AND DEDUCTIONS? - Numeric (currency): Hard range: Min = 0.01, Max = 999999.99 --> GO TO EMPPRE-J2.Q12B
 
-53. **EMPPRE-J2.Q12B**: [Interviewer: Select the appropriate category for reported wage or salary.] - Single choice: Hourly; Weekly; Every two weeks/twice a month; Monthly; Yearly; Other (specify) [If Other -> EMPPRE-J2.Q13; Otherwise -> EMPPRE-J2.Q14]
+53. **EMPPRE-J2.Q12B**: [Interviewer: Select the appropriate category for reported wage or salary.] - Single choice: Hourly; Weekly; Every two weeks/twice a month; Monthly; Yearly; Other (specify) - Other --> GO TO EMPPRE-J2.Q13, Otherwise --> GO TO EMPPRE-J2.Q14
 
-54. **EMPPRE-J2.Q13**: WHAT WERE [respondent]'S TOTAL EARNINGS FROM THIS JOB IN [reference year]? - Numeric (currency): Hard range: Min = 0.01, Max = 999999.99
+54. **EMPPRE-J2.Q13**: WHAT WERE [respondent]'S TOTAL EARNINGS FROM THIS JOB IN [reference year]? - Numeric (currency): Hard range: Min = 0.01, Max = 999999.99 --> GO TO EMPPRE-J2.Q14
 
-55. **EMPPRE-J2.Q14**: DID [respondent] RECEIVE ANY COMMISSIONS, TIPS, BONUSES OR PAID OVERTIME FROM THIS JOB IN [reference year]? - Choice: Yes -> EMPPRE-J2.Q15; No/DK/R -> EMPPRE-N12
+55. **EMPPRE-J2.Q14**: DID [respondent] RECEIVE ANY COMMISSIONS, TIPS, BONUSES OR PAID OVERTIME FROM THIS JOB IN [reference year]? - Yes --> GO TO EMPPRE-J2.Q15, No/DK/R --> GO TO EMPPRE-N12
 
-56. **EMPPRE-J2.Q15**: WERE THESE COMMISSIONS, TIPS, BONUSES OR PAID OVERTIME INCLUDED IN THE AMOUNT JUST REPORTED? - Choice: Yes/DK/R -> EMPPRE-N12; No -> EMPPRE-J2.Q16
+56. **EMPPRE-J2.Q15**: WERE THESE COMMISSIONS, TIPS, BONUSES OR PAID OVERTIME INCLUDED IN THE AMOUNT JUST REPORTED? - Yes/DK/R --> GO TO EMPPRE-N12, No --> GO TO EMPPRE-J2.Q16
 
-57. **EMPPRE-J2.Q16**: WHAT WERE [respondent]'S TOTAL EARNINGS IN [reference year] FROM THESE COMMISSIONS, TIPS, BONUSES, OR PAID OVERTIME? - Numeric (currency): Hard range: Min = 0.01, Max = 999999.99 [-> EMPPRE-N12]
+57. **EMPPRE-J2.Q16**: WHAT WERE [respondent]'S TOTAL EARNINGS IN [reference year] FROM THESE COMMISSIONS, TIPS, BONUSES, OR PAID OVERTIME? - Numeric (currency): Hard range: Min = 0.01, Max = 999999.99 --> GO TO EMPPRE-N12
 
 ---
 
 ### EXPRE Module (Experience) - 16 questions
 
-58. **EXPRE-N1**: [Internal logic] [age] is greater than 69 years? - Routing: Yes -> DEMPRE-Q1A; Otherwise -> EXPRE-Q1A
+58. **EXPRE-N1** [*]: [Internal logic] [age] is greater than 69 years? - Yes --> GO TO DEMPRE-Q1A, Otherwise --> GO TO EXPRE-Q1A
 
-59. **EXPRE-Q1A**: THE NEXT FEW QUESTIONS ARE ABOUT [respondent]'S WORK EXPERIENCE, THINKING BACK TO WHEN HE/SHE FIRST STARTED WORKING AT A JOB OR BUSINESS. DID [respondent] EVER WORK FULL-TIME? (Exclude summer jobs while in school) - Choice: Yes -> EXPRE-Q1B; No, never worked full-time -> DEMPRE-Q1A; No, only worked full-time at summer jobs while in school -> DEMPRE-Q1A; DK/R -> DEMPRE-Q1A
+59. **EXPRE-Q1A**: THE NEXT FEW QUESTIONS ARE ABOUT [respondent]'S WORK EXPERIENCE, THINKING BACK TO WHEN HE/SHE FIRST STARTED WORKING AT A JOB OR BUSINESS. DID [respondent] EVER WORK FULL-TIME? (Exclude summer jobs while in school) - Yes --> GO TO EXPRE-Q1B, No, never worked full-time --> GO TO DEMPRE-Q1A, No, only worked full-time at summer jobs while in school --> GO TO DEMPRE-Q1A, DK/R --> GO TO DEMPRE-Q1A
 
-60. **EXPRE-Q1B**: HOW MANY YEARS AGO DID [respondent] FIRST START WORKING FULL-TIME? (Exclude summer jobs while in school) [Interviewer: Enter 00 if less than one year] - Numeric: Hard range: Min = 0, Max = [age]-10 [If DK/R or 0 -> DEMPRE-Q1A; If answered 1 year -> EXPRE-Q3; Otherwise -> EXPRE-Q2A]
+60. **EXPRE-Q1B**: HOW MANY YEARS AGO DID [respondent] FIRST START WORKING FULL-TIME? (Exclude summer jobs while in school) [Interviewer: Enter 00 if less than one year] - Numeric: Hard range: Min = 0, Max = [age]-10 - DK/R or 0 --> GO TO DEMPRE-Q1A, 1 year --> GO TO EXPRE-Q3, Otherwise --> GO TO EXPRE-Q2A
 
-61. **EXPRE-Q2A**: IN THOSE [response given in EXPRE-Q1B] YEARS, WERE THERE ANY YEARS WHEN [respondent] DID NOT WORK AT A JOB OR BUSINESS? - Choice: Yes -> EXPRE-Q2B; No/DK/R -> EXPRE-Q3
+61. **EXPRE-Q2A**: IN THOSE [response given in EXPRE-Q1B] YEARS, WERE THERE ANY YEARS WHEN [respondent] DID NOT WORK AT A JOB OR BUSINESS? - Yes --> GO TO EXPRE-Q2B, No/DK/R --> GO TO EXPRE-Q3
 
-62. **EXPRE-Q2B**: HOW MANY YEARS DID [respondent] NOT WORK AT A JOB OR BUSINESS? - Numeric: Hard range: Min = 1, Max = [response given in EXPRE-Q1B] [-> EXPRE-Q5A]
+62. **EXPRE-Q2B**: HOW MANY YEARS DID [respondent] NOT WORK AT A JOB OR BUSINESS? - Numeric: Hard range: Min = 1, Max = [response given in EXPRE-Q1B] --> GO TO EXPRE-Q5A
 
-63. **EXPRE-Q3**: IN THOSE [response given in EXPRE-Q1B] YEARS, DID [respondent] WORK AT LEAST 6 MONTHS EACH AND EVERY YEAR? - Choice: Yes/DK/R -> EXPRE-Q4A; No -> EXPRE-Q5A
+63. **EXPRE-Q3**: IN THOSE [response given in EXPRE-Q1B] YEARS, DID [respondent] WORK AT LEAST 6 MONTHS EACH AND EVERY YEAR? - Yes/DK/R --> GO TO EXPRE-Q4A, No --> GO TO EXPRE-Q5A
 
-64. **EXPRE-Q4A**: HOW MANY YEARS DID HE/SHE WORK ONLY FULL-TIME? (by full-time I mean 30 or more hours per week) [Interviewer: If none enter 00] - Numeric: Hard range: Min = 0, Max = [response given in EXPRE-Q1B]
+64. **EXPRE-Q4A**: HOW MANY YEARS DID HE/SHE WORK ONLY FULL-TIME? (by full-time I mean 30 or more hours per week) [Interviewer: If none enter 00] - Numeric: Hard range: Min = 0, Max = [response given in EXPRE-Q1B] --> GO TO EXPRE-Q4B
 
-65. **EXPRE-Q4B**: HOW MANY YEARS DID HE/SHE WORK ONLY PART-TIME? [Interviewer: If none enter 00] - Numeric: Hard range: Min = 0, Max = [response given in EXPRE-Q1B]
+65. **EXPRE-Q4B**: HOW MANY YEARS DID HE/SHE WORK ONLY PART-TIME? [Interviewer: If none enter 00] - Numeric: Hard range: Min = 0, Max = [response given in EXPRE-Q1B] --> GO TO EXPRE-Q4C
 
-66. **EXPRE-Q4C**: HOW MANY YEARS DID HE/SHE ONLY WORK SOME OF EACH (full-time and part-time) [Interviewer: If none enter 00] - Numeric: Hard range: Min = 0, Max = [response given in EXPRE-Q1B]
+66. **EXPRE-Q4C**: HOW MANY YEARS DID HE/SHE ONLY WORK SOME OF EACH (full-time and part-time) [Interviewer: If none enter 00] - Numeric: Hard range: Min = 0, Max = [response given in EXPRE-Q1B] --> GO TO EXPRE-N4
 
-67. **EXPRE-N4**: [Internal logic] Sum of Q4A/B/C = EXPRE-Q1B? - Routing: Yes -> DEMPRE-Q1A; Otherwise -> EXPRE-Q4D
+67. **EXPRE-N4** [*]: [Internal logic] Sum of Q4A/B/C = EXPRE-Q1B? - Yes --> GO TO DEMPRE-Q1A, Otherwise --> GO TO EXPRE-Q4D
 
-68. **EXPRE-Q4D**: [Interviewer: [respondent] has worked full-time for [answer in EXPRE-Q4A] years, part-time for [answer in EXPRE-Q4B] years, and some of each for [answer in EXPRE-Q4C] years. Conflict with when started working full-time [answer in EXPRE-Q1B] years ago. If incorrect go back to previous questions and make necessary changes. Otherwise press Enter to continue.] - Consistency check / interviewer instruction
+68. **EXPRE-Q4D**: [Interviewer: [respondent] has worked full-time for [answer in EXPRE-Q4A] years, part-time for [answer in EXPRE-Q4B] years, and some of each for [answer in EXPRE-Q4C] years. Conflict with when started working full-time [answer in EXPRE-Q1B] years ago. If incorrect go back to previous questions and make necessary changes. Otherwise press Enter to continue.] - Consistency check / interviewer instruction --> GO TO DEMPRE-Q1A
 
-69. **EXPRE-Q5A**: SINCE [respondent] FIRST STARTED WORKING, HOW MANY YEARS DID HE/SHE WORK AT LEAST 6 MONTHS OF THE YEAR? [Interviewer: If none enter 00] - Numeric: Hard range: Min = 0, Max = [response given in EXPRE-Q1B] minus [response given in EXPRE-Q2B] (if Q2B not answered use Q1B as maximum) [If 0/DK/R -> DEMPRE-Q1A; Otherwise -> EXPRE-Q6A]
+69. **EXPRE-Q5A**: SINCE [respondent] FIRST STARTED WORKING, HOW MANY YEARS DID HE/SHE WORK AT LEAST 6 MONTHS OF THE YEAR? [Interviewer: If none enter 00] - Numeric: Hard range: Min = 0, Max = [response given in EXPRE-Q1B] minus [response given in EXPRE-Q2B] (if Q2B not answered use Q1B as maximum) - 0/DK/R --> GO TO DEMPRE-Q1A, Otherwise --> GO TO EXPRE-Q6A
 
-70. **EXPRE-Q6A**: IN THOSE [response given in EXPRE-Q5A] YEARS, HOW MANY DID HE/SHE WORK ONLY FULL-TIME? (by full-time I mean 30 or more hours per week) [Interviewer: If none enter 00] - Numeric: Hard range: Min = 0, Max = [response given in EXPRE-Q5A]
+70. **EXPRE-Q6A**: IN THOSE [response given in EXPRE-Q5A] YEARS, HOW MANY DID HE/SHE WORK ONLY FULL-TIME? (by full-time I mean 30 or more hours per week) [Interviewer: If none enter 00] - Numeric: Hard range: Min = 0, Max = [response given in EXPRE-Q5A] --> GO TO EXPRE-Q6B
 
-71. **EXPRE-Q6B**: IN THOSE [response given in EXPRE-Q5A] YEARS, HOW MANY DID HE/SHE WORK ONLY PART-TIME? [Interviewer: If none enter 00] - Numeric: Hard range: Min = 0, Max = [response given in EXPRE-Q5A]
+71. **EXPRE-Q6B**: IN THOSE [response given in EXPRE-Q5A] YEARS, HOW MANY DID HE/SHE WORK ONLY PART-TIME? [Interviewer: If none enter 00] - Numeric: Hard range: Min = 0, Max = [response given in EXPRE-Q5A] --> GO TO EXPRE-Q6C
 
-72. **EXPRE-Q6C**: IN THOSE [response given in EXPRE-Q5A] YEARS, HOW MANY DID HE/SHE ONLY WORK SOME OF EACH? (full-time and part-time) [Interviewer: If none enter 00] - Numeric: Hard range: Min = 0, Max = [response given in EXPRE-Q5A]
+72. **EXPRE-Q6C**: IN THOSE [response given in EXPRE-Q5A] YEARS, HOW MANY DID HE/SHE ONLY WORK SOME OF EACH? (full-time and part-time) [Interviewer: If none enter 00] - Numeric: Hard range: Min = 0, Max = [response given in EXPRE-Q5A] --> GO TO EXPRE-N6
 
-73. **EXPRE-N6**: [Internal logic] Sum of Q6A/B/C = EXPRE-Q5A? - Routing: Yes -> DEMPRE-Q1A; Otherwise -> EXPRE-Q6D
+73. **EXPRE-N6** [*]: [Internal logic] Sum of Q6A/B/C = EXPRE-Q5A? - Yes --> GO TO DEMPRE-Q1A, Otherwise --> GO TO EXPRE-Q6D
 
-74. **EXPRE-Q6D**: [Interviewer: [respondent] is shown working full-time for [answer in EXPRE-Q6A] years, part-time for [answer in EXPRE-Q6B] years, and some of each for [answer in EXPRE-Q6C] years. Conflicts with # of years they worked more than six months [answer in EXPRE-Q5A]. If incorrect go back to previous questions and make necessary changes. Otherwise press Enter to continue.] - Consistency check / interviewer instruction
+74. **EXPRE-Q6D**: [Interviewer: [respondent] is shown working full-time for [answer in EXPRE-Q6A] years, part-time for [answer in EXPRE-Q6B] years, and some of each for [answer in EXPRE-Q6C] years. Conflicts with # of years they worked more than six months [answer in EXPRE-Q5A]. If incorrect go back to previous questions and make necessary changes. Otherwise press Enter to continue.] - Consistency check / interviewer instruction --> GO TO DEMPRE-Q1A
 
 ---
 
@@ -189,173 +189,173 @@ Pre-fill items (in square brackets) include: [respondent], [current year], [refe
 
 **Introduction and marital status routing:**
 
-75. **DEMPRE-Q1A**: THE NEXT FEW QUESTIONS ARE ABOUT [respondent]'S FAMILY BACKGROUND AND ARE BASED ON THE DATE OF BIRTH AND MARITAL STATUS REPORTED EARLIER IN THE INTERVIEW. - Introduction / read-aloud statement
+75. **DEMPRE-Q1A**: THE NEXT FEW QUESTIONS ARE ABOUT [respondent]'S FAMILY BACKGROUND AND ARE BASED ON THE DATE OF BIRTH AND MARITAL STATUS REPORTED EARLIER IN THE INTERVIEW. - Introduction / read-aloud statement --> GO TO DEMPRE-N1
 
-76. **DEMPRE-N1**: [Internal logic] Marital status = married? - Routing: Yes -> DEMPRE-Q2B
+76. **DEMPRE-N1** [*]: [Internal logic] Marital status = married? - Yes --> GO TO DEMPRE-Q2B, Otherwise --> GO TO DEMPRE-N1A
 
-77. **DEMPRE-N1A**: [Internal logic] Marital status = common-in-law? - Routing: Yes -> DEMPRE-Q5
+77. **DEMPRE-N1A** [*]: [Internal logic] Marital status = common-in-law? - Yes --> GO TO DEMPRE-Q5, Otherwise --> GO TO DEMPRE-N1B
 
-78. **DEMPRE-N1B**: [Internal logic] Marital status = separated? - Routing: Yes -> DEMPRE-Q1
+78. **DEMPRE-N1B** [*]: [Internal logic] Marital status = separated? - Yes --> GO TO DEMPRE-Q1, Otherwise --> GO TO DEMPRE-N1C
 
-79. **DEMPRE-N1C**: [Internal logic] Marital status = divorced? - Routing: Yes -> DEMPRE-Q1
+79. **DEMPRE-N1C** [*]: [Internal logic] Marital status = divorced? - Yes --> GO TO DEMPRE-Q1, Otherwise --> GO TO DEMPRE-N1D
 
-80. **DEMPRE-N1D**: [Internal logic] Marital status = widowed? - Routing: Yes -> DEMPRE-Q7
+80. **DEMPRE-N1D** [*]: [Internal logic] Marital status = widowed? - Yes --> GO TO DEMPRE-Q7, Otherwise --> GO TO DEMPRE-N1E
 
-81. **DEMPRE-N1E**: [Internal logic] Marital status = single (never married)? - Routing: Yes -> DEMPRE-N11A
+81. **DEMPRE-N1E** [*]: [Internal logic] Marital status = single (never married)? - Yes --> GO TO DEMPRE-N11A, Otherwise --> GO TO DEMPRE-N1F
 
-82. **DEMPRE-N1F**: [Internal logic] Marital status = DK/R? - Routing: Yes -> DEMPRE-N11A
+82. **DEMPRE-N1F** [*]: [Internal logic] Marital status = DK/R? - Yes --> GO TO DEMPRE-N11A
 
 **Separation/divorce path:**
 
-83. **DEMPRE-Q1**: WHAT WAS THE DATE OF [respondent]'S SEPARATION? (Not the date of divorce) - Date (DD/MM/YY): Hard range: Min = [current year] minus [age] minus 14, Max = [current year]
+83. **DEMPRE-Q1**: WHAT WAS THE DATE OF [respondent]'S SEPARATION? (Not the date of divorce) - Date (DD/MM/YY): Hard range: Min = [current year] minus [age] minus 14, Max = [current year] --> GO TO DEMPRE-Q2
 
-84. **DEMPRE-Q2**: WHAT WAS THE DATE OF THIS MARRIAGE? - Date (DD/MM/YY): Hard range: Min = [current year] minus [age] minus 14, Max = [current year] [-> COMPARE-Q2]
+84. **DEMPRE-Q2**: WHAT WAS THE DATE OF THIS MARRIAGE? - Date (DD/MM/YY): Hard range: Min = [current year] minus [age] minus 14, Max = [current year] --> GO TO COMPARE-Q2
 
-85. **COMPARE-Q2**: [Internal logic] Date of this marriage (DEMPRE-Q2) is before date of separation (DEMPRE-Q1)? - Routing: No -> DEMPRE-Q2A; Otherwise -> DEMPRE-Q3
+85. **COMPARE-Q2** [*]: [Internal logic] Date of this marriage (DEMPRE-Q2) is before date of separation (DEMPRE-Q1)? - No --> GO TO DEMPRE-Q2A, Otherwise --> GO TO DEMPRE-Q3
 
-86. **DEMPRE-Q2A**: [Interviewer: Date of marriage [response in DEMPRE-Q2] is after date of separation [response in DEMPRE-Q1]. If information is incorrect go to previous questions to correct inconsistencies. Otherwise press Enter to continue.] - Consistency check / interviewer instruction
+86. **DEMPRE-Q2A**: [Interviewer: Date of marriage [response in DEMPRE-Q2] is after date of separation [response in DEMPRE-Q1]. If information is incorrect go to previous questions to correct inconsistencies. Otherwise press Enter to continue.] - Consistency check / interviewer instruction --> GO TO DEMPRE-Q3
 
 **Married path:**
 
-87. **DEMPRE-Q2B**: WHAT WAS THE DATE OF [respondent]'S MARRIAGE? - Date (DD/MM/YY): Hard range: Min = [current year] minus [age] minus 14, Max = [current year]
+87. **DEMPRE-Q2B**: WHAT WAS THE DATE OF [respondent]'S MARRIAGE? - Date (DD/MM/YY): Hard range: Min = [current year] minus [age] minus 14, Max = [current year] --> GO TO DEMPRE-Q3
 
-88. **DEMPRE-Q3**: WAS THIS [respondent]'S FIRST MARRIAGE? - Choice: Yes/DK/R -> DEMPRE-N11A; No -> DEMPRE-Q4
+88. **DEMPRE-Q3**: WAS THIS [respondent]'S FIRST MARRIAGE? - Yes/DK/R --> GO TO DEMPRE-N11A, No --> GO TO DEMPRE-Q4
 
-89. **DEMPRE-Q4**: WHAT WAS THE DATE OF [respondent]'S FIRST MARRIAGE? - Date (DD/MM/YY): Hard range: Min = [current year] minus [age] minus 14, Max = [current year]
+89. **DEMPRE-Q4**: WHAT WAS THE DATE OF [respondent]'S FIRST MARRIAGE? - Date (DD/MM/YY): Hard range: Min = [current year] minus [age] minus 14, Max = [current year] --> GO TO COMPARE-Q4
 
-90. **COMPARE-Q4**: [Internal logic] Date of first marriage (DEMPRE-Q4) is before date of current marriage (DEMPRE-Q2)? - Routing: No -> DEMPRE-Q4A; Otherwise -> DEMPRE-N11A
+90. **COMPARE-Q4** [*]: [Internal logic] Date of first marriage (DEMPRE-Q4) is before date of current marriage (DEMPRE-Q2)? - No --> GO TO DEMPRE-Q4A, Otherwise --> GO TO DEMPRE-N11A
 
-91. **DEMPRE-Q4A**: [Interviewer: Date of marriage [response in DEMPRE-Q4] should be before date of current marriage [response in DEMPRE-Q2B]. If information is incorrect go to previous questions to correct inconsistencies. Otherwise press Enter to continue.] - Consistency check / interviewer instruction
+91. **DEMPRE-Q4A**: [Interviewer: Date of marriage [response in DEMPRE-Q4] should be before date of current marriage [response in DEMPRE-Q2B]. If information is incorrect go to previous questions to correct inconsistencies. Otherwise press Enter to continue.] - Consistency check / interviewer instruction --> GO TO DEMPRE-N11A
 
 **Common-law path:**
 
-92. **DEMPRE-Q5**: WHEN DID [respondent] AND HIS/HER PARTNER BEGIN TO LIVE TOGETHER? - Date (DD/MM/YY): Hard range: Min = [current year] minus [age] minus 14, Max = [current year]
+92. **DEMPRE-Q5**: WHEN DID [respondent] AND HIS/HER PARTNER BEGIN TO LIVE TOGETHER? - Date (DD/MM/YY): Hard range: Min = [current year] minus [age] minus 14, Max = [current year] --> GO TO DEMPRE-Q6
 
-93. **DEMPRE-Q6**: HAS [respondent] EVER BEEN MARRIED? - Choice: Yes -> DEMPRE-Q8; No/DK/R -> DEMPRE-N11A
+93. **DEMPRE-Q6**: HAS [respondent] EVER BEEN MARRIED? - Yes --> GO TO DEMPRE-Q8, No/DK/R --> GO TO DEMPRE-N11A
 
 **Widowed path:**
 
-94. **DEMPRE-Q7**: WHEN WAS [respondent] WIDOWED? - Date (DD/MM/YY): Hard range: Min = [current year] minus [age] minus 14, Max = [current year]
+94. **DEMPRE-Q7**: WHEN WAS [respondent] WIDOWED? - Date (DD/MM/YY): Hard range: Min = [current year] minus [age] minus 14, Max = [current year] --> GO TO DEMPRE-Q8
 
-95. **DEMPRE-Q8**: WAS THIS [respondent]'S FIRST MARRIAGE? - Choice: Yes/DK/R -> DEMPRE-Q9; No -> DEMPRE-Q10
+95. **DEMPRE-Q8**: WAS THIS [respondent]'S FIRST MARRIAGE? - Yes/DK/R --> GO TO DEMPRE-Q9, No --> GO TO DEMPRE-Q10
 
-96. **DEMPRE-Q9**: WHAT WAS THE DATE OF [respondent]'S MARRIAGE? - Date (DD/MM/YY): Hard range: Min = [current year] minus [age] minus 14, Max = [current year]
+96. **DEMPRE-Q9**: WHAT WAS THE DATE OF [respondent]'S MARRIAGE? - Date (DD/MM/YY): Hard range: Min = [current year] minus [age] minus 14, Max = [current year] --> GO TO COMPARE9A
 
-97. **COMPARE9A**: [Internal logic] Date of marriage (DEMPRE-Q9) is before date widowed (DEMPRE-Q7)? - Routing: No -> DEMPRE-Q9A; Otherwise -> COMPARE9B
+97. **COMPARE9A** [*]: [Internal logic] Date of marriage (DEMPRE-Q9) is before date widowed (DEMPRE-Q7)? - No --> GO TO DEMPRE-Q9A, Otherwise --> GO TO COMPARE9B
 
-98. **DEMPRE-Q9A**: [Interviewer: Date of previous marriage [answer in DEMPRE-Q9] should be before date widowed [answer in DEMPRE-Q7]. If information is incorrect go to previous questions to correct inconsistencies. Otherwise press Enter to continue.] - Consistency check / interviewer instruction
+98. **DEMPRE-Q9A**: [Interviewer: Date of previous marriage [answer in DEMPRE-Q9] should be before date widowed [answer in DEMPRE-Q7]. If information is incorrect go to previous questions to correct inconsistencies. Otherwise press Enter to continue.] - Consistency check / interviewer instruction --> GO TO COMPARE9B
 
-99. **COMPARE9B**: [Internal logic] Date of marriage (DEMPRE-Q9) is before date living together (DEMPRE-Q5)? - Routing: No -> DEMPRE-Q9B; Otherwise -> DEMPRE-N11A
+99. **COMPARE9B** [*]: [Internal logic] Date of marriage (DEMPRE-Q9) is before date living together (DEMPRE-Q5)? - No --> GO TO DEMPRE-Q9B, Otherwise --> GO TO DEMPRE-N11A
 
-100. **DEMPRE-Q9B**: [Interviewer: Date of previous marriage [answer in DEMPRE-Q9] should be before date started living together [answer in DEMPRE-Q5]. If information is incorrect go to previous questions to correct inconsistencies. Otherwise press Enter to continue.] - Consistency check / interviewer instruction
+100. **DEMPRE-Q9B**: [Interviewer: Date of previous marriage [answer in DEMPRE-Q9] should be before date started living together [answer in DEMPRE-Q5]. If information is incorrect go to previous questions to correct inconsistencies. Otherwise press Enter to continue.] - Consistency check / interviewer instruction --> GO TO DEMPRE-N11A
 
-101. **DEMPRE-Q10**: WHAT WAS THE DATE OF [respondent]'S FIRST MARRIAGE? - Date (DD/MM/YY): Hard range: Min = [current year] minus [age] minus 14, Max = [current year]
+101. **DEMPRE-Q10**: WHAT WAS THE DATE OF [respondent]'S FIRST MARRIAGE? - Date (DD/MM/YY): Hard range: Min = [current year] minus [age] minus 14, Max = [current year] --> GO TO COMPARE10A
 
-102. **COMPARE10A**: [Internal logic] Date of first marriage (DEMPRE-Q10) is before date started living together (DEMPRE-Q5)? - Routing: No -> DEMPRE-Q10A; Otherwise -> COMPARE10B
+102. **COMPARE10A** [*]: [Internal logic] Date of first marriage (DEMPRE-Q10) is before date started living together (DEMPRE-Q5)? - No --> GO TO DEMPRE-Q10A, Otherwise --> GO TO COMPARE10B
 
-103. **DEMPRE-Q10A**: [Interviewer: Date of first marriage [answer in DEMPRE-Q10] should be before date started living together [answer in DEMPRE-Q5]. If information is incorrect go to previous questions to correct inconsistencies. Otherwise press Enter to continue.] - Consistency check / interviewer instruction
+103. **DEMPRE-Q10A**: [Interviewer: Date of first marriage [answer in DEMPRE-Q10] should be before date started living together [answer in DEMPRE-Q5]. If information is incorrect go to previous questions to correct inconsistencies. Otherwise press Enter to continue.] - Consistency check / interviewer instruction --> GO TO COMPARE10B
 
-104. **COMPARE10B**: [Internal logic] Date of first marriage (DEMPRE-Q10) is before date widowed (DEMPRE-Q7)? - Routing: No -> DEMPRE-Q10B; Otherwise -> DEMPRE-N11A
+104. **COMPARE10B** [*]: [Internal logic] Date of first marriage (DEMPRE-Q10) is before date widowed (DEMPRE-Q7)? - No --> GO TO DEMPRE-Q10B, Otherwise --> GO TO DEMPRE-N11A
 
-105. **DEMPRE-Q10B**: [Interviewer: Date of first marriage [answer in DEMPRE-Q10] should be before date widowed [answer in DEMPRE-Q7]. If information is incorrect go to previous questions to correct inconsistencies. Otherwise press Enter to continue.] - Consistency check / interviewer instruction
+105. **DEMPRE-Q10B**: [Interviewer: Date of first marriage [answer in DEMPRE-Q10] should be before date widowed [answer in DEMPRE-Q7]. If information is incorrect go to previous questions to correct inconsistencies. Otherwise press Enter to continue.] - Consistency check / interviewer instruction --> GO TO DEMPRE-N11A
 
 **Birth history (females 18+):**
 
-106. **DEMPRE-N11A**: [Internal logic] Respondent is female 18 years of age and over? - Routing: Yes -> DEMPRE-Q11; Otherwise -> DEMPRE-Q16
+106. **DEMPRE-N11A** [*]: [Internal logic] Respondent is female 18 years of age and over? - Yes --> GO TO DEMPRE-Q11, Otherwise --> GO TO DEMPRE-Q16
 
-107. **DEMPRE-Q11**: HAS [respondent] HAD ANY CHILDREN? - Choice: Yes -> DEMPRE-Q12; No -> DEMPRE-Q14; DK/R -> DEMPRE-Q16
+107. **DEMPRE-Q11**: HAS [respondent] HAD ANY CHILDREN? - Yes --> GO TO DEMPRE-Q12, No --> GO TO DEMPRE-Q14, DK/R --> GO TO DEMPRE-Q16
 
-108. **DEMPRE-Q12**: HOW MANY CHILDREN WERE EVER BORN TO [respondent]? [Interviewer: Enter 00 if none] - Numeric: Hard range: Min = 0, Max = 20 [If 0/DK/R -> DEMPRE-Q14; Otherwise -> DEMPRE-Q13]
+108. **DEMPRE-Q12**: HOW MANY CHILDREN WERE EVER BORN TO [respondent]? [Interviewer: Enter 00 if none] - Numeric: Hard range: Min = 0, Max = 20 - 0/DK/R --> GO TO DEMPRE-Q14, Otherwise --> GO TO DEMPRE-Q13
 
-109. **DEMPRE-Q13**: IN WHAT YEAR DID [respondent] GIVE BIRTH TO HER FIRST CHILD? - Year: Hard range: Min = [current year] minus [age] minus 14, Max = [current year]
+109. **DEMPRE-Q13**: IN WHAT YEAR DID [respondent] GIVE BIRTH TO HER FIRST CHILD? - Year: Hard range: Min = [current year] minus [age] minus 14, Max = [current year] --> GO TO DEMPRE-Q14
 
-110. **DEMPRE-Q14**: (Other than children [respondent] has given birth to) HAS [respondent] ADOPTED OR RAISED ANY CHILDREN? - Choice: Yes -> INPATH-Q12; No/DK/R -> DEMPRE-Q16
+110. **DEMPRE-Q14**: (Other than children [respondent] has given birth to) HAS [respondent] ADOPTED OR RAISED ANY CHILDREN? - Yes --> GO TO INPATH-Q12, No/DK/R --> GO TO DEMPRE-Q16
 
-111. **INPATH-Q12**: [Internal logic] DEMPRE-Q11=yes and DEMPRE-Q14=no and DEMPRE-Q12 = 0? - Routing: Yes -> DEMPRE-Q14A; Otherwise -> DEMPRE-Q15
+111. **INPATH-Q12** [*]: [Internal logic] DEMPRE-Q11=yes and DEMPRE-Q14=no and DEMPRE-Q12 = 0? - Yes --> GO TO DEMPRE-Q14A, Otherwise --> GO TO DEMPRE-Q15
 
-112. **DEMPRE-Q14A**: [Interviewer: In previous questions (DEMPRE-Q11 and Q12) respondent stated that she had children, but none were born to her, therefore she should have raised or adopted children (DEMPRE-Q14). If incorrect go to previous questions to correct inconsistencies. Otherwise press Enter to continue.] - Consistency check / interviewer instruction
+112. **DEMPRE-Q14A**: [Interviewer: In previous questions (DEMPRE-Q11 and Q12) respondent stated that she had children, but none were born to her, therefore she should have raised or adopted children (DEMPRE-Q14). If incorrect go to previous questions to correct inconsistencies. Otherwise press Enter to continue.] - Consistency check / interviewer instruction --> GO TO DEMPRE-Q15
 
-113. **DEMPRE-Q15**: HOW MANY (other) CHILDREN HAS [respondent] ADOPTED OR RAISED? - Numeric: Hard range: Min = 1, Max = 20
+113. **DEMPRE-Q15**: HOW MANY (other) CHILDREN HAS [respondent] ADOPTED OR RAISED? - Numeric: Hard range: Min = 1, Max = 20 --> GO TO DEMPRE-Q16
 
 **Language, birthplace, ethnicity:**
 
-114. **DEMPRE-Q16**: WHAT IS THE LANGUAGE THAT [respondent] FIRST LEARNED AT HOME IN CHILDHOOD AND STILL UNDERSTANDS? - Choice: English; French; Other (SPECIFY)
+114. **DEMPRE-Q16**: WHAT IS THE LANGUAGE THAT [respondent] FIRST LEARNED AT HOME IN CHILDHOOD AND STILL UNDERSTANDS? - Choice: English; French; Other (SPECIFY) --> GO TO DEMPRE-Q17
 
-115. **DEMPRE-Q17**: IN WHAT COUNTRY WAS [respondent] BORN? - Choice: Canada; United Kingdom; Italy; U.S.A.; Germany; Poland; Other (SPECIFY) [If Canada -> DEMPRE-Q19; Otherwise -> DEMPRE-Q18]
+115. **DEMPRE-Q17**: IN WHAT COUNTRY WAS [respondent] BORN? - Choice: Canada; United Kingdom; Italy; U.S.A.; Germany; Poland; Other (SPECIFY) - Canada --> GO TO DEMPRE-Q19, Otherwise --> GO TO DEMPRE-Q18
 
-116. **DEMPRE-Q18**: DID [respondent] IMMIGRATE TO CANADA? - Choice: Yes -> DEMPRE-Q18B; No (never immigrated - Canadian citizen by birth) -> DEMPRE-Q19; DK/R -> DEMPRE-Q19
+116. **DEMPRE-Q18**: DID [respondent] IMMIGRATE TO CANADA? - Yes --> GO TO DEMPRE-Q18B, No (never immigrated - Canadian citizen by birth) --> GO TO DEMPRE-Q19, DK/R --> GO TO DEMPRE-Q19
 
-117. **DEMPRE-Q18B**: IN WHAT YEAR WAS THAT? - Year: Hard range: Min = [current year] minus [age], Max = [current year]
+117. **DEMPRE-Q18B**: IN WHAT YEAR WAS THAT? - Year: Hard range: Min = [current year] minus [age], Max = [current year] --> GO TO DEMPRE-Q19
 
-118. **DEMPRE-Q19**: IS [respondent] A REGISTERED INDIAN AS DEFINED BY THE INDIAN ACT OF CANADA? - Choice: Yes, Registered Indian; No/DK/R
+118. **DEMPRE-Q19**: IS [respondent] A REGISTERED INDIAN AS DEFINED BY THE INDIAN ACT OF CANADA? - Choice: Yes, Registered Indian; No/DK/R --> GO TO DEMPRE-Q20
 
-119. **DEMPRE-Q20**: CANADIANS COME FROM MANY ETHNIC, CULTURAL AND RACIAL BACKGROUNDS. FOR EXAMPLE, ENGLISH, FRENCH, NORTH AMERICAN INDIAN, CHINESE, BLACK, FILIPINO OR LEBANESE. WHAT IS [respondent]'S BACKGROUND? [Interviewer: if indian, probe for North American or East. Mark all that apply.] - Multiple choice: English; French; German; Scottish; Italian; Irish; Ukrainian; Chinese; Canadian (probe for any other background); Dutch (Netherlands); Jewish; Polish; Black; Metis; Inuit/Eskimo; North American Indian; East Indian; Other (specify) [If Other -> DEMPRE-Q20A; Otherwise -> EDUPRE-Q1]
+119. **DEMPRE-Q20**: CANADIANS COME FROM MANY ETHNIC, CULTURAL AND RACIAL BACKGROUNDS. FOR EXAMPLE, ENGLISH, FRENCH, NORTH AMERICAN INDIAN, CHINESE, BLACK, FILIPINO OR LEBANESE. WHAT IS [respondent]'S BACKGROUND? [Interviewer: if indian, probe for North American or East. Mark all that apply.] - Multiple choice: English; French; German; Scottish; Italian; Irish; Ukrainian; Chinese; Canadian (probe for any other background); Dutch (Netherlands); Jewish; Polish; Black; Metis; Inuit/Eskimo; North American Indian; East Indian; Other (specify) - Other --> GO TO DEMPRE-Q20A, Otherwise --> GO TO EDUPRE-Q1
 
-120. **DEMPRE-Q20A**: [Interviewer: Enter other ethnic background not already given in previous question.] - Open text [-> EDUPRE-Q1]
+120. **DEMPRE-Q20A**: [Interviewer: Enter other ethnic background not already given in previous question.] - Open text --> GO TO EDUPRE-Q1
 
 ---
 
 ### EDUPRE Module (Education) - 27 questions
 
-121. **EDUPRE-Q1**: HOW MANY YEARS OF ELEMENTARY AND HIGH SCHOOL DID [respondent] COMPLETE? - Numeric: Hard range: Min = 0, Max = 15
+121. **EDUPRE-Q1**: HOW MANY YEARS OF ELEMENTARY AND HIGH SCHOOL DID [respondent] COMPLETE? - Numeric: Hard range: Min = 0, Max = 15 --> GO TO VERIFY-Q1
 
-122. **VERIFY-Q1**: [Internal logic] Years of schooling (EDUPRE-Q1) is greater than [age] minus 5? - Routing: No -> EDUPRE-Q1A; Otherwise: if answered "0" -> EDUPRE-Q17; otherwise -> EDUPRE-Q2
+122. **VERIFY-Q1** [*]: [Internal logic] Years of schooling (EDUPRE-Q1) is greater than [age] minus 5? - No --> GO TO EDUPRE-Q1A, Otherwise: if answered "0" --> GO TO EDUPRE-Q17, otherwise --> GO TO EDUPRE-Q2
 
-123. **EDUPRE-Q1A**: [Interviewer: Years of education does not correspond with [respondent]'s age. Verify that this information is correct. If incorrect go back to previous question (EDUPRE-Q1) and make the necessary changes. Otherwise press Enter to continue.] - Consistency check / interviewer instruction
+123. **EDUPRE-Q1A**: [Interviewer: Years of education does not correspond with [respondent]'s age. Verify that this information is correct. If incorrect go back to previous question (EDUPRE-Q1) and make the necessary changes. Otherwise press Enter to continue.] - Consistency check / interviewer instruction --> GO TO EDUPRE-Q2
 
-124. **EDUPRE-Q2**: IN WHICH PROVINCE OR TERRITORY DID [respondent] GET MOST OF HIS/HER ELEMENTARY AND HIGH SCHOOL EDUCATION? - Single choice: Newfoundland; Prince Edward Island; Nova Scotia; New Brunswick; Quebec; Ontario; Manitoba; Saskatchewan; Alberta; British Columbia; Yukon; Northwest Territories; Outside Canada
+124. **EDUPRE-Q2**: IN WHICH PROVINCE OR TERRITORY DID [respondent] GET MOST OF HIS/HER ELEMENTARY AND HIGH SCHOOL EDUCATION? - Single choice: Newfoundland; Prince Edward Island; Nova Scotia; New Brunswick; Quebec; Ontario; Manitoba; Saskatchewan; Alberta; British Columbia; Yukon; Northwest Territories; Outside Canada --> GO TO EVAL-Q1
 
-125. **EVAL-Q1**: [Internal logic] EDUPRE-Q1 = 1 to 9? - Routing: Yes -> EDUPRE-Q4; Otherwise -> EDUPRE-Q3
+125. **EVAL-Q1** [*]: [Internal logic] EDUPRE-Q1 = 1 to 9? - Yes --> GO TO EDUPRE-Q4, Otherwise --> GO TO EDUPRE-Q3
 
-126. **EDUPRE-Q3**: DID [respondent] COMPLETE HIGH SCHOOL? - Choice: Yes; No
+126. **EDUPRE-Q3**: DID [respondent] COMPLETE HIGH SCHOOL? - Choice: Yes; No --> GO TO EDUPRE-Q4
 
-127. **EDUPRE-Q4**: EXCLUDING UNIVERSITY, HAS [respondent] EVER BEEN ENROLLED IN ANY OTHER KIND OF SCHOOL, FOR EXAMPLE, A COMMUNITY COLLEGE, BUSINESS SCHOOL, TRADE OR VOCATIONAL SCHOOL, OR CEGEP? - Choice: Yes/DK/R -> EDUPRE-Q5; No -> EDUPRE-Q12
+127. **EDUPRE-Q4**: EXCLUDING UNIVERSITY, HAS [respondent] EVER BEEN ENROLLED IN ANY OTHER KIND OF SCHOOL, FOR EXAMPLE, A COMMUNITY COLLEGE, BUSINESS SCHOOL, TRADE OR VOCATIONAL SCHOOL, OR CEGEP? - Yes/DK/R --> GO TO EDUPRE-Q5, No --> GO TO EDUPRE-Q12
 
-128. **EDUPRE-Q5**: HAS [respondent] RECEIVED ANY CERTIFICATES OR DIPLOMAS AS A RESULT OF THIS EDUCATION? - Choice: Yes/DK/R -> EDUPRE-Q6; No -> EDUPRE-Q11
+128. **EDUPRE-Q5**: HAS [respondent] RECEIVED ANY CERTIFICATES OR DIPLOMAS AS A RESULT OF THIS EDUCATION? - Yes/DK/R --> GO TO EDUPRE-Q6, No --> GO TO EDUPRE-Q11
 
-129. **EDUPRE-Q6**: THINKING OF THE MOST RECENT CERTIFICATE OR DIPLOMA (EXCLUDING UNIVERSITY) COULD YOU TELL ME WHAT TYPE OF SCHOOL OR COLLEGE [respondent] ATTENDED? WAS IT A... - Single choice: COMMUNITY COLLEGE OR INSTITUTE OF APPLIED ARTS AND TECHNOLOGY?; BUSINESS OR COMMERCIAL SCHOOL?; TRADE OR VOCATIONAL SCHOOL?; CEGEP?; SOME OTHER TYPE (Specify)
+129. **EDUPRE-Q6**: THINKING OF THE MOST RECENT CERTIFICATE OR DIPLOMA (EXCLUDING UNIVERSITY) COULD YOU TELL ME WHAT TYPE OF SCHOOL OR COLLEGE [respondent] ATTENDED? WAS IT A... - Single choice: COMMUNITY COLLEGE OR INSTITUTE OF APPLIED ARTS AND TECHNOLOGY?; BUSINESS OR COMMERCIAL SCHOOL?; TRADE OR VOCATIONAL SCHOOL?; CEGEP?; SOME OTHER TYPE (Specify) --> GO TO EDUPRE-Q7
 
-130. **EDUPRE-Q7**: HOW LONG DID IT TAKE [respondent] TO COMPLETE THIS PROGRAM? - Choice of unit: Answer given in months -> EDUPRE-Q7A; Answer given in years -> EDUPRE-Q7B; DK/R -> EDUPRE-Q8
+130. **EDUPRE-Q7**: HOW LONG DID IT TAKE [respondent] TO COMPLETE THIS PROGRAM? - Answer given in months --> GO TO EDUPRE-Q7A, Answer given in years --> GO TO EDUPRE-Q7B, DK/R --> GO TO EDUPRE-Q8
 
-131. **EDUPRE-Q7A**: [Interviewer: Enter # of months it took [respondent] to complete this program.] - Numeric: Hard range: Min = 1, Max = 99 [-> EDUPRE-Q8]
+131. **EDUPRE-Q7A**: [Interviewer: Enter # of months it took [respondent] to complete this program.] - Numeric: Hard range: Min = 1, Max = 99 --> GO TO EDUPRE-Q8
 
-132. **EDUPRE-Q7B**: [Interviewer: Enter # of years it took [respondent] to complete this program.] - Numeric: Hard range: Min = 1, Max = 9 [-> EDUPRE-Q8]
+132. **EDUPRE-Q7B**: [Interviewer: Enter # of years it took [respondent] to complete this program.] - Numeric: Hard range: Min = 1, Max = 9 --> GO TO EDUPRE-Q8
 
-133. **EDUPRE-Q8**: WAS THIS FULL-TIME, PART-TIME OR SOME OF EACH? - Single choice: Full-time; Part-time; Some of each
+133. **EDUPRE-Q8**: WAS THIS FULL-TIME, PART-TIME OR SOME OF EACH? - Single choice: Full-time; Part-time; Some of each --> GO TO EDUPRE-Q9
 
-134. **EDUPRE-Q9**: IN WHAT YEAR DID [respondent] RECEIVE HIS/HER CERTIFICATE OR DIPLOMA? - Year: Hard range: Min = [current year] minus [age] minus 14, Max = [current year]
+134. **EDUPRE-Q9**: IN WHAT YEAR DID [respondent] RECEIVE HIS/HER CERTIFICATE OR DIPLOMA? - Year: Hard range: Min = [current year] minus [age] minus 14, Max = [current year] --> GO TO VERIFY-Q9
 
-135. **VERIFY-Q9**: [Internal logic] Year received diploma is between current year minus age minus 14 and current year minus age minus 20? - Routing: Yes -> EDUPRE-Q9A; Otherwise -> EDUPRE-Q10
+135. **VERIFY-Q9** [*]: [Internal logic] Year received diploma is between current year minus age minus 14 and current year minus age minus 20? - Yes --> GO TO EDUPRE-Q9A, Otherwise --> GO TO EDUPRE-Q10
 
-136. **EDUPRE-Q9A**: [Interviewer: Year respondent received certificate or diploma indicates he/she was [age - current year - EDUPRE-Q9] years old when they graduated. If year received certificate/diploma [answer in EDUPRE-Q9] is incorrect, go back to previous question (EDUPRE-Q9) and make necessary changes. Otherwise press Enter to continue.] - Consistency check / interviewer instruction
+136. **EDUPRE-Q9A**: [Interviewer: Year respondent received certificate or diploma indicates he/she was [age - current year - EDUPRE-Q9] years old when they graduated. If year received certificate/diploma [answer in EDUPRE-Q9] is incorrect, go back to previous question (EDUPRE-Q9) and make necessary changes. Otherwise press Enter to continue.] - Consistency check / interviewer instruction --> GO TO EDUPRE-Q10
 
-137. **EDUPRE-Q10**: WHAT WAS THE MAJOR SUBJECT OR FIELD OF STUDY? - Open text
+137. **EDUPRE-Q10**: WHAT WAS THE MAJOR SUBJECT OR FIELD OF STUDY? - Open text --> GO TO EDUPRE-Q11
 
-138. **EDUPRE-Q11**: IN TOTAL, HOW MANY YEARS OF SCHOOLING DID [respondent] COMPLETE AT A COMMUNITY COLLEGE, TECHNICAL INSTITUTE, TRADE OR VOCATIONAL SCHOOL, OR CEGEP? [Interviewer: Enter 00 if less than one year] - Numeric: Hard range: Min = 0, Max = 20
+138. **EDUPRE-Q11**: IN TOTAL, HOW MANY YEARS OF SCHOOLING DID [respondent] COMPLETE AT A COMMUNITY COLLEGE, TECHNICAL INSTITUTE, TRADE OR VOCATIONAL SCHOOL, OR CEGEP? [Interviewer: Enter 00 if less than one year] - Numeric: Hard range: Min = 0, Max = 20 --> GO TO VERIFY-Q11
 
-139. **VERIFY-Q11**: [Internal logic] Years of schooling (EDUPRE-Q11) is greater than [age] minus 14? - Routing: Yes -> EDUPRE-Q11A; Otherwise -> EDUPRE-Q12
+139. **VERIFY-Q11** [*]: [Internal logic] Years of schooling (EDUPRE-Q11) is greater than [age] minus 14? - Yes --> GO TO EDUPRE-Q11A, Otherwise --> GO TO EDUPRE-Q12
 
-140. **EDUPRE-Q11A**: [Interviewer: Years of schooling completed in a community college etc. [EDUPRE-Q11] does not correspond to [respondent]'s age [age]. Verify that this is correct. If incorrect, go back to previous question (EDUPRE-Q11) and make necessary changes. Otherwise press Enter to continue.] - Consistency check / interviewer instruction
+140. **EDUPRE-Q11A**: [Interviewer: Years of schooling completed in a community college etc. [EDUPRE-Q11] does not correspond to [respondent]'s age [age]. Verify that this is correct. If incorrect, go back to previous question (EDUPRE-Q11) and make necessary changes. Otherwise press Enter to continue.] - Consistency check / interviewer instruction --> GO TO EDUPRE-Q12
 
-141. **EDUPRE-Q12**: HAS [respondent] EVER BEEN ENROLLED IN A UNIVERSITY? - Choice: Yes/DK/R -> EDUPRE-Q13; No -> EDUPRE-Q17
+141. **EDUPRE-Q12**: HAS [respondent] EVER BEEN ENROLLED IN A UNIVERSITY? - Yes/DK/R --> GO TO EDUPRE-Q13, No --> GO TO EDUPRE-Q17
 
-142. **EDUPRE-Q13**: HOW MANY YEARS OF UNIVERSITY HAS [respondent] COMPLETED? [Interviewer: Enter 00 if attended university but didn't complete the year] - Numeric: Hard range: Min = 0, Max = 20
+142. **EDUPRE-Q13**: HOW MANY YEARS OF UNIVERSITY HAS [respondent] COMPLETED? [Interviewer: Enter 00 if attended university but didn't complete the year] - Numeric: Hard range: Min = 0, Max = 20 --> GO TO VERIFY-Q13
 
-143. **VERIFY-Q13**: [Internal logic] Years of university is greater than [age] minus 14? - Routing: Yes -> EDUPRE-Q13A; Otherwise -> EDUPRE-Q14
+143. **VERIFY-Q13** [*]: [Internal logic] Years of university is greater than [age] minus 14? - Yes --> GO TO EDUPRE-Q13A, Otherwise --> GO TO EDUPRE-Q14
 
-144. **EDUPRE-Q13A**: [Interviewer: Years of university [EDUPRE-Q13] does not correspond to [respondent]'s age [age]. Verify that this is correct. If incorrect, go back to previous question (EDUPRE-Q13) and make necessary changes. Otherwise press Enter to continue.] - Consistency check / interviewer instruction
+144. **EDUPRE-Q13A**: [Interviewer: Years of university [EDUPRE-Q13] does not correspond to [respondent]'s age [age]. Verify that this is correct. If incorrect, go back to previous question (EDUPRE-Q13) and make necessary changes. Otherwise press Enter to continue.] - Consistency check / interviewer instruction --> GO TO EDUPRE-Q14
 
-145. **EDUPRE-Q14**: WHAT DEGREES, CERTIFICATES OR DIPLOMAS HAS [respondent] RECEIVED FROM A UNIVERSITY? - Choice: None -> EDUPRE-Q17; Specify Degrees -> EDUPRE-Q14A; DK/R -> EDUPRE-Q15
+145. **EDUPRE-Q14**: WHAT DEGREES, CERTIFICATES OR DIPLOMAS HAS [respondent] RECEIVED FROM A UNIVERSITY? - None --> GO TO EDUPRE-Q17, Specify Degrees --> GO TO EDUPRE-Q14A, DK/R --> GO TO EDUPRE-Q15
 
-146. **EDUPRE-Q14A**: [Interviewer: Specify degrees, certificates or diplomas [respondent] has received from a university. Mark all that apply.] - Multiple choice: University certificate/diploma below Bachelor level; Bachelor's degree(s); University certificate/diploma above Bachelor level; Master's degree(s); Degree in medicine, dentistry, veterinary medicine or optometry; Doctorate (PhD)
+146. **EDUPRE-Q14A**: [Interviewer: Specify degrees, certificates or diplomas [respondent] has received from a university. Mark all that apply.] - Multiple choice: University certificate/diploma below Bachelor level; Bachelor's degree(s); University certificate/diploma above Bachelor level; Master's degree(s); Degree in medicine, dentistry, veterinary medicine or optometry; Doctorate (PhD) --> GO TO EDUPRE-Q15
 
-147. **EDUPRE-Q15**: WHAT YEAR DID [respondent] RECEIVE HIS/HER [highest response category given in EDUPRE-Q14A]? - Year: Hard range: Min = [current year] minus [age] minus 18, Max = [current year]
+147. **EDUPRE-Q15**: WHAT YEAR DID [respondent] RECEIVE HIS/HER [highest response category given in EDUPRE-Q14A]? - Year: Hard range: Min = [current year] minus [age] minus 18, Max = [current year] --> GO TO EDUPRE-Q16
 
-148. **EDUPRE-Q16**: WHAT WAS THE MAJOR FIELD OF STUDY? - Open text
+148. **EDUPRE-Q16**: WHAT WAS THE MAJOR FIELD OF STUDY? - Open text --> GO TO EDUPRE-Q17
 
-149. **EDUPRE-Q17**: WHAT WAS THE HIGHEST LEVEL OF EDUCATION COMPLETED BY [respondent]'S MOTHER? WAS IT... - Single choice: ELEMENTARY SCHOOL (includes no schooling)?; SOME HIGH SCHOOL?; COMPLETED HIGH SCHOOL?; TRADE/VOCATIONAL SCHOOL?; POST-SECONDARY CERTIFICATE OR DIPLOMA? (e.g., community college, Cegep, teachers' college, school of nursing, etc.); UNIVERSITY DEGREE?
+149. **EDUPRE-Q17**: WHAT WAS THE HIGHEST LEVEL OF EDUCATION COMPLETED BY [respondent]'S MOTHER? WAS IT... - Single choice: ELEMENTARY SCHOOL (includes no schooling)?; SOME HIGH SCHOOL?; COMPLETED HIGH SCHOOL?; TRADE/VOCATIONAL SCHOOL?; POST-SECONDARY CERTIFICATE OR DIPLOMA? (e.g., community college, Cegep, teachers' college, school of nursing, etc.); UNIVERSITY DEGREE? --> GO TO EDUPRE-Q18
 
-150. **EDUPRE-Q18**: WHAT WAS THE HIGHEST LEVEL OF EDUCATION COMPLETED BY [respondent]'S FATHER? WAS IT... - Single choice: ELEMENTARY SCHOOL (includes no schooling)?; SOME HIGH SCHOOL?; COMPLETED HIGH SCHOOL?; TRADE/VOCATIONAL SCHOOL?; POST-SECONDARY CERTIFICATE OR DIPLOMA? (e.g., community college, Cegep, teachers' college, school of nursing, etc.); UNIVERSITY DEGREE?
+150. **EDUPRE-Q18**: WHAT WAS THE HIGHEST LEVEL OF EDUCATION COMPLETED BY [respondent]'S FATHER? WAS IT... - Single choice: ELEMENTARY SCHOOL (includes no schooling)?; SOME HIGH SCHOOL?; COMPLETED HIGH SCHOOL?; TRADE/VOCATIONAL SCHOOL?; POST-SECONDARY CERTIFICATE OR DIPLOMA? (e.g., community college, Cegep, teachers' college, school of nursing, etc.); UNIVERSITY DEGREE? --> END OF PRELIMINARY INTERVIEW
 
 ---
 

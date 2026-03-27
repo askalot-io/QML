@@ -2,14 +2,15 @@
 name: write-qml
 description: >
   Write QML (Questionnaire Markup Language) files for the Askalot survey platform.
-  Use this skill whenever the user wants to create, write, generate, design, or convert
-  a survey or questionnaire in QML format. This includes: designing new questionnaires
-  from requirements or specifications, converting imperative GOTO-based questionnaires
-  (CATI, paper surveys, legacy systems) into declarative QML, modifying or extending
-  existing QML files, and translating regulations or compliance rules into survey form.
-  Trigger on mentions of: QML, questionnaire creation, survey design, CATI conversion,
-  skip patterns, branching logic, Askalot platform, or any request to build a survey
-  with conditional logic.
+  Use this skill when the user wants to create, write, generate, or design a NEW
+  survey or questionnaire in QML format from requirements or specifications. This
+  includes: designing new questionnaires from scratch, modifying or extending existing
+  QML files, fixing validation errors in QML files, and translating regulations or
+  compliance rules into survey form. For converting existing imperative questionnaires
+  (PDF, CATI, paper surveys with GOTO-based routing) into QML, use the
+  evaluate-questionnaire skill instead. Trigger on: QML writing, new questionnaire
+  design, survey creation from requirements, QML modification, QML syntax questions,
+  or extending an existing QML file.
 ---
 
 # Writing QML Questionnaires
@@ -202,131 +203,6 @@ For each item, processing happens in this strict sequence:
 This means: a postcondition on the same item whose codeBlock updates a variable will see
 the variable's OLD value, not the updated one.
 
-## Converting GOTO-Based Questionnaires to QML
-
-Many legacy questionnaires use imperative "If X, go to Y" patterns. Here are the five
-core conversion patterns. For detailed examples with real Statistics Canada questionnaires,
-see `references/goto-conversion-guide.md`.
-
-### Pattern 1: "If X, go to Y" becomes a Precondition on Y
-
-The most common pattern. Instead of routing FROM the gate question, put a precondition ON
-the target question:
-
-```
-IMPERATIVE: Q1 "Do you smoke?" → If Yes, go to Q3. If No, go to Q5.
-```
-
-```yaml
-- id: q_smoke
-  kind: Question
-  title: "Do you smoke?"
-  input:
-    control: Switch
-    off: "No"
-    on: "Yes"
-
-- id: q_cigarettes    # was Q3 — only for smokers
-  precondition:
-    - predicate: q_smoke.outcome == 1
-  ...
-
-- id: q_exercise      # was Q5 — shown to everyone
-  ...
-```
-
-### Pattern 2: PATH/Classification Variable Routing
-
-When the original uses a routing variable to direct respondents to different sections,
-model it with `codeInit` + `codeBlock` + preconditions:
-
-```yaml
-codeInit: |
-  path = 0
-
-# Classification question sets the path
-- id: q_employment
-  codeBlock: |
-    if q_employment.outcome == 1:
-        path = 1    # employed
-    elif q_looking.outcome == 1:
-        path = 2    # job seeker
-    else:
-        path = 3    # not in labour force
-
-# Later items reference the path variable
-- id: q_employer_details
-  precondition:
-    - predicate: path == 1
-```
-
-**Warning — variable feedback loops:** If item A reads variable `path` in its precondition,
-and a downstream item B (that depends on A) writes back to `path` in its codeBlock, the Z3
-validator will detect a dependency cycle. This is a real problem in the original questionnaire
-design — see `references/goto-conversion-guide.md` for solutions.
-
-### Pattern 3: "Skip to end of section" becomes Block-Level Precondition
-
-```yaml
-- id: b_employment_details
-  title: "Employment Details"
-  precondition:
-    - predicate: q_age.outcome >= 16
-    - predicate: q_age.outcome <= 65
-  items:
-    - ...  # entire block skipped if age outside range
-```
-
-### Pattern 4: Cross-Checks become Postconditions
-
-```
-IMPERATIVE: "CATI CHECK: Q5 must be <= Q3. If not, return to Q3."
-```
-
-```yaml
-- id: q5_experience
-  postcondition:
-    - predicate: q5_experience.outcome <= q3_age.outcome - 16
-      hint: "Work experience cannot exceed years since age 16"
-  ...
-```
-
-### Pattern 5: Converging Paths Need No Special Handling
-
-When multiple GOTO branches converge at the same question:
-- If the question applies to everyone → no precondition needed
-- If it applies to a subset → use an OR combining the path conditions:
-
-```yaml
-precondition:
-  - predicate: path == 1 or path == 2 or discouraged_worker == 1
-```
-
-### Pattern 6: Intermediate Filter Gates (Commonly Missed)
-
-CATI questionnaires often have hidden "filter" checks — e.g., "if fewer than 5 symptoms
-reported, skip the diagnostic section." These appear as interviewer instructions, not as
-GOTO statements, making them easy to miss. Model them with a counter variable:
-
-```yaml
-codeInit: |
-  symptom_count = 0
-
-# Each symptom question increments the counter in its codeBlock
-- id: q_symptom_1
-  codeBlock: |
-    if q_symptom_1.outcome == 1:
-        symptom_count = symptom_count + 1
-
-# Gate the detailed section on the count
-- id: q_severity
-  precondition:
-    - predicate: symptom_count >= 5
-```
-
-For more examples including severity gates, roster/loop structures, and composite score
-routing, see `references/goto-conversion-guide.md`.
-
 ## Validation Checklist
 
 Before outputting the QML, verify every point:
@@ -343,38 +219,20 @@ Before outputting the QML, verify every point:
 9. Postcondition hints are specific and user-friendly
 10. Multiple precondition predicates correctly express AND logic (use `or` within a single
     predicate for OR logic)
-11. Filter/screener gates are modeled — if the source has "if count < N, skip section",
-    add a counter variable and precondition (see Pattern 6)
-12. "Other (specify)" options have a Textarea follow-up with a precondition
-13. PATH-like variables are not both read in preconditions AND written in downstream
-    codeBlocks (use separate variables for initial and refined classification)
-14. Age boundaries match the source exactly (watch for off-by-one: >= 15 vs >= 16)
-15. Waterfall/cascade patterns ("first YES wins") use direct outcome references in
-    preconditions, NOT a shared routing variable. A shared variable that's both read in
-    preconditions and written in codeBlocks by items in the same cascade creates dependency
-    cycles (see Pitfall 9 below)
 
 ## Workflow
 
 1. **Understand requirements** — Ask clarifying questions about the survey's purpose,
    target audience, and conditional logic
-2. **Build question inventory** (for large sources, 20+ pages) — Before writing any QML,
-   read the entire source document and build a structured inventory of every question node.
-   For each question, record: ID/number, section, question text, response options with codes,
-   skip/routing instruction, and any interviewer notes. Count total substantive questions —
-   this count is your completeness target. Write the inventory to a file (e.g.,
-   `question_inventory.md`) so it can be referenced during QML generation. This step is
-   critical for sources with 50+ questions — it prevents missed questions and ensures the
-   block structure reflects the source's organization.
-3. **Design block structure** — Group related questions into logical sections
-4. **Choose controls** — Match each question to the right input control type
-5. **Write items** — Create each item with appropriate kind and input
-6. **Add preconditions** — Define when each conditional question appears
-7. **Add postconditions** — Define validation constraints with helpful hints
-8. **Add code blocks** — Implement scoring, classification, or routing variables
-9. **Initialize variables** — Ensure all variables are declared in `codeInit`
-10. **Validate** — Run through the checklist above
-11. **Save** — Use `save_qml_file` (Askalot MCP) or write the file locally
+2. **Design block structure** — Group related questions into logical sections
+3. **Choose controls** — Match each question to the right input control type
+4. **Write items** — Create each item with appropriate kind and input
+5. **Add preconditions** — Define when each conditional question appears
+6. **Add postconditions** — Define validation constraints with helpful hints
+7. **Add code blocks** — Implement scoring, classification, or routing variables
+8. **Initialize variables** — Ensure all variables are declared in `codeInit`
+9. **Validate** — Run the validator and check against the checklist
+10. **Save** — Use `save_qml_file` (Askalot MCP) or write the file locally
 
 ## Validation
 
@@ -390,12 +248,12 @@ uv run python .claude/skills/write-qml/scripts/validate_qml.py <path-to-qml-file
 
 The four verification steps (always run in order):
 
-1. **Per-item classification** — Witness formula W_i = B ∧ P_i ∧ ¬Q_i
+1. **Per-item classification** — Witness formula W_i = B AND P_i AND NOT Q_i
    Classifies each item's precondition reachability (ALWAYS/CONDITIONAL/NEVER) and
    postcondition invariant (TAUTOLOGICAL/CONSTRAINING/INFEASIBLE/NONE).
    Detects NEVER reachable items and INFEASIBLE postconditions.
 
-2. **Global satisfiability** — F = B ∧ ∧(P_i ⇒ Q_i)
+2. **Global satisfiability** — F = B AND conjunction(P_i => Q_i)
    Checks whether at least one valid questionnaire completion exists.
    UNSAT means accumulated postconditions conflict — no execution path is valid.
 
@@ -403,7 +261,7 @@ The four verification steps (always run in order):
    Builds the dependency graph and detects cycles via Z3 ordering constraints
    and Kahn's algorithm. Cycles indicate variable feedback loops.
 
-4. **Path-based reachability** — A_i = B ∧ ∧{j∈Pred(i)}(P_j ⇒ Q_j)
+4. **Path-based reachability** — A_i = B AND conjunction over Pred(i) of (P_j => Q_j)
    For each CONDITIONAL item, checks accumulated reachability under predecessor
    postconditions. Detects dead code that per-item and global checks miss.
 
@@ -424,15 +282,10 @@ When working with the Askalot platform:
 
 ## Reference Files
 
-For detailed information beyond what's covered here:
-
 - **`references/qml-full-reference.md`** — Complete syntax reference with all control
   properties, QuestionGroup/MatrixQuestion examples, and the full JSON schema summary.
   Read this when working with complex item types or unusual control configurations.
 
 - **`references/goto-conversion-guide.md`** — Detailed GOTO-to-declarative conversion
-  patterns with real-world examples from 10 Statistics Canada CATI questionnaires. Read this
-  when converting an existing imperative questionnaire to QML. Covers 9 conversion patterns
-  (including intermediate filter gates, roster/loop structures, composite score routing),
-  variable feedback loops with the snapshot solution, and 8 common pitfalls with frequencies
-  observed across real conversions.
+  patterns with real-world examples. Read this when you need to understand how imperative
+  routing maps to QML preconditions and code blocks.

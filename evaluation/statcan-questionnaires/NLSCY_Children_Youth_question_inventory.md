@@ -13,7 +13,7 @@
 The survey consists of three main components:
 1. **Household Record Variables** (pp. 3-8): Contact, demographics, dwelling characteristics
 2. **General Questionnaire** (pp. 9-26): Restriction of activities, chronic conditions, socio-demographics, education, labour force, income, administration (asked of all household members 15+)
-3. **Parent Questionnaire** (pp. 27-40): Adult health, maternal history, family functioning, neighbourhood, social support (asked of PMK - Person Most Knowledgeable about child)
+3. **Parent Questionnaire** (pp. 27-40): Adult health, maternal history, CES-D depression scale, family functioning, neighbourhood, social support (asked of PMK - Person Most Knowledgeable about child)
 4. **Children's Questionnaire** (pp. 44-161): Health, medical/biological, temperament, education, literacy, activities, behaviour, motor/social development, relationships, parenting, custody history, child care
 
 Note: Per the document's conventions, where the same response categories are used in each question of a series, responses are shown for the first question only. "DON'T KNOW" and "REFUSAL" are possible responses for every question even if not shown.
@@ -22,696 +22,1013 @@ Note: Per the document's conventions, where the same response categories are use
 
 ---
 
-### HOUSEHOLD RECORD VARIABLES (pp. 3-8) - 15 questions
+### HOUSEHOLD RECORD VARIABLES (pp. 3-8) - 23 questions
 
-1. CONT-Q1A: Hello, I'm ... from Statistics Canada. I am contacting you about the National Longitudinal Survey of Children. - Intro (no response)
-2. CONT-Q2: Would you prefer to be interviewed in English or French? - Radio: 1=English, 2=French, 3=Either
-3. CONT-Q3A: We are conducting this survey to collect information on children, their development, family and school experiences. - Intro (no response)
-4. CONT-Q4A: Your answers will be kept strictly confidential and used only for statistical purposes. - Intro (no response)
-5. CONT-Q7: The next few questions will provide important basic information on the people in your household. - Intro (no response)
-6. DEMO-Q1: What are the names of all persons now living or staying here who have no usual place of residence elsewhere? - Open text (First and last names)
-7. DEMO-Q2: Are there any persons away from this household attending school, visiting, travelling, or in hospital who usually live here? - Y/N: Yes-->GO TO DEMO-Q1, No
-8. DEMO-Q3: Does anyone else live at this dwelling such as young children, relatives, roomers, boarders, or employees? - Y/N: Yes-->GO TO DEMO-Q1, No
-9. DEMO-Q4: What is ...'s date of birth? - Open text (date)
-10. DEMO-Q5: Enter or ask ...'s sex. - Radio: Male, Female
-11. DEMO-Q6: What is ...'s marital status? - Radio: Now married, Common-law, Living with a partner, Single (never married), Widowed, Separated, Divorced
-12. DEMO-Q7: Enter ...'s family ID code. - Open text (A to Z)
-13. DEMO-Q8: Relationships of everyone to everyone else. - Radio: Husband/Wife, Common law partner, Birth parent, Step parent, Adoptive parent, Foster parent, Birth child, Step child, Adopted child, Foster child, Sister/Brother, Grandparent, Grandchild, In-law, Other related, Unrelated, Same sex partner
-14. HHLD-Q1: Is this dwelling owned by a member of this household (even if being paid for)? - Y/N: Yes, No
-15. HHLD-Q2: Is this dwelling subsidized by the government for any reason? - Y/N: Yes, No [If Yes in HHLD-Q1 --> GO TO HHLD-Q2B]
-16. HHLD-Q2B: Is this dwelling in need of any repairs? - Radio: Yes minor repairs, Yes major repairs, No only regular maintenance
-17. HHLD-Q3: How many bedrooms are there in this dwelling? - Numeric (2 digits)
-18. HHLD-Q6: Record type of dwelling (by interviewer observation). - Radio: Single detached house, Semi-detached or double, Garden house/town-house/row house, Duplex, Low-rise apartment (<5 stories), High-rise apartment (5+ stories), Institution, Hotel/rooming/lodging house/logging or construction camp/hutterite colony, Mobile home, Other (specify)
-19. HHLD-Q7: Information source indicator i.e. who is providing the information. - Admin
+1. CONT-Q1A: **Hello, I'm ... from Statistics Canada. I am contacting you about the National Longitudinal Survey of Children.** - Intro
+2. CONT-Q2: Would you prefer to be interviewed in English or French? - Radio: 1=ENGLISH, 2=FRENCH, 3=EITHER
+3. CONT-Q3A: **We are conducting this survey to collect information on children, their development, family and school experiences.** - Intro
+4. CONT-Q4A: **Your answers will be kept strictly confidential and used only for statistical purposes. While participation is voluntary, your assistance is essential if the results are to be accurate. (REGISTRATION #:STC/HLD-040-75020)** - Intro
+5. CONT-Q7: **The next few questions will provide important basic information on the people in your household.** - Intro
+6. DEMO-Q1: What are the names of all persons now living or staying here who have no usual place of residence elsewhere? (First and last names) - Open text
+7. DEMO-Q2: Are there any persons away from this household attending school, visiting, travelling, or in hospital who usually live here? - Y/N: YES -->GO TO DEMO-Q1, NO
+8. DEMO-Q3: Does anyone else live at this dwelling such as young children, relatives, roomers, boarders, or employees? - Y/N: YES -->GO TO DEMO-Q1, NO
+9. DEMO-Q4: What is ...'s date of birth? - Date
+10. DEMO-Q5: Enter or ask ...'s sex. - Radio: MALE, FEMALE
+11. DEMO-Q6: What is ...'s marital status? - Radio: NOW MARRIED, COMMON-LAW, LIVING WITH A PARTNER, SINGLE (NEVER MARRIED), WIDOWED, SEPARATED, DIVORCED
+12. DEMO-Q7: ENTER ...'S FAMILY ID CODE. - Internal: (A to Z)
+13. DEMO-Q8: Relationships of everyone to everyone else; - Radio: HUSBAND/WIFE, COMMON LAW PARTNER, BIRTH PARENT, STEP PARENT, ADOPTIVE PARENT, FOSTER PARENT, BIRTH CHILD, STEP CHILD, ADOPTED CHILD, FOSTER CHILD, SISTER/BROTHER, GRANDPARENT, GRANDCHILD, IN-LAW, OTHER RELATED, UNRELATED, SAME SEX PARTNER
+14. HHLD-Q1: Now a few questions about your dwelling. Is this dwelling owned by a member of this household (even if being paid for)? - Y/N: YES, NO
+15. HHLD-C1A: *IF YES IN HHLD-Q1 ---> GO TO HHLD-Q2B* - Check (routing)
+16. HHLD-Q2: Is this dwelling subsidized by the government for any reason? (Eg. low income housing project, co-operative housing project, public housing.) - Y/N: YES, NO
+17. HHLD-Q2B: Is this dwelling in need of any repairs? (READ LIST. MARK ONE ONLY.) - Y/N: Yes, minor repairs (missing or loose floor tiles, bricks or shingles, defective steps, railing or siding, etc.); Yes, major repairs (defective plumbing or electrical wiring, structural repairs to walls, floors or ceiling, etc.); No, only regular maintenance is needed (painting, furnace cleaning, etc.)
+18. HHLD-Q3: How many bedrooms are there in this dwelling? (IF NO SEPARATE ENCLOSED BEDROOM, ENTER "00".) - Numeric
+19. HHLD-Q6: RECORD TYPE OF DWELLING (BY INTERVIEWER OBSERVATION) - Internal: SINGLE DETACHED HOUSE, SEMI-DETACHED OR DOUBLE (SIDE-BY-SIDE), GARDEN HOUSE TOWN-HOUSE OR ROW HOUSE, DUPLEX (ONE ABOVE THE OTHER), LOW-RISE APARTMENT (LESS THAN 5 STORIES), HIGH-RISE APARTMENT (5 OR MORE STORIES), INSTITUTION, HOTEL ROOMING OR LODGING HOUSE LOGGING OR CONSTRUCTION CAMP HUTTERITE COLONY, MOBILE HOME, OTHER (SPECIFY)
+20. HHLD-Q7: INFORMATION SOURCE INDICATOR I.E. WHO IS PROVIDING THE INFORMATION - Internal
+21. HHLD-Q8: RECORD LANGUAGE OF INTERVIEW - Internal: ENGLISH, FRENCH, ARABIC, CHINESE, CREE, GERMAN, GREEK, HUNGARIAN, ITALIAN, KOREAN, PERSIAN (FARSI), POLISH, PORTUGUESE, PUNJABI, SPANISH, TAGALOG (FILIPINO), UKRAINIAN, VIETNAMESE, OTHER (SPECIFY)
+22. CAID-INT-1: **Who is the most knowledgeable about ...?** - Intro
+23. PICKRESP: Who is providing the information for this person's form? - Open text
 
 ---
 
 ### GENERAL QUESTIONNAIRE
 
-#### Restriction of Activities (pp. 9-10) - 7 questions
+#### Restriction of Activities (pp. 9-10) - 3 questions
 
-20. GEN-Q1A: Does ... have any difficulty hearing, seeing, communicating, walking, climbing stairs, bending, learning or doing any similar activities? - Radio: 1=Yes sometimes, 2=Yes often, 3=No
-21. GEN-Q1B: Does a physical or mental condition or health problem reduce the amount or the kind of activity ... can do at home? - Y/N: 1=Yes, 2=No
-22. GEN-Q1C: At work? - Y/N: 1=Yes, 2=No [If not working --> GO TO GEN-Q1D]
-23. GEN-Q1D: At school or at other activities? - Y/N: 1=Yes, 2=No
-24. GEN-Q1E: In other activities, for example, transportation to or from work, leisure time activities? - Y/N: 1=Yes, 2=No
-25. GEN-Q2: Does ... have any long-term disabilities or handicaps? - Y/N: 1=Yes, 2=No, 8=Don't know
-26. GEN-Q3: What is the nature of the condition? - Checkbox (Mark all that apply): Physical disability, Mental disability, Learning disability, Emotional disability, Chronic condition, Speech difficulties, Developmental delay, Other
+24. RESTR-CINT: *IF AGE<12, GO TO NEXT SECTION.* - Check (routing)
+25. RESTR-INT: **The next few questions deal with any health limitations which affect ... (r/'s) daily activities. In these questions, "long-term conditions" refer to conditions that have lasted or are expected to last 6 months or more.** - Intro
+26. RESTR-Q1: Because of a long-term physical or mental condition or a health problem, are/is ... limited in the kind or amount of activity you/he/she can do: - Y/N: (a) At home? 1=YES 2=NO (b) At school? 1=YES 2=NO 3=NOT APPLICABLE (c) At work? 1=YES 2=NO 3=NOT APPLICABLE (d) In other activities such as transportation to or from work or leisure time activities? 1=YES 2=NO (e) In caring for children? 1=YES 2=NO 3=NOT APPLICABLE
 
-#### Chronic Conditions (pp. 11-12) - 2 questions
+#### Chronic Conditions (pp. 11-12) - 6 questions
 
-27. GEN-Q4: Does ... have any of the following long-term conditions that have been diagnosed by a health professional? - Checkbox (Read list, mark all that apply): 01=Food allergies, 02=Any other allergies, 03=Asthma, 04=Heart condition or disease, 05=Kidney condition or disease, 06=Epilepsy, 07=Cerebral palsy, 08=Mental handicap, 09=Learning disability, 10=Emotional/psychological/nervous difficulties, 11=Any other chronic condition, 12=None, 98=Don't know, 99=Refusal
-28. GEN-Q5: Because of any condition or health problem, does ... need help of another person in (a) personal care, (b) moving about inside the house, (c) doing housework, (d) doing heavy household chores, (e) personal finances, (f) care of children? - Y/N for each sub-item
+27. CHRON-CINT: *IF AGE<12 OR RESPONDENT IS NOT THE PARENT GO TO NEXT SECTION.* - Check (routing)
+28. CHRON-INT: **Now I'd like to ask about any chronic health conditions ... may have. Again, "long-term conditions" refer to conditions that have lasted or are expected to last 6 months or more.** - Intro
+29. CHRON-Q1: Do(es) ... have any of the following long-term conditions that have been diagnosed by a health professional: - Checkbox: (READ LIST. MARK ALL THAT APPLY.) (a) Food allergies? (b) Other allergies? (c) Asthma? (IF YES ASK CHRON-Q1cc1) (d) Arthritis or rheumatism? (e) Back problems excluding arthritis? (f) High blood pressure? (g) Migraine headaches? (h) Chronic bronchitis or emphysema? (i) Sinusitis? (j) Diabetes? (k) Epilepsy? (l) Heart disease? (m) Cancer? (IF YES ASK CHRON-Q1mm) (n) Stomach or intestinal ulcers? (o) Effects of stroke? (p) Urinary incontinence? (r) Alzheimer's disease or other dementia? (s) Cat...
+30. CHRON-Q1mm: What type(s) of cancer is this? For example, skin, lung or colon cancer. - Open text
+31. CHRON-Q1cc1: Have/Has ... had an attack of asthma in the past 12 months? - Y/N: 1=YES 2=NO
+32. CHRON-Q1cc2: Have/Has ... had wheezing or whistling in the chest at any time in the past 12 months? - Radio: Not explicitly listed in source (likely YES/NO, same pattern as CHRON-Q1cc1)
 
-#### Socio-Demographic Characteristics (pp. 12-14) - 10 questions
+#### Socio-demographic Characteristics (pp. 12-14) - 10 questions
 
-29. GEN-Q6: In what country was ... born? - Radio: 1=Canada, 2=Other (specify)
-30. GEN-Q7: Is ... an immigrant? - Y/N: 1=Yes, 2=No [If No --> skip]
-31. GEN-Q8: In what year did ... come to Canada to live permanently? - Numeric (year)
-32. GEN-Q9: To which ethnic or cultural group(s) did ...'s ancestors belong? (Mark all that apply) - Checkbox: 01=French, 02=English, 03=German, 04=Scottish, 05=Irish, 06=Italian, 07=Ukrainian, 08=Dutch, 09=Chinese, 10=Jewish, 11=Polish, 12=Black, 13=North American Indian, 14=Metis, 15=Inuit/Eskimo, 16=Portuguese, 17=South Asian, 18=Other, 98=Don't know, 99=Refusal
-33. GEN-Q10A: Is ... an Aboriginal person? - Y/N: 1=Yes, 2=No
-34. GEN-Q10B: Is ... a North American Indian, Metis, or Inuit? - Checkbox: 1=North American Indian, 2=Metis, 3=Inuit
-35. GEN-Q11: Is ... a registered Indian as defined by the Indian Act of Canada? - Y/N: 1=Yes, 2=No
-36. GEN-Q12: What language(s) does ... speak most often at home? - Checkbox (mark all that apply): 1=English, 2=French, 3=Other, 8=Don't know, 9=Refusal
-37. GEN-Q13: What is the language that ... first learned at home in childhood and still understands? - Checkbox (mark all that apply): 1=English, 2=French, 3=Other, 8=Don't know, 9=Refusal
-38. GEN-Q14: Is ... a Canadian citizen? - Y/N: 1=Yes, 2=No
+33. SOCIO-INT: **Now I'd like to ask some general background questions.** - Intro
+34. SOCIO-Q1: In what country were/was ... born? - Radio: (DO NOT READ LIST. MARK ONE ONLY.) 1=CANADA (GO TO NEXT SECTION) 2=CHINA 3=FRANCE 4=GERMANY 5=GREECE 6=GUYANA 7=HONG KONG 8=HUNGARY 9=INDIA 10=ITALY 11=JAMAICA 12=NETHERLANDS 13=PHILIPPINES 14=POLAND 15=PORTUGAL 16=UNITED KINGDOM 17=UNITED STATES 18=VIET NAM 19=OTHER (SPECIFY___)
+35. SOCIO-Q2a: Of what country are/is ... a citizen? - Checkbox: (DO NOT READ LIST. MARK ALL THAT APPLY.) 1=CANADA, CITIZEN BY BIRTH (GO TO NEXT SECTION) 2=CANADA, BY NATURALIZATION 3=SAME AS COUNTRY OF BIRTH 4=OTHER COUNTRY
+36. SOCIO-Q2b: Are/Is ... now, or have/has ... ever been a landed immigrant? - Y/N: 1=YES 2=NO
+37. SOCIO-Q3: In what year did ... first immigrate to Canada? - Radio: YEAR (4 DIGITS)
+38. SOCIO-Q4: To which ethnic or cultural group(s) did your/...'s ancestors belong? (For example: French, British, Chinese) - Checkbox: (DO NOT READ LIST. MARK ALL THAT APPLY.) 1=CANADIAN 2=FRENCH 3=ENGLISH 4=GERMAN 5=SCOTTISH 6=IRISH 7=ITALIAN 8=UKRAINIAN 9=DUTCH (NETHERLANDS) 10=CHINESE 11=JEWISH 12=POLISH 13=PORTUGUESE 14=SOUTH ASIAN 15=BLACK 16=NORTH AMERICAN INDIAN 17=METIS 18=INUIT/ESKIMO 19=OTHER (SPECIFY______)
+39. SOCIO-Q5: In what language(s) can ... conduct a conversation? - Checkbox: (DO NOT READ LIST. MARK ALL THAT APPLY.) 1=ENGLISH 2=FRENCH 3=ARABIC 4=CHINESE 5=CREE 6=GERMAN 7=GREEK 8=HUNGARIAN 9=ITALIAN 10=KOREAN 11=PERSIAN (FARSI) 12=POLISH 13=PORTUGUESE 14=PUNJABI 15=SPANISH 16=TAGALOG (FILIPINO) 17=UKRAINIAN 18=VIETNAMESE 19=OTHER (SPECIFY______)
+40. SOCIO-Q6: What is the language that ... first learned at home in childhood and can still understand? (IF ... CAN NO LONGER UNDERSTAND THE FIRST LANGUAGE LEARNED, CHOOSE THE SECOND LANGUAGE LEARNED.) - Checkbox: (DO NOT READ LIST. MARK ALL THAT APPLY.) 1=ENGLISH 2=FRENCH 3=ARABIC 4=CHINESE 5=CREE 6=GERMAN 7=GREEK 8=HUNGARIAN 9=ITALIAN 10=KOREAN 11=PERSIAN (FARSI) 12=POLISH 13=PORTUGUESE 14=PUNJABI 15=SPANISH 16=TAGALOG (FILIPINO) 17=UKRAINIAN 18=VIETNAMESE 19=OTHER (SPECIFY______)
+41. SOCIO-Q8: What, if any, is your/...'s religion? - Radio: (DO NOT READ LIST. MARK ONE ONLY.) 1=NO RELIGION (GO TO NEXT SECTION) 2=ROMAN CATHOLIC 3=UNITED CHURCH 4=ANGLICAN 5=PRESBYTERIAN 6=LUTHERAN 7=BAPTIST 8=EASTERN ORTHODOX 9=JEWISH 10=ISLAM (MUSLIM) 11=BUDDHIST 12=HINDU 13=SIKH 14=JEHOVAH'S WITNESS 15=OTHER (SPECIFY_________)
+42. SOCIO-Q9: Other than on special occasions (such as weddings, funerals or baptisms), how often did ... attend religious services or meetings in the past 12 months? - Radio: (READ LIST. MARK ONE ONLY.) 1=At least once a week 2=At least once a month 3=At least 3 or 4 times a year 4=At least once a year 5=Not at all
 
-#### Education (pp. 15-17) - 8 questions
+#### Education (pp. 15-16) - 8 questions
 
-39. GEN-Q15A: What is the highest grade or year of elementary or high school that ... ever attended or completed? - Radio: 01=No schooling or kindergarten only, 02-14=Grade 1-13/OAC, 98=Don't know, 99=Refusal
-40. GEN-Q15B: Did ... graduate from high school (obtain a high school diploma)? - Y/N: 1=Yes, 2=No, 8=Don't know, 9=Refusal
-41. GEN-Q16A: Has ... ever attended or completed education beyond high school? - Radio: 1=Attended, 2=Completed, 3=Neither
-42. GEN-Q16B: What type of program/school? - Radio: 1=Community college/CEGEP/Nursing school, 2=University, 3=Trade/Vocational school, 4=Other
-43. GEN-Q16C: How many years of post-secondary education has ... completed? - Numeric
-44. GEN-Q16D: What degree, certificate or diploma did ... obtain? - Radio: 01=Trade/vocational diploma/certificate, 02=Non-university diploma/certificate, 03=Bachelor's degree, 04=First professional degree (medicine/dentistry/law/etc.), 05=Master's degree, 06=Earned doctorate, 07=Other, 98=Don't know, 99=Refusal
-45. GEN-Q17: Is ... currently attending school, college or university? - Radio: 1=Yes full-time, 2=Yes part-time, 3=No
-46. GEN-Q17B: What type? - Radio: 1=High school, 2=Community college/CEGEP, 3=University, 4=Trade/vocational school, 5=Other
+43. EDUC-C1: *IF AGE<12, GO TO NEXT SECTION.* - Check (routing)
+44. EDUC-Q1: Excluding kindergarten, how many years of elementary and high school have/has ... successfully completed? - Radio: (DO NOT READ LIST. MARK ONE ONLY.) 0=NO SCHOOLING (GO TO NEXT SECTION) 1=1-5 YEARS 2=6 3=7 4=8 5=9 6=10 7=11 8=12 9=13
+45. EDUC-Q2: Have/has ... graduated from high school? - Y/N: 1=YES 2=NO
+46. EDUC-Q3: Have/has ... ever attended any other kind of school such as a university, community college, business school, trade or vocational school, CEGEP or other post-secondary institution? - Y/N: 1=YES 2=NO (GO TO EDUC-C5)
+47. EDUC-Q4: What is the highest level of education that ... have/has attained? - Radio: (DO NOT READ LIST. MARK ONE ONLY.) 1=SOME TRADE, TECHNICAL OR VOCATIONAL SCHOOL, OR BUSINESS COLLEGE 2=SOME COMMUNITY COLLEGE, CEGEP, OR NURSING SCHOOL 3=SOME UNIVERSITY 4=DIPLOMA OR CERTIFICATE FROM TRADE, TECHNICAL OR VOCATIONAL SCHOOL, OR BUSINESS COLLEGE 5=DIPLOMA OR CERTIFICATE FROM COMMUNITY COLLEGE, CEGEP OR NURSING SCHOOL 6=BACHELOR OR UNDERGRADUATE DEGREE, OR TEACHER'S COLLEGE (E.G. B.A., B.SC., LL.B.) 7=MASTER'S (E.G. M.A., M.SC., M.ED.) 8=DEGREE IN MEDICINE, DENTISTRY, VETERINARY M...
+48. EDUC-C5: *IF AGE >= 65, GO TO NEXT SECTION.* - Check (routing)
+49. EDUC-Q5: Are/Is ... currently attending a school, college or university? - Y/N: 1=YES 2=NO (GO TO NEXT SECTION)
+50. EDUC-Q6: Are/Is ... enrolled as a full-time or part-time student? - Radio: 1=FULL-TIME 2=PART-TIME
 
-#### Labour Force (pp. 17-21) - 19 questions
+#### Labour Force (pp. 17-21) - 31 questions
 
-47. GEN-Q18: Last week, did ... work at a job or a business? - Y/N: 1=Yes, 2=No
-48. GEN-Q19A: Did ... have a job or business from which he/she was absent? - Y/N: 1=Yes, 2=No
-49. GEN-Q19B: What was the main reason for the absence? - Radio: 01=Own illness, 02=Caring for own children, 03=Maternity/paternity leave, 04=Vacation, 05=Labour dispute, 06=Temporarily laid off, 07=Other, 98=Don't know, 99=Refusal
-50. GEN-Q20: Did ... look for work? - Y/N: 1=Yes, 2=No
-51. GEN-Q21: Has ... ever worked at a job or business? - Y/N: 1=Yes, 2=No
-52. GEN-Q22A: For whom did/does ... work? (name of firm/department/institution) - Open text
-53. GEN-Q22B: What kind of business/industry/service is this? - Open text
-54. GEN-Q22C: What is ...'s job title? - Open text
-55. GEN-Q22D: What are the most important things ... does in this job? - Open text
-56. GEN-Q22E: Is ... a paid worker or self-employed? - Radio: 1=Paid worker, 2=Self-employed
-57. GEN-Q23A: How many hours per week does ... usually work at this job? - Numeric
-58. GEN-Q23B: Does ... have more than one job? - Y/N: 1=Yes, 2=No
-59. GEN-Q23C: How many hours per week does ... work at all jobs? - Numeric
-60. GEN-Q24: What are ...'s usual hours of work at his/her main job? - Radio: 1=Regular daytime schedule, 2=Regular evening shift, 3=Regular night shift, 4=Rotating shift, 5=Split shift, 6=On call, 7=Irregular schedule, 8=Other, 98=Don't know, 99=Refusal
-61. GEN-Q25: How long has ... been working at this job? - Radio: 1=Less than 1 year, 2=1-5 years, 3=6-10 years, 4=11-20 years, 5=More than 20 years, 8=Don't know, 9=Refusal
-62. GEN-Q26: When did ... last work? - Radio: 1=Within past year, 2=1-5 years ago, 3=More than 5 years ago, 8=Don't know, 9=Refusal
-63. GEN-Q27: What was the main reason ... stopped working? - Radio: 01=Own illness/disability, 02=Caring for children, 03=Pregnancy, 04=Lost job/laid off, 05=Personal/family responsibilities, 06=School, 07=Retired, 08=Moved, 09=Other, 98=Don't know, 99=Refusal
-64. GEN-Q28: Has ... ever worked for pay in the past 12 months? - Y/N: 1=Yes, 2=No
-65. GEN-Q29: How many weeks did ... work for pay in the past 12 months? - Numeric
+51. LFS-C1: *IF NOT PARENT, GO TO NEXT SECTION.* - Check (routing)
+52. LFS-Q1: What do/does ... consider to be your/his/her current main activity? (For example, working for pay, caring for family.) - Radio: (DO NOT READ LIST. MARK ONE ONLY.) 1=CARING FOR FAMILY 2=WORKING FOR PAY OR PROFIT 3=CARING FOR FAMILY AND WORKING FOR PAY OR PROFIT 4=GOING TO SCHOOL 5=RECOVERING FROM ILLNESS/ON DISABILITY 6=LOOKING FOR WORK 7=RETIRED 8=OTHER (SPECIFY)
+53. LFS-I2: **The next section contains questions about jobs or employment which ... have/has had during the past 12 months, that is, from 12 months ago to today. Please include such employment as part-time jobs, contract work, baby sitting and any other paid work.** - Intro
+54. LFS-C2: *IF LFS-Q1 = Working for pay or profit or Caring for family and working for pay or profit ---> GO TO LFS-Q3* - Check (routing)
+55. LFS-Q2: Have/has you/he/she worked for pay or profit at any time in the past 12 months? - Y/N: 1=YES (GO TO LFS-Q3) 2=NO
+56. LFS-C2A: *IF LFS-Q1=7 (RETIRED) ---> GO TO INCOME SECTION; ELSE GO TO LFS-Q17B* - Check (routing)
+57. LFS-Q3: For whom/whom else have/has you/he/she worked for pay or profit in the past 12 months? - Open text
+58. LFS-Q4: Did you/he/she have that job 1 year ago, that is, on (date 12 months ago) without a break in employment since then? - Y/N: 1=YES (GO TO LFS-Q6) 2=NO
+59. LFS-Q5: When did you/he/she start working at this job or business? - Date
+60. LFS-Q6: Do/Does you/he/she now have that job? - Y/N: 1=YES (GO TO LFS-Q8) 2=NO
+61. LFS-Q7: When did you/he/she stop working at this job or business? - Date
+62. LFS-Q8: About how many hours per week do/does/did you/he/she usually work at this job? (IF IRREGULAR WORKING SCHEDULE, ENTER THE AVERAGE PER WEEK FOR THE LAST 4 WEEKS WORKED.) - Numeric
+63. LFS-Q9: Which of the following best describes the hours you/he/she usually work/works/worked at this job? - Radio: (READ LIST. MARK ONE ONLY.) 1=Regular daytime schedule or shift 2=Regular evening shift 3=Regular night shift 4=Rotating shift (change from days to evenings to nights) 5=Split shift 6=On call 7=Irregular schedule 8=Other (Specify_______)
+64. LFS-Q10: Do/Does/Did you/he/she usually work on weekends at this job? - Y/N: 1=YES 2=NO
+65. LFS-Q11: Did you/he/she do any other work for pay or profit in the past 12 months? - Y/N: 1=YES 2=NO
+66. LFS-C12: *If LFS-Q11 = NO ---> GO TO LFS-Q13* - Check (routing)
+67. LFS-Q12: Which was the main job? - Radio: Selection from roster of jobs entered in LFS-Q3 through LFS-Q11.
+68. LFS-Q13: Thinking about this/the main job, what kind of business, service or industry is this? (For example, wheat farm, trapping, road maintenance, retail shoe store, secondary school.) - Open text
+69. LFS-Q14: Again, thinking about this/the main job, what kind of work was/were ... doing? (For example, medical lab technician, accounting clerk, secondary school teacher, supervisor of data entry unit, food processing labourer.) - Open text
+70. LFS-Q15: In this work, what were your/his/her most important duties or activities? (For example, analysis of blood samples, verifying invoices, teaching mathematics, organizing work schedules, cleaning vegetables.) - Open text
+71. LFS-Q16: Did you/he/she work mainly for others for wages, salary or commission, or in your/his/her own business, farm or professional practice? - Radio: (DO NOT READ LIST. MARK ONE ONLY.) 1=FOR OTHERS FOR WAGES, SALARY OR COMMISSION 2=IN OWN BUSINESS, FARM OR PROFESSIONAL PRACTICE -->GO TO LFS-C17 3=UNPAID FAMILY WORKER -->GO TO LFS-C17
+72. LFS-Q16A: At this job, about how many hours per week were/was you/he/she paid for? - Numeric
+73. LFS-Q16B: At this job, did you/he/she receive any tips, commissions, bonuses, or paid overtime? - Y/N: 1=YES -->GO TO LFS-Q16C 2=NO -->GO TO LFS-Q16CC 8=DON'T KNOW -->GO TO LFS-Q16CC 9=REFUSAL -->GO TO LFS-C17
+74. LFS-Q16C: At this job, including tips, commissions, bonuses, or paid overtime, what was your/his/her usual wage or salary before taxes and other deductions from the employer? (TO ENTER CENTS, ENTER . THEN THE CENTS.) - Numeric
+75. LFS-Q16CC: At this job, what was your/his/her usual wage or salary before taxes and other deductions from the employer? (TO ENTER CENTS, ENTER . THEN THE CENTS.) - Numeric
+76. LFS-Q16D: Was this ... - Radio: 01=PER HOUR -->GO TO LFS-C17 02=PER DAY -->GO TO LFS-C17 03=PER WEEK -->GO TO LFS-C17 04=EVERY TWO WEEKS -->GO TO LFS-C17 05=TWICE A MONTH -->GO TO LFS-C17 06=PER MONTH -->GO TO LFS-C17 07=PER YEAR -->GO TO LFS-C17 08=SINCE STARTING AT THIS JOB THIS YEAR -->GO TO LFS-C17 09=OTHER 98=DON'T KNOW -->GO TO LFS-C17 99=REFUSAL -->GO TO LFS-C17
+77. LFS-Q16E: At this job, what was your/his/her total earnings? - Numeric
+78. LFS-C17: *CHECK THE CALENDAR FOR GAPS > 6 DAYS. IF # GAPS = 0 ---> GO TO NEXT SECTION* - Check (routing)
+79. LFS-C17A: *IF ANY LFS-Q6 = 1 (CURRENTLY EMPLOYED) ---> GO TO LFS-Q17A; OTHERWISE ---> GO TO LFS-Q17B* - Check (routing)
+80. LFS-Q17A: What was the reason that ... were/was not working for pay or profit during the most recent period away from work in the past year? - Radio: (DO NOT READ LIST. MARK ONE ONLY.) 01=OWN ILLNESS OR DISABILITY 02=PREGNANCY 03=CARING FOR OWN CHILDREN 04=CARING FOR ELDER RELATIVE(S) 05=OTHER PERSONAL OR FAMILY RESPONSIBILITIES 06=SCHOOL OR EDUCATIONAL LEAVE 07=LABOUR DISPUTE 08=TEMPORARY LAYOFF DUE TO SEASONAL CONDITIONS 09=TEMPORARY LAYOFF - NON-SEASONAL 10=PERMANENT LAYOFF 11=UNPAID OR PARTIALLY PAID LEAVE 12=OTHER (SPECIFY________) 13=NO PERIOD NOT WORKING FOR PAY OR PROFIT IN THE PAST YEAR
+81. LFS-Q17B: What is the reason that ... are/is currently not working for pay or profit? - Radio: (DO NOT READ LIST. MARK ONE ONLY.) 01=OWN ILLNESS OR DISABILITY 02=PREGNANCY 03=CARING FOR OWN CHILDREN 04=CARING FOR ELDER RELATIVE(S) 05=OTHER PERSONAL OR FAMILY RESPONSIBILITIES 06=SCHOOL OR EDUCATIONAL LEAVE 07=LABOUR DISPUTE 08=TEMPORARY LAYOFF DUE TO SEASONAL CONDITIONS 09=TEMPORARY LAYOFF - NON-SEASONAL 10=PERMANENT LAYOFF 11=UNPAID OR PARTIALLY PAID LEAVE 12=OTHER (SPECIFY_______) 13=NO PERIOD NOT WORKING FOR PAY OR PROFIT IN THE PAST YEAR
 
-#### Income (pp. 22-24) - 10 questions
+#### Income (pp. 22-24) - 6 questions
 
-66. GEN-Q30: What is your best estimate of your total personal income, before deductions, from all sources during the past 12 months? - Numeric (dollars)
-67. GEN-Q31A: Employment income (wages, salaries, commissions, tips)? - Numeric (dollars)
-68. GEN-Q31B: Net income from self-employment? - Numeric (dollars)
-69. GEN-Q32A: Employment Insurance benefits? - Y/N and amount
-70. GEN-Q32B: Workers' Compensation? - Y/N and amount
-71. GEN-Q32C: Social assistance/provincial supplement? - Y/N and amount
-72. GEN-Q32D: Child Tax Benefit? - Y/N and amount
-73. GEN-Q32E: Provincial/territorial tax credits? - Y/N and amount
-74. GEN-Q32F: Other government income? - Y/N and amount
-75. GEN-Q33: What is your best estimate of the total income of all household members from all sources during the past 12 months, before deductions? - Numeric (dollars)
+82. INCOM-Q1: Thinking about your total household income, from which of the following sources did your household receive any income in the past 12 months? - Checkbox: (READ LIST. MARK ALL THAT APPLY.) 01=Wages and salaries 02=Income from self-employment 03=Dividends and interest (e.g. on bonds, deposits, etc.) 04=Unemployment insurance 05=Worker's compensation 06=Benefits from Canada or Quebec Pension Plan 07=Retirement pensions, superannuation and annuities 08=Old Age Security and Guaranteed Income Supplement 09=Child Tax Benefit 10=Provincial or municipal social assistance or welfare 11=Child Support 12=Alimony 13=Other (e.g. other gov't, rental income, ...
+83. INCOM-Q2: What was the main source of income? - Radio: (DO NOT READ LIST. MARK ONE ONLY.) 01=WAGES AND SALARIES 02=INCOME FROM SELF-EMPLOYMENT 03=DIVIDENDS AND INTEREST (E.G. ON BONDS, DEPOSITS, ETC.) 04=UNEMPLOYMENT INSURANCE 05=WORKER'S COMPENSATION 06=BENEFITS FROM CANADA OR QUEBEC PENSION PLAN 07=RETIREMENT PENSIONS, SUPERANNUATION AND ANNUITIES 08=OLD AGE SECURITY AND GUARANTEED INCOME SUPPLEMENT 09=CHILD TAX BENEFIT 10=PROVINCIAL OR MUNICIPAL SOCIAL ASSISTANCE OR WELFARE 11=CHILD SUPPORT 12=ALIMONY 13=OTHER (E.G. OTHER GOV'T, RENTAL INCOME,...
+84. INCOM-Q3: What is your best estimate of the total income before taxes and deductions of all household members from all sources in the past 12 months? - Numeric
+85. INCOM-Q3B: Can you estimate in which of the following groups your household income falls? - Radio: (Cascading/branching structure) 01=LESS THAN $20,000? 02=LESS THAN $10,000? 03=LESS THAN $5,000? (GO TO INCOM-Q4) 04=$5,000 OR MORE? (GO TO INCOM-Q4) 05=$10,000 OR MORE? 06=LESS THAN $15,000? (GO TO INCOM-Q4) 07=$15,000 OR MORE? (GO TO INCOM-Q4) 08=$20,000 OR MORE? 09=LESS THAN $40,000? 10=LESS THAN $30,000? (GO TO INCOM-Q4) 11=$30,000 OR MORE? (GO TO INCOM-Q4) 12=$40,000 OR MORE? 13=LESS THAN $50,000? (GO TO INCOM-Q4) 14=$50,000 TO LESS THAN $60,000? (GO TO INCOM-Q4) 15=$60,000 TO LESS THAN ...
+86. INCOM-Q4: What is your best estimate of your total personal income before taxes and deductions from all sources in the past 12 months? - Numeric
+87. INCOM-Q4B: Can you estimate in which of the following groups your personal income falls? - Radio: (Cascading/branching structure) 01=LESS THAN $20,000? 02=LESS THAN $10,000? 03=LESS THAN $5,000? (GO TO NEXT SECTION) 04=$5,000 OR MORE? (GO TO NEXT SECTION) 05=$10,000 OR MORE? 06=LESS THAN $15,000? (GO TO NEXT SECTION) 07=$15,000 OR MORE? (GO TO NEXT SECTION) 08=$20,000 OR MORE? 09=LESS THAN $40,000? 10=LESS THAN $30,000? (GO TO NEXT SECTION) 11=$30,000 OR MORE? (GO TO NEXT SECTION) 12=$40,000 OR MORE? 13=LESS THAN $50,000? (GO TO NEXT SECTION) 14=$50,000 TO LESS THAN $60,000? (GO TO NEXT S...
 
-#### Administration (pp. 25-26) - 5 questions
+#### Administration (pp. 25-26) - 2 questions
 
-76. ADM-Q1: Interviewer record: Was the PMK interview completed in full, in part, or not at all? - Radio: 1=Complete, 2=Partial, 3=Not at all
-77. ADM-Q2: Language of interview - Radio: 1=English, 2=French
-78. ADM-Q3: Date of interview - Open text (date)
-79. ADM-Q4: Start time of interview - Open text (time)
-80. ADM-Q5: End time of interview - Open text (time)
+88. H05-P1: Was this interview conducted on the telephone or in person? - Radio: 1=ON TELEPHONE 2=IN PERSON 3=BOTH (SPECIFY REASON)
+89. H05-P2: Record language of interview - Radio: 01=ENGLISH 02=FRENCH 03=ARABIC 04=CHINESE 05=CREE 06=GERMAN 07=GREEK 08=HUNGARIAN 09=ITALIAN 10=KOREAN 11=PERSIAN (FARSI) 12=POLISH 13=PORTUGUESE 14=PUNJABI 15=SPANISH 16=TAGALOG (FILIPINO) 17=UKRAINIAN 18=VIETNAMESE 19=OTHER (SPECIFY_______________)
 
 ---
 
 ### PARENT QUESTIONNAIRE
 
-#### Adult Health (pp. 29-30) - 10 questions
+#### Adult Health - CHLT (pp. 29-32) - 26 questions
 
-81. AHL-Q1: In general, would you say your health is: - Radio: 1=Excellent, 2=Very good, 3=Good, 4=Fair, 5=Poor, 8=Don't know, 9=Refusal
-82. AHL-Q2: Compared to one year ago, how would you say your health is now? - Radio: 1=Much better, 2=Somewhat better, 3=About the same, 4=Somewhat worse, 5=Much worse, 8=Don't know, 9=Refusal
-83. AHL-Q3: How often do you smoke cigarettes now? - Radio: 1=Daily, 2=Occasionally, 3=Not at all, 8=Don't know, 9=Refusal
-84. AHL-Q4: How many cigarettes do you smoke each day? - Numeric
-85. AHL-Q5: During the past 12 months, have you had a drink of beer, wine, liquor or any other alcoholic beverage? - Y/N: 1=Yes, 2=No, 8=Don't know, 9=Refusal
-86. AHL-Q6: During the past 12 months, how often did you drink alcoholic beverages? - Radio: 1=Less than once a month, 2=Once a month, 3=2-3 times a month, 4=Once a week, 5=2-3 times a week, 6=4-6 times a week, 7=Every day, 8=Don't know, 9=Refusal
-87. AHL-Q7: How many drinks did you usually have on those occasions? - Radio: 1=1, 2=2, 3=3, 4=4, 5=5 or more, 8=Don't know, 9=Refusal
-88. AHL-Q8: Have you ever experienced chronic depression since ...(child) was born? - Y/N: 1=Yes, 2=No, 8=Don't know, 9=Refusal
-89. AHL-Q9: How would you describe your state of health during your pregnancy with ...? - Radio: 1=Excellent, 2=Very good, 3=Good, 4=Fair, 5=Poor, 8=Don't know, 9=Refusal
-90. AHL-Q10: How tall are you without shoes? - Numeric (feet/inches or cm)
+*NOTE: PMK gets CHLT-Q1-Q7, Q12A-Q12L. Female biological parent of child < 2 years also gets CHLT-Q8-Q11. Spouse/Partner of PMK gets CHLT-Q1-Q7.*
 
-#### Maternal History (pp. 31-32) - 6 questions
+90. CHLT-Q1: The following questions ask about your/...'s general health and smoking habits. In general, would you say your/his/her health is: - Radio: 1=Excellent, 2=Very good, 3=Good, 4=Fair, 5=Poor, 8=DON'T KNOW, 9=REFUSAL
+91. CHLT-Q2: At the present time do you/does ... smoke cigarettes daily, occasionally or not at all? - Radio: 1=DAILY, 2=OCCASIONALLY (GO TO CHLT-I4), 3=NOT AT ALL (GO TO CHLT-I4), 8=DON'T KNOW (GO TO CHLT-I4), 9=REFUSAL (GO TO CHLT-I4)
+92. CHLT-Q3: How many cigarettes do you/does ... smoke each day now? - Numeric
+93. CHLT-I4: **Now, some questions about alcohol consumption.** - Intro
+94. CHLT-Q4: During the past 12 months, have you/has ... had a drink of beer, wine, liquor or any other alcoholic beverage? - Y/N: 1=YES, 2=NO (GO TO CHLT-C8), 8=DON'T KNOW (GO TO CHLT-C8), 9=REFUSAL (GO TO CHLT-C8)
+95. CHLT-Q5: During the past 12 months, how often did you/he/she drink alcoholic beverages? (MARK ONE ONLY.) - Radio: 1=EVERY DAY, 2=4-6 TIMES A WEEK, 3=2-3 TIMES A WEEK, 4=ONCE A WEEK, 5=2-3 TIMES A MONTH, 6=ONCE A MONTH, 7=LESS THAN ONCE A MONTH, 8=DON'T KNOW, 9=REFUSAL (GO TO CHLT-C8)
+96. CHLT-Q6: How many times in the past 12 months have you/has he/she had 5 or more drinks on one occasion? - Numeric
+97. CHLT-Q7: In the past 12 months, what is the highest number of drinks you/he/she had on one occasion? - Numeric
 
-91. MTH-Q1: At what age did you first become pregnant? - Numeric (years)
-92. MTH-Q2: How many times have you been pregnant? (include current pregnancy) - Numeric
-93. MTH-Q3: How many live births have you had? - Numeric
-94. MTH-Q4: What was your age when your first child was born? - Numeric (years)
-95. MTH-Q5: Were any of your pregnancies terminated through miscarriage or stillbirth? - Y/N: 1=Yes, 2=No, 8=Don't know, 9=Refusal
-96. MTH-Q6: How many? - Numeric
+**Maternal History**
 
-#### Family Section / Family Functioning (pp. 33-34) - 12 questions
+98. CHLT-C8: *IF THE RESPONDENT IS THE FEMALE BIOLOGICAL PARENT OF AT LEAST 1 CHILD IN THE FAMILY UNDER 2 YEARS OF AGE, AND THIS COMPONENT IS NON-PROXY ---> GO TO CHLT-Q8. OTHERWISE ---> GO TO CHLT-C12* - Check (routing)
+99. CHLT-Q8: Now I would like to ask you some questions about your past pregnancies. How many times throughout your life have you been pregnant including any pregnancies which did not go full term? - Numeric
+100. CHLT-Q9: How many babies have you had? - Numeric
+101. CHLT-Q11: At what age did you have your first baby? - Numeric
 
-97. FAM-I1: **The following questions ask about your family. For each statement please indicate whether you: strongly agree, agree, disagree, or strongly disagree.** - Intro
-98. FAM-Q1A: Planning family activities is difficult because we misunderstand each other. - Scale: 1=Strongly agree, 2=Agree, 3=Disagree, 4=Strongly disagree, 8=Don't know, 9=Refusal
-99. FAM-Q1B: In times of crisis we can turn to each other for support. - Scale (same as above)
-100. FAM-Q1C: We cannot talk to each other about the sadness we feel. - Scale (same as above)
-101. FAM-Q1D: Individuals are accepted for what they are. - Scale (same as above)
-102. FAM-Q1E: We avoid discussing our fears and concerns. - Scale (same as above)
-103. FAM-Q1F: We can express our feelings to each other. - Scale (same as above)
-104. FAM-Q1G: There are lots of bad feelings in the family. - Scale (same as above)
-105. FAM-Q1H: We feel accepted for what we are. - Scale (same as above)
-106. FAM-Q1I: Making decisions is a problem for our family. - Scale (same as above)
-107. FAM-Q1J: We are able to make decisions about how to solve problems. - Scale (same as above)
-108. FAM-Q1K: We don't get along well together. - Scale (same as above)
-109. FAM-Q1L: We confide in each other. - Scale (same as above)
+**CES-D Depression Scale**
 
-#### Neighbourhood (pp. 35-37) - 12 questions
+102. CHLT-C12: *IF RESPONDENT IS THE PERSON MOST KNOWLEDGEABLE ABOUT THE CHILD ---> GO TO CHLT-C12A. OTHERWISE ---> GO TO NEXT SECTION* - Check (routing)
+103. CHLT-I12: **The next set of statements describe feelings or behaviours. For each one, please tell me how often you felt or behaved this way during the past week.** - Intro
+104. CHLT-Q12A: How often have you felt or behaved this way during the past week: I did not feel like eating; my appetite was poor. - Scale: 1=RARELY OR NONE OF THE TIME (LESS THAN 1 DAY), 2=SOME OR A LITTLE OF THE TIME (1-2 DAYS), 3=OCCASIONALLY OR A MODERATE AMOUNT OF TIME (3-4 DAYS), 4=MOST OR ALL OF THE TIME (5-7 DAYS), 8=DON'T KNOW, 9=REFUSAL (GO TO CHLT-STOP)
+105. CHLT-Q12B: I felt that I could not shake off the blues even with help from my family or friends. - Radio: (Same 1-4, 8, 9 scale as CHLT-Q12A)
+106. CHLT-Q12C: I had trouble keeping my mind on what I was doing. - Radio: (Same 1-4, 8, 9 scale as CHLT-Q12A)
+107. CHLT-Q12D: I felt depressed. - Radio: (Same 1-4, 8, 9 scale as CHLT-Q12A)
+108. CHLT-Q12E: I felt that everything I did was an effort. - Radio: (Same 1-4, 8, 9 scale as CHLT-Q12A)
+109. CHLT-Q12F: I felt hopeful about the future. - Radio: (Same 1-4, 8, 9 scale as CHLT-Q12A)
+110. CHLT-Q12G: My sleep was restless. - Radio: (Same 1-4, 8, 9 scale as CHLT-Q12A)
+111. CHLT-Q12H: I was happy. - Radio: (Same 1-4, 8, 9 scale as CHLT-Q12A)
+112. CHLT-Q12I: I felt lonely. - Radio: (Same 1-4, 8, 9 scale as CHLT-Q12A)
+113. CHLT-Q12J: I enjoyed life. - Radio: (Same 1-4, 8, 9 scale as CHLT-Q12A)
+114. CHLT-Q12K: I had crying spells. - Radio: (Same 1-4, 8, 9 scale as CHLT-Q12A)
+115. CHLT-Q12L: I felt that people disliked me. - Radio: (Same 1-4, 8, 9 scale as CHLT-Q12A)
 
-110. NBH-I1: **The following questions are about your neighbourhood.** - Intro
-111. NBH-Q1A: There are adults in the neighbourhood that children can look up to. - Scale: 1=Strongly agree, 2=Agree, 3=Disagree, 4=Strongly disagree, 8=Don't know, 9=Refusal
-112. NBH-Q1B: People around here are willing to help their neighbours. - Scale (same as above)
-113. NBH-Q1C: You can count on adults in this neighbourhood to watch out that children are safe and don't get in trouble. - Scale (same as above)
-114. NBH-Q1D: When I'm away from home, I know that my neighbours will keep their eyes open for possible trouble. - Scale (same as above)
-115. NBH-Q1E: If there is a problem around here, the neighbours get together to deal with it. - Scale (same as above)
-116. NBH-Q2: Is there a safe park, playground, or play space close to your home? - Y/N: 1=Yes, 2=No, 8=Don't know, 9=Refusal
-117. NBH-Q3: How safe do you feel/would you feel walking alone in your neighbourhood after dark? - Radio: 1=Very safe, 2=Reasonably safe, 3=Somewhat unsafe, 4=Very unsafe, 8=Don't know, 9=Refusal
-118. NBH-Q4: How safe is the neighbourhood in which you live? Would you say that it is: - Radio: 1=Very safe, 2=Reasonably safe, 3=Somewhat unsafe, 4=Very unsafe, 8=Don't know, 9=Refusal
-119. NBH-Q5: In this neighbourhood, how much of a problem is: (a) drug use and dealing? - Radio: 1=A big problem, 2=Somewhat of a problem, 3=No problem, 8=Don't know, 9=Refusal
-120. NBH-Q5B: (b) excessive public drinking or alcohol use? - Radio (same as above)
-121. NBH-Q5C: (c) groups of young people who cause trouble? - Radio (same as above)
-122. NBH-Q5D: (d) burglary of homes and apartments? - Radio (same as above)
+#### Family Functioning - FNC (pp. 33-34) - 17 questions
 
-#### Social Support (pp. 38-40) - 13 questions
+116. FNC-C1: *IF THIS SECTION HAS BEEN COMPLETED FOR ANOTHER HOUSEHOLD MEMBER ---> GO TO NEXT SECTION* - Check (routing)
+117. FNC-I1: **The following statements are about families and family relationships. For each one, please indicate which response best describes your family: strongly agree, agree, disagree or strongly disagree.** - Intro
+118. FNC-Q1A: Planning family activities is difficult because we misunderstand each other. - Scale: 1=STRONGLY AGREE, 2=AGREE, 3=DISAGREE, 4=STRONGLY DISAGREE, 8=DON'T KNOW, 9=REFUSAL (GO TO NEXT SECTION)
+119. FNC-Q1B: In times of crisis we can turn to each other for support. - Radio: (Same 1-4, 8, 9 scale as FNC-Q1A)
+120. FNC-Q1C: We cannot talk to each other about sadness we feel. - Radio: (Same 1-4, 8, 9 scale as FNC-Q1A)
+121. FNC-Q1D: Individuals (in the family) are accepted for what they are. - Radio: (Same 1-4, 8, 9 scale as FNC-Q1A)
+122. FNC-Q1E: We avoid discussing our fears or concerns. - Radio: (Same 1-4, 8, 9 scale as FNC-Q1A)
+123. FNC-Q1F: We express feelings to each other. - Radio: (Same 1-4, 8, 9 scale as FNC-Q1A)
+124. FNC-Q1G: There are lots of bad feelings in our family. - Radio: (Same 1-4, 8, 9 scale as FNC-Q1A)
+125. FNC-Q1H: We feel accepted for what we are. - Radio: (Same 1-4, 8, 9 scale as FNC-Q1A)
+126. FNC-Q1I: Making decisions is a problem for our family. - Radio: (Same 1-4, 8, 9 scale as FNC-Q1A)
+127. FNC-Q1J: We are able to make decisions about how to solve problems. - Radio: (Same 1-4, 8, 9 scale as FNC-Q1A)
+128. FNC-Q1K: We don't get along well together. - Radio: (Same 1-4, 8, 9 scale as FNC-Q1A)
+129. FNC-Q1L: We confide in each other. - Radio: (Same 1-4, 8, 9 scale as FNC-Q1A)
+130. FNC-Q1M: Drinking is a source of tension or disagreement in our family. - Radio: (Same 1-4, 8, 9 scale as FNC-Q1A)
+131. FNC-C2: *IF PERSON IS MARRIED, LIVING COMMON-LAW OR LIVING WITH A PARTNER ---> GO TO FNC-Q2. OTHERWISE ---> GO TO NEXT SECTION* - Check (routing)
+132. FNC-Q2: All things considered, how satisfied or dissatisfied are you with your marriage or relationship with your partner? Which number comes the closest to how you feel, where 1 is completely dissatisfied and 11 is completely satisfied? - Radio: 01=COMPLETELY DISSATISFIED, 02, 03, 04, 05, 06=NEUTRAL, 07, 08, 09, 10, 11=COMPLETELY SATISFIED, 98=DON'T KNOW, 99=REFUSAL
 
-123. SUP-I1: **The following questions deal with different kinds of support that are available to you.** - Intro
-124. SUP-Q1: If you needed it, could you count on anyone to: (a) look after your child(ren) in case of emergency? - Y/N: 1=Yes, 2=No, 8=Don't know, 9=Refusal
-125. SUP-Q1B: (b) provide advice in a crisis? - Y/N (same as above)
-126. SUP-Q1C: (c) give emotional support? - Y/N (same as above)
-127. SUP-Q1D: (d) help out when you are sick? - Y/N (same as above)
-128. SUP-Q1E: (e) help with childcare on an ongoing basis? - Y/N (same as above)
-129. SUP-Q1F: (f) help you when you need transportation? - Y/N (same as above)
-130. SUP-Q1G: (g) help you with household chores if you need it? - Y/N (same as above)
-131. SUP-Q2: About how many close friends do you have? (People you feel at ease with and can talk to about what is on your mind.) - Numeric
-132. SUP-Q3: About how many close relatives do you have? (People you feel at ease with and can talk to about what is on your mind.) - Numeric
-133. SUP-Q4: About how many of your close friends or relatives have children the same age as ...? - Numeric
-134. SUP-Q5: Do you have anyone you trust to talk to if you have a problem? - Y/N: 1=Yes, 2=No, 8=Don't know, 9=Refusal
-135. SUP-Q6: Do you ever feel alone or isolated? - Radio: 1=Often, 2=Sometimes, 3=Rarely, 4=Never, 8=Don't know, 9=Refusal
-136. SUP-Q7: In the past 12 months how often did you participate in organized activities outside the home (community organizations, church groups, sports, etc.)? - Radio: 1=At least once a week, 2=At least once a month, 3=A few times, 4=Never, 8=Don't know, 9=Refusal
+#### Neighbourhood - SAF (pp. 35-37) - 21 questions
+
+133. SAF-C1: *IF THIS SECTION HAS BEEN COMPLETED FOR ANOTHER HOUSEHOLD MEMBER ---> GO TO NEXT SECTION. OTHERWISE ---> GO TO SAF-Q1* - Check (routing)
+134. SAF-Q1: This section asks questions about your neighbourhood. How many years have you lived at this address? (ENTER 0 IF LESS THAN 1 YEAR.) - Numeric
+135. SAF-Q2: How do you feel about your neighbourhood as a place to bring up children? Is it... (READ LIST. MARK ONE ONLY.) - Radio: 1=Excellent, 2=Good, 3=Average, 4=Poor, 5=Very poor, 8=DON'T KNOW, 9=REFUSAL (GO TO NEXT SECTION)
+136. SAF-Q3: Are you involved in any local voluntary organizations such as school groups, church groups, community or ethnic associations? - Y/N: 1=YES, 2=NO, 8=DON'T KNOW, 9=REFUSAL (GO TO NEXT SECTION)
+137. SAF-I5A: **Please tell me whether you strongly agree, agree, disagree, or strongly disagree with these statements about your neighbourhood.** - Intro
+138. SAF-Q5A: It is safe to walk alone in this neighbourhood after dark. - Scale: 1=STRONGLY AGREE, 2=AGREE, 3=DISAGREE, 4=STRONGLY DISAGREE, 8=DON'T KNOW, 9=REFUSAL (GO TO NEXT SECTION)
+139. SAF-Q5B: It is safe for children to play outside during the day. - Radio: (Same 1-4, 8, 9 scale as SAF-Q5A)
+140. SAF-Q5C: There are good parks, playgrounds and play spaces in this neighbourhood. - Radio: (Same 1-4, 8, 9 scale as SAF-Q5A)
+141. SAF-I6A: **The following statements are about people in neighbourhoods.** - Intro
+142. SAF-Q6A: Please tell me whether you strongly agree, agree, disagree, or strongly disagree about the following statement when thinking of your neighbours. If there is a problem around here, the neighbours get together to deal with it. - Scale: 1=STRONGLY AGREE, 2=AGREE, 3=DISAGREE, 4=STRONGLY DISAGREE, 8=DON'T KNOW, 9=REFUSAL (GO TO NEXT SECTION)
+143. SAF-Q6B: There are adults in the neighbourhood that children can look up to. - Radio: (Same 1-4, 8, 9 scale as SAF-Q6A)
+144. SAF-Q6C: People around here are willing to help their neighbours. - Radio: (Same 1-4, 8, 9 scale as SAF-Q6A)
+145. SAF-Q6D: You can count on adults in this neighbourhood to watch out that children are safe and don't get in trouble. - Radio: (Same 1-4, 8, 9 scale as SAF-Q6A)
+146. SAF-Q6E: When I'm away from home, I know that my neighbours will keep their eyes open for possible trouble. - Radio: (Same 1-4, 8, 9 scale as SAF-Q6A)
+147. SAF-I7A: **The following are problems that arise in neighbourhoods.** - Intro
+148. SAF-Q7A: How much of a problem is the following in this neighbourhood: Litter, broken glass or garbage in the street or road, on the sidewalk, or in yards? - Radio: 1=A BIG PROBLEM, 2=SOMEWHAT OF A PROBLEM, 3=NO PROBLEM, 8=DON'T KNOW, 9=REFUSAL (GO TO NEXT SECTION)
+149. SAF-Q7B: Selling or using drugs? - Radio: (Same 1-3, 8, 9 scale as SAF-Q7A)
+150. SAF-Q7C: Alcoholics and excessive drinking in public? - Radio: (Same 1-3, 8, 9 scale as SAF-Q7A)
+151. SAF-Q7D: Groups of young people who cause trouble? - Radio: (Same 1-3, 8, 9 scale as SAF-Q7A)
+152. SAF-Q7E: Burglary of homes and apartments? - Radio: (Same 1-3, 8, 9 scale as SAF-Q7A)
+153. SAF-Q7F: Unrest due to ethnic or religious differences? - Radio: (Same 1-3, 8, 9 scale as SAF-Q7A)
+
+#### Social Support - SUP (pp. 38-40) - 12 questions
+
+154. SUP-C1: *IF THIS SECTION HAS BEEN COMPLETED FOR ANOTHER HOUSEHOLD MEMBER ---> GO TO NEXT SECTION. OTHERWISE ---> GO TO SUP-I1* - Check (routing)
+155. SUP-I1: **The following statements are about relationships and the support which you get from others. For each of the following, please tell me whether you strongly disagree, disagree, agree, or strongly agree.** - Intro
+156. SUP-Q1A: If something went wrong, no one would help me. - Scale: 1=STRONGLY DISAGREE, 2=DISAGREE, 3=AGREE, 4=STRONGLY AGREE, 8=DON'T KNOW, 9=REFUSAL (GO TO SUP-Q2A)
+157. SUP-Q1B: I have family and friends who help me feel safe, secure and happy. - Radio: (Same 1-4, 8, 9 reversed scale as SUP-Q1A)
+158. SUP-Q1C: There is someone I trust whom I would turn to for advice if I were having problems. - Radio: (Same 1-4, 8, 9 reversed scale as SUP-Q1A)
+159. SUP-Q1D: There is no one I feel comfortable talking about problems with. - Radio: (Same 1-4, 8, 9 reversed scale as SUP-Q1A)
+160. SUP-Q1E: I lack a feeling of closeness with another person. - Radio: (Same 1-4, 8, 9 reversed scale as SUP-Q1A)
+161. SUP-Q1F: There are people I can count on in an emergency. - Radio: (Same 1-4, 8, 9 reversed scale as SUP-Q1A)
+162. SUP-Q2A: Besides your friends and family, did any of the following help with your personal problems during the past 12 months? Community or social service professionals? - Y/N: 1=YES, 2=NO, 8=DON'T KNOW, 9=REFUSAL (GO TO NEXT SECTION)
+163. SUP-Q2B: Health professionals? - Radio: (Same 1-2, 8, 9 scale as SUP-Q2A)
+164. SUP-Q2C: Religious or spiritual leaders or communities? - Radio: (Same 1-2, 8, 9 scale as SUP-Q2A)
+165. SUP-Q2D: Books or magazines? - Radio: (Same 1-2, 8, 9 scale as SUP-Q2A)
 
 ---
 
 ### CHILDREN'S QUESTIONNAIRE
 
-#### Health - Health Status (pp. 44-60) - 55 questions
+#### Child Demographics - DVS (pp. 43) - 3 questions
 
-137. HLT-Q1: In general, would you say ...'s health is: - Radio: 1=Excellent, 2=Very good, 3=Good, 4=Fair, 5=Poor, 8=Don't know, 9=Refusal
-138. HLT-Q2: How would you describe ...'s weight: - Radio: 1=Overweight, 2=Underweight, 3=Just about right, 8=Don't know, 9=Refusal
-139. HLT-Q3: How tall is ...? - Numeric (feet/inches or cm) [If age < 2 --> HLT-Q4]
-140. HLT-Q4: How much does ... weigh? - Numeric (lbs or kg)
+166. DVS-INT: **I need to confirm some of the information that we collected earlier, since it is important in determining which questions we need to ask you about ......** - Intro
+167. DVS-Q1: What is your relationship to ......? - Radio: BIRTH PARENT, STEP PARENT (INCLUDING COMMON-LAW PARENT), ADOPTIVE PARENT, FOSTER PARENT, SISTER/BROTHER, GRANDPARENT, IN-LAW, OTHER RELATED, UNRELATED
+168. DVS-Q2: What is .....'s relationship to ...........? (first child) - Radio: FULL SISTER/BROTHER BY BIRTH, SISTER/BROTHER - HALF STEP ADOPTED FOSTER (INCLUDE COMMON-LAW SIBLINGS), OTHER RELATED, UNRELATED
+
+#### Health - HLT (pp. 44-60) - 85 questions
+
+*NOTE: Age-tier routing: AGE 0-1: HLT-Q1-Q4, I37-Q45, Q45B-Q51E; AGE 2-3: HLT-Q1-Q5, I37-Q45, Q45B-Q51E; AGE 4-5: HLT-Q1-Q5, Q6A, Q7A, Q8-Q19, Q20A, Q21, Q22A, Q23-Q45, Q45B, Q48A-Q52B; AGE 6-11: HLT-Q1-Q5, Q6, Q7, Q8-Q19, Q20, Q21, Q22, Q23-Q44, Q45A, Q45B, Q48A-Q52B*
+
+169. HLT-Q1: In general, would you say ...'s health is: - Radio: 1=Excellent, 2=Very good, 3=Good, 4=Fair, 5=Poor, 8=DON'T KNOW (GO TO HLT-Q3), 9=REFUSAL (GO TO HLT-Q3)
+170. HLT-Q2: Over the past few months, how often has he/she been in good health? - Scale: 1=ALMOST ALL THE TIME, 2=OFTEN, 3=ABOUT HALF OF THE TIME, 4=SOMETIMES, 5=ALMOST NEVER, 8=DON'T KNOW
+171. HLT-Q3: What is his/her height in feet and inches or in metres/centimetres (without shoes on)? - Numeric
+172. HLT-Q4: What is his/her weight in kilograms (and grams) or in pounds (and ounces)? - Numeric
+173. HLT-C5: *IF AGE < 2 YEARS ---> GO TO HLT-I37; OTHERWISE ---> GO TO HLT-Q5* - Check (routing)
+174. HLT-Q5: In your opinion, how physically active is ... compared to other children the same age and sex? (READ LIST. MARK ONE ONLY.) - Radio: 1=Much more, 2=Moderately more, 3=Equally, 4=Moderately less, 5=Much less
+175. HLT-C6: *IF AGE = 0-3 ---> GO TO HLT-I37; OTHERWISE ---> GO TO HLT-I6* - Check (routing)
+176. HLT-I6: **The next set of questions ask about ...'s day to day health. The questions are not about illnesses like colds that affect people for short periods of time. They are concerned with his/her abilities relative to other children the same age. You may feel that some of these questions do not apply to him/her, but it is important that we ask the same questions of everyone.** - Intro
 
 **VISION**
-141. HLT-Q5: How would you describe ...'s usual ability to see? (READ LIST. MARK ONE ONLY.) - Radio: 1=Able to see well enough to read ordinary newsprint without glasses/contacts, 2=Able to see well enough with glasses/contacts, 3=Unable to see well enough even with glasses/contacts, 4=Unable to see at all, 8=Don't know, 9=Refusal
+
+177. HLT-C6A: *IF AGE < 6 ---> GO TO HLT-Q6A; OTHERWISE ---> GO TO HLT-Q6* - Check (routing)
+178. HLT-Q6: Is he/she usually able to see well enough to read ordinary newsprint without glasses or contact lenses? - Y/N: 1=YES (GO TO HLT-Q9), 2=NO, 8=DON'T KNOW, 9=REFUSAL (GO TO HLT-Q11)
+179. HLT-Q7: Is he/she usually able to see well enough to read ordinary newsprint with glasses or contact lenses? - Y/N: 1=YES (GO TO HLT-Q9), 2=NO (GO TO HLT-Q8), 3=DOESN'T WEAR GLASSES OR CONTACT LENSES (GO TO HLT-Q8), 8=DON'T KNOW (GO TO HLT-Q8), 9=REFUSAL (GO TO HLT-Q11)
+180. HLT-Q6A: Is he/she usually able to see clearly, and without distortion, the words in a story book without glasses or contact lenses? - Y/N: 1=YES (GO TO HLT-Q9), 2=NO, 8=DON'T KNOW, 9=REFUSAL (GO TO HLT-Q11)
+181. HLT-Q7A: Is he/she usually able to see clearly, and without distortion, the words in a story book with glasses or contact lenses? - Y/N: 1=YES (GO TO HLT-Q9), 2=NO, 3=DOESN'T WEAR GLASSES OR CONTACT LENSES, 8=DON'T KNOW, 9=REFUSAL (GO TO HLT-Q11)
+182. HLT-Q8: Is he/she able to see at all? - Y/N: 1=YES, 2=NO (GO TO HLT-Q11), 8=DON'T KNOW (GO TO HLT-Q11), 9=REFUSAL (GO TO HLT-Q11)
+183. HLT-Q9: Is he/she able to see well enough to recognize a friend on the other side of the street without glasses or contact lenses? - Y/N: 1=YES (GO TO HLT-Q11), 2=NO, 8=DON'T KNOW, 9=REFUSAL (GO TO HLT-Q11)
+184. HLT-Q10: Is he/she usually able to see well enough to recognize a friend on the other side of the street with glasses or contact lenses? - Y/N: 1=YES, 2=NO, 3=DOESN'T WEAR GLASSES OR CONTACTS, 8=DON'T KNOW, 9=REFUSAL
 
 **HEARING**
-142. HLT-Q22: How would you describe ...'s usual ability to hear? (READ LIST. MARK ONE ONLY.) - Radio: 1=Able to hear what is said in a group conversation (at least 3 other people) without hearing aid, 2=Able to hear what is said in a conversation with 1 other person in a quiet room without hearing aid, 3=Able to hear what is said with a hearing aid, 4=Unable to hear what is said in a conversation with 1 other person, 8=Don't know, 9=Refusal
+
+185. HLT-Q11: Is ... usually able to hear what is said in a group conversation with at least three other people without a hearing aid? - Y/N: 1=YES (GO TO HLT-Q16), 2=NO, 8=DON'T KNOW, 9=REFUSAL (GO TO HLT-Q16)
+186. HLT-Q12: Is he/she usually able to hear what is said in a group conversation with at least three other people with a hearing aid? - Y/N: 1=YES (GO TO HLT-Q14), 2=NO, 3=DOESN'T WEAR A HEARING AID, 8=DON'T KNOW, 9=REFUSAL (GO TO HLT-Q16)
+187. HLT-Q13: Is he/she able to hear at all? - Y/N: 1=YES, 2=NO (GO TO HLT-Q16), 8=DON'T KNOW (GO TO HLT-Q16), 9=REFUSAL (GO TO HLT-Q16)
+188. HLT-Q14: Is he/she usually able to hear what is said in a conversation with one other person in a quiet room without a hearing aid? - Y/N: 1=YES (GO TO HLT-Q16), 2=NO, 8=DON'T KNOW, 9=REFUSAL (GO TO HLT-Q16)
+189. HLT-Q15: Is he/she usually able to hear what is said in a conversation with one other person in a quiet room with a hearing aid? - Y/N: 1=YES, 2=NO, 3=DOESN'T WEAR A HEARING AID, 8=DON'T KNOW, 9=REFUSAL
 
 **SPEECH**
-143. HLT-Q23: How would you describe ...'s usual ability to be understood when speaking his/her own language? (READ LIST. MARK ONE ONLY.) - Radio: 1=Able to be understood completely when speaking with strangers or friends, 2=Able to be understood partially when speaking with strangers but fully when speaking with people who know him/her well, 3=Unable to be understood when speaking with strangers but able to be understood partially by people who know him/her well, 4=Unable to be understood when speaking to other people (too young to speak), 8=Don't know, 9=Refusal
+
+190. HLT-Q16: Is ... usually able to be understood completely when speaking with strangers in his/her own language? - Y/N: 1=YES (GO TO HLT-C20), 2=NO, 8=DON'T KNOW (GO TO HLT-Q18), 9=REFUSAL (GO TO HLT-C20)
+191. HLT-Q17: Is he/she able to be understood partially when speaking with strangers in his/her own language? - Y/N: 1=YES, 2=NO, 8=DON'T KNOW, 9=REFUSAL (GO TO HLT-C20)
+192. HLT-Q18: Is he/she able to be understood completely when speaking with those who know him/her well? - Y/N: 1=YES (GO TO HLT-C20), 2=NO, 8=DON'T KNOW (GO TO HLT-C20), 9=REFUSAL (GO TO HLT-C20)
+193. HLT-Q19: Is he/she able to be understood partially when speaking with those who know him/her well? - Y/N: 1=YES, 2=NO, 8=DON'T KNOW, 9=REFUSAL
 
 **GETTING AROUND**
-144. HLT-Q24: How would you describe ...'s usual ability to walk? (READ LIST. MARK ONE ONLY.) - Radio: 1=Able to walk around neighbourhood without difficulty and without mechanical support, 2=Able to walk around neighbourhood with difficulty but does not require mechanical support or help, 3=Requires mechanical support to walk around neighbourhood, 4=Requires the help of another person to walk, 5=Unable to walk at all, 6=Too young to walk, 8=Don't know, 9=Refusal
 
-**DEXTERITY**
-145. HLT-Q25: How would you describe ...'s usual ability to use his/her hands and fingers? (READ LIST. MARK ONE ONLY.) - Radio: 1=Full use of two hands and ten fingers, 2=Limitations in the use of hands or fingers but does not require special tools or the help of another person, 3=Limitations requiring special tools or help, 4=Limitations requiring the help of another person for most tasks, 8=Don't know, 9=Refusal
+194. HLT-C20: *IF AGE < 6 ---> GO TO HLT-Q20A; OTHERWISE ---> GO TO HLT-Q20* - Check (routing)
+195. HLT-Q20: Is ... usually able to walk around the neighbourhood without difficulty and without mechanical support such as braces, a cane or crutches? - Y/N: 1=YES (GO TO HLT-Q27), 2=NO (GO TO HLT-Q21), 8=DON'T KNOW (GO TO HLT-Q21), 9=REFUSAL (GO TO HLT-Q27)
+196. HLT-Q20A: Is he/she usually able to walk without difficulty and without mechanical support such as braces, a cane or crutches? - Y/N: 1=YES (GO TO HLT-Q27), 2=NO, 8=DON'T KNOW, 9=REFUSAL (GO TO HLT-Q27)
+197. HLT-Q21: Is he/she able to walk at all? - Y/N: 1=YES, 2=NO (GO TO HLT-Q24), 8=DON'T KNOW (GO TO HLT-Q24), 9=REFUSAL (GO TO HLT-Q27)
+198. HLT-C22: *IF AGE < 6 ---> GO TO HLT-Q22A; OTHERWISE ---> GO TO HLT-Q22* - Check (routing)
+199. HLT-Q22: Does he/she require mechanical support such as braces, a cane or crutches to be able to walk around the neighbourhood? - Y/N: 1=YES (GO TO HLT-Q23), 2=NO (GO TO HLT-Q23), 8=DON'T KNOW (GO TO HLT-Q23), 9=REFUSAL (GO TO HLT-Q27)
+200. HLT-Q22A: Does he/she require mechanical support such as braces, a cane or crutches to be able to walk? - Y/N: 1=YES, 2=NO, 8=DON'T KNOW, 9=REFUSAL (GO TO HLT-Q27)
+201. HLT-Q23: Does he/she require the help of another person to be able to walk? - Y/N: 1=YES, 2=NO, 8=DON'T KNOW, 9=REFUSAL (GO TO HLT-Q27)
+202. HLT-Q24: Does he/she require a wheelchair to get around? - Y/N: 1=YES, 2=NO (GO TO HLT-Q27), 8=DON'T KNOW (GO TO HLT-Q27), 9=REFUSAL (GO TO HLT-Q27)
+203. HLT-Q25: How often does he/she use a wheelchair? - Radio: 1=ALWAYS, 2=OFTEN, 3=SOMETIMES, 4=NEVER, 8=DON'T KNOW, 9=REFUSAL (GO TO HLT-Q27)
+204. HLT-Q26: Does he/she need the help of another person to get around in the wheelchair? - Y/N: 1=YES, 2=NO, 8=DON'T KNOW, 9=REFUSAL
 
-**COGNITION**
-146. HLT-Q30: How would you describe ...'s usual ability to learn and remember things? Is he/she: (READ LIST. MARK ONE ONLY.) - Radio: 1=Able to learn and remember most things, 2=Able to learn and remember some things, 3=Unable to learn and remember, 8=Don't know, 9=Refusal
+**HANDS AND FINGERS**
 
-**FEELINGS**
-147. HLT-Q31: Would you describe ... as being usually: (READ LIST. MARK ONE ONLY.) - Radio: 1=Happy and interested in life, 2=Somewhat happy, 3=Somewhat unhappy, 4=Unhappy with little interest in life, 5=So unhappy that life is not worthwhile, 8=Don't know, 9=Refusal
+205. HLT-Q27: Is ... usually able to grasp and handle small objects such as a pencil or scissors? - Y/N: 1=YES (GO TO HLT-Q31), 2=NO, 8=DON'T KNOW (GO TO HLT-Q31), 9=REFUSAL (GO TO HLT-Q31)
+206. HLT-Q28: Does he/she require the help of another person because of limitations in the use of hands or fingers? - Y/N: 1=YES, 2=NO (GO TO HLT-Q30), 8=DON'T KNOW (GO TO HLT-Q30), 9=REFUSAL (GO TO HLT-Q31)
+207. HLT-Q29: Does he/she require the help of another person with: (READ LIST. MARK ONE ONLY.) - Radio: 1=Some tasks, 2=Most tasks, 3=Almost all tasks, 4=All tasks, 8=DON'T KNOW, 9=REFUSAL (GO TO HLT-Q31)
+208. HLT-Q30: Does he/she require special equipment, for example, devices to assist in dressing because of limitations in the use of hands or fingers? - Y/N: 1=YES, 2=NO, 8=DON'T KNOW, 9=REFUSAL
 
-**MEMORY**
-148. HLT-Q32: How would you describe his/her usual ability to remember things? Is he/she: (READ LIST. MARK ONE ONLY.) - Radio: 1=Able to remember most things, 2=Somewhat forgetful, 3=Very forgetful, 4=Unable to remember anything at all, 8=Don't know, 9=Refusal
+**COGNITION / FEELINGS**
 
-**THINKING**
-149. HLT-Q33: How would you describe his/her usual ability to think and solve day-to-day problems? Is he/she: (READ LIST. MARK ONE ONLY.) - Radio: 1=Able to think clearly and solve problems, 2=Having a little difficulty, 3=Having some difficulty, 4=Having a great deal of difficulty, 5=Unable to think or solve problems, 8=Don't know, 9=Refusal
+209. HLT-Q31: Would you describe ... as being usually: (READ LIST. MARK ONE ONLY.) - Radio: 1=Happy and interested in life, 2=Somewhat happy, 3=Somewhat unhappy, 4=Unhappy with little interest in life, 5=So unhappy that life is not worthwhile, 8=DON'T KNOW, 9=REFUSAL
+210. HLT-Q32: How would you describe his/her usual ability to remember things? Is he/she: (READ LIST. MARK ONE ONLY.) - Radio: 1=Able to remember most things, 2=Somewhat forgetful, 3=Very forgetful, 4=Unable to remember anything at all, 8=DON'T KNOW, 9=REFUSAL
+211. HLT-Q33: How would you describe his/her usual ability to think and solve day-to-day problems? Is he/she: (READ LIST. MARK ONE ONLY.) - Radio: 1=Able to think clearly and solve problems, 2=Having a little difficulty, 3=Having some difficulty, 4=Having a great deal of difficulty, 5=Unable to think or solve problems, 8=DON'T KNOW, 9=REFUSAL
 
 **PAIN AND DISCOMFORT**
-150. HLT-Q34: Is ... usually free of pain or discomfort? - Y/N: 1=Yes-->GO TO HLT-I37, 2=No, 8=Don't know-->GO TO HLT-I37, 9=Refusal-->GO TO HLT-I37
-151. HLT-Q35: How would you describe the usual intensity of his/her pain or discomfort? (READ LIST. MARK ONE ONLY.) - Radio: 1=Mild, 2=Moderate, 3=Severe, 8=Don't know, 9=Refusal-->GO TO HLT-I37
-152. HLT-Q36: How many activities does his/her pain or discomfort prevent? (READ LIST. MARK ONE ONLY.) - Radio: 1=None, 2=A few, 3=Some, 4=Most, 8=Don't know, 9=Refusal
+
+212. HLT-Q34: Is ... usually free of pain or discomfort? - Y/N: 1=YES (GO TO HLT-I37), 2=NO, 8=DON'T KNOW (GO TO HLT-I37), 9=REFUSAL (GO TO HLT-I37)
+213. HLT-Q35: How would you describe the usual intensity of his/her pain or discomfort: (READ LIST. MARK ONE ONLY.) - Radio: 1=Mild, 2=Moderate, 3=Severe, 8=DON'T KNOW, 9=REFUSAL (GO TO HLT-I37)
+214. HLT-Q36: How many activities does his/her pain or discomfort prevent? (READ LIST. MARK ONE ONLY.) - Radio: 1=None, 2=A few, 3=Some, 4=Most, 8=DON'T KNOW, 9=REFUSAL
 
 **INJURIES**
-153. HLT-Q37: In the past 12 months was ... injured? - Y/N: 1=Yes, 2=No-->GO TO HLT-Q43A, 8=Don't know-->GO TO HLT-Q43A, 9=Refusal-->GO TO HLT-Q43A
-154. HLT-Q38: How many times was he/she injured? - Numeric (2 digits)
-155. HLT-Q39: For the most serious injury, what type of injury did he/she have? (DO NOT READ LIST. MARK ONE ONLY.) - Radio: 01=Broken or fractured bones, 02=Burn or scald, 03=Dislocation, 04=Sprain or strain, 05=Cut/scrape/bruise, 06=Concussion, 07=Poisoning by substance or liquid, 08=Internal injury, 09=Dental injury, 10=Other, 11=Multiple injuries, 98=Don't know, 99=Refusal-->GO TO HLT-Q43A
-156. HLT-Q40: What part of his/her body was injured? (DO NOT READ LIST. MARK ONE ONLY.) - Radio: 01=Eyes, 02=Face or scalp (excluding eyes), 03=Head or neck (excluding eyes and face or scalp), 04=Arms or hands, 05=Legs or feet, 06=Back or spine, 07=Trunk (excluding back or spine), 08=Shoulder, 09=Hip, 10=Multiple sites, 98=Don't know, 99=Refusal-->GO TO HLT-Q43A [If any of 1-5 in HLT-Q39 --> HLT-Q40, otherwise --> HLT-Q41]
-157. HLT-Q41: What happened, for example, was the injury the result of a fall, motor vehicle collision, a physical assault, etc.? (DO NOT READ LIST. MARK ONE ONLY.) - Radio: 01=Motor vehicle collision-passenger, 02=Motor vehicle collision-pedestrian, 03=Motor vehicle collision-riding bicycle, 04=Other bicycle accident, 05=Fall (excluding bicycle or sports), 06=Sports (excluding bicycle), 07=Physical assault, 08=Scalded by hot liquids or food, 09=Accidental poisoning, 10=Self-inflicted poisoning, 11=Other intentionally self-inflicted injuries, 12=Natural/environmental factors (ex. animal bite/sting), 13=Fire/flames or resulting fumes, 14=Near drowning, 15=Other, 98=Don't know, 99=Refusal-->GO TO HLT-Q43A
-158. HLT-Q42: Where did the injury happen? (DO NOT READ LIST. MARK ONE ONLY.) - Radio: 01=Inside respondent's own home/apartment, 02=Outside respondent's home including yard/driveway/parking lot/shared areas, 03=In or around other private residence, 04=Inside school/daycare centre or on school/centre grounds, 05=At an indoor or outdoor sports facility (other than school), 06=Other building used by general public, 07=On sidewalk/street/highway in respondent's neighbourhood, 08=On any other sidewalk/street/highway, 09=In a playground/park (other than school), 10=Other, 98=Don't know, 99=Refusal
+
+215. HLT-I37: **The following questions refer to injuries, such as a broken bone, bad cut or burn, head injury, poisoning, or a sprained ankle, which occurred in the past 12 months, and were serious enough to require medical attention by a doctor, nurse, or dentist.** - Intro
+216. HLT-Q37: In the past 12 months was ... injured? - Y/N: 1=YES, 2=NO (GO TO HLT-Q43A), 8=DON'T KNOW (GO TO HLT-Q43A), 9=REFUSAL (GO TO HLT-Q43A)
+217. HLT-Q38: How many times was he/she injured? - Numeric
+218. HLT-Q39: For the most serious injury, what type of injury did he/she have? (DO NOT READ LIST. MARK ONE ONLY.) - Checkbox: 01=BROKEN OR FRACTURED BONES, 02=BURN OR SCALD, 03=DISLOCATION, 04=SPRAIN OR STRAIN, 05=CUT SCRAPE OR BRUISE, 06=CONCUSSION, 07=POISONING BY SUBSTANCE OR LIQUID, 08=INTERNAL INJURY, 09=DENTAL INJURY, 10=OTHER, 11=MULTIPLE INJURIES, 98=DON'T KNOW, 99=REFUSAL (GO TO HLT-Q43A)
+219. HLT-C40: *IF ANY OF 1-5 MARKED IN HLT-Q39 ---> GO TO HLT-Q40; OTHERWISE ---> GO TO HLT-Q41* - Check (routing)
+220. HLT-Q40: What part of his/her body was injured? (DO NOT READ LIST. MARK ONE ONLY.) - Checkbox: 01=EYES, 02=FACE OR SCALP (EXCLUDING EYES), 03=HEAD OR NECK (EXCLUDING EYES AND FACE OR SCALP), 04=ARMS OR HANDS, 05=LEGS OR FEET, 06=BACK OR SPINE, 07=TRUNK (EXCLUDING BACK OR SPINE)(INCLUDE CHEST INTERNAL ORGANS ETC.), 08=SHOULDER, 09=HIP, 10=MULTIPLE SITES, 98=DON'T KNOW, 99=REFUSAL (GO TO HLT-Q43A)
+221. HLT-Q41: What happened, for example, was the injury the result of a fall, motor vehicle collision, a physical assault, etc.? (DO NOT READ LIST. MARK ONE ONLY.) - Radio: 01=MOTOR VEHICLE COLLISION-PASSENGER, 02=MOTOR VEHICLE COLLISION-PEDESTRIAN, 03=MOTOR VEHICLE COLLISION-RIDING BICYCLE, 04=OTHER BICYCLE ACCIDENT, 05=FALL (EXCLUDING BICYCLE OR SPORTS), 06=SPORTS (EXCLUDING BICYCLE), 07=PHYSICAL ASSAULT, 08=SCALDED BY HOT LIQUIDS OR FOOD, 09=ACCIDENTAL POISONING, 10=SELF-INFLICTED POISONING, 11=OTHER INTENTIONALLY SELF-INFLICTED INJURIES, 12=NATURAL/ENVIRONMENTAL FACTORS (EX. ANIMAL BITE STING), 13=FIRE/FLAMES OR RESULTING FUMES, 14=NEAR DROWNING, 15=OTHER, 9...
+222. HLT-Q42: Where did the injury happen, for example at home, on the street, in a playground, at school, etc.? (DO NOT READ LIST. MARK ONE ONLY.) - Radio: 01=INSIDE RESPONDENT'S OWN HOME/APARTMENT, 02=OUTSIDE RESPONDENT'S HOME APARTMENT INCLUDING YARD DRIVEWAY PARKING LOT OR IN SHARED AREAS RELATED TO HOME SUCH AS APARTMENT HALLWAY OR LAUNDRY ROOM, 03=IN OR AROUND OTHER PRIVATE RESIDENCE, 04=INSIDE SCHOOL/DAYCARE CENTRE OR ON SCHOOL/CENTRE GROUNDS, 05=AT AN INDOOR OR OUTDOOR SPORTS FACILITY (OTHER THAN SCHOOL), 06=OTHER BUILDING USED BY GENERAL PUBLIC, 07=ON SIDEWALK/STREET/HIGHWAY IN RESPONDENT'S NEIGHBOURHOOD, 08=ON ANY OTHER SIDEWALK/STREET/...
 
 **ASTHMA**
-159. HLT-Q43A: Has ... ever had asthma that was diagnosed by a health professional? - Y/N: 1=Yes, 2=No-->GO TO HLT-Q44, 8=Don't know, 9=Refusal-->GO TO HLT-C45
-160. HLT-Q43B: Does this condition or health problem prevent or limit his/her participation in school, at play or any other activity normal for a child his/her age? - Y/N: 1=Yes, 2=No, 8=Don't know, 9=Refusal
-161. HLT-Q43C: Has he/she had an attack of asthma in the last 12 months? - Y/N (same codes)
-162. HLT-Q44: Has he/she had wheezing or whistling in the chest at any time in the last 12 months? - Y/N (same codes)
+
+223. HLT-Q43A: The following questions are about asthma. Has ... ever had asthma that was diagnosed by a health professional? - Y/N: 1=YES, 2=NO (GO TO HLT-Q44), 8=DON'T KNOW, 9=REFUSAL (GO TO HLT-C45)
+224. HLT-Q43B: Does this condition or health problem prevent or limit his/her participation in school, at play or any other activity normal for a child his/her age? - Y/N: 1=YES, 2=NO, 8=DON'T KNOW, 9=REFUSAL
+225. HLT-Q43C: Has he/she had an attack of asthma in the last 12 months? - Radio: (response options not explicitly listed in source -- likely YES/NO/DK/REF same pattern)
+226. HLT-Q44: Has he/she had wheezing or whistling in the chest at any time in the last 12 months? - Radio: (response options not explicitly listed in source -- likely YES/NO/DK/REF same pattern)
 
 **LONG-TERM CONDITIONS**
-163. HLT-Q45: Does ... have any of the following long-term conditions that have been diagnosed by a health professional? (READ LIST. MARK ALL THAT APPLY.) [If age < 6] - Checkbox: 01=Allergies, 02=Bronchitis, 03=Heart condition or disease, 04=Epilepsy, 05=Cerebral Palsy, 06=Kidney Condition or disease, 07=Mental handicap, 08=Any other long term condition, 09=None, 98=Don't know, 99=Refusal
-164. HLT-Q45A: Does ... have any of the following long-term conditions? (READ LIST. MARK ALL THAT APPLY.) [If age >= 6] - Checkbox: 01=Allergies, 02=Bronchitis, 03=Heart condition or disease, 04=Epilepsy, 05=Cerebral Palsy, 06=Kidney Condition or disease, 07=Mental handicap, 08=Learning disability, 09=Emotional/psychological/nervous difficulties, 10=Any other long term condition, 11=None, 98=Don't know, 99=Refusal
-165. HLT-Q45B: Does ... have any long term conditions or health problems which prevent or limit his/her participation in school, at play, or in any other activity for a child of his/her age? - Y/N: 1=Yes, 2=No, 8=Don't know, 9=Refusal
-166. HLT-Q46: How often does ... have nose or throat infections? [If age <= 3] - Radio: 1=Almost all the time, 2=Often, 3=From time to time, 4=Rarely, 5=Never, 8=Don't know, 9=Refusal
-167. HLT-Q47A: Since his/her birth, has he/she had an ear infection (otitis)? - Y/N: 1=Yes, 2=No-->GO TO HLT-I48, 8=Don't know-->GO TO HLT-I48, 9=Refusal-->GO TO HLT-I48
-168. HLT-Q47B: How many times? - Radio: 1=Once, 2=2 times, 3=3 times, 4=4 or more times, 8=Don't know, 9=Refusal
 
-**USE OF HEALTH PROFESSIONALS**
-169. HLT-Q48A: A general practitioner, family physician? (ENTER 0 IF NONE.) - Numeric (2 digits), 98=Don't know, 99=Refusal-->GO TO HLT-Q49
-170. HLT-Q48B: A pediatrician? - Numeric (same)
-171. HLT-Q48C: An other medical doctor (such as an orthopedist, or eye specialist)? - Numeric (same)
-172. HLT-Q48D: A public health nurse or nurse practitioner? - Numeric (same)
-173. HLT-Q48E: A dentist or orthodontist? - Numeric (same)
-174. HLT-Q48G: A psychiatrist or psychologist? - Numeric (same)
-175. HLT-Q48H: Child welfare worker or children's aid worker? - Numeric (same)
-176. HLT-Q48I: Any other person trained to provide treatment or counsel, for example a speech therapist, a social worker? - Numeric (same)
+227. HLT-C45: *IF AGE < 6 YEARS ---> GO TO HLT-Q45; OTHERWISE ---> GO TO HLT-Q45A* - Check (routing)
+228. HLT-Q45: In the following questions long-term conditions refer to conditions that have lasted or are expected to last 6 months or more. Does ... have any of the following long-term conditions that have been diagnosed by a health professional? (READ LIST. MARK ALL THAT APPLY) - Checkbox: 01=Allergies, 02=Bronchitis, 03=Heart condition or disease, 04=Epilepsy, 05=Cerebral Palsy, 06=Kidney Condition or disease, 07=Mental handicap, 08=Any other long term condition, 09=None, 98=DON'T KNOW, 99=REFUSAL
+229. HLT-Q45A: In the following questions long-term conditions refer to conditions that have lasted or are expected to last 6 months or more. Does... have any of the following long-term conditions that have been diagnosed by a health professional? (READ LIST. MARK ALL THAT APPLY) - Checkbox: 01=Allergies, 02=Bronchitis, 03=Heart condition or disease, 04=Epilepsy, 05=Cerebral Palsy, 06=Kidney Condition or disease, 07=Mental handicap, 08=Learning disability, 09=Emotional psychological or nervous difficulties, 10=Any other long term condition, 11=None, 98=DON'T KNOW, 99=REFUSAL
+230. HLT-Q45B: Does ... have any long term conditions or health problems which prevent or limit his/her participation in school, at play, or in any other activity for a child of his/her age? - Y/N: 1=YES, 2=NO, 8=DON'T KNOW, 9=REFUSAL
+231. HLT-C46: *IF AGE > 3 ---> GO TO HLT-I48; OTHERWISE ---> GO TO HLT-Q46* - Check (routing)
+
+**INFECTIONS**
+
+232. HLT-Q46: How often does ... have nose or throat infections? - Radio: 1=ALMOST ALL THE TIME, 2=OFTEN, 3=FROM TIME TO TIME, 4=RARELY, 5=NEVER, 8=DON'T KNOW, 9=REFUSAL
+233. HLT-Q47A: Since his/her birth, has he/she had an ear infection (otitis)? - Y/N: 1=YES, 2=NO (GO TO HLT-I48), 8=DON'T KNOW (GO TO HLT-I48), 9=REFUSAL (GO TO HLT-I48)
+234. HLT-Q47B: How many times? - Radio: 1=ONCE, 2=2 TIMES, 3=3 TIMES, 4=4 OR MORE TIMES, 8=DON'T KNOW, 9=REFUSAL
+
+**HEALTH PROFESSIONALS**
+
+235. HLT-I48: **In the past year, how many times have you seen or talked on the telephone with any of the following about ...'s physical or mental health? (Exclude at time of birth for babies.)** - Intro
+236. HLT-Q48A: A general practitioner, family physician? (ENTER 0 IF NONE.) - Numeric
+237. HLT-Q48B: A pediatrician? - Numeric
+238. HLT-Q48C: An other medical doctor (such as an orthopedist, or eye specialist)? - Radio: (same format as Q48A)
+239. HLT-Q48D: A public health nurse or nurse practitioner? - Radio: (same format as Q48A)
+240. HLT-Q48E: A dentist or orthodontist? - Radio: (same format as Q48A)
+241. HLT-Q48G: A psychiatrist or psychologist? - Radio: (same format as Q48A)
+242. HLT-Q48H: Child welfare worker or children's aid worker? - Radio: (same format as Q48A)
+243. HLT-Q48I: Any other person trained to provide treatment or counsel, for example a speech therapist, a social worker? - Radio: (same format as Q48A)
 
 **HOSPITALIZATION**
-177. HLT-Q49: In the past 12 months, was ... ever an overnight patient in a hospital? - Y/N: 1=Yes, 2=No-->GO TO HLT-Q51A, 8=Don't know-->GO TO HLT-Q51A
-178. HLT-Q50: For what reason? - Radio: 1=Respiratory illness or disease, 2=Gastrointestinal illness or disease, 3=Injuries, 4=Other, 8=Don't know, 9=Refusal
 
-**USE OF MEDICATION**
-179. HLT-Q51A: Does he/she take any of the following prescribed medication on a regular basis: Ventolin or other inhalants? - Y/N: 1=Yes, 2=No, 8=Don't know, 9=Refusal-->GO TO HLT-C52
-180. HLT-Q51B: Ritalin? - Y/N (same)
-181. HLT-Q51C: Tranquilizers or nerve pills? - Y/N (same)
-182. HLT-Q51D: Anti-convulsants or anti-epileptic pills? - Y/N (same)
-183. HLT-Q51E: Other? - Y/N (same)
+244. HLT-Q49: In the past 12 months, was ... ever an overnight patient in a hospital? - Y/N: 1=YES, 2=NO (GO TO HLT-Q51A), 8=DON'T KNOW (GO TO HLT-Q51A)
+245. HLT-Q50: For what reason? - Radio: 1=RESPIRATORY ILLNESS OR DISEASE, 2=GASTROINTESTINAL ILLNESS OR DISEASE, 3=INJURIES, 4=OTHER, 8=DON'T KNOW, 9=REFUSAL
+
+**MEDICATION**
+
+246. HLT-Q51A: Does he/she take any of the following prescribed medication on a regular basis: Ventolin or other inhalants? - Y/N: 1=YES, 2=NO, 8=DON'T KNOW, 9=REFUSAL (GO TO HLT-C52)
+247. HLT-Q51B: Ritalin? - Radio: (same YES/NO/DK/REF pattern)
+248. HLT-Q51C: Tranquilizers or nerve pills? - Radio: (same YES/NO/DK/REF pattern)
+249. HLT-Q51D: Anti-convulsants or anti-epileptic pills? - Radio: (same YES/NO/DK/REF pattern)
+250. HLT-Q51E: Other? - Radio: (same YES/NO/DK/REF pattern)
 
 **STRESSFUL EVENTS**
-184. HLT-Q52A: Has ... ever experienced any event or situation that has caused him/her a great amount of worry or unhappiness? [If age >= 4] - Y/N: 1=Yes, 2=No-->GO TO NEXT SECTION
-185. HLT-Q52B: What was this? (DO NOT READ LIST. MARK ALL THAT APPLY.) - Checkbox: 01=Death of parents, 02=Death in family (other than parents), 03=Divorce/separation of parents, 04=Move, 05=Stay in hospital, 06=Stay in foster home, 07=Other separation from parents, 08=Illness/injury of child, 09=Illness/injury of a family member, 10=Abuse/fear of abuse, 11=Change in household members, 12=Alcoholism or mental health disorder in family, 13=Conflict between parents, 14=Other, 98=Don't know, 99=Refusal
+
+251. HLT-C52: *IF AGE < 4 ---> GO TO NEXT SECTION; OTHERWISE ---> GO TO HLT-Q52A* - Check (routing)
+252. HLT-Q52A: Has ... ever experienced any event or situation that has caused him/her a great amount of worry or unhappiness? - Y/N: 1=YES, 2=NO (GO TO NEXT SECTION)
+253. HLT-Q52B: What was this? (DO NOT READ LIST. MARK ALL THAT APPLY.) - Checkbox: 01=DEATH OF PARENTS, 02=DEATH IN FAMILY (OTHER THAN PARENTS), 03=DIVORCE/SEPARATION OF PARENTS, 04=MOVE, 05=STAY IN HOSPITAL, 06=STAY IN FOSTER HOME, 07=OTHER SEPARATION FROM PARENTS, 08=ILLNESS/INJURY OF CHILD, 09=ILLNESS/INJURY OF A FAMILY MEMBER, 10=ABUSE/FEAR OF ABUSE, 11=CHANGE IN HOUSEHOLD MEMBERS, 12=ALCOHOLISM OR MENTAL HEALTH DISORDER IN FAMILY, 13=CONFLICT BETWEEN PARENTS, 14=OTHER, 98=DON'T KNOW, 99=REFUSAL
+
+#### Activities - ACT (pp. 105-108) - 28 questions
+
+*NOTE: Age-tier routing: AGE 0-3: ACT-Q1-Q2B; AGE 4-5: ACT-Q1-Q3D1, Q3E-Q5; AGE 6-9: ACT-Q3A-Q3C, Q3D2, Q3E-Q5, Q7A-Q8B; AGE 10-11: ACT-Q3A-Q3C, Q3D3-Q8B*
+
+254. ACT-I1: **The next few questions are about ...'s interests and activities.** - Intro
+255. ACT-C1: *IF AGE > 5 ---> GO TO ACT-Q3A; OTHERWISE ---> GO TO ACT-Q1* - Check (routing)
+256. ACT-Q1: Does he/she currently attend any nursery school, play group or other early childhood program or activity? (Please do not include child care programs or time spent in elementary school.) - Y/N: 1=YES; 2=NO -->GO TO ACT-C3; 8=DON'T KNOW -->GO TO ACT-C3; 9=REFUSAL -->GO TO ACT-C3
+257. ACT-Q2A: What type(s) of programs or activities? (MARK ALL THAT APPLY.) - Checkbox: 1=NURSERY SCHOOL, PRESCHOOL OR KINDERGARTEN; 2=PLAY GROUP; 3=DROP-IN CENTRE; 4=TOY LIBRARY; 5=INFANT STIMULATION PROGRAM; 6=MOM AND TOT PROGRAM; 7=OTHER; 8=DON'T KNOW; 9=REFUSAL -->GO TO BEHAVIOUR SECTION
+258. ACT-Q2B: For about how many hours a week does he/she attend these in total? - Radio: (numeric open entry)
+259. ACT-C3: *IF AGE < 4 YEARS ---> GO TO BEHAVIOUR SECTION; OTHERWISE ---> GO TO ACT-Q3A* - Check (routing)
+260. ACT-Q3A: In the last 12 months, outside of school hours, how often has ...: taken part in any sports which involved coaching or instruction? - Radio: 1=MOST DAYS; 2=A FEW TIMES A WEEK; 3=ABOUT ONCE A WEEK; 4=ABOUT ONCE A MONTH; 5=ALMOST NEVER; 8=DON'T KNOW; 9=REFUSAL -->GO TO BEHAVIOUR SECTION
+261. ACT-Q3B: Taken part in unorganized sports or physical activities? - Radio: (same scale as ACT-Q3A: 1=MOST DAYS through 5=ALMOST NEVER, 8=DON'T KNOW, 9=REFUSAL)
+262. ACT-Q3C: Taken lessons or instruction in music, dance, art or other non-sport activities? - Radio: (same scale as ACT-Q3A)
+263. ACT-C3D: *IF AGE = 4 TO 5 YEARS ---> GO TO ACT-Q3D1; IF AGE = 6 TO 9 YEARS ---> GO TO ACT-Q3D2; OTHERWISE (AGE = 10 TO 11 YEARS) ---> GO TO ACT-Q3D3* - Check (routing)
+264. ACT-Q3D1: Taken part in any clubs, groups or community programs with leadership, such as Beavers, Sparks or church groups? - Radio: (same scale as ACT-Q3A)
+265. ACT-Q3D2: Taken part in any clubs, groups or community programs with leadership, such as Brownies, Cubs or church groups? - Radio: (same scale as ACT-Q3A)
+266. ACT-Q3D3: Taken part in any clubs, groups or community programs with leadership, such as Boys and Girls Clubs, Scouts, Guides or church groups? - Radio: (same scale as ACT-Q3A)
+267. ACT-Q3E: Played computer or video games? - Radio: (same scale as ACT-Q3A)
+268. ACT-Q4A: About how many days a week on average does ... watch T.V. or videos at home? - Radio: 0=NONE -->GO TO ACT-Q5; 1-7=DAYS (numeric); 8=DON'T KNOW -->GO TO ACT-Q5; 9=REFUSAL -->GO TO NEXT SECTION
+269. ACT-Q4B: On those days, how many hours on average does he/she spend watching T.V. or videos? - Radio: (numeric open entry)
+270. ACT-Q5: How often does he/she play alone (e.g., riding a bike, doing a craft or hobby, playing ball)? - Radio: 1=OFTEN; 2=SOMETIMES; 3=SELDOM; 4=NEVER; 8=DON'T KNOW; 9=REFUSAL -->GO TO BEHAVIOUR SECTION
+271. ACT-C6: *IF AGE < 6 ---> GO TO BEHAVIOUR SECTION; IF AGE 6-9 ---> GO TO ACT-Q7A; OTHERWISE ---> GO TO ACT-Q6A* - Check (routing)
+272. ACT-Q6A: I would like to ask you some questions about his/her responsibilities at home. How often does he/she make his/her own bed? - Radio: 1=OFTEN; 2=SOMETIMES; 3=SELDOM; 4=NEVER; 8=DON'T KNOW; 9=REFUSAL -->GO TO BEHAVIOUR SECTION
+273. ACT-Q6B: Clean his/her own room? - Radio: (same scale as ACT-Q6A: 1=OFTEN through 4=NEVER, 8=DON'T KNOW, 9=REFUSAL)
+274. ACT-Q6C: Pick up after him/herself? - Radio: (same scale as ACT-Q6A)
+275. ACT-Q6D: Help keep shared living areas clean and straight? - Radio: (same scale as ACT-Q6A)
+276. ACT-Q6E: Do routine chores such as mow the lawn, help with dinner, wash dishes, etc.? - Radio: (same scale as ACT-Q6A)
+277. ACT-Q6F: Help manage his/her own time (get up on time, be ready for school, etc.) - Radio: (same scale as ACT-Q6A)
+278. ACT-Q7A: Did ... attend an overnight camp last summer? - Y/N: 1=YES; 2=NO -->GO TO ACT-Q8A; 8=DON'T KNOW -->GO TO ACT-Q8A; 9=REFUSAL -->GO TO BEHAVIOUR SECTION
+279. ACT-Q7B: For how many days? - Radio: (numeric open entry)
+280. ACT-Q8A: Last summer, did ... attend a day camp or recreational or skill-building activity that ran for half days or full days (e.g., music program, reading program, athletic program?) - Y/N: 1=YES; 2=NO -->GO TO NEXT SECTION; 8=DON'T KNOW -->GO TO BEHAVIOUR SECTION; 9=REFUSAL -->GO TO BEHAVIOUR SECTION
+281. ACT-Q8B: For how many days? - Radio: (numeric open entry)
+
+#### Behaviour - BEH (pp. 109-116) - 99 questions
+
+*NOTE: Age-tier routing: AGE 0-11m: BEH-Q1-Q4, Q5A; AGE 1yr: BEH-Q1-Q5; AGE 2-3: BEH-Q1-Q5, I8A-Q8UU; AGE 4-9: BEH-I6A-Q6UU; AGE 10-11: BEH-I6A-Q7F*
+
+282. BEH-C1: *IF AGE > 3 ---> GO TO BEH-I6A; OTHERWISE ---> GO TO BEH-Q1* - Check (routing)
+
+**Age 0-3**
+
+283. BEH-Q1: The following questions relate to ...'s sleep patterns. When you put him/her to bed, how often does he/she have trouble falling asleep? (READ LIST. MARK ONE ONLY.) - Scale: 1=Almost every time; 2=Often; 3=About half of the time; 4=Sometimes; 5=Almost never; 8=DON'T KNOW; 9=REFUSAL -->GO TO BEH-C5
+284. BEH-Q2: Does he/she have a particular and long routine (more than 30 minutes) to go to bed (rocking, songs, nursery rhymes, etc.) that he/she cannot go to sleep without? - Scale: 1=ALMOST EVERY TIME; 2=OFTEN; 3=ABOUT HALF OF THE TIME; 4=SOMETIMES; 5=ALMOST NEVER; 8=DON'T KNOW; 9=REFUSAL -->GO TO BEH-C5
+285. BEH-Q3: Does ... wake up several times during his/her sleep? - Scale: (same scale as BEH-Q1: 1=Almost every time through 5=Almost never, 8=DON'T KNOW, 9=REFUSAL)
+286. BEH-Q4: Does he/she have a restless sleep? - Radio: (same scale as BEH-Q1)
+287. BEH-C5: *IF AGE < 1 ---> GO TO BEH-Q5A; OTHERWISE ---> GO TO BEH-Q5* - Check (routing)
+288. BEH-Q5: The following are a few examples of how infants react to new foods (orange juice, apple puree, porridge, vegetables, etc.). Which of the following is the best approximation of how ... reacts? - Radio: 1=He/she swallows everything without complaining; 2=The first time he/she made faces or spit out the food, but after a few tries, he/she got used to it; 3=The same reaction after several attempts, he/she continued to refuse most of the new foods; 8=DON'T KNOW; 9=REFUSAL
+289. BEH-Q5A: How often do you find him/her difficult to feed? - Scale: 1=ALMOST EVERY TIME; 2=OFTEN; 3=ABOUT HALF OF THE TIME; 4=SOMETIMES; 5=ALMOST NEVER; 8=DON'T KNOW; 9=REFUSAL
+
+**Age 4-11**
+
+290. BEH-I6A: **Now I'd like to ask you questions about how ... seems to feel or act.** - Intro
+291. BEH-Q6A: Using the answers never or not true, sometimes or somewhat true, or often or very true, how often would you say that ...: shows sympathy to someone who has made a mistake? - Scale: 1=NEVER OR NOT TRUE; 2=SOMETIMES OR SOMEWHAT TRUE; 3=OFTEN OR VERY TRUE; 8=DON'T KNOW; 9=REFUSAL -->GO TO BEH-C7A
+292. BEH-Q6B: Can't sit still, is restless, or hyperactive? - Scale: (same 3-point scale: 1=NEVER OR NOT TRUE; 2=SOMETIMES OR SOMEWHAT TRUE; 3=OFTEN OR VERY TRUE; 8=DON'T KNOW; 9=REFUSAL)
+293. BEH-Q6C: Destroys his/her own things? - Radio: (same 3-point scale)
+294. BEH-Q6D: Will try to help someone who has been hurt? - Radio: (same 3-point scale)
+295. BEH-Q6E: Steals at home? - Radio: (same 3-point scale)
+296. BEH-Q6F: Seems to be unhappy, sad, or depressed? - Radio: (same 3-point scale)
+297. BEH-Q6G: Gets into many fights? - Radio: (same 3-point scale)
+298. BEH-Q6H: Volunteers to help clear up a mess someone else has made? - Radio: (same 3-point scale)
+299. BEH-Q6I: Is distractible, has trouble sticking to any activity? - Radio: (same 3-point scale)
+300. BEH-Q6J: When mad at someone, tries to get others to dislike that person? - Radio: (same 3-point scale)
+301. BEH-Q6K: Is not as happy as other children? - Radio: (same 3-point scale)
+302. BEH-Q6L: Destroys things belonging to his/her family, or other children? - Radio: (same 3-point scale)
+303. BEH-Q6M: If there is a quarrel or dispute, will try to stop it? - Radio: (same 3-point scale)
+304. BEH-Q6N: Fidgets? - Radio: (same 3-point scale)
+305. BEH-Q6O: Is disobedient at school? - Radio: (same 3-point scale)
+306. BEH-Q6P: Can't concentrate, can't pay attention for long? - Radio: (same 3-point scale)
+307. BEH-Q6Q: Is too fearful or anxious? - Radio: (same 3-point scale)
+308. BEH-Q6R: When mad at someone, becomes friends with another as revenge? - Radio: (same 3-point scale)
+309. BEH-Q6S: Is impulsive, acts without thinking? - Radio: (same 3-point scale)
+310. BEH-Q6T: Tells lies or cheats? - Radio: (same 3-point scale)
+311. BEH-Q6U: Offers to help other children (friend, brother or sister) who are having difficulty with a task? - Radio: (same 3-point scale)
+312. BEH-Q6V: Is worried? - Radio: (same 3-point scale)
+313. BEH-Q6W: Has difficulty awaiting turn in games or groups? - Radio: (same 3-point scale)
+314. BEH-Q6X: When another child accidentally hurts him/her (such as by bumping into him/her), assumes that the other child meant to do it, and then reacts with anger and fighting? - Radio: (same 3-point scale)
+315. BEH-Q6Y: Tends to do things on his/her own - is rather solitary? - Radio: (same 3-point scale)
+316. BEH-Q6Z: When mad at someone, says bad things behind the other's back? - Radio: (same 3-point scale)
+317. BEH-Q6AA: Physically attacks people? - Radio: (same 3-point scale)
+318. BEH-Q6BB: Comforts a child (friend, brother, or sister) who is crying or upset? - Radio: (same 3-point scale)
+319. BEH-Q6CC: Cries a lot? - Radio: (same 3-point scale)
+320. BEH-Q6DD: Vandalizes? - Radio: (same 3-point scale)
+321. BEH-Q6EE: Gives up easily? - Radio: (same 3-point scale)
+322. BEH-Q6FF: Threatens people? - Radio: (same 3-point scale)
+323. BEH-Q6GG: Spontaneously helps to pick up objects which another child has dropped (e.g. pencils, books, etc.)? - Radio: (same 3-point scale)
+324. BEH-Q6HH: Cannot settle to anything for more than a few moments? - Radio: (same 3-point scale)
+325. BEH-Q6II: Appears miserable, unhappy, tearful, or distressed? - Radio: (same 3-point scale)
+326. BEH-Q6JJ: Is cruel, bullies or is mean to others? - Radio: (same 3-point scale)
+327. BEH-Q6KK: Stares into space? - Radio: (same 3-point scale)
+328. BEH-Q6LL: When mad at someone, says to others: let's not be with him/her? - Radio: (same 3-point scale)
+329. BEH-Q6MM: Is nervous, highstrung or tense? - Radio: (same 3-point scale)
+330. BEH-Q6NN: Kicks, bites, hits other children? - Radio: (same 3-point scale)
+331. BEH-Q6OO: Will invite bystanders to join in a game? - Radio: (same 3-point scale)
+332. BEH-Q6PP: Steals outside the home? - Radio: (same 3-point scale)
+333. BEH-Q6QQ: Is inattentive? - Radio: (same 3-point scale)
+334. BEH-Q6RR: Has trouble enjoying him/herself? - Radio: (same 3-point scale)
+335. BEH-Q6SS: Helps other children (friends, brother or sister) who are feeling sick? - Radio: (same 3-point scale)
+336. BEH-Q6TT: When mad at someone, tells the other one's secrets to a third person? - Radio: (same 3-point scale)
+337. BEH-Q6UU: Takes the opportunity to praise the work of less able children? - Radio: (same 3-point scale)
+
+**Age 10-11**
+
+338. BEH-C7A: *IF AGE < 10 ---> GO TO MOTOR AND SOCIAL DEVELOPMENT SECTION; OTHERWISE ---> GO TO BEH-I7A* - Check (routing)
+339. BEH-I7A: **Now I'd like to ask you some questions about certain difficult behaviours which some children may show at this age. These may or may not apply to ....** - Intro
+340. BEH-Q7A: In the past year, about how many times has ... stayed out later than you said he/she should? - Radio: 1=NEVER; 2=ONCE; 3=TWICE; 4=MORE THAN TWICE; 8=DON'T KNOW; 9=REFUSAL -->GO TO MOTOR AND SOCIAL DEVELOPMENT SECTION
+341. BEH-Q7B: Stayed out all night without permission? - Radio: (same scale: 1=NEVER; 2=ONCE; 3=TWICE; 4=MORE THAN TWICE; 8=DON'T KNOW; 9=REFUSAL)
+342. BEH-Q7C: Skipped a day of school without permission? - Radio: (same scale as BEH-Q7A)
+343. BEH-Q7D: Gotten drunk? - Radio: (same scale as BEH-Q7A)
+344. BEH-Q7E: Been questioned by the police about anything he/she might have done such as stealing, damaging property, or something else? - Radio: 1=NEVER; 2=ONCE; 3=TWICE; 4=MORE THAN TWICE; 8=DON'T KNOW; 9=REFUSAL -->GO TO MOTOR AND SOCIAL DEVELOPMENT SECTION
+345. BEH-Q7F: Has he/she ever run away from home? - Y/N: 1=YES; 2=NO; 8=DON'T KNOW; 9=REFUSAL
+
+**Age 2-3**
+
+346. BEH-I8A: **Now I'd like to ask you questions about how ... seems to feel or act.** - Intro
+347. BEH-Q8B: Using the answers never or not true, sometimes or somewhat true, or often or very true, how often would you say that ...: can't sit still, is restless, or hyperactive? - Scale: 1=NEVER OR NOT TRUE; 2=SOMETIMES OR SOMEWHAT TRUE; 3=OFTEN OR VERY TRUE; 8=DON'T KNOW; 9=REFUSAL -->GO TO MOTOR AND SOCIAL DEVELOPMENT SECTION
+348. BEH-Q8D: Will try to help someone who has been hurt? - Scale: (same 3-point scale: 1=NEVER OR NOT TRUE; 2=SOMETIMES OR SOMEWHAT TRUE; 3=OFTEN OR VERY TRUE; 8=DON'T KNOW; 9=REFUSAL)
+349. BEH-Q8E1: Is defiant? - Radio: (same 3-point scale)
+350. BEH-Q8F: Seems to be unhappy, sad, or depressed? - Radio: (same 3-point scale)
+351. BEH-Q8G: Gets into many fights? - Radio: (same 3-point scale)
+352. BEH-Q8I: Is distractible, has trouble sticking to any activity? - Radio: (same 3-point scale)
+353. BEH-Q8J1: Doesn't seem to feel guilty after misbehaving? - Radio: (same 3-point scale)
+354. BEH-Q8K: Is not as happy as other children? - Radio: (same 3-point scale)
+355. BEH-Q8N: Fidgets? - Radio: (same 3-point scale)
+356. BEH-Q8P: Can't concentrate, can't pay attention for long? - Radio: (same 3-point scale)
+357. BEH-Q8Q: Is too fearful or anxious? - Radio: (same 3-point scale)
+358. BEH-Q8R1: Punishment doesn't change his/her behaviour? - Radio: (same 3-point scale)
+359. BEH-Q8S: Is impulsive, acts without thinking? - Radio: (same 3-point scale)
+360. BEH-Q8T1: Has temper tantrums or hot temper? - Radio: (same 3-point scale)
+361. BEH-Q8U: Offers to help other children (friend, brother or sister) who are having difficulty with a task? - Radio: (same 3-point scale)
+362. BEH-Q8V: Is worried? - Radio: (same 3-point scale)
+363. BEH-Q8W: Has difficulty awaiting turn in games or groups? - Radio: (same 3-point scale)
+364. BEH-Q8X: When another child accidentally hurts him/her (such as by bumping into him/her), assumes that the other child meant to do it, and then reacts with anger and fighting? - Radio: (same 3-point scale)
+365. BEH-Q8Z1: Has angry moods? - Radio: (same 3-point scale)
+366. BEH-Q8BB: Comforts a child (friend, brother, or sister) who is crying or upset? - Radio: (same 3-point scale)
+367. BEH-Q8CC: Cries a lot? - Radio: (same 3-point scale)
+368. BEH-Q8DD1: Clings to adults or is too dependent? - Radio: (same 3-point scale)
+369. BEH-Q8EE: Gives up easily? - Radio: (same 3-point scale)
+370. BEH-Q8HH: Cannot settle to anything for more than a few moments? - Radio: (same 3-point scale)
+371. BEH-Q8KK: Stares into space? - Radio: (same 3-point scale)
+372. BEH-Q8LL1: Constantly seeks help? - Radio: (same 3-point scale)
+373. BEH-Q8MM: Is nervous, highstrung or tense? - Radio: (same 3-point scale)
+374. BEH-Q8NN: Kicks, bites, hits other children? - Radio: (same 3-point scale)
+375. BEH-Q8PP1: Doesn't want to sleep alone? - Radio: (same 3-point scale)
+376. BEH-Q8QQ: Is inattentive? - Radio: (same 3-point scale)
+377. BEH-Q8RR: Has trouble enjoying him/herself? - Radio: (same 3-point scale)
+378. BEH-Q8SS: Helps other children (friends, brother or sister) who are feeling sick? - Radio: (same 3-point scale)
+379. BEH-Q8TT: Gets too upset when separated from parents? - Radio: (same 3-point scale)
+380. BEH-Q8UU: Takes the opportunity to praise the work of less able children? - Radio: (same 3-point scale)
+
+#### Motor and Social Development - MSD (pp. 117-121) - 57 questions
+
+*NOTE: Asked for children 0 to 47 months only. Age bands: 0-3m: Q1-Q15; 4-6m: Q8-Q22; 7-9m: Q12-Q26; 10-12m: Q18-Q32; 13-15m: Q22-Q36; 16-18m: Q26-Q40; 19-21m: Q29-Q43; 22-47m: Q34-Q48*
+
+381. MSD-C1: *IF AGE > 3 YEARS ---> GO TO RELATIONSHIPS SECTION; ELSE ---> GO TO MSD-I1* - Check (routing)
+382. MSD-I1: **The following questions are about ...'s motor and social development.** - Intro
+383. MSD-Q1: When lying on his/her stomach, has ... ever turned his/her head from side to side? - Y/N: 1=YES, 2=NO, 8=DON'T KNOW, 9=REFUSAL -->GO TO RELATIONSHIPS SECTION
+384. MSD-Q2: Have his/her eyes ever followed a moving object? - Radio: (same response scale as Q1 implied: YES/NO/DK/REF)
+385. MSD-Q3: When lying on his/her stomach on a flat surface, has he/she ever lifted his/her head off the surface for a moment? - Radio: (same response scale implied)
+386. MSD-Q4: Have his/her eyes ever followed a moving object all the way from one side to the other? - Radio: (same response scale implied)
+387. MSD-Q5: Has he/she ever smiled at someone when that person talked to or smiled at (but did not touch) him/her? - Radio: (same response scale implied)
+388. MSD-Q6: When lying on his/her stomach, has he/she ever raised his/her head and chest from the surface while resting his/her weight on his/her lower arms or hands? - Radio: (same response scale implied)
+389. MSD-Q7: Has he/she ever turned his/her head around to look at something? - Radio: (same response scale implied)
+390. MSD-Q8: When lying on his/her back and being pulled up to a sitting position, did ... ever hold his/her head stiffly so that it did not hang back as he/she was pulled up? - Radio: (same response scale implied)
+391. MSD-Q9: Has he/she ever laughed out loud without being tickled or touched? - Radio: (same response scale implied)
+392. MSD-Q10: Has he/she ever held in one hand a moderate size object such as a block or a rattle? - Radio: (same response scale implied)
+393. MSD-Q11: Has he/she ever rolled over on his/her own on purpose? - Radio: (same response scale implied)
+394. MSD-Q12: Has ... ever seemed to enjoy looking in the mirror at him/herself? - Radio: (same response scale implied)
+395. MSD-Q13: Has he/she ever been pulled from a sitting to a standing position and supported his/her own weight with legs stretched out? - Radio: (same response scale implied)
+396. MSD-Q14: Has he/she ever looked around with his/her eyes for a toy which was lost or not nearby? - Radio: (same response scale implied)
+397. MSD-Q15: Has he/she ever sat alone with no help except for leaning forward on his/her hands or with just a little help from someone else? - Radio: (same response scale implied)
+398. MSD-C16: *IF AGE IN MONTHS = 0 TO 3 MONTHS ---> GO TO RELATIONSHIP SECTION; OTHERWISE ---> GO TO MSD-Q16* - Check (routing)
+399. MSD-Q16: Has he/she ever sat for 10 minutes without any support at all? - Radio: (same response scale implied)
+400. MSD-Q17: Has he/she ever pulled him/herself to a standing position without help from another person? - Radio: (same response scale implied)
+401. MSD-Q18: Has ... ever crawled when left lying on his/her stomach? - Radio: (same response scale implied)
+402. MSD-Q19: Has he/she ever said any recognizable words such as "mama" or "dada"? - Radio: (same response scale implied)
+403. MSD-Q20: Has he/she ever picked up small objects such as raisins or cookie crumbs, using only his/her thumb and first finger? - Radio: (same response scale implied)
+404. MSD-Q21: Has he/she ever walked at least 2 steps with one hand held or holding on to something? - Radio: (same response scale implied)
+405. MSD-Q22: Has ... ever waved good-bye without help from another person? - Radio: (same response scale implied)
+406. MSD-C23: *IF AGE IN MONTHS = 4 TO 6 MONTHS ---> GO TO RELATIONSHIPS SECTION; OTHERWISE ---> GO TO MSD-Q23* - Check (routing)
+407. MSD-Q23: Has he/she ever shown by his/her behavior that he/she knows the names of common objects when somebody else names them out loud? - Radio: (same response scale implied)
+408. MSD-Q24: Has he/she ever shown that he/she wanted something by pointing, pulling, or making pleasant sounds rather than crying or whining? - Radio: (same response scale implied)
+409. MSD-Q25: Has he/she ever stood alone on his/her feet for 10 seconds or more without holding on to anything or another person? - Radio: (same response scale implied)
+410. MSD-Q26: Has ... ever walked at least 2 steps without holding on to anything or another person? - Radio: (same response scale implied)
+411. MSD-C27: *IF AGE IN MONTHS = 7 TO 9 MONTHS ---> GO TO RELATIONSHIPS SECTION; OTHERWISE ---> GO TO MSD-Q27* - Check (routing)
+412. MSD-Q27: Has he/she ever crawled up at least 2 stairs or steps? - Radio: (same response scale implied)
+413. MSD-Q28: Has he/she said 2 recognizable words besides "mama" or "dada"? - Radio: (same response scale implied)
+414. MSD-Q29: Has ... ever run? - Radio: (same response scale implied)
+415. MSD-Q30: Has he/she ever said the name of a familiar object, such as a ball? - Radio: (same response scale implied)
+416. MSD-Q31: Has he/she ever made a line with a crayon or pencil? - Radio: (same response scale implied)
+417. MSD-Q32: Did he/she ever walk up at least 2 stairs with one hand held or holding the railing? - Radio: (same response scale implied)
+418. MSD-C33: *IF AGE IN MONTHS = 10 TO 12 MONTHS ---> GO TO RELATIONSHIPS SECTION; OTHERWISE ---> GO TO MSD-Q33* - Check (routing)
+419. MSD-Q33: Has he/she ever fed him/herself with a spoon or fork without spilling much? - Radio: (same response scale implied)
+420. MSD-Q34: Has ... ever let someone know, without crying, that wearing wet (soiled) pants or diapers bothered him/her? - Radio: (same response scale implied)
+421. MSD-Q35: Has he/she ever spoken a partial sentence of 3 words or more? - Radio: (same response scale implied)
+422. MSD-Q36: Has he/she ever walked up stairs by him/herself without holding on to a rail? - Radio: (same response scale implied)
+423. MSD-C37: *IF AGE IN MONTHS = 13 TO 15 MONTHS ---> GO TO RELATIONSHIPS SECTION; OTHERWISE ---> GO TO MSD-Q37* - Check (routing)
+424. MSD-Q37: Has he/she ever washed and dried his/her hands without any help except for turning the water on and off? - Radio: (same response scale implied)
+425. MSD-Q38: Has he/she ever counted 3 objects correctly? - Radio: (same response scale implied)
+426. MSD-Q39: Has he/she ever gone to the toilet alone? - Radio: (same response scale implied)
+427. MSD-Q40: Has he/she ever walked upstairs by him/herself with no help, stepping on each step with only one foot? - Radio: (same response scale implied)
+428. MSD-C41: *IF AGE = 16 TO 18 MONTHS ---> GO TO RELATIONSHIPS SECTION; OTHERWISE GO TO MSD-Q41* - Check (routing)
+429. MSD-Q41: Does he/she know his/her own age and sex? - Radio: (same response scale implied)
+430. MSD-Q42: Has he/she ever said the names of at least 4 colors? - Radio: (same response scale implied)
+431. MSD-Q43: Has he/she ever pedaled a tricycle at least 10 feet? - Radio: (same response scale implied)
+432. MSD-C44: *IF AGE IN MONTHS = 19 TO 21 MONTHS ---> GO TO RELATIONSHIPS SECTION; OTHERWISE ---> GO TO MSD-Q44* - Check (routing)
+433. MSD-Q44: Has he/she ever done a somersault without help from anybody? - Radio: (same response scale implied)
+434. MSD-Q45: Has he/she ever dressed him/herself without any help except for tying shoes (and buttoning the backs of dresses)? - Radio: (same response scale implied)
+435. MSD-Q46: Has he/she ever said his/her first and last name together without someone's help? (Nickname may be used for first name.) - Radio: (same response scale implied)
+436. MSD-Q47: Has he/she ever counted out loud up to 10? - Radio: (same response scale implied)
+437. MSD-Q48: Has he/she ever drawn a picture of a man or woman with at least 2 parts of the body besides a head? - Radio: (same response scale implied)
+
+#### Relationships - REL (pp. 122-124) - 15 questions
+
+438. REL-C1: *IF AGE < 4 ---> GO TO PARENTING SECTION; OTHERWISE ---> GO TO REL-I1* - Check (routing)
+439. REL-I1: **The next few questions are about ...'s relationships with friends, family and others.** - Intro
+440. REL-Q1: About how many days a week does he/she do things with friends? - Radio: 1=NEVER, 2=1 DAY A WEEK, 3=2-3 DAYS A WEEK, 4=4-5 DAYS A WEEK, 5=6-7 DAYS A WEEK, 8=DON'T KNOW, 9=REFUSAL (GO TO PARENTING SECTION)
+441. REL-C2: *IF AGE < 6 ---> GO TO REL-Q6; OTHERWISE ---> GO TO REL-Q2* - Check (routing)
+442. REL-Q2: About how many close friends does he/she have? - Radio: 1=NONE (GO TO REL-C4), 2=1, 3=2 OR 3, 4=4 OR 5, 5=6 OR MORE, 8=DON'T KNOW, 9=REFUSAL (GO TO PARENTING SECTION)
+443. REL-C3: *IF AGE < 8 ---> GO TO REL-Q6; OTHERWISE ---> GO TO REL-Q3* - Check (routing)
+444. REL-Q3: How many of his/her close friends do you know by sight and by first and last name? - Radio: 1=ALL, 2=MOST, 3=ABOUT HALF, 4=ONLY A FEW, 5=NONE, 8=DON'T KNOW, 9=REFUSAL (GO TO PARENTING SECTION)
+445. REL-C4: *IF AGE < 8 ---> GO TO REL-Q6; OTHERWISE ---> GO TO REL-Q4* - Check (routing)
+446. REL-Q4: When it comes to meeting new children and making new friends is he/she: - Radio: 1=Somewhat shy, 2=About average, 3=Very outgoing - makes friends easily, 8=DON'T KNOW, 9=REFUSAL (GO TO PARENTING SECTION)
+447. REL-Q5: How often does he/she hang around with kids you think are frequently in trouble? - Radio: 1=OFTEN, 2=SOMETIMES, 3=SELDOM, 4=NEVER, 8=DON'T KNOW, 9=REFUSAL (GO TO PARENTING SECTION)
+448. REL-Q6: During the past 6 months, how well has ... gotten along with other kids, such as friends or classmates (excluding brothers or sisters)? - Radio: 1=VERY WELL NO PROBLEMS, 2=QUITE WELL HARDLY ANY PROBLEMS, 3=PRETTY WELL OCCASIONAL PROBLEMS, 4=NOT TOO WELL FREQUENT PROBLEMS, 5=NOT WELL AT ALL CONSTANT PROBLEMS, 6=NOT APPLICABLE, 8=DON'T KNOW, 9=REFUSAL (GO TO PARENTING SECTION)
+449. REL-Q7: Since starting school in the fall, how well has he/she gotten along with his/her teacher(s) at school? - Radio: (same 1-5 + 6=N/A + 8=DK + 9=REF scale as Q6)
+450. REL-Q8: During the past 6 months, how well has he/she gotten along with his/her parent(s)? - Radio: (same 1-5 + 6=N/A + 8=DK + 9=REF scale as Q6)
+451. REL-C9: *IF NO BROTHERS OR SISTERS LIVING IN THE HOUSEHOLD ---> GO TO PARENTING SECTION; OTHERWISE ---> GO TO REL-Q9* - Check (routing)
+452. REL-Q9: During the past 6 months, how well has ... gotten along with his/her brother(s)/sister(s)? - Radio: (same 1-5 + 6=N/A + 8=DK + 9=REF scale as Q6)
+
+#### Parenting - PAR (pp. 125-129) - 38 questions
+
+453. PAR-C1: *IF THE RESPONDENT IS THE CHILD'S FOSTER PARENT ---> GO TO CUSTODY SECTION; ELSE IF THE RESPONDENT IS THE PERSON MOST KNOWLEDGEABLE ABOUT THE CHILD, OR THAT PERSON'S SPOUSE/PARTNER ---> GO TO PAR-I1; OTHERWISE ---> GO TO CUSTODY SECTION* - Check (routing)
+454. PAR-I1: **The following questions have to do with things that ... does and ways that you react to him/her.** - Intro
+455. PAR-Q1: How often do you praise ..., by saying something like "Good for you!" or "What a nice thing you did!" or "That's good going!"? - Radio: 1=NEVER, 2=ABOUT ONCE A WEEK OR LESS, 3=A FEW TIMES A WEEK, 4=ONE OR TWO TIMES A DAY, 5=MANY TIMES EACH DAY, 8=DON'T KNOW, 9=REFUSAL -->GO TO CUSTODY SECTION
+456. PAR-Q2: How often do you and he/she talk or play with each other, focusing attention on each other for five minutes or more, just for fun? - Radio: Same scale as PAR-Q1 (1=NEVER through 5=MANY TIMES EACH DAY, 8=DK, 9=REF)
+457. PAR-Q3: How often do you and he/she laugh together? - Radio: Same scale as PAR-Q1
+458. PAR-Q4: How often do you get annoyed with ... for saying or doing something he/she is not supposed to? - Radio: Same scale as PAR-Q1
+459. PAR-Q5: How often do you tell him/her that he/she is bad or not as good as others? - Radio: Same scale as PAR-Q1
+460. PAR-Q6: How often do you do something special with him/her that he/she enjoys? - Radio: Same scale as PAR-Q1
+461. PAR-C7: *IF AGE < 3 ---> GO TO PAR-Q7A; OTHERWISE ---> GO TO PAR-Q7* - Check (routing)
+462. PAR-Q7: How often do you play sports, hobbies or games with him/her? - Radio: Same scale as PAR-Q1
+463. PAR-Q7A: How often do you play games with him/her? - Radio: Same scale as PAR-Q1
+464. PAR-C8: *IF AGE < 2 ---> GO TO CUSTODY SECTION; OTHERWISE ---> GO TO PAR-I8A* - Check (routing)
+465. PAR-I8A: **Now, we know that when parents spend time together with their children, some of the time things go well and some of the time they don't go well. For the following questions, I would like you to tell me what proportion of the time things turn out in different ways.** - Intro
+466. PAR-Q8: Of all the times that you talk to ... about his/her behaviour, what proportion is praise? - Radio: 1=NEVER, 2=LESS THAN HALF THE TIME, 3=ABOUT HALF THE TIME, 4=MORE THAN HALF THE TIME, 5=ALL THE TIME, 8=DON'T KNOW, 9=REFUSAL -->GO TO CUSTODY SECTION
+467. PAR-Q9: Of all the times that you talk to him/her about his/her behaviour, what proportion is disapproval? - Radio: Same scale as PAR-Q8 (1=NEVER through 5=ALL THE TIME, 8=DK, 9=REF)
+468. PAR-Q10: When you give him/her a command or order to do something, what proportion of the time do you make sure that he/she does it? - Radio: Same scale as PAR-Q8
+469. PAR-Q11: If you tell him/her he/she will get punished if he/she doesn't stop doing something, and he/she keeps doing it, how often will you punish him/her? - Radio: Same scale as PAR-Q8
+470. PAR-Q12: How often does he/she get away with things that you feel should have been punished? - Radio: Same scale as PAR-Q8
+471. PAR-Q13: How often do you get angry when you punish ...? - Radio: Same scale as PAR-Q8
+472. PAR-Q14: How often do you think that the kind of punishment you give him/her depends on your mood? - Radio: Same scale as PAR-Q8
+473. PAR-Q15: How often do you feel you are having problems managing him/her in general? - Radio: Same scale as PAR-Q8
+474. PAR-Q16: How often is he/she able to get out of a punishment when he/she really sets his/her mind to it? - Radio: Same scale as PAR-Q8
+475. PAR-Q17: How often when you discipline him/her, does he/she ignore the punishment? - Radio: Same scale as PAR-Q8
+476. PAR-Q18: How often do you have to discipline him/her repeatedly for the same thing? - Radio: Same scale as PAR-Q8
+477. PAR-I19A: **Just about all children break the rules or do things that they are not supposed to. Also, parents react in different ways. Please tell me how often you do each of the following when ... breaks the rules or does things that he/she is not supposed to.** - Intro
+478. PAR-Q19: How often do you: Tell him/her to stop? - Radio: 1=ALWAYS, 2=OFTEN, 3=SOMETIMES, 4=RARELY, 5=NEVER, 8=DON'T KNOW, 9=REFUSAL -->GO TO CUSTODY SECTION
+479. PAR-Q20: Ignore it, do nothing? - Radio: Same scale as PAR-Q19 (1=ALWAYS through 5=NEVER, 8=DK, 9=REF)
+480. PAR-Q21: Raise your voice, scold or yell at him/her? - Radio: Same scale as PAR-Q19
+481. PAR-Q22: Calmly discuss the problem? - Radio: Same scale as PAR-Q19
+482. PAR-Q23: Use physical punishment? - Radio: Same scale as PAR-Q19
+483. PAR-Q24: Describe alternative ways of behaving that are acceptable? - Radio: Same scale as PAR-Q19
+484. PAR-Q25: Take away privileges or put in room? - Radio: Same scale as PAR-Q19
+485. PAR-I26A: **Sometimes different situations or circumstances arise which may affect family life. The next few questions are about some of these possible situations.** - Intro
+486. PAR-Q26A: Has he/she ever experienced being hungry because the family has run out of food or money to buy food? - Y/N: 1=YES, 2=NO -->GO TO PAR-Q27, 8=DON'T KNOW -->GO TO PAR-Q27, 9=REFUSAL -->GO TO CUSTODY SECTION
+487. PAR-Q26B: How often? - Radio: 1=REGULARLY, END OF THE MONTH, 2=MORE OFTEN THAN END OF EACH MONTH, 3=EVERY FEW MONTHS, 4=OCCASIONALLY, NOT A REGULAR OCCURRENCE, 8=DON'T KNOW, 9=REFUSAL -->GO TO CUSTODY SECTION
+488. PAR-Q26C: How do you cope with feeding ... when this happens? (MARK ALL THAT APPLY.) - Checkbox: 01=PARENT/GUARDIAN SKIPS MEALS OR EATS LESS, 02=CHILDREN SKIP MEALS OR EAT LESS, 03=CUT DOWN ON VARIETY OF FOOD FAMILY USUALLY EATS, 04=SEEK HELP FROM RELATIVES, 05=SEEK HELP FROM FRIENDS, 06=SEEK HELP FROM SOCIAL WORKER/GOVERNMENT OFFICE, 07=SEEK HELP FROM FOOD BANK (EMERGENCY FOOD PROGRAM), 08=USE SCHOOL MEAL PROGRAM, 09=OTHER, 98=DON'T KNOW, 99=REFUSAL -->GO TO CUSTODY SECTION
+489. PAR-Q27: How often does he/she see television shows or movies that have a lot of violence in them? - Radio: 1=OFTEN, 2=SOMETIMES, 3=SELDOM, 4=NEVER, 8=DON'T KNOW, 9=REFUSAL -->GO TO CUSTODY SECTION
+490. PAR-Q28: How often does he/she see adults or teenagers in your house physically fighting, hitting or otherwise trying to hurt others? - Radio: Same scale as PAR-Q27 (1=OFTEN through 4=NEVER, 8=DK, 9=REF)
+
+#### Education (Children) - EDU (pp. 84-100) - 62 questions
+
+491. EDU-C1: *IF AGE < 4 ---> GO TO LITERACY SECTION; OTHERWISE ---> GO TO EDU-I1* - Check (routing)
+492. EDU-I1: **The next section is about ...'s experiences at school.** - Intro
+493. EDU-C1A: *IF PROVINCE IS NEWFOUNDLAND ---> GO TO EDU-Q1A; IF PROVINCE IS QUEBEC ---> GO TO EDU-Q1B; IF PROVINCE IS ONTARIO ---> GO TO EDU-Q1C; IF PROVINCE IS NOVA SCOTIA ---> GO TO EDU-Q1D; IF PROVINCE IS P.E.I. ---> GO TO EDU-Q1E; OTHERWISE ---> GO TO EDU-Q1* - Check (routing)
+494. EDU-Q1: What school grade is ... in? (New Brunswick, Manitoba, Saskatchewan, Alberta or British Columbia) - Radio: 01=NOT IN SCHOOL, 02=KINDERGARTEN, 03=GRADE 1, 04=GRADE 2, 05=GRADE 3, 06=GRADE 4, 07=GRADE 5, 08=GRADE 6, 09=GRADE 7, 10=GRADE 8, 11=GRADE 9, 12=GRADE 10, 13=GRADE 11, 14=GRADE 12, 15=UNGRADED
+495. EDU-E1: *IF EDU-Q1 = 1 (NOT IN SCHOOL) OR REFUSAL ---> GO TO LITERACY SECTION; IF EDU-Q1 = 15 (UNGRADED) OR DON'T KNOW ---> GO TO EDU-Q8; IF EDU-Q1 = 2-14 ---> GO TO EDU-Q2* - Check (routing)
+496. EDU-Q1A: What school grade is ... in? (Newfoundland) - Radio: 01=NOT IN SCHOOL, 02=KINDERGARTEN, 03=GRADE 1 ELEMENTARY, 04=GRADE 2 ELEMENTARY, 05=GRADE 3 ELEMENTARY, 06=GRADE 4 ELEMENTARY, 07=GRADE 5 ELEMENTARY, 08=GRADE 6 ELEMENTARY, 09=GRADE 7 ELEMENTARY, 10=GRADE 8 ELEMENTARY, 11=GRADE 9 ELEMENTARY, 12=LEVEL 1 SECONDARY, 13=LEVEL 2 SECONDARY, 14=LEVEL 3 SECONDARY, 15=UNGRADED
+497. EDU-E1A: *IF EDU-Q1A = 1 (NOT IN SCHOOL) OR REFUSAL ---> GO TO LITERACY SECTION; IF EDU-Q1A = 15 (UNGRADED) OR DON'T KNOW ---> GO TO EDU-Q8; IF EDU-Q1A = 2-14 ---> GO TO EDU-Q2* - Check (routing)
+498. EDU-Q1B: What school grade is ... in? (Quebec) - Radio: 01=NOT IN SCHOOL, 02=JUNIOR KINDERGARTEN, 03=KINDERGARTEN, 04=GRADE 1 ELEMENTARY, 05=GRADE 2 ELEMENTARY, 06=GRADE 3 ELEMENTARY, 07=GRADE 4 ELEMENTARY, 08=GRADE 5 ELEMENTARY, 09=GRADE 6 ELEMENTARY, 10=SECONDARY I, 11=SECONDARY II, 12=SECONDARY III, 13=SECONDARY IV, 14=SECONDARY V, 15=UNGRADED
+499. EDU-E1B: *IF EDU-Q1B = 1 (NOT IN SCHOOL) OR REFUSAL ---> GO TO LITERACY SECTION; IF EDU-Q1B = 15 (UNGRADED) OR DON'T KNOW ---> GO TO EDU-Q8; IF EDU-Q1B = 2 (JUNIOR KINDERGARTEN) ---> GO TO EDU-Q8; IF EDU-Q1B = 3-14 ---> GO TO EDU-Q2* - Check (routing)
+500. EDU-Q1C: What school grade is ... in? (Ontario) - Radio: 01=NOT IN SCHOOL, 02=JUNIOR KINDERGARTEN, 03=KINDERGARTEN, 04=GRADE 1, 05=GRADE 2, 06=GRADE 3, 07=GRADE 4, 08=GRADE 5, 09=GRADE 6, 10=GRADE 7, 11=GRADE 8, 12=GRADE 9, 13=GRADE 10, 14=GRADE 11, 15=GRADE 12, 16=OAC GRADE 13, 17=UNGRADED
+501. EDU-E1C: *IF EDU-Q1C = 1 (NOT IN SCHOOL) OR REFUSAL ---> GO TO LITERACY SECTION; IF EDU-Q1C = 17 (UNGRADED) OR DON'T KNOW ---> GO TO EDU-Q8; IF EDU-Q1C = 2 (JUNIOR KINDERGARTEN) ---> GO TO EDU-Q8; IF EDU-Q1C = 3-16 ---> GO TO EDU-Q2* - Check (routing)
+502. EDU-Q1D: What school grade is ... in? (Nova Scotia) - Radio: 01=NOT IN SCHOOL, 02=PRIMARY, 03=GRADE 1, 04=GRADE 2, 05=GRADE 3, 06=GRADE 4, 07=GRADE 5, 08=GRADE 6, 09=GRADE 7, 10=GRADE 8, 11=GRADE 9, 12=GRADE 10, 13=GRADE 11, 14=GRADE 12, 15=UNGRADED
+503. EDU-E1D: *IF EDU-Q1D = 1 (NOT IN SCHOOL) OR REFUSAL ---> GO TO LITERACY SECTION; IF EDU-Q1D = 15 (UNGRADED) OR DON'T KNOW ---> GO TO EDU-Q8; IF EDU-Q1D = 2-14 ---> GO TO EDU-Q2* - Check (routing)
+504. EDU-Q1E: What school grade is ... in? (Prince Edward Island) - Radio: 01=NOT IN SCHOOL, 02=GRADE 1, 03=GRADE 2, 04=GRADE 3, 05=GRADE 4, 06=GRADE 5, 07=GRADE 6, 08=GRADE 7, 09=GRADE 8, 10=GRADE 9, 11=GRADE 10, 12=GRADE 11, 13=GRADE 12, 14=UNGRADED
+505. EDU-E1E: *IF EDU-Q1E = 1 (NOT IN SCHOOL) OR REFUSAL ---> GO TO LITERACY SECTION; IF EDU-Q1E = 14 (UNGRADED) OR DON'T KNOW ---> GO TO EDU-Q8; IF EDU-Q1E = 2-13 ---> GO TO EDU-Q2* - Check (routing)
+506. EDU-Q2: Did he/she attend junior kindergarten? - Y/N: 1=YES, 2=NO, 8=DON'T KNOW, 9=REFUSAL -->GO TO NEXT SECTION
+507. EDU-C3: *IF CHILD IN KINDERGARTEN/PRIMARY (EDU-Q1 = 2 OR EDU-Q1A = 2 OR EDU-Q1B = 3 OR EDU-Q1C = 3 OR EDU-Q1D = 2) ---> GO TO EDU-Q8; OTHERWISE ---> GO TO EDU-Q3* - Check (routing)
+508. EDU-Q3: Did he/she attend kindergarten/primary? - Y/N: 1=YES, 2=NO, 8=DON'T KNOW, 9=REFUSAL (same format as Q2)
+509. EDU-Q4: Has ... ever skipped a grade at school? (INCLUDE KINDERGARTEN) - Y/N: 1=YES, 2=NO -->GO TO EDU-Q6, 8=DON'T KNOW -->GO TO EDU-Q6, 9=REFUSAL -->GO TO EDU-Q6
+510. EDU-C5: *IF PROVINCE IS NFLD ---> GO TO EDU-Q5A; IF PROVINCE IS QUE ---> GO TO EDU-Q5B; IF PROVINCE IS ONTARIO ---> GO TO EDU-Q5C; IF PROVINCE IS NOVA SCOTIA ---> GO TO EDU-Q5D; IF PROVINCE IS P.E.I. ---> GO TO EDU-Q5E; OTHERWISE ---> GO TO EDU-Q5* - Check (routing)
+511. EDU-Q5: What grade(s) has he/she skipped? (New Brunswick, Manitoba, Saskatchewan, Alberta, British Columbia) (MARK ONE ONLY. IF MORE THAN ONE REPORTED, MARK THE MOST RECENT.) - Radio: 01=KINDERGARTEN, 02=GRADE 1, 03=GRADE 2, 04=GRADE 3, 05=GRADE 4, 06=GRADE 5, 07=GRADE 6, 08=GRADE 7, 09=GRADE 8, 10=GRADE 9, 11=GRADE 10, 12=GRADE 11, 13=GRADE 12, 98=DON'T KNOW, 99=REFUSAL -->GO TO NEXT SECTION
+512. EDU-Q5A: What grade(s) has he/she skipped? (Newfoundland) (MARK ONE ONLY. IF MORE THAN ONE REPORTED, MARK THE MOST RECENT.) - Radio: 01=KINDERGARTEN, 02=GRADE 1 ELEMENTARY, 03=GRADE 2 ELEMENTARY, 04=GRADE 3 ELEMENTARY, 05=GRADE 4 ELEMENTARY, 06=GRADE 5 ELEMENTARY, 07=GRADE 6 ELEMENTARY, 08=GRADE 7 ELEMENTARY, 09=GRADE 8 ELEMENTARY, 10=GRADE 9 ELEMENTARY, 11=LEVEL 1 SECONDARY, 12=LEVEL 2 SECONDARY, 13=LEVEL 3 SECONDARY, 98=DON'T KNOW, 99=REFUSAL -->GO TO NEXT SECTION
+513. EDU-Q5B: What grade(s) has he/she skipped? (Quebec) (MARK ONE ONLY. IF MORE THAN ONE REPORTED, MARK THE MOST RECENT.) - Radio: 01=KINDERGARTEN, 02=GRADE 1 ELEMENTARY, 03=GRADE 2 ELEMENTARY, 04=GRADE 3 ELEMENTARY, 05=GRADE 4 ELEMENTARY, 06=GRADE 5 ELEMENTARY, 07=GRADE 6 ELEMENTARY, 08=SECONDARY I, 09=SECONDARY II, 10=SECONDARY III, 11=SECONDARY IV, 12=SECONDARY V, 98=DON'T KNOW, 99=REFUSAL -->GO TO NEXT SECTION
+514. EDU-Q5C: What grade(s) has he/she skipped? (Ontario) (MARK ONE ONLY. IF MORE THAN ONE REPORTED, MARK THE MOST RECENT.) - Radio: 01=KINDERGARTEN, 02=GRADE 1, 03=GRADE 2, 04=GRADE 3, 05=GRADE 4, 06=GRADE 5, 07=GRADE 6, 08=GRADE 7, 09=GRADE 8, 10=GRADE 9, 11=GRADE 10, 12=GRADE 11, 13=GRADE 12, 14=OAC GRADE 13, 98=DON'T KNOW, 99=REFUSAL -->GO TO NEXT SECTION
+515. EDU-Q5D: What grade(s) has he/she skipped? (Nova Scotia) (MARK ONE ONLY. IF MORE THAN ONE REPORTED, MARK THE MOST RECENT.) - Radio: 01=PRIMARY, 02=GRADE 1, 03=GRADE 2, 04=GRADE 3, 05=GRADE 4, 06=GRADE 5, 07=GRADE 6, 08=GRADE 7, 09=GRADE 8, 10=GRADE 9, 11=GRADE 10, 12=GRADE 11, 13=GRADE 12, 98=DON'T KNOW, 99=REFUSAL -->GO TO NEXT SECTION
+516. EDU-Q5E: What grade(s) has he/she skipped? (Prince Edward Island) (MARK ONE ONLY. IF MORE THAN ONE REPORTED, MARK THE MOST RECENT.) - Radio: 01=GRADE 1, 02=GRADE 2, 03=GRADE 3, 04=GRADE 4, 05=GRADE 5, 06=GRADE 6, 07=GRADE 7, 08=GRADE 8, 09=GRADE 9, 10=GRADE 10, 11=GRADE 11, 12=GRADE 12, 98=DON'T KNOW, 99=REFUSAL -->GO TO NEXT SECTION
+517. EDU-Q6: Has ... ever repeated a grade at school (INCLUDE KINDERGARTEN)? - Y/N: 1=YES, 2=NO -->GO TO EDU-Q8, 8=DON'T KNOW -->GO TO EDU-Q8, 9=REFUSAL -->GO TO EDU-Q8
+518. EDU-C7: *IF PROVINCE IS NFLD ---> GO TO EDU-Q7A; IF PROVINCE IS QUE ---> GO TO EDU-Q7B; IF PROVINCE IS ONTARIO ---> GO TO EDU-Q7C; IF PROVINCE IS NOVA SCOTIA ---> GO TO EDU-Q7D; IF PROVINCE IS P.E.I. ---> GO TO EDU-Q7E; OTHERWISE ---> GO TO EDU-Q7* - Check (routing)
+519. EDU-Q7: What grade(s) has he/she repeated? (New Brunswick, Manitoba, Saskatchewan, Alberta, British Columbia) (MARK ONE ONLY. IF MORE THAN ONE REPORTED, MARK THE MOST RECENT.) - Radio: 01=KINDERGARTEN, 02=GRADE 1, 03=GRADE 2, 04=GRADE 3, 05=GRADE 4, 06=GRADE 5, 07=GRADE 6, 08=GRADE 7, 09=GRADE 8, 10=GRADE 9, 11=GRADE 10, 12=GRADE 11, 13=GRADE 12, 98=DON'T KNOW, 99=REFUSAL -->GO TO NEXT SECTION
+520. EDU-Q7A: What grade(s) has he/she repeated? (Newfoundland) (MARK ONE ONLY. IF MORE THAN ONE REPORTED, MARK THE MOST RECENT.) - Radio: 01=KINDERGARTEN, 02=GRADE 1 ELEMENTARY, 03=GRADE 2 ELEMENTARY, 04=GRADE 3 ELEMENTARY, 05=GRADE 4 ELEMENTARY, 06=GRADE 5 ELEMENTARY, 07=GRADE 6 ELEMENTARY, 08=GRADE 7 ELEMENTARY, 09=GRADE 8 ELEMENTARY, 10=GRADE 9 ELEMENTARY, 11=LEVEL 1 SECONDARY, 12=LEVEL 2 SECONDARY, 13=LEVEL 3 SECONDARY, 98=DON'T KNOW, 99=REFUSAL -->GO TO NEXT SECTION
+521. EDU-Q7B: What grade(s) has he/she repeated? (Quebec) (MARK ONE ONLY. IF MORE THAN ONE REPORTED, MARK THE MOST RECENT.) - Radio: 01=KINDERGARTEN, 02=GRADE 1 ELEMENTARY, 03=GRADE 2 ELEMENTARY, 04=GRADE 3 ELEMENTARY, 05=GRADE 4 ELEMENTARY, 06=GRADE 5 ELEMENTARY, 07=GRADE 6 ELEMENTARY, 08=SECONDARY I, 09=SECONDARY II, 10=SECONDARY III, 11=SECONDARY IV, 12=SECONDARY V, 98=DON'T KNOW, 99=REFUSAL -->GO TO NEXT SECTION
+522. EDU-Q7C: What grade(s) has he/she repeated? (Ontario) (MARK ONE ONLY. IF MORE THAN ONE REPORTED, MARK THE MOST RECENT.) - Radio: 01=KINDERGARTEN, 02=GRADE 1, 03=GRADE 2, 04=GRADE 3, 05=GRADE 4, 06=GRADE 5, 07=GRADE 6, 08=GRADE 7, 09=GRADE 8, 10=GRADE 9, 11=GRADE 10, 12=GRADE 11, 13=GRADE 12, 14=OAC GRADE 13, 98=DON'T KNOW, 99=REFUSAL -->GO TO NEXT SECTION
+523. EDU-Q7D: What grade(s) has he/she repeated? (Nova Scotia) (MARK ONE ONLY. IF MORE THAN ONE REPORTED, MARK THE MOST RECENT.) - Radio: 01=PRIMARY, 02=GRADE 1, 03=GRADE 2, 04=GRADE 3, 05=GRADE 4, 06=GRADE 5, 07=GRADE 6, 08=GRADE 7, 09=GRADE 8, 10=GRADE 9, 11=GRADE 10, 12=GRADE 11, 13=GRADE 12, 98=DON'T KNOW, 99=REFUSAL -->GO TO NEXT SECTION
+524. EDU-Q7E: What grade(s) has he/she repeated? (Prince Edward Island) (MARK ONE ONLY. IF MORE THAN ONE REPORTED, MARK THE MOST RECENT.) - Radio: 01=GRADE 1, 02=GRADE 2, 03=GRADE 3, 04=GRADE 4, 05=GRADE 5, 06=GRADE 6, 07=GRADE 7, 08=GRADE 8, 09=GRADE 9, 10=GRADE 10, 11=GRADE 11, 12=GRADE 12, 98=DON'T KNOW, 99=REFUSAL -->GO TO NEXT SECTION
+525. EDU-Q8: What type of school is ... currently in? Is it a: (READ LIST. MARK ONE ONLY.) - Radio: 1=Public school?, 2=Catholic school, publicly funded?, 3=Private school?, 4=Other, 8=DON'T KNOW, 9=REFUSAL -->GO TO NEXT SECTION
+526. EDU-Q9A: Other than natural progression through the school system in your area, has ... ever changed schools? - Y/N: 1=YES, 2=NO -->GO TO EDU-Q11, 3=NOT APPLICABLE -->GO TO EDU-Q11, 8=DON'T KNOW -->GO TO EDU-Q11, 9=REFUSAL -->GO TO EDU-Q11
+527. EDU-Q9B: How many times has he/she changed schools? - Numeric
+528. EDU-Q10: For the most recent change in schools, what was the reason for changing? - Radio: 01=FAMILY OR CHILD MOVED, 02=CHILD NOT PROGRESSING WELL ACADEMICALLY, 03=CHILD NOT PROGRESSING WELL IN LANGUAGE OF INSTRUCTION, 04=CHILD NOT GETTING ALONG WELL WITH OTHERS AT SCHOOL, 05=CONCERNS ABOUT SCHOOL'S ACADEMIC STANDARDS OR QUALITY, 06=CONCERNS ABOUT SCHOOL SAFETY OR DISCIPLINE, 07=CONCERNS ABOUT SCHOOL FACILITIES OR RESOURCES, 08=OTHER, 98=DON'T KNOW, 99=REFUSAL -->GO TO NEXT SECTION
+529. EDU-Q11: Aside from school changes, how many times in ...'s life has he/she moved, that is, changed his/her usual place of residence? - Numeric
+530. EDU-Q12A: In what language is he/she mainly taught? - Radio: 1=ENGLISH, 2=FRENCH, 3=BOTH, 4=OTHER, 8=DON'T KNOW, 9=REFUSAL -->GO TO NEXT SECTION
+531. EDU-C12B: *IF AGE > 5 ---> GO TO EDU-Q13* - Check (routing)
+532. EDU-Q12B: What language does he/she speak most often at home? (MARK ALL THAT APPLY.) - Checkbox: 1=ENGLISH, 2=FRENCH, 3=OTHER, 4=NONE, 8=DON'T KNOW, 9=REFUSAL -->GO TO NEXT SECTION
+533. EDU-Q13: Since he/she started school in the fall, about how many days has he/she been away from school for any reason? - Numeric
+534. EDU-C14A: *IF EDU-Q1 = 2 (KINDERGARTEN) OR DON'T KNOW OR REFUSAL ---> GO TO EDU-Q16; ELSE IF EDU-Q1A = 2 (KINDERGARTEN) OR DON'T KNOW OR REFUSAL ---> GO TO EDU-Q16; ELSE IF EDU-Q1B = 2 (JUNIOR KINDERGARTEN) OR 3 (KINDERGARTEN) OR DON'T KNOW OR REFUSAL ---> GO TO EDU-Q16; ELSE IF EDU-Q1C = 2 (JUNIOR KINDERGARTEN) OR 3 (KINDERGARTEN) OR DON'T KNOW OR REFUSAL ---> GO TO EDU-Q16; ELSE IF EDU-Q1D = 2 (PRIMARY) OR DON'T KNOW OR REFUSAL ---> GO TO EDU-Q16; ELSE IF EDU-Q1E = DON'T KNOW OR REFUSAL ---> GO TO EDU-Q16; OTHERWISE ---> GO TO EDU-Q14A* - Check (routing)
+535. EDU-Q14A: Based on your knowledge of his/her school work, including his/her report cards, how is ... doing in the following areas at school this year: reading? - Radio: 1=VERY WELL, 2=WELL, 3=AVERAGE, 4=POORLY, 5=VERY POORLY, 6=NOT APPLICABLE, 8=DON'T KNOW, 9=REFUSAL -->GO TO NEXT SECTION
+536. EDU-Q14B: Mathematics? - Radio: Same scale as EDU-Q14A
+537. EDU-Q14C: Written work such as composition? - Radio: Same scale as EDU-Q14A
+538. EDU-Q14D: How is he/she doing overall? - Radio: Same scale as EDU-Q14A
+539. EDU-Q15A: Since ... started school in the fall, has he/she received any help or tutoring outside of school? - Y/N: 1=YES, 2=NO -->GO TO EDU-Q16, 8=DON'T KNOW -->GO TO EDU-Q16, 9=REFUSAL -->GO TO EDU-Q16
+540. EDU-Q15B: How often? - Radio: 1=ONCE A WEEK OR LESS OFTEN, 2=TWICE A WEEK, 3=MORE THAN TWICE A WEEK, 8=DON'T KNOW, 9=REFUSAL -->GO TO NEXT SECTION
+541. EDU-Q16: Since ... started school in the fall how many times have you been contacted by his/her school regarding his/her behaviour at school? - Radio: 1=NONE/ONCE, 2=TWICE/THREE TIMES, 3=FOUR OR MORE TIMES, 8=DON'T KNOW, 9=REFUSAL -->GO TO NEXT SECTION
+542. EDU-Q17: With regard to how he/she feels about school, how often does he/she look forward to going to school? - Radio: 1=ALMOST NEVER, 2=RARELY, 3=SOMETIMES, 4=OFTEN, 5=ALMOST ALWAYS, 8=DON'T KNOW, 9=REFUSAL -->GO TO NEXT SECTION
+543. EDU-C18: *IF AGE < 8 ---> GO TO EDU-Q18B; OTHERWISE ---> GO TO EDU-Q18A* - Check (routing)
+544. EDU-Q18A: How important is it to you that ... have good grades in school? - Radio: 1=VERY IMPORTANT, 2=IMPORTANT, 3=SOMEWHAT IMPORTANT, 4=NOT IMPORTANT AT ALL, 8=DON'T KNOW, 9=REFUSAL -->GO TO NEXT SECTION
+545. EDU-Q18B: How far do you hope he/she will go in school? - Radio: 1=PRIMARY SCHOOL, 2=SECONDARY OR HIGH SCHOOL, 3=GO TO COMMUNITY COLLEGE, TECHNICAL COLLEGE OR CEGEP, 4=GO TO UNIVERSITY, 5=LEARN A TRADE, 6=OTHER, 8=DON'T KNOW, 9=REFUSAL -->GO TO NEXT SECTION
+546. EDU-C19A: *IF EDU-Q1 = 2 (KINDERGARTEN) OR DON'T KNOW OR REFUSAL ---> GO TO EDU-Q20; ELSE IF EDU-Q1A = 2 (KINDERGARTEN) OR DON'T KNOW OR REFUSAL ---> GO TO EDU-Q20; ELSE IF EDU-Q1B = 2 (JUNIOR KINDERGARTEN) OR 3 (KINDERGARTEN) OR DON'T KNOW OR REFUSAL ---> GO TO EDU-20; ELSE IF EDU-Q1C = 2 (JUNIOR KINDERGARTEN) OR 3 (KINDERGARTEN) OR DON'T KNOW OR REFUSAL ---> GO TO EDU-Q20; ELSE IF EDU-Q1D = 2 (PRIMARY) OR DON'T KNOW OR REFUSAL ---> GO TO EDU-Q20; ELSE IF EDU-Q1E = DON'T KNOW OR REFUSAL ---> GO TO EDU-Q20; OTHERWISE ---> GO TO EDU-I19A* - Check (routing)
+547. EDU-I19A: **The following are possible descriptions of his/her present school. For each, please indicate whether you strongly agree, agree, disagree, or strongly disagree.** - Intro
+548. EDU-Q19A: Academic progress is very important at this school. - Scale: Strongly agree/Agree/Disagree/Strongly disagree scale (per intro)
+549. EDU-Q19B: Most children in this school enjoy being there. - Radio: Same scale as Q19A
+550. EDU-Q19C: Parents are made to feel welcome in this school. - Radio: Same scale as Q19A
+551. EDU-Q19D: School spirit is very high. - Radio: Same scale as Q19A
+552. EDU-Q20: Does ... receive special education because a physical, emotional, behavioral, or some other problem limits the kind or amount of school work he/she can do? - Y/N: 1=YES, 2=NO, 8=DON'T KNOW, 9=REFUSAL
+
+#### Literacy - LIT (pp. 101-104) - 25 questions
+
+553. LIT-I1: **Children can show their interest in reading or sharing books in different ways. The following are some questions about books and reading.** - Intro
+554. LIT-C1: *IF AGE IN MONTHS > 23 ---> GO TO LIT-C4; OTHERWISE ---> GO TO LIT-Q1* - Check (routing)
+555. LIT-Q1: Do you or another adult ever read to ..., or show him/her pictures or wordless baby books? - Y/N: 1=YES, 2=NO -->GO TO ACTIVITIES SECTION, 8=DON'T KNOW -->GO TO ACTIVITIES SECTION, 9=REFUSAL -->GO TO ACTIVITIES SECTION
+556. LIT-Q2: How often do you do this? - Radio: 01=RARELY, 02=LESS THAN ONCE A MONTH, 03=ONCE A MONTH, 04=A FEW TIMES A MONTH, 05=ONCE A WEEK, 06=A FEW TIMES A WEEK, 07=DAILY, 08=MANY TIMES EACH DAY, 98=DON'T KNOW, 99=REFUSAL -->GO TO ACTIVITIES SECTION
+557. LIT-Q3: How old was he/she when you started to do this (to nearest month)? - Numeric
+558. LIT-C4: *IF AGE = 2-4 ---> GO TO LIT-Q4; IF AGE = 5 ---> GO TO LIT-Q6A; IF AGE = 6-7 ---> GO TO LIT-Q7A; OTHERWISE (AGE = 8-11) ---> GO TO LIT-Q7B* - Check (routing)
+559. LIT-Q4: How often does ... look at books, magazines, comics, etc. on his/her own? (Think about what he/she does at home only, do not include day care or school.) - Radio: Frequency scale (not explicitly shown; likely same as LIT-Q7/Q11 scale)
+560. LIT-Q5: How often does he/she play with pencils or markers doing real or pretend writing? - Radio: Frequency scale (not explicitly shown)
+561. LIT-Q6A: Have you or another adult ever read aloud to ... on a regular basis? - Y/N: 1=YES, 2=NO -->GO TO LIT-Q8, 8=DON'T KNOW -->GO TO LIT-C9, 9=REFUSAL -->GO TO ACTIVITIES SECTION
+562. LIT-Q6B1: How old was he/she when you started (to the nearest month of age)? - Numeric
+563. LIT-C7A: *IF AGE < 5 ---> GO TO LIT-Q7; OTHERWISE ---> GO TO LIT-Q7A* - Check (routing)
+564. LIT-Q7: Currently, how often do you or another adult read to him/her? (Also include if he/she reads or pretends to read to adult.) - Radio: 01=NEVER OR RARELY, 02=LESS THAN ONCE A MONTH, 03=ONCE A MONTH, 04=A FEW TIMES A MONTH, 05=ONCE A WEEK, 06=A FEW TIMES A WEEK, 07=DAILY, 08=MANY TIMES EACH DAY, 98=DON'T KNOW, 99=REFUSAL
+565. LIT-Q7A: Currently, how often do you or another adult read aloud to him/her or listen to him/her read or attempt to read aloud? - Radio: Same frequency scale as LIT-Q7
+566. LIT-Q7B: Currently, how often do you or another adult read aloud to him/her or listen to him/her read? - Radio: Same frequency scale as LIT-Q7
+567. LIT-C8: *IF AGE > 5 ---> GO TO LIT-Q9; OTHERWISE GO TO LIT-Q8* - Check (routing)
+568. LIT-Q8: How often do you help or encourage him/her to write or pretend to write? - Radio: Frequency scale (not explicitly shown)
+569. LIT-C9: *IF AGE = 2-4 ---> GO TO ACTIVITIES SECTION; OTHERWISE (AGE = 5) ---> GO TO LIT-Q12* - Check (routing)
+570. LIT-Q9: How often is ... assigned homework? - Radio: 1=NEVER -->GO TO LIT-C12A, 2=LESS THAN ONCE A MONTH, 3=ONCE A MONTH, 4=A FEW TIMES A MONTH, 5=ONCE A WEEK, 6=A FEW TIMES A WEEK, 7=DAILY, 8=DON'T KNOW -->GO TO LIT-C12A, 9=REFUSAL -->GO TO ACTIVITIES SECTION
+571. LIT-Q10A: On days when he/she is assigned homework, how much time does he/she usually spend doing homework? - Radio: Open entry (time/duration)
+572. LIT-Q11: How often do you check his/her homework or provide help with homework? - Radio: 1=NEVER OR RARELY, 2=LESS THAN ONCE A MONTH, 3=ONCE A MONTH, 4=A FEW TIMES A MONTH, 5=ONCE A WEEK, 6=A FEW TIMES A WEEK, 7=DAILY, 8=DON'T KNOW, 9=REFUSAL -->GO TO ACTIVITIES SECTION
+573. LIT-C12A: *IF AGE = 6 ---> GO TO LIT-Q12; OTHERWISE ---> GO TO LIT-Q12A* - Check (routing)
+574. LIT-Q12: How often does ... look at books or try to read on his/her own? - Radio: Frequency scale (not explicitly shown)
+575. LIT-Q12A: How often does ... read for pleasure? - Radio: Frequency scale (not explicitly shown)
+576. LIT-Q13: How often does he/she talk about a book with family or friends? - Radio: Frequency scale (not explicitly shown)
+577. LIT-Q14: How often does he/she go to the library, including the school library? - Radio: Frequency scale (not explicitly shown)
+
+#### Medical/Biological - MED (pp. 61-67) - 42 questions
+
+*NOTE: Asked only of children 0-3 years. AGE 0-11m: MED-Q1A-Q28; AGE 12-23m: MED-Q1A-Q15, Q21A-Q22, Q25-Q28; AGE 2-3: MED-Q12A-Q15*
+
+578. MED-C1: *IF AGE > 3 YEARS ---> GO TO TEMPERAMENT SECTION* - Check (routing)
+579. MED-C1A: *IF RESPONDENT IS THE BIOLOGICAL MOTHER OF THE CHILD ---> GO TO MED-C1C; ELSE IF RESPONDENT IS BIOLOGICAL FATHER OF THE CHILD ---> GO TO MED-Q12A; OTHERWISE ---> GO TO TEMPERAMENT SECTION* - Check (routing)
+580. MED-C1C: *IF AGE IN MONTHS > 23 ---> GO TO MED-Q12A* - Check (routing)
+581. MED-Q1A: The following are prenatal questions concerning .... During the pregnancy with ... did you suffer from any of the following: pregnancy diabetes? - Y/N: 1=YES, 2=NO, 8=DON'T KNOW, 9=REFUSAL -->GO TO MED-Q2
+582. MED-Q1B: High blood pressure? - Radio: (same response scale as Q1A implied: YES/NO/DK/REF)
+583. MED-Q1C: Other physical problems? - Radio: (same response scale implied)
+584. MED-Q2: From whom did you receive pre-natal care? - Radio: 1=A DOCTOR, 2=A NURSE, 3=A MIDWIFE, 4=OTHER, 5=NOBODY
+585. MED-Q3: Did you smoke during your pregnancy with ...? - Y/N: 1=YES, 2=NO -->GO TO MED-Q6, 8=DON'T KNOW -->GO TO MED-Q6
+586. MED-Q4: How many cigarettes per day did you smoke during your pregnancy with ...? - Numeric
+587. MED-Q5: At what stage in your pregnancy did you smoke this amount? (MARK MORE THAN ONE IF NECESSARY) - Radio: 1=DURING THE FIRST THREE MONTHS, 2=DURING THE SECOND THREE MONTHS, 3=DURING THE THIRD THREE MONTHS, 4=THROUGHOUT
+588. MED-Q6: How frequently did you consume alcohol during your pregnancy with ... (Eg. Beer, wine, liquor)? - Radio: 1=NEVER -->GO TO MED-Q9A, 2=LESS THAN ONCE A MONTH, 3=1-3 TIMES A MONTH, 4=ONCE A WEEK, 5=2-3 TIMES A WEEK, 6=4-6 TIMES A WEEK, 7=EVERYDAY, 8=DON'T KNOW, 9=REFUSAL -->GO TO MED-Q9A
+589. MED-Q7: On the days when you drank, how many drinks did you usually have? - Radio: 1=1 TO 2, 2=3 TO 4, 3=5 OR MORE, 8=DON'T KNOW, 9=REFUSAL -->GO TO MED-Q9A
+590. MED-Q8: At what stage in your pregnancy did you consume this quantity? (MARK MORE THAN ONE IF NECESSARY) - Radio: 1=DURING THE FIRST THREE MONTHS, 2=DURING THE SECOND THREE MONTHS, 3=DURING THE THIRD THREE MONTHS, 4=THROUGHOUT, 8=DON'T KNOW, 9=REFUSAL
+591. MED-Q9A: Did you take any prescription medications during your pregnancy with ...? - Y/N: 1=YES, 2=NO -->GO TO MED-Q10A, 8=DON'T KNOW -->GO TO MED-Q10A, 9=REFUSAL -->GO TO MED-Q12A
+592. MED-Q9B: At what stage in your pregnancy did you take these? (MARK ALL THAT APPLY) - Checkbox: 1=DURING THE FIRST THREE MONTHS, 2=DURING THE SECOND THREE MONTHS, 3=DURING THE THIRD THREE MONTHS, 4=THROUGHOUT, 8=DON'T KNOW, 9=REFUSAL -->GO TO MED-Q12A
+593. MED-Q10A: Did you take any over-the-counter drugs during your pregnancy with ...? - Y/N: 1=YES, 2=NO -->GO TO MED-Q12A, 8=DON'T KNOW -->GO TO MED-Q12A, 9=REFUSAL -->GO TO MED-Q12A
+594. MED-Q10B: At what stage in your pregnancy did you take these? (MARK ALL THAT APPLY) - Checkbox: 1=DURING THE FIRST THREE MONTHS, 2=DURING THE SECOND THREE MONTHS, 3=DURING THE THIRD THREE MONTHS, 4=THROUGHOUT, 8=DON'T KNOW, 9=REFUSAL
+595. MED-Q12A: The following are questions concerning ...'s birth. Was he/she born before or after the due date? - Radio: 1=BEFORE, 2=AFTER, 3=ON DUE DATE -->GO TO MED-Q13A
+596. MED-Q12B: How many days or weeks before or after the due date was he/she born? - Numeric
+597. MED-Q13A: What was his/her birth weight in kilograms and grams or pounds and ounces? - Numeric
+598. MED-Q14A: What was his/her length at birth in centimetres or inches? - Numeric
+599. MED-Q15: Was this a single birth or twins, or triplets? - Radio: 1=SINGLE BIRTH, 2=TWINS, 3=TRIPLETS, 4=MORE THAN TRIPLETS, 8=DON'T KNOW, 9=REFUSAL -->GO TO MED-Q21A
+600. MED-C16: *IF AGE IN MONTHS = 12-23 ---> GO TO MED-Q21A; IF AGE IN MONTHS > 23 ---> GO TO TEMPERAMENT SECTION; OTHERWISE ---> GO TO MED-Q16* - Check (routing)
+601. MED-Q16: Was the delivery vaginal or caesarian? - Radio: 1=VAGINAL, 2=CAESARIAN -->GO TO MED-Q21A
+602. MED-Q17: Was ... born head first? - Y/N: 1=YES, 2=NO, 8=DON'T KNOW, 9=REFUSAL
+603. MED-Q18: Were birthing aids used? - Radio: 1=NONE, 2=FORCEPS, 3=CUPPING GLASS (SUCTION CUP), 8=DON'T KNOW, 9=REFUSAL
+604. MED-Q21A: Did ... receive special medical care following his/her birth? - Y/N: 1=YES, 2=NO --> Go to MED-Q22, 8=DON'T KNOW --> Go to MED-Q22, 9=REFUSAL --> Go to MED-Q22
+605. MED-Q21B: What type of special medical care was received? (MARK ALL THAT APPLY) - Checkbox: 1=INTENSIVE CARE, 2=VENTILATION/OXYGEN, 3=TRANSFER TO A SPECIALIZED HOSPITAL, 4=OTHER, 8=DON'T KNOW -->GO TO MED-Q22
+606. MED-Q21C: For how many days, in total, was this care received? - Numeric
+607. MED-Q22: Compared to other babies in general, would you say that ...'s health at birth was: - Radio: 1=Excellent?, 2=Very good?, 3=Good?, 4=Fair?, 5=Poor?, 8=DON'T KNOW, 9=REFUSAL
+608. MED-C23A: *IF AGE IN MONTHS = 12-23 ---> GO TO MED-Q25; OTHERWISE ---> GO TO MED-Q23A* - Check (routing)
+609. MED-Q23A: The following are postnatal questions concerning .... After ...'s delivery, did you/her/his-mother suffer from any of the following conditions: postpartum haemorrhage? - Y/N: 1=YES, 2=NO, 8=DON'T KNOW, 9=REFUSAL -->GO TO MED-Q24A
+610. MED-Q23B: Postpartum infection? - Radio: (same response scale implied)
+611. MED-Q23C1: Postpartum depression? - Radio: (same response scale implied)
+612. MED-Q23C2: For how long? (ENTER NUMBER OF DAYS OR WEEKS OR MONTHS) - Numeric
+613. MED-Q23D: Postpartum hypertension? - Radio: (same response scale implied)
+614. MED-Q24A: Were/Was you/her/his mother hospitalized for special medical care for any period immediately following the birth of ...? - Y/N: 1=YES, 2=NO -->GO TO MED-Q25
+615. MED-Q24B: For how many days? - Numeric
+616. MED-Q25: Are/Is you/her/his mother currently breast-feeding ...? - Y/N: 1=YES -->GO TO TEMPERAMENT SECTION, 2=NO
+617. MED-Q26: Did you/her/his mother breast-feed him/her even if only for a short time? - Y/N: 1=YES, 2=NO -->GO TO TEMPERAMENT SECTION
+618. MED-Q27: For how long? (DO NOT READ LIST. MARK ONE ONLY.) - Radio: 01=LESS THAN 1 WEEK, 02=1-4 WEEKS, 03=5-8 WEEKS, 04=9-12 WEEKS, 05=3-6 MONTHS, 06=7-9 MONTHS, 07=10-12 MONTHS, 08=13-16 MONTHS, 09=MORE THAN 16 MONTHS
+619. MED-Q28: What was the main reason you/her/his mother stopped breast-feeding him/her? (DO NOT READ LIST. MARK ALL THAT APPLY.) - Checkbox: 01=NOT ENOUGH MILK/HUNGRY BABY, 02=INCONVENIENCED/FATIGUE, 03=DIFFICULTY WITH BF TECHNIQUES, 04=SORE NIPPLES/ENGORGED BREAST, 05=MOTHER'S ILLNESS, 06=PLANNED TO STOP AT THIS TIME, 07=BABY WEANED HIMSELF/HERSELF, 08=PHYSICIAN TOLD ME/HER TO STOP, 09=RETURNED TO WORK/SCHOOL, 10=PARTNER/FATHER WANTED ME/HER TO STOP, 11=FORMULA FEEDING PREFERABLE, 12=WANTED TO DRINK ALCOHOL, 13=OTHER
+
+#### Temperament - TMP (pp. 68-83) - 68 questions
+
+*NOTE: Asked for children 3-47 months. Multiple age variants exist (e.g., TMP-Q2 vs Q2A, TMP-Q4 vs Q4A). Check items (C-prefixed) route to age-appropriate variants.*
+
+620. TMP-C1: *IF AGE < 1 YEAR AND MONTH OF BIRTH WAS NOT STATED IN THE DEMOGRAPHICS OR IN THE CHILD COMPONENT ---> GO TO EDUCATION SECTION; ELSE IF AGE IN MONTHS < 3 OR > 47 ---> GO TO EDUCATION SECTION; OTHERWISE ---> GO TO TMP-I1* - Check (routing)
+621. TMP-I1: **The following questions are about how ... behaves. Please answer them for him/her in comparison to others. "About average" means how you think the typical child would be scored.** - Intro
+622. TMP-Q1: How easy or difficult is it for you to calm or soothe ... when he/she is upset? - Scale 1-7: 1=VERY EASY, 2=(unlabeled), 3=(unlabeled), 4=ABOUT AVERAGE, 5=(unlabeled), 6=(unlabeled), 7=DIFFICULT, 9=REFUSAL -->GO TO NEXT SECTION
+623. TMP-C2: *IF AGE < 1 ---> GO TO TMP-Q2; OTHERWISE ---> GO TO TMP-Q2A* - Check (routing)
+624. TMP-Q2: How easy or difficult is it for you to predict when he/she will go to sleep and wake up? - Scale 1-7: 1=VERY EASY, 2, 3, 4=ABOUT AVERAGE, 5, 6, 7=DIFFICULT, 9=REFUSAL -->GO TO NEXT SECTION
+625. TMP-Q2A: How consistent is he/she in sticking with his/her sleeping routine? - Scale 1-7: 1=VERY CONSISTENT; LITTLE OR NO VARIABILITY, 2, 3, 4=SOME VARIABILITY, 5, 6, 7=VERY INCONSISTENT; HIGHLY VARIABLE, 9=REFUSAL -->GO TO NEXT SECTION
+626. TMP-Q3: How easy or difficult is it for you to predict when he/she will become hungry? - Scale 1-7: 1=VERY EASY, 2, 3, 4=ABOUT AVERAGE, 5, 6, 7=DIFFICULT, 9=REFUSAL -->GO TO NEXT SECTION
+627. TMP-Q3A: How consistent is he/she in sticking with his/her eating routine? - Scale 1-7: 1=VERY CONSISTENT; LITTLE OR NO VARIABILITY, 2, 3, 4=SOME VARIABILITY, 5, 6, 7=VERY INCONSISTENT; HIGHLY VARIABLE, 9=REFUSAL -->GO TO NEXT SECTION
+628. TMP-C4: *IF AGE < 3 ---> GO TO TMP-Q4; OTHERWISE ---> GO TO TMP-Q4A* - Check (routing)
+629. TMP-Q4: How easy or difficult is it for you to know what's bothering him/her when he/she cries or fusses? - Scale 1-7: 1=VERY EASY, 2, 3, 4=ABOUT AVERAGE, 5, 6, 7=VERY DIFFICULT, 9=REFUSAL -->GO TO NEXT SECTION
+630. TMP-Q4A: How easy or difficult is it for you to know what's bothering him/her when he/she is irritable? - Scale 1-7: 1=VERY EASY, 2, 3, 4=ABOUT AVERAGE, 5, 6, 7=VERY DIFFICULT, 9=REFUSAL -->GO TO NEXT SECTION
+631. TMP-Q5: How many times per day, on average, does ... get fussy and irritable - for either short or long periods of time? - Radio: 1=NEVER, 2=1-2 TIMES PER DAY, 3=3-4 TIMES PER DAY, 4=5-6 TIMES PER DAY, 5=7-9 TIMES PER DAY, 6=10-14 TIMES PER DAY, 7=15 TIMES PER DAY OR MORE, 9=REFUSAL -->GO TO NEXT SECTION
+632. TMP-Q5A: How many times per day on average does ... get cranky and irritable - for either short or long periods of time? - Radio: 1=NEVER, 2=1-2 TIMES PER DAY, 3=3-4 TIMES PER DAY, 4=5-6 TIMES PER DAY, 5=7-9 TIMES PER DAY, 6=10-14 TIMES PER DAY, 7=15 TIMES PER DAY OR MORE, 9=REFUSAL -->GO TO NEXT SECTION
+633. TMP-Q6: How much does he/she cry and fuss in general? - Scale 1-7: 1=VERY LITTLE; MUCH LESS THAN THE AVERAGE BABY/CHILD, 2, 3, 4=AVERAGE AMOUNT; ABOUT AS MUCH AS THE AVERAGE BABY/CHILD, 5, 6, 7=A LOT; MUCH MORE THAN THE AVERAGE BABY/CHILD, 9=REFUSAL -->GO TO NEXT SECTION
+634. TMP-Q6A: How much does he/she cry, fuss or whine in general? - Radio: (same 7-point scale implied)
+635. TMP-Q7: How easily does he/she get upset? - Scale 1-7: 1=VERY HARD TO UPSET -- EVEN BY THINGS THAT UPSET MOST BABIES/CHILDREN, 2, 3, 4=ABOUT AVERAGE, 5, 6, 7=VERY EASILY UPSET BY THINGS THAT WOULDN'T BOTHER MOST BABIES/CHILDREN, 8=DON'T KNOW, 9=REFUSAL -->GO TO NEXT SECTION
+636. TMP-C8: *IF AGE < 1 ---> GO TO TMP-Q8; ELSE AGE = 1 OR 2 ---> GO TO TMP-Q8A; OTHERWISE ---> GO TO TMP-Q8B* - Check (routing)
+637. TMP-Q8: When he/she gets upset (e.g., before feeding, during diapering, etc.), how vigorously or loudly does he/she cry and fuss? - Scale 1-7: 1=VERY MILD INTENSITY OR LOUDNESS, 2, 3, 4=MODERATE INTENSITY OR LOUDNESS, 5, 6, 7=VERY LOUD OR INTENSE, REALLY CUTS LOOSE, 9=REFUSAL -->GO TO NEXT SECTION
+638. TMP-Q8A: When he/she gets upset, how vigorously or loudly does he/she cry and fuss? - Scale 1-7: 1=VERY MILD INTENSITY OR LOUDNESS, 2, 3, 4=MODERATE INTENSITY OR LOUDNESS, 5, 6, 7=VERY LOUD OR INTENSE, REALLY CUTS LOOSE, 9=REFUSAL -->GO TO NEXT SECTION
+639. TMP-Q8B: When he/she gets upset, how vigourously or loudly does he/she cry and whine? - Radio: (same 7-point scale implied)
+640. TMP-Q9: How does he/she react when you are dressing him/her? - Scale 1-7: 1=VERY WELL -- LIKES IT, 2, 3, 4=ABOUT AVERAGE -- DOESN'T MIND IT, 5, 6, 7=DOESN'T LIKE IT AT ALL, 9=REFUSAL -->GO TO NEXT SECTION
+641. TMP-Q9A: How does he/she react during hairwashing? - Radio: (same 7-point scale implied)
+642. TMP-Q10: How active is ... in general? - Scale 1-7: 1=VERY CALM AND QUIET, 2, 3, 4=AVERAGE, 5, 6, 7=VERY ACTIVE AND VIGOROUS, 8=DON'T KNOW, 9=REFUSAL -->GO TO NEXT SECTION
+643. TMP-C11: *IF AGE < 3 ---> GO TO TMP-Q11; OTHERWISE ---> GO TO TMP-Q11A* - Check (routing)
+644. TMP-Q11: How much does he/she smile and make happy sounds? - Radio: 1=A GREAT DEAL, MUCH MORE THAN MOST INFANTS/CHILDREN, 2, 3, 4=AN AVERAGE AMOUNT, 5, 6, 7=VERY LITTLE, MUCH LESS THAN MOST INFANTS/CHILDREN, 9=REFUSAL -->GO TO NEXT SECTION
+645. TMP-Q11A: How much does he/she smile and laugh? - Radio: (same 7-point scale implied)
+646. TMP-Q12: What kind of mood is he/she generally in? - Scale 1-7: 1=VERY HAPPY AND CHEERFUL, 2, 3, 4=NEITHER SERIOUS NOR CHEERFUL, 5, 6, 7=SERIOUS, 9=REFUSAL -->GO TO NEXT SECTION
+647. TMP-C13: *IF AGE IN MONTHS < 6 ---> GO TO TMP-Q14; IF AGE IN MONTHS 6-11 ---> GO TO TMP-Q13; OTHERWISE ---> GO TO TMP-Q13A* - Check (routing)
+648. TMP-Q13: How much does he/she enjoy playing little games with you? - Radio: 1=A GREAT DEAL -- REALLY LOVES IT, 2, 3, 4=ABOUT AVERAGE, 5, 6, 7=VERY LITTLE -- DOESN'T LIKE IT VERY MUCH, 9=REFUSAL -->GO TO NEXT SECTION
+649. TMP-Q13A: How much does he/she enjoy playing with you? - Radio: (same 7-point scale implied)
+650. TMP-C14: *IF AGE < 3 YEARS ---> GO TO TMP-Q14; OTHERWISE ---> GO TO TMP-Q14A* - Check (routing)
+651. TMP-Q14: How much does he/she want to be held? - Radio: 1=WANTS TO BE FREE MOST OF THE TIME, 2, 3, 4=SOMETIMES WANTS TO BE HELD; SOMETIMES NOT, 5, 6, 7=A GREAT DEAL -- WANTS TO BE HELD ALMOST ALL THE TIME, 9=REFUSAL -->GO TO NEXT SECTION
+652. TMP-Q14A: How much does he/she want to be cuddled? - Radio: (same 7-point scale implied)
+653. TMP-Q15: How does he/she respond to disruptions and changes in everyday routine, such as when you go to church, a meeting, on trips, etc.,? - Scale 1-7: 1=VERY FAVOURABLY, DOESN'T GET UPSET, 2, 3, 4=ABOUT AVERAGE, 5, 6, 7=VERY UNFAVOURABLY, GETS QUITE UPSET, 9=REFUSAL -->GO TO NEXT SECTION
+654. TMP-C16: *IF AGE IN MONTHS < 12 ---> GO TO TMP-Q16; OTHERWISE ---> GO TO TMP-Q17* - Check (routing)
+655. TMP-Q16: How easy is it for you to predict when he/she will need a diaper change? - Scale 1-7: 1=VERY EASY, 2, 3, 4=ABOUT AVERAGE, 5, 6, 7=VERY DIFFICULT, 9=REFUSAL -->GO TO NEXT SECTION
+656. TMP-Q17: How changeable is ...'s mood? - Radio: 1=CHANGES SELDOM AND CHANGES SLOWLY WHEN HE/SHE DOES CHANGE, 2, 3, 4=ABOUT AVERAGE, 5, 6, 7=CHANGES OFTEN AND RAPIDLY, 9=REFUSAL -->GO TO NEXT SECTION
+657. TMP-Q18: How excited does he/she become when people play with or talk to him/her? - Scale 1-7: 1=VERY EXCITED, 2, 3, 4=ABOUT AVERAGE, 5, 6, 7=NOT AT ALL, 8=DON'T KNOW, 9=REFUSAL -->GO TO NEXT SECTION
+658. TMP-C19: *IF AGE = 3 ---> GO TO TMP-Q19A; OTHERWISE ---> GO TO TMP-Q19* - Check (routing)
+659. TMP-Q19: On the average, how much attention does he/she require, other than for caregiving (feeding, bathing, diaper changes, etc.)? - Scale 1-7: 1=VERY LITTLE -- MUCH LESS THAN THE AVERAGE BABY/CHILD, 2, 3, 4=AVERAGE AMOUNT, 5, 6, 7=A LOT -- MUCH MORE THAN THE AVERAGE BABY/CHILD, 9=REFUSAL -->GO TO NEXT SECTION
+660. TMP-Q19A: On the average, how much attention does he/she require, other than for caregiving (bathing, eating, etc.)? - Radio: (same 7-point scale implied)
+661. TMP-Q20: When left alone, he/she plays well by him/herself? - Radio: 1=ALMOST ALWAYS, 2, 3, 4=ABOUT HALF THE TIME, 5, 6, 7=ALMOST NEVER -- WON'T PLAY BY SELF, 8=DON'T KNOW, 9=REFUSAL -->GO TO NEXT SECTION
+662. TMP-C21: *IF AGE IN MONTHS = 3-11 ---> GO TO TMP-Q23; ELSE IF AGE IN MONTHS = 12-23 ---> GO TO TMP-Q21; ELSE IF AGE IN MONTHS = 24-35 ---> GO TO TMP-Q21A; ELSE ---> GO TO TMP-Q21B* - Check (routing)
+663. TMP-Q21: How does he/she react to being confined (as in a carseat, infant seat, playpen, etc.)? - Scale 1-7: 1=VERY WELL -- LIKES IT, 2, 3, 4=MINDS A LITTLE OR PROTESTS ONCE IN A WHILE, 5, 6, 7=DOESN'T LIKE IT AT ALL, 8=DON'T KNOW, 9=REFUSAL -->GO TO NEXT SECTION
+664. TMP-Q21A: How does he/she react to being confined (as in a carseat, bedroom, crib, etc.)? - Radio: (same 7-point scale implied)
+665. TMP-Q21B: How does he/she react to being confined (as in a boosterseat, seatbelt, bedroom, bed, etc.) - Radio: (same 7-point scale implied)
+666. TMP-Q22: How much does he/she cuddle and snuggle when held? - Radio: 1=A GREAT DEAL -- ALMOST EVERY TIME, 2, 3, 4=AVERAGE, SOMETIMES DOES AND SOMETIMES DOES NOT, 5, 6, 7=VERY LITTLE -- SELDOM CUDDLES, 9=REFUSAL -->GO TO NEXT SECTION
+667. TMP-Q22A: How much does he/she cuddle and snuggle when close to you? - Radio: (same 7-point scale implied)
+668. TMP-C23: *IF AGE = 1-3 ---> GO TO TMP-Q23A* - Check (routing)
+669. TMP-Q23: How did he/she respond to his/her first bath? - Scale 1-7: 1=VERY WELL -- BABY LOVED IT, 2, 3, 4=NEITHER LIKED NOR DISLIKED IT, 5, 6, 7=TERRIBLY -- DIDN'T LIKE IT, 9=REFUSAL -->GO TO NEXT SECTION
+670. TMP-C23A: *IF AGE IN MONTHS = 3-5 ---> GO TO TMP-Q33; ELSE ---> GO TO TMP-Q24* - Check (routing)
+671. TMP-Q23A: How does he/she typically respond to new playthings? - Radio: 1=ALWAYS RESPONDS FAVOURABLY, 2, 3, 4=RESPONDS FAVOURABLY ABOUT HALF THE TIME OR IS ALWAYS NEUTRAL, 5, 6, 7=ALWAYS RESPONDS NEGATIVELY OR FEARFULLY, 9=REFUSAL -->GO TO NEXT SECTION
+672. TMP-Q24: How did he/she respond to his/her first solid food? - Scale 1-7: 1=VERY FAVOURABLY -- LIKED IT IMMEDIATELY, 2, 3, 4=NEITHER LIKED NOR DISLIKED IT, 5, 6, 7=VERY NEGATIVELY -- DID NOT LIKE IT AT ALL, 9=REFUSAL -->GO TO NEXT SECTION
+673. TMP-Q24A: How does he/she typically respond to new foods? - Radio: 1=ALWAYS RESPONDS FAVOURABLY, 2, 3, 4=RESPONDS FAVOURABLY ABOUT HALF OF THE TIME OR IS ALWAYS NEUTRAL, 5, 6, 7=VERY NEGATIVELY--DOES NOT LIKE IT AT ALL, 9=REFUSAL -->GO TO NEXT SECTION
+674. TMP-Q25: How does he/she typically respond to a new person? - Radio: 1=ALMOST ALWAYS RESPONDS FAVORABLY, 2, 3, 4=RESPONDS FAVORABLY ABOUT HALF THE TIME, 5, 6, 7=ALMOST ALWAYS RESPONDS NEGATIVELY AT FIRST, 8=DON'T KNOW, 9=REFUSAL -->GO TO NEXT SECTION
+675. TMP-Q26: How does he/she typically respond to being in a new place? - Radio: (same 7-point scale implied)
+676. TMP-C27: *IF AGE < 1 ---> GO TO TMP-Q27; OTHERWISE ---> GO TO TMP-Q27A* - Check (routing)
+677. TMP-Q27: How well does he/she adapt to things (such as baths, new people & new places) eventually? - Scale 1-7: 1=VERY WELL -- ALWAYS LIKES IT EVENTUALLY, 2, 3, 4=ENDS UP LIKING IT ABOUT HALF THE TIME, 5, 6, 7=ALMOST ALWAYS DISLIKES IT IN THE END, 9=REFUSAL -->GO TO NEXT SECTION
+678. TMP-Q27A: How well does he/she adapt to new experiences (such as new playthings, new foods, new persons, etc.) eventually? - Radio: (same 7-point scale implied)
+679. TMP-C28: *IF AGE < 1 ---> GO TO TMP-Q33; OTHERWISE ---> GO TO TMP-Q28* - Check (routing)
+680. TMP-Q28: How easy or difficult is it to take him/her places? - Radio: 1=EASY; FUN TO TAKE BABY/CHILD WITH ME, 2, 3, 4=OKAY; BABY/CHILD MAY FUSS BUT NO REAL TROUBLE, 5, 6, 7=DIFFICULT; BABY/CHILD IS USUALLY DISRUPTIVE, 9=REFUSAL -->GO TO NEXT SECTION
+681. TMP-Q29: Does he/she persist in playing with objects when he/she is told to leave them alone? - Radio: 1=RARELY OR NEVER PERSISTS, 2, 3, 4=SOMETIMES DOES AND SOMETIMES DOES NOT, 5, 6, 7=ALMOST ALWAYS PERSISTS, 8=DON'T KNOW, 9=REFUSAL -->GO TO NEXT SECTION
+682. TMP-C30: *IF AGE < 3 ---> GO TO TMP-Q30; OTHERWISE ---> GO TO TMP-Q30A* - Check (routing)
+683. TMP-Q30: Does he/she continue to go someplace even when you told him/her something like "stop", "come here", or "no-no"? - Radio: 1=RARELY OR NEVER, 2, 3, 4=SOMETIMES DOES AND SOMETIMES DOES NOT, 5, 6, 7=ALMOST ALWAYS, 9=REFUSAL -->GO TO NEXT SECTION
+684. TMP-Q30A: Does he/she continue to go someplace even when you told him/her something like "stop", "come here", or "please don't"? - Radio: (same 7-point scale implied)
+685. TMP-Q31: When removed from something he/she is interested in but should not be getting into, he/she gets upset. - Radio: 1=NEVER, 2, 3, 4=SOMETIMES DOES AND SOMETIMES DOES NOT, 5, 6, 7=ALWAYS GETS VERY UPSET, 9=REFUSAL -->GO TO NEXT SECTION
+686. TMP-Q32: How persistent is he/she in trying to get your attention when you are busy? - Radio: 1=DOESN'T PERSIST AT ALL, 2, 3, 4=WILL TRY, BUT WILL ONLY MILDLY PERSIST, 5, 6, 7=VERY PERSISTENT -- WILL DO ANYTHING TO GET ATTENTION, 8=DON'T KNOW, 9=REFUSAL -->GO TO NEXT SECTION
+687. TMP-Q33: Please rate the overall degree of difficulty ... would present for the average parent. - Scale 1-7: 1=VERY EASY, 2, 3, 4=ORDINARY, SOME PROBLEMS, 5, 6, 7=HIGHLY DIFFICULT TO DEAL WITH, 8=DON'T KNOW, 9=REFUSAL -->GO TO NEXT SECTION
+
+#### Family & Custody History - CUS (pp. 130-155) - 118 questions
+
+688. CUS-C1: *IF RESPONDENT IS THE CHILD'S FOSTER PARENT (DVS-Q1 = 4) ---> GO TO CHILD CARE SECTION. ELSE IF THE RESPONDENT IS THE PERSON MOST KNOWLEDGEABLE ABOUT THE CHILD, OR THAT PERSON'S SPOUSE/PARTNER ---> GO TO CUS-I1. OTHERWISE ---> GO TO CHILD CARE SECTION.* - Check (routing)
+689. CUS-I1: **I would now like to ask you some questions about the family history of ....** - Intro
+690. CUS-Q1A: Did ... live with you when he/she was born? - Y/N: 1=YES, 2=NO, 8=DON'T KNOW (GO TO CHILD CARE SECTION), 9=REFUSAL (GO TO CHILD CARE SECTION)
+691. CUS-C1A: *IF ELDEST SELECTED CHILD AND CUS-Q1A = YES ---> GO TO CUS-Q1D. ELSE IF ELDEST CHILD'S CUSTODY SECTION COMPLETED AND SELECTED CHILD IS A FULL SIBLING ---> GO TO CUS-C1B. ELSE IF CUS-Q1A = YES ---> GO TO CUS-Q1D. OTHERWISE ---> GO TO CUS-Q1B.* - Check (routing)
+692. CUS-C1B: *IF PARENTS TOGETHER SINCE ELDEST CHILD'S BIRTH AND CHILD LIVED WITH RESPONDENT AT BIRTH ---> GO TO CHILD CARE SECTION. ELSE IF PARENTS SEPARATED AFTER ELDEST CHILD'S BIRTH - NEITHER REMARRIED AND CHILD LIVED WITH RESPONDENT AT BIRTH AND THIS CHILD WAS BORN BEFORE THE SEPARATION ---> GO TO CUS-Q11D. ELSE IF CHILD LIVING WITH RESPONDENT AT BIRTH (YES TO CUS-Q1A) ---> GO TO CUS-I2. OTHERWISE (CHILD NOT LIVING WITH PARENTS AT BIRTH) ---> GO TO CUS-Q1B.* - Check (routing)
+693. CUS-Q1B: At what age did ... start living with you? - Radio: 01=LESS THAN ONE YEAR OLD, 02=ONE YEAR OLD (GO TO CUS-Q1C), 03=TWO YEARS OLD (GO TO CUS-Q1C), 04=THREE YEARS OLD (GO TO CUS-Q1C), 05=FOUR YEARS OLD (GO TO CUS-Q1C), 06=FIVE YEARS OLD (GO TO CUS-Q1C), 07=SIX YEARS OLD (GO TO CUS-Q1C), 08=SEVEN YEARS OLD (GO TO CUS-Q1C), 09=EIGHT YEARS OLD (GO TO CUS-Q1C), 10=NINE YEARS OLD (GO TO CUS-Q1C), 11=TEN YEARS OLD (GO TO CUS-Q1C), 12=ELEVEN YEARS OLD (GO TO CUS-Q1C), 98=DON'T KNOW (GO TO CUS-Q1C), 99=REFUSAL (GO TO CHILD CARE SECTION)
+694. CUS-Q1B2: ENTER THE AGE IN MONTHS - Numeric
+695. CUS-Q1C: What was the reason ... did not live with you right from birth? - Radio: 01=YOU HAVE ADOPTED HER/HIM, 02=SHE/HE IS A STEPCHILD, 03=SHE/HE WAS PUT IN YOUR CARE BY A CHILD WELFARE AGENCY (FOSTER CARE), 04=SHE/HE WAS PUT IN YOUR CARE BY ANOTHER TYPE OF AGENCY, 05=SHE/HE WAS SICK AND HAD TO REMAIN IN A HOSPITAL OR OTHER INSTITUTION, 06=YOU HAD TO LEAVE HER/HIM IN THE CARE OF SOMEONE ELSE FOR A WHILE BEFORE YOU COULD TAKE CHARGE OF HER/HIM, 07=CHILD WAS IN CARE OF A CHILD WELFARE AGENCY (FOSTER CARE) FOR A TIME, 08=OTHER, 98=DON'T KNOW, 99=REFUSAL (GO TO CHILD CARE SEC...
+696. CUS-C1D: *IF ELDEST SELECTED CHILD ---> GO TO CUS-Q1D. ELSE IF ELDEST SELECTED CHILD'S CUSTODY SECTION COMPLETED AND SELECTED CHILD IS A FULL SIBLING BY BIRTH ---> GO TO CUS-C1E. OTHERWISE ---> GO TO CUS-Q1D.* - Check (routing)
+697. CUS-C1E: *IF PARENTS TOGETHER SINCE ELDEST CHILD'S BIRTH ---> GO TO CHILD CARE SECTION. ELSE IF PARENTS SEPARATED AFTER ELDEST CHILD'S BIRTH - NEITHER REMARRIED AND THIS CHILD WAS BORN BEFORE THE SEPARATION ---> GO TO CUS-Q11D. OTHERWISE ---> GO TO CUS-I2.* - Check (routing)
+698. CUS-Q1D: Does ... have any brothers or sisters who do not regularly live in this household, excluding step and half brothers and sisters? - Y/N: 1=YES, 2=NO (GO TO CUS-I2), 8=DON'T KNOW (GO TO CUS-I2), 9=REFUSAL (GO TO CHILD CARE SECTION)
+699. CUS-Q1E: How many? - Numeric
+700. CUS-Q1F: What is the age of the youngest one/him/her? (INTERVIEWER: ENTER AGE IN YEARS. IF LESS THAN ONE YEAR ENTER 0.) - Numeric
+701. CUS-C1J: *IF CUS-Q1E = 1 (ONE CHILD ONLY) ---> GO TO CUS-I2. OTHERWISE ---> GO TO CUS-Q1G.* - Check (routing)
+702. CUS-Q1G: What is the age of the oldest one? (INTERVIEWER: ENTER AGE IN YEARS. IF LESS THAN ONE YEAR ENTER 0.) - Numeric
+703. CUS-I2: **INTERVIEWER: IF ADOPTED, USE SUITABLE WORDING IN QUESTION CUS-Q2 AND CUS-Q3A, THEN CONSIDER ADOPTIVE PARENTS AS MOTHER AND FATHER FOR THE REST OF THIS SECTION. IN QUESTIONS REFERRING TO THE TIME OF BIRTH, SUBSTITUTE TIME OF ADOPTION.** - Intro
+704. CUS-Q2: When ... was born/adopted, were his/her parents (biological/adoptive) living together? - Y/N: 1=YES, 2=NO (GO TO CUS-Q4), 8=DON'T KNOW (GO TO CHILD CARE SECTION), 9=REFUSAL (GO TO CHILD CARE SECTION)
+705. CUS-Q3A: When ... was born/adopted, were his/her parents married, were they living together in a common-law relationship, or were they living together and eventually got married? - Radio: 1=MARRIED, 2=COMMON LAW (GO TO CUS-Q3D), 3=COMMON-LAW BUT MARRIED LATER (GO TO CUS-Q3C), 8=DON'T KNOW (GO TO CUS-Q6A), 9=REFUSAL (GO TO CHILD CARE SECTION)
+706. CUS-Q3B: Had they been living together before getting married? - Y/N: 1=YES, 2=NO, 8=DON'T KNOW, 9=REFUSAL (GO TO CHILD CARE SECTION)
+707. CUS-Q3C: What date were they married? - Numeric
+708. CUS-C3D: *IF "MARRIED" IN CUS-Q3A AND "NO" IN CUS-Q3B ---> GO TO CUS-Q6A.* - Check (routing)
+709. CUS-Q3D: Approximately since when had they been living together? - Numeric
+710. CUS-Q4: Did ... live with his/her: - Radio: 1=Mother alone?, 2=Father alone?, 3=Mother and other?, 4=Father and other?, 5=Other?, 8=DON'T KNOW, 9=REFUSAL (GO TO CHILD CARE SECTION)
+711. CUS-Q5A: Have ...'s parents ever lived together as a couple? - Y/N: 1=YES, 2=NO (GO TO CUS-Q5F), 8=DON'T KNOW (GO TO CUS-Q5F), 9=REFUSAL (GO TO CHILD CARE SECTION)
+712. CUS-Q5B: Was that before or after his/her birth? - Radio: 1=BEFORE, 2=AFTER, 3=BOTH BEFORE AND AFTER, 8=DON'T KNOW, 9=REFUSAL (GO TO CHILD CARE SECTION)
+713. CUS-Q5C: Were ...'s parents ever married? - Y/N: 1=YES, 2=NO (GO TO CUS-C5E), 8=DON'T KNOW (GO TO CUS-C5E), 9=REFUSAL (GO TO CHILD CARE SECTION)
+714. CUS-Q5D: When did they marry? - Numeric
+715. CUS-C5E: *IF "AFTER" IN CUS-Q5B ---> GO TO CUS-Q5F.* - Check (routing)
+716. CUS-Q5E: At the time ... was born, since when had his/her parents stopped living together? - Numeric
+717. CUS-Q5F: Without living together, did ...'s parents have a steady relationship at the time of his/her birth? - Y/N: 1=YES, 2=NO, 8=DON'T KNOW, 9=REFUSAL (GO TO CHILD CARE SECTION)
+718. CUS-Q6A: Had ...'s mother been in any common-law relationships or been married before the union with ...'s father? (MARK ALL THAT APPLY) - Checkbox: 1=YES COMMON-LAW, 2=YES MARRIAGE, 3=YES COMMON LAW WHICH RESULTED IN MARRIAGE, 4=NO (GO TO CUS-Q6E), 8=DON'T KNOW (GO TO CUS-Q6E), 9=REFUSAL (GO TO CHILD CARE SECTION)
+719. CUS-Q6B: How many times? - Numeric
+720. CUS-Q6C: Before ...'s birth, had his/her mother been in any common-law relationships or been married to a person other than ...'s father? (MARK ALL THAT APPLY) - Checkbox: 1=YES COMMON-LAW, 2=YES MARRIAGE, 3=YES COMMON LAW WHICH RESULTED IN MARRIAGE, 4=NO (GO TO CUS-Q6H), 8=DON'T KNOW (GO TO CUS-Q6H), 9=REFUSAL (GO TO CHILD CARE SECTION)
+721. CUS-Q6D: How many times? - Numeric
+722. CUS-Q6E: Did ...'s mother have any children before entering into union with ...'s father? - Y/N: 1=YES, 2=NO (GO TO CUS-Q7A), 8=DON'T KNOW (GO TO CUS-Q7A), 9=REFUSAL (GO TO CHILD CARE SECTION)
+723. CUS-Q6F: How many? - Numeric
+724. CUS-Q6G: Did that child/any of those children live at least part time in the household when ... was born? (MARK ALL THAT APPLY) - Y/N: 1=YES ALL OF THEM FULL-TIME, 2=YES ALL OF THEM PART-TIME, 3=YES SOME OF THEM FULL-TIME, 4=YES SOME OF THEM PART-TIME, 5=NO NONE OF THEM, 8=DON'T KNOW, 9=REFUSAL (GO TO CHILD CARE SECTION)
+725. CUS-Q6H: How many children did ...'s mother have before ...? - Numeric
+726. CUS-C6I: *IF CUS-Q6H = 0 AND CUS-Q5A = YES ---> GO TO CUS-Q7C. ELSE IF CUS-Q6H = 0 AND CUS-Q5A = NO OR DON'T KNOW ---> GO TO CUS-Q8A. OTHERWISE ---> GO TO CUS-Q6I.* - Check (routing)
+727. CUS-Q6I: Did that child/any of those children live at least part time in the household when ... was born? (MARK ALL THAT APPLY) - Y/N: 1=YES ALL OF THEM FULL-TIME, 2=YES ALL OF THEM PART-TIME, 3=YES SOME OF THEM FULL-TIME, 4=YES SOME OF THEM PART-TIME, 5=NO NONE OF THEM, 8=DON'T KNOW, 9=REFUSAL (GO TO CHILD CARE SECTION)
+728. CUS-C7A: *IF CUS-Q5A = YES ---> GO TO CUS-Q7C. OTHERWISE ---> GO TO CUS-Q8A.* - Check (routing)
+729. CUS-Q7A: Had ...'s father been in any common-law relationships or been married before the union with ...'s mother? (MARK ALL THAT APPLY) - Checkbox: 1=YES COMMON-LAW, 2=YES MARRIAGE, 3=YES COMMON LAW WHICH RESULTED IN MARRIAGE, 4=NO (GO TO CUS-Q7E), 8=DON'T KNOW (GO TO CUS-Q7E), 9=REFUSAL (GO TO CHILD CARE SECTION)
+730. CUS-Q7B: How many times? - Numeric
+731. CUS-Q7C: Before ...'s birth, had his/her father been in any common-law relationships or been married to a person other than ...'s mother? (MARK ALL THAT APPLY) - Checkbox: 1=YES COMMON-LAW, 2=YES MARRIAGE, 3=YES COMMON LAW WHICH RESULTED IN MARRIAGE, 4=NO (GO TO CUS-Q7H), 8=DON'T KNOW (GO TO CUS-Q7H), 9=REFUSAL (GO TO CHILD CARE SECTION)
+732. CUS-Q7D: How many times? - Numeric
+733. CUS-Q7E: Did ...'s father have any children before entering into union with ...'s mother? - Y/N: 1=YES, 2=NO (GO TO CUS-Q9A), 8=DON'T KNOW (GO TO CUS-Q9A), 9=REFUSAL (GO TO CHILD CARE SECTION)
+734. CUS-Q7F: How many? - Numeric
+735. CUS-Q7G: Did that child/any of those children live at least part time in the household when ... was born? (MARK ALL THAT APPLY) - Y/N: 1=YES ALL OF THEM FULL-TIME, 2=YES ALL OF THEM PART-TIME, 3=YES SOME OF THEM FULL-TIME, 4=YES SOME OF THEM PART-TIME, 5=NO NONE OF THEM, 8=DON'T KNOW, 9=REFUSAL (GO TO CHILD CARE SECTION)
+736. CUS-Q7H: How many children did ...'s father have before ...? - Numeric
+737. CUS-C7I: *IF CUS-Q7H = 0 ---> GO TO CUS-Q8A. OTHERWISE ---> GO TO CUS-Q7I.* - Check (routing)
+738. CUS-Q7I: Did that child/any of those children live at least part time in the household when ... was born? (MARK ALL THAT APPLY) - Y/N: 1=YES ALL OF THEM FULL-TIME, 2=YES ALL OF THEM PART-TIME, 3=YES SOME OF THEM FULL-TIME, 4=YES SOME OF THEM PART-TIME, 5=NO NONE OF THEM, 8=DON'T KNOW, 9=REFUSAL (GO TO CHILD CARE SECTION)
+739. CUS-Q8A: Was ...'s father declared on his/her birth certificate? - Y/N: 1=YES, 2=NO, 8=DON'T KNOW, 9=REFUSAL (GO TO CHILD CARE SECTION)
+740. CUS-Q8B: What kind of contact did ... first have with his/her other parent? - Radio: 01=SHARING LIVING ARRANGEMENTS ON AN EQUAL TIME BASIS, 02=SHARING LIVING ARRANGEMENTS WITH MOST TIME WITH MOTHER, 03=SHARING LIVING ARRANGEMENTS WITH MOST TIME WITH FATHER, 04=REGULAR VISITING, 05=IRREGULAR VISITING, 06=TELEPHONE OR LETTER CONTACT ONLY, 07=NO CONTACT AT ALL, 08=OTHER, 98=DON'T KNOW (GO TO CUS-Q8E), 99=REFUSAL (GO TO CHILD CARE SECTION)
+741. CUS-Q8C: How many times would you say this situation has changed over time? - Radio: 1=NONE (GO TO CUS-Q9B), 2=ONCE, 3=TWICE, 4=THREE TIMES, 5=FOUR OR MORE TIMES, 8=DON'T KNOW, 9=REFUSAL (GO TO CHILD CARE SECTION)
+742. CUS-Q8D: How old was ... when the last change happened? (ENTER AGE IN YEARS. IF LESS THAN ONE YEAR ENTER 0.) - Numeric
+743. CUS-Q8E: What type of contact does ... now have with his/her other parent? - Radio: 01=SHARING LIVING ARRANGEMENTS ON AN EQUAL TIME BASIS, 02=SHARING LIVING ARRANGEMENTS WITH MOST TIME WITH MOTHER, 03=SHARING LIVING ARRANGEMENTS WITH MOST TIME WITH FATHER, 04=REGULAR VISITING, 05=IRREGULAR VISITING, 06=TELEPHONE OR LETTER CONTACT ONLY, 07=BOTH PARENTS NOW LIVING WITH THE CHILD, 08=NO CONTACT AT ALL, 09=OTHER, 98=DON'T KNOW, 99=REFUSAL (GO TO CHILD CARE SECTION)
+744. CUS-Q9A: Between ...'s birth and now, has one of his/her parents died? - Y/N: 1=YES MOTHER (GO TO CUS-Q9C), 2=YES FATHER (GO TO CUS-Q9C), 3=YES BOTH (GO TO CUS-Q9C), 4=NO (GO TO CUS-Q10B), 5=DON'T KNOW (ABOUT FATHER) (GO TO CUS-Q10B), 6=DON'T KNOW (ABOUT MOTHER) (GO TO CUS-Q10B), 8=DON'T KNOW (GO TO CUS-Q10B), 9=REFUSAL (GO TO CHILD CARE SECTION)
+745. CUS-Q9B: Has one of ...'s parents died? - Y/N: 1=YES MOTHER, 2=YES FATHER, 3=YES BOTH, 4=NO (GO TO CUS-C10), 5=DON'T KNOW (ABOUT FATHER) (GO TO CUS-C10), 6=DON'T KNOW (ABOUT MOTHER) (GO TO CUS-C10), 8=DON'T KNOW (GO TO CUS-C10), 9=REFUSAL (GO TO CHILD CARE SECTION)
+746. CUS-Q9C: When did it happen? (DATE OF FIRST DEATH, IF BOTH) - Date
+747. CUS-Q9D: With whom did ... go on living at the time it happened? - Radio: 1=MOTHER, 2=FATHER, 3=OTHER, 8=DON'T KNOW, 9=REFUSAL (GO TO CHILD CARE SECTION)
+748. CUS-C10: *IF CUS-Q9A OR CUS-Q9B = 3 (BOTH PARENTS DIED) ---> GO TO CHILD CARE SECTION. ELSE IF CUS-Q5A = NO OR DON'T KNOW (PARENTS EITHER DID NOT LIVE TOGETHER, OR DON'T KNOW IF THEY LIVED TOGETHER) ---> GO TO CUS-C20B. ELSE IF CUS-Q5A=YES AND CUS-Q5B=BEFORE (PARENTS LIVED TOGETHER ONLY BEFORE CHILD'S BIRTH) ---> GO TO CUS-C20B. ELSE IF (CUS-Q9A = 1 OR 2) OR ((CUS-Q9B = 1 OR 2) AND CUS-Q5A = YES (ONE PARENT DIED, AND THEY HAD LIVED TOGETHER)) ---> GO TO CUS-Q10A. OTHERWISE ---> GO TO CUS-Q10B.* - Check (routing)
+749. CUS-Q10A: Prior to the death of ...'s parent, did his/her parents break up and stop living together? - Y/N: 1=YES (GO TO CUS-Q11A), 2=NO (GO TO CUS-C20B), 8=DON'T KNOW (GO TO CUS-C20B), 9=REFUSAL (GO TO CHILD CARE SECTION)
+750. CUS-Q10B: Since ...'s birth, did his/her parents break up and stop living together? - Y/N: 1=YES, 2=NO (GO TO CUS-C25A), 8=DON'T KNOW (GO TO CUS-C25A), 9=REFUSAL (GO TO CHILD CARE SECTION)
+751. CUS-Q11A: When did the separation happen? - Numeric
+752. CUS-C11B: *IF ('MARRIED' OR 'COMMON-LAW, BUT MARRIED LATER' IN CUS-Q3A) OR (CUS-Q5C = YES (PARENTS HAD BEEN MARRIED)) ---> GO TO CUS-Q11B. OTHERWISE ---> GO TO CUS-Q11D.* - Check (routing)
+753. CUS-Q11B: Did ...'s parents eventually divorce? - Y/N: 1=YES, 2=NO (GO TO CUS-Q11D), 8=DON'T KNOW (GO TO CUS-Q11D), 9=REFUSAL (GO TO CHILD CARE SECTION)
+754. CUS-Q11C: When was the divorce pronounced? - Numeric
+755. CUS-Q11D: Was there a court order concerning ...'s custody when his/her parents separated or divorced? - Y/N: 1=YES, 2=YES IN PROGRESS (GO TO CUS-Q11F), 3=NO (GO TO CUS-Q11F), 8=DON'T KNOW (GO TO CUS-Q11F), 9=REFUSAL (GO TO CHILD CARE SECTION)
+756. CUS-Q11E: Did the court order him/her to be put into: - Radio: 1=Sole custody of mother?, 2=Sole custody of father?, 3=Shared physical custody of both parents?, 4=Other?, 8=DON'T KNOW, 9=REFUSAL (GO TO CHILD CARE SECTION)
+757. CUS-Q11F: What type of agreement was made regarding support/maintenance payments when ...'s parents separated or divorced? - Radio: 1=NONE (GO TO CUS-C12), 2=PRIVATE AGREEMENT BETWEEN SPOUSES (GO TO CUS-C12), 3=COURT-ORDERED AGREEMENT IN PROGRESS (GO TO CUS-C12), 4=COURT-ORDERED AGREEMENT, 8=DON'T KNOW (GO TO CUS-C12), 9=REFUSAL (GO TO CHILD CARE SECTION)
+758. CUS-Q11G: Was this: - Radio: 1=For child support only?, 2=For spousal support only?, 3=For both?, 8=DON'T KNOW, 9=REFUSAL (GO TO CHILD CARE SECTION)
+759. CUS-Q11H: How regular have the maintenance support payments been? - Radio: 01=REGULAR AND ON TIME, 02=REGULAR BUT LATE SOMETIMES, 03=IRREGULAR, 04=NO PAYMENTS FOR THE LAST 6 MONTHS, 05=NO PAYMENTS FOR THE LAST YEAR, 06=NO PAYMENTS FOR THE LAST FEW YEARS, 07=PAYMENTS NEVER BEEN RECEIVED, 08=PAYMENTS STOPPED DUE TO A CHANGE IN CIRCUMSTANCES E.G. COURT ORDER DEATH OF PAYOR ETC., 98=DON'T KNOW, 99=REFUSAL (GO TO CHILD CARE SECTION)
+760. CUS-C12: *IF CUS-Q11E = 1 OR 2 (CHILD IN EXCLUSIVE CARE OF ONE PARENT) ---> GO TO CUS-Q13. OTHERWISE ---> GO TO CUS-Q12.* - Check (routing)
+761. CUS-Q12: With whom did ... go on living at the time of the separation? - Radio: 1=MOTHER ONLY, 2=FATHER ONLY, 3=SHARED TIME BASIS MOSTLY MOTHER (GO TO CUS-Q16), 4=SHARED TIME BASIS MOSTLY FATHER (GO TO CUS-Q16), 5=EQUALLY SHARED TIME MOTHER AND FATHER (GO TO CUS-Q16), 6=OTHER (GO TO CUS-Q17), 8=DON'T KNOW (GO TO CUS-C18A), 9=REFUSAL (GO TO CHILD CARE SECTION)
+762. CUS-Q13: At that time, what type of contact did ... have with his/her other parent? - Radio: 01=REGULAR VISITING EVERY WEEK, 02=REGULAR VISITING EVERY TWO WEEKS, 03=REGULAR VISITING MONTHLY, 04=IRREGULAR VISITING ON HOLIDAYS ONLY, 05=IRREGULAR VISITING WITHOUT SET PATTERN, 06=TELEPHONE OR LETTER CONTACT ONLY, 07=NO CONTACT AT ALL, 08=OTHER, 98=DON'T KNOW (GO TO CUS-C15A), 99=REFUSAL (GO TO CHILD CARE SECTION)
+763. CUS-Q14: Since then, how many times has the type of contact changed? - Radio: 1=NONE (GO TO CUS-Q19A), 2=ONCE, 3=TWICE, 4=THREE TIMES, 5=FOUR OR MORE TIMES, 8=DON'T KNOW, 9=REFUSAL (GO TO CHILD CARE SECTION)
+764. CUS-C15A: *IF (CUS-Q9A = 1, 2, 5, 6 OR DON'T KNOW) OR (CUS-Q9B = 1, 2, 5, 6 OR DON'T KNOW) ---> GO TO CUS-Q19A. OTHERWISE ---> GO TO CUS-Q15A.* - Check (routing)
+765. CUS-Q15A: What type of contact does ... now have with his/her other parent? - Radio: 01=REGULAR VISITING EVERY WEEK (GO TO CUS-Q19A), 02=REGULAR VISITING EVERY TWO WEEKS (GO TO CUS-Q19A), 03=REGULAR VISITING MONTHLY (GO TO CUS-Q19A), 04=IRREGULAR VISITING ON HOLIDAYS ONLY (GO TO CUS-Q19A), 05=IRREGULAR VISITING WITHOUT SET PATTERN (GO TO CUS-Q19A), 06=TELEPHONE OR LETTER CONTACT ONLY (GO TO CUS-Q19A), 07=LOST CONTACT COMPLETELY (GO TO CUS-Q19A), 08=CHILD NOW SHARES LIVING ARRANGEMENTS WITH OTHER PARENT, 09=PARENTS NOW LIVING TOGETHER AGAIN (GO TO CUS-Q19C), 10=CHILD NOW LIVES...
+766. CUS-Q15B: How much time does ... live at his/her other parent's home? (MARK ALL THAT APPLY) - Checkbox: 01=ON WEEKDAYS NOT WEEKENDS (GO TO CUS-Q19A), 02=EVERY OTHER NIGHT (GO TO CUS-Q19A), 03=ONE WEEK OUT OF TWO (GO TO CUS-Q19A), 04=TWO WEEKS ALTERNATELY (GO TO CUS-Q19A), 05=EVERY WEEK END (GO TO CUS-Q19A), 06=ONE WEEKEND OUT OF TWO (GO TO CUS-Q19A), 07=LESS THAN TWO DAYS EVERY MONTH (GO TO CUS-Q19A), 08=SOME HOLIDAYS (GO TO CUS-Q19A), 09=NEVER (GO TO CUS-Q19A), 10=ALL THE TIME (GO TO CUS-Q19A), 11=OTHER (GO TO CUS-Q19A), 98=DON'T KNOW (GO TO CUS-Q19A), 99=REFUSAL (GO TO CHILD CARE SECTION)
+767. CUS-Q16: At that time, how much time did ... live at his/her other parent's home? (MARK ALL THAT APPLY) - Checkbox: 01=ON WEEKDAYS NOT WEEKENDS, 02=EVERY OTHER NIGHT, 03=ONE WEEK OUT OF TWO, 04=TWO WEEKS ALTERNATELY, 05=EVERY WEEKEND, 06=ONE WEEKEND OUT OF TWO, 07=LESS THAN TWO DAYS EVERY MONTH, 08=SOME HOLIDAYS, 09=OTHER, 98=DON'T KNOW (GO TO CUS-C18A), 99=REFUSAL (GO TO CHILD CARE SECTION)
+768. CUS-Q17: How many times would you say these living arrangements have changed over time? - Radio: 1=NONE (GO TO CUS-Q19A), 2=ONCE, 3=TWICE, 4=THREE TIMES, 5=FOUR OR MORE TIMES, 8=DON'T KNOW, 9=REFUSAL (GO TO CHILD CARE SECTION)
+769. CUS-C18A: *IF (CUS-Q9A = 1, 2, 5, 6 OR DON'T KNOW) OR (CUS-Q9B = 1, 2, 5, 6 OR DON'T KNOW) ---> GO TO CUS-Q19A. OTHERWISE ---> GO TO CUS-Q18A.* - Check (routing)
+770. CUS-Q18A: Currently, how much time does ... live at his/her other parent's home? (MARK ALL THAT APPLY.) - Checkbox: 01=ON WEEKDAYS NOT WEEKENDS, 02=EVERY OTHER NIGHT, 03=ONE WEEK OUT OF TWO, 04=TWO WEEKS ALTERNATELY, 05=EVERY WEEK END, 06=ONE WEEKEND OUT OF TWO, 07=LESS THAN TWO DAYS EVERY MONTH, 08=SOME HOLIDAYS, 09=VISITS OR LETTER OR TELEPHONE CALLS ONLY, 10=NO CONTACT, 11=ALL THE TIME, 12=PARENTS NOW LIVING TOGETHER AGAIN, 13=OTHER, 98=DON'T KNOW, 99=REFUSAL (GO TO CHILD CARE SECTION)
+771. CUS-C18B: *IF 12 ENTERED IN CUS-Q18A ---> GO TO CUS-Q19C. ELSE IF 9 ENTERED IN CUS-Q18A ---> GO TO CUS-Q18B. OTHERWISE ---> GO TO CUS-Q19A.* - Check (routing)
+772. CUS-Q18B: Which type of contact does ... now have with his/her other parent? - Radio: 1=REGULAR VISITING EVERY WEEK, 2=REGULAR VISITING EVERY TWO WEEKS, 3=REGULAR VISITING MONTHLY, 4=IRREGULAR VISITING ON HOLIDAYS ONLY, 5=IRREGULAR VISITING WITHOUT SET PATTERN, 6=TELEPHONE OR LETTER CONTACT ONLY, 7=OTHER, 8=DON'T KNOW, 9=REFUSAL (GO TO CHILD CARE SECTION)
+773. CUS-Q19A: Has a court order modified the custody of ... since his/her parents separated (or divorced)? - Y/N: 1=YES, 2=NO (GO TO CUS-Q19C), 8=DON'T KNOW (GO TO CUS-Q19C), 9=REFUSAL (GO TO CHILD CARE SECTION)
+774. CUS-Q19B: Is he/she now in: - Radio: 1=Sole custody of mother?, 2=Sole custody of father?, 3=Shared physical custody of both parents?, 4=Other?, 8=DON'T KNOW, 9=REFUSAL (GO TO CHILD CARE SECTION)
+775. CUS-Q19C: Between ...'s parents, has the question of living arrangements or visiting rights been: - Radio: 1=A great source of tension?, 2=Some source of tension?, 3=Very little source of tension?, 4=No source of tension at all?, 8=DON'T KNOW, 9=REFUSAL (GO TO CHILD CARE SECTION)
+776. CUS-C20A: *IF ELDEST SELECTED CHILD'S CUSTODY SECTION COMPLETED AND SELECTED CHILD IS A FULL SIBLING BY BIRTH, AND PARENTS SEPARATED AFTER ELDEST CHILD'S BIRTH - NEITHER REMARRIED, AND THIS CHILD BORN BEFORE THE SEPARATION ---> GO TO CHILD CARE SECTION. OTHERWISE ---> GO TO CUS-C20B.* - Check (routing)
+777. CUS-C20B: *IF (CUS-Q9A = 1, 6 OR DON'T KNOW) OR (CUS-Q9B = 1, 6 OR DON'T KNOW) ---> GO TO CUS-C21. ELSE IF CUS-Q2 = 1 AND CUS-Q9A = 4 AND CUS-Q10B = 2 ---> GO TO CUS-C25A. OTHERWISE ---> GO TO CUS-Q20A.* - Check (routing)
+778. CUS-Q20A: Has ...'s mother entered into another marriage, common-law relationship or common-law relationship that resulted in marriage? (MARK ALL THAT APPLY) - Checkbox: 1=YES A MARRIAGE, 2=YES A COMMON-LAW RELATIONSHIP, 3=YES A COMMON-LAW RELATIONSHIP THAT RESULTED IN MARRIAGE, 4=NO, 8=DON'T KNOW, 9=REFUSAL
+779. CUS-C20B1: *IF CUS-Q20A = 2 OR 3 ---> GO TO CUS-Q20B. ELSE IF CUS-Q20A = 1 ---> GO TO CUS-Q20C. ELSE IF CUS-Q20A = 4 OR DON'T KNOW ---> GO TO CUS-C21. OTHERWISE (REFUSAL) ---> GO TO CHILD CARE SECTION.* - Check (routing)
+780. CUS-Q20B: When did ...'s mother start living with her new partner? - Numeric
+781. CUS-C20C: *IF CUS-Q20A = 2 (YES, A COMMON-LAW RELATIONSHIP) ---> GO TO CUS-Q20D. OTHERWISE ---> GO TO CUS-Q20C.* - Check (routing)
+782. CUS-Q20C: When did the marriage take place? - Numeric
+783. CUS-Q20D: When they started living together, did ... live in the household with his/her mother's new partner? - Y/N: 1=YES FULL-TIME, 2=YES PART-TIME, 3=NO, 8=DON'T KNOW, 9=REFUSAL (GO TO CHILD CARE SECTION)
+784. CUS-Q20E: Did the mother's new partner have any children of his own? - Y/N: 1=YES, 2=NO (GO TO CUS-Q20H), 8=DON'T KNOW (GO TO CUS-Q20H), 9=REFUSAL (GO TO CHILD CARE SECTION)
+785. CUS-Q20F: How many? - Numeric
+786. CUS-Q20G: Did he/she/they live in the household with their father? (MARK ALL THAT APPLY) - Y/N: 1=YES ALL OF THEM FULL-TIME, 2=YES ALL OF THEM PART-TIME, 3=YES SOME OF THEM FULL-TIME, 4=YES SOME OF THEM PART-TIME, 5=NO NONE OF THEM, 8=DON'T KNOW, 9=REFUSAL (GO TO CHILD CARE SECTION)
+787. CUS-Q20H: Did ...'s mother have any children with this new spouse/partner? - Y/N: 1=YES, 2=NO (GO TO CUS-C21), 8=DON'T KNOW (GO TO CUS-C21), 9=REFUSAL (GO TO CHILD CARE SECTION)
+788. CUS-Q20I: How many? - Numeric
+789. CUS-C21: *IF 'YES, FATHER' IN CUS-Q9A OR CUS-Q9B AND 'YES' (1 TO 3) IN CUS-Q20A (FATHER DIED, AND MOTHER ENTERED A NEW RELATIONSHIP) ---> GO TO CUS-Q22A. IF 'YES, FATHER' IN CUS-Q9A OR CUS-Q9B AND 'NO' OR DON'T KNOW IN CUS-Q20A (FATHER DIED AND MOTHER DID NOT ENTER A NEW RELATIONSHIP) ---> GO TO CUS-C25A. IF 'DON'T KNOW (FATHER)' OR DON'T KNOW IN CUS-Q9A OR CUS-Q9B AND 'YES' (1 TO 3) IN CUS-Q20A (DON'T KNOW IF FATHER DIED, AND MOTHER ENTERED A NEW RELATIONSHIP) ---> GO TO CUS-Q22A. IF 'DON'T KNOW (FATHER)' OR DON'T KNOW IN CUS-Q9A OR CUS-Q9B AND 'NO' OR DON'T KNOW IN CUS-Q20A (DON'T KNOW IF FATHER DIED AND MOTHER DID NOT ENTER A NEW RELATIONSHIP) ---> GO TO CUS-C25A. OTHERWISE ---> GO TO CUS-Q21A.* - Check (routing)
+790. CUS-Q21A: Has ...'s father entered into another marriage, common-law relationship or common-law relationship that resulted in marriage? (MARK ALL THAT APPLY) - Checkbox: 1=YES A MARRIAGE (GO TO CUS-Q21C), 2=YES A COMMON-LAW RELATIONSHIP, 3=YES A COMMON-LAW RELATIONSHIP THAT RESULTED IN MARRIAGE, 4=NO (GO TO CUS-C22), 8=DON'T KNOW (GO TO CUS-C22), 9=REFUSAL (GO TO CHILD CARE SECTION)
+791. CUS-Q21B: When did ...'s father start living with his new partner? - Numeric
+792. CUS-C21C: *IF CUS-Q21A = 2 (YES, A COMMON-LAW RELATIONSHIP) ---> GO TO CUS-Q21D. OTHERWISE ---> GO TO CUS-Q21C.* - Check (routing)
+793. CUS-Q21C: When did the marriage take place? - Numeric
+794. CUS-Q21D: When they started living together, did ... live in the household with his/her father's new partner? - Y/N: 1=YES FULL-TIME, 2=YES PART-TIME, 3=NO, 8=DON'T KNOW, 9=REFUSAL (GO TO CHILD CARE SECTION)
+795. CUS-Q21E: Did the father's new partner have any children of her own? - Y/N: 1=YES, 2=NO (GO TO CUS-Q21H), 8=DON'T KNOW (GO TO CUS-Q21H), 9=REFUSAL (GO TO CHILD CARE SECTION)
+796. CUS-Q21F: How many? - Numeric
+797. CUS-Q21G: Did he/she/they live in the household with their mother? (MARK ALL THAT APPLY) - Y/N: 1=YES ALL OF THEM FULL-TIME, 2=YES ALL OF THEM PART-TIME, 3=YES SOME OF THEM FULL-TIME, 4=YES SOME OF THEM PART-TIME, 5=NO NONE OF THEM, 8=DON'T KNOW, 9=REFUSAL (GO TO CHILD CARE SECTION)
+798. CUS-Q21H: Did ...'s father have any children with this new spouse/partner? - Y/N: 1=YES, 2=NO (GO TO CUS-C22), 8=DON'T KNOW (GO TO CUS-C22), 9=REFUSAL (GO TO CHILD CARE SECTION)
+799. CUS-Q21I: How many? - Numeric
+800. CUS-C22: *IF 'YES' IN CUS-Q20A OR CUS-Q21A (MOTHER OR FATHER ENTERED A NEW RELATIONSHIP) ---> GO TO CUS-Q22A. OTHERWISE ---> GO TO CUS-C25A.* - Check (routing)
+801. CUS-Q22A: Has this other union of ...'s mother or father broken up? - Y/N: 1=YES MOTHER'S UNION, 2=YES FATHER'S UNION, 3=YES BOTH UNIONS, 4=NO (GO TO CUS-C25A), 8=DON'T KNOW (GO TO CUS-C25A), 9=REFUSAL (GO TO CHILD CARE SECTION)
+802. CUS-Q22B: When did that happen? (IF BOTH UNIONS HAVE BROKEN UP, USE DATE OF FIRST EVENT) - Date
+803. CUS-Q22C: With whom did ... go on living after it happened? - Radio: 1=MOTHER FULL-TIME, 2=FATHER FULL-TIME, 3=PART-TIME MOTHER AND FATHER, 8=DON'T KNOW, 9=REFUSAL (GO TO CHILD CARE SECTION)
+804. CUS-Q23: Did ... live through any other family reconstitution between then and now? - Y/N: 1=YES, 2=NO, 8=DON'T KNOW, 9=REFUSAL (GO TO CHILD CARE SECTION)
+805. CUS-C25A: *IF ELDEST-DONE = 1 ---> GO TO CHILD CARE SECTION.* - Check (routing)
+
+#### Child Care - CAR (pp. 156-161) - 38 questions
+
+806. CAR-I1: **Now I'd like to ask you some questions regarding your child care arrangements for ....** - Intro
+807. CAR-Q1A: Do you currently use child care such as daycare or babysitting while you (and your spouse/partner) are at work or studying? - Y/N: 1=YES, 2=NO (GO TO CAR-C6), 8=DON'T KNOW (GO TO END OF CHILD CARE SECTION), 9=REFUSAL (GO TO END OF CHILD CARE SECTION)
+808. CAR-Q1B: Which of the following methods of child care do you currently use? Care provided in someone else's home by a non-relative? - Y/N: 1=YES, 2=NO (GO TO CAR-Q1C), 8=DON'T KNOW (GO TO CAR-Q1C), 9=REFUSAL (GO TO CAR-Q1C)
+809. CAR-Q1B1: For about how many hours per week is that? - Numeric
+810. CAR-Q1B2: Is the person providing this care licensed by the government or approved by a family daycare agency? - Y/N: 1=YES, 2=NO
+811. CAR-Q1C: Care in someone else's home by a relative? - Y/N: 1=YES, 2=NO (GO TO CAR-Q1D), 3=NO AND NO OTHER ARRANGEMENT (GO TO CAR-I2), 8=DON'T KNOW (GO TO CAR-Q1D), 9=REFUSAL (GO TO CAR-Q1D)
+812. CAR-Q1C1: For about how many hours per week is that? - Numeric
+813. CAR-Q1C2: Is the person providing this care licensed by the government or approved by a family daycare agency? - Y/N: 1=YES, 2=NO, 8=DON'T KNOW, 9=REFUSAL
+814. CAR-Q1D: Care in own home by brother or sister of the child? - Y/N: 1=YES, 2=NO (GO TO CAR-Q1E), 3=NO AND NO OTHER ARRANGEMENT (GO TO CAR-I2), 4=NOT APPLICABLE (GO TO CAR-Q1E), 8=DON'T KNOW (GO TO CAR-Q1E), 9=REFUSAL (GO TO CAR-Q1E)
+815. CAR-Q1D1: For about how many hours per week is that? - Numeric
+816. CAR-Q1E: Care in own home by a relative other than a sister or brother of the child? - Y/N: 1=YES, 2=NO (GO TO CAR-Q1F), 3=NO AND NO OTHER ARRANGEMENT (GO TO CAR-I2), 8=DON'T KNOW (GO TO CAR-Q1F), 9=REFUSAL (GO TO CAR-Q1F)
+817. CAR-Q1E1: For about how many hours per week is that? - Numeric
+818. CAR-Q1F: Care in own home by a non-relative? - Y/N: 1=YES, 2=NO (GO TO CAR-Q1G), 3=NO AND NO OTHER ARRANGEMENT (GO TO CAR-I2), 8=DON'T KNOW (GO TO CAR-Q1G), 9=REFUSAL (GO TO CAR-Q1G)
+819. CAR-Q1F1: For about how many hours per week is that? - Numeric
+820. CAR-Q1G: Care in a daycare centre (including at workplace)? - Y/N: 1=YES, 2=NO (GO TO CAR-C1H), 3=NO AND NO OTHER ARRANGEMENT (GO TO CAR-I2), 8=DON'T KNOW (GO TO CAR-C1H), 9=REFUSAL (GO TO CAR-C1H)
+821. CAR-Q1G1: For about how many hours per week is that? - Numeric
+822. CAR-Q1G2: Is the child care program or daycare centre operated on a profit or non-profit basis (include government sponsored care)? - Radio: 1=PROFIT, 2=NON-PROFIT, 8=DON'T KNOW, 9=REFUSAL
+823. CAR-C1H: *IF AGE < 4 ---> GO TO CAR-Q1J. OTHERWISE (4-11 YEARS OF AGE) ---> GO TO CAR-Q1H.* - Check (routing)
+824. CAR-Q1H: Care in a before or after school program? - Y/N: 1=YES, 2=NO (GO TO CAR-C1I), 3=NO AND NO OTHER ARRANGEMENT (GO TO CAR-I2), 8=DON'T KNOW (GO TO CAR-C1I), 9=REFUSAL (GO TO CAR-C1I)
+825. CAR-Q1H1: For about how many hours per week is that? - Numeric
+826. CAR-C1I: *IF AGE = 4-5 ---> GO TO CAR-Q1J. OTHERWISE (6-11 YEARS) ---> GO TO CAR-Q1I.* - Check (routing)
+827. CAR-Q1I: Is ... in his/her own care (e.g. before/after school)? - Y/N: 1=YES, 2=NO (GO TO CAR-Q1J), 3=NO AND NO OTHER ARRANGEMENT (GO TO CAR-I2), 8=DON'T KNOW (GO TO CAR-Q1J), 9=REFUSAL (GO TO CAR-Q1J)
+828. CAR-Q1I1: For about how many hours per week is that? - Numeric
+829. CAR-Q1J: Do you currently use other child care arrangements? - Y/N: 1=YES, 2=NO (GO TO CAR-I2), 8=DON'T KNOW (GO TO CAR-I2), 9=REFUSAL (GO TO CAR-I2)
+830. CAR-Q1J1: For about how many hours per week is that? - Numeric
+831. CAR-I2: **In the following questions we will be asking about your main child care arrangement, that is, the one used for the most hours.** - Intro
+832. CAR-Q2: When did you start using this child care arrangement? - Date
+833. CAR-C3: *IF AGE > 5 ---> GO TO CAR-Q4. OTHERWISE ---> GO TO CAR-Q3.* - Check (routing)
+834. CAR-Q3: During the past 6 months, how well has he/she gotten along with his/her main child care provider? - Radio: 1=VERY WELL NO PROBLEMS, 2=QUITE WELL HARDLY ANY PROBLEMS, 3=PRETTY WELL OCCASIONAL PROBLEMS, 4=NOT TOO WELL FREQUENT PROBLEMS, 5=NOT WELL AT ALL CONSTANT PROBLEMS, 8=DON'T KNOW, 9=REFUSAL
+835. CAR-Q4: In the past 12 months, how many times have you changed your main child care arrangement and/or caregiver, excluding periods of care by yourself (or spouse/partner)? - Radio: 1=NONE, 2=1, 3=2, 4=3 OR 4, 5=5 OR MORE, 8=DON'T KNOW, 9=REFUSAL
+836. CAR-C5: *IF 'NONE' IN CAR-Q4 AND AGE < 1 ---> GO TO END OF CHILD CARE SECTION. IF 'NONE' IN CAR-Q4 AND AGE > 0 ---> GO TO CAR-Q7. OTHERWISE ---> GO TO CAR-Q5.* - Check (routing)
+837. CAR-Q5: What were the reasons for changing? (DO NOT READ. MARK ALL THAT APPLY.) - Checkbox: 1=DISSATISFACTION WITH CAREGIVER/PROGRAM, 2=CAREGIVER/PROGRAM NO LONGER AVAILABLE, 3=FAMILY OR CHILD MOVED PARENTAL WORK STATUS OR CUSTODY ARRANGEMENT CHANGED, 4=CHANGES IN CHILD OR CHILD'S NEEDS (E.G. SPECIAL CARE CHILD'S AGE), 5=A PREFERRED ARRANGEMENT BECAME AVAILABLE (E.G. SUBSIDIZED SPACE), 6=COST, 7=OTHER, 8=DON'T KNOW, 9=REFUSAL
+838. CAR-E5: *IF AGE < 1 ---> GO TO END OF CHILD CARE SECTION. OTHERWISE ---> GO TO CAR-Q7.* - Check (routing)
+839. CAR-C6: *IF AGE < 1 ---> GO TO END OF CHILD CARE SECTION. OTHERWISE ---> GO TO CAR-Q6.* - Check (routing)
+840. CAR-Q6: Have you ever used child care for ... while you (and your spouse/partner) were at work or studying? - Y/N: 1=YES, 2=NO (GO TO END OF CHILD CARE SECTION), 8=DON'T KNOW (GO TO END OF CHILD CARE SECTION), 9=REFUSAL (GO TO END OF CHILD CARE SECTION)
+841. CAR-Q7: Overall, how many changes in child care arrangements has ... experienced since you began using child care, excluding periods of care by yourself (or spouse/partner)? - Numeric
+842. CAR-C8: *IF AGE < 6 ---> GO TO END OF CHILD CARE SECTION. OTHERWISE ---> GO TO CAR-Q8.* - Check (routing)
+843. CAR-Q8: Last summer while ... was not in school, what type of child care arrangement did you use while you (and your spouse/partner) were at work/studying? (MARK ALL THAT APPLY.) - Checkbox: 01=DAY CARE CENTRE, 02=CARE IN SOMEONE ELSE'S HOME BY A NON-RELATIVE, 03=CARE IN SOMEONE ELSE'S HOME BY A RELATIVE, 04=CARE IN OWN HOME BY A NON-RELATIVE, 05=CARE IN OWN HOME BY BROTHER/SISTER, 06=CARE IN OWN HOME BY OTHER RELATIVE, 07=CHILD IN OWN CARE, 08=STRUCTURED SUMMER PROGRAM, 09=OTHER, 10=NOT APPLICABLE, 98=DON'T KNOW, 99=REFUSAL
 
 ---
 
-#### Medical/Biological (pp. 61-67) - 34 questions
-
-**PRENATAL QUESTIONS** [Children 0-3 years, biological mother/father as respondent]
-
-186. MED-Q1A: During the pregnancy with ... did you suffer from any of the following: pregnancy diabetes? - Y/N: 1=Yes, 2=No, 8=Don't know, 9=Refusal-->GO TO MED-Q2
-187. MED-Q1B: High blood pressure? - Y/N (same)
-188. MED-Q1C: Other physical problems? - Y/N (same)
-189. MED-Q2: From whom did you receive pre-natal care? - Radio: 1=A doctor, 2=A nurse, 3=A midwife, 4=Other, 5=Nobody
-190. MED-Q3: Did you smoke during your pregnancy with ...? - Y/N: 1=Yes, 2=No-->GO TO MED-Q6, 8=Don't know-->GO TO MED-Q6
-191. MED-Q4: How many cigarettes per day did you smoke during your pregnancy with ...? - Numeric (2 digits)
-192. MED-Q5: At what stage in your pregnancy did you smoke this amount? (MARK MORE THAN ONE IF NECESSARY) - Checkbox: 1=During the first three months, 2=During the second three months, 3=During the third three months, 4=Throughout
-193. MED-Q6: How frequently did you consume alcohol during your pregnancy with ...? - Radio: 1=Never-->GO TO MED-Q9A, 2=Less than once a month, 3=1-3 times a month, 4=Once a week, 5=2-3 times a week, 6=4-6 times a week, 7=Everyday, 8=Don't know, 9=Refusal-->GO TO MED-Q9A
-194. MED-Q7: On the days when you drank, how many drinks did you usually have? - Radio: 1=1 to 2, 2=3 to 4, 3=5 or more, 8=Don't know, 9=Refusal-->GO TO MED-Q9A
-195. MED-Q8: At what stage in your pregnancy did you consume this quantity? (MARK MORE THAN ONE IF NECESSARY) - Checkbox: 1=During the first three months, 2=During the second three months, 3=During the third three months, 4=Throughout, 8=Don't know, 9=Refusal
-196. MED-Q9A: Did you take any prescription medications during your pregnancy with ...? - Y/N: 1=Yes, 2=No-->GO TO MED-Q10A, 8=Don't know-->GO TO MED-Q10A, 9=Refusal-->GO TO MED-Q12A
-197. MED-Q9B: At what stage in your pregnancy did you take these? (MARK ALL THAT APPLY) - Checkbox: 1=During the first three months, 2=During the second three months, 3=During the third three months, 4=Throughout, 8=Don't know, 9=Refusal-->GO TO MED-Q12A
-198. MED-Q10A: Did you take any over-the-counter drugs during your pregnancy with ...? - Y/N: 1=Yes, 2=No-->GO TO MED-Q12A, 8=Don't know-->GO TO MED-Q12A, 9=Refusal-->GO TO MED-Q12A
-199. MED-Q10B: At what stage in your pregnancy did you take these? (MARK ALL THAT APPLY) - Checkbox: 1=During the first three months, 2=During the second three months, 3=During the third three months, 4=Throughout, 8=Don't know, 9=Refusal
-
-**BIRTH**
-200. MED-Q12A: Was he/she born before or after the due date? - Radio: 1=Before, 2=After, 3=On due date-->GO TO MED-Q13A
-201. MED-Q12B: How many days or weeks before or after the due date was he/she born? - Numeric
-202. MED-Q13A: What was his/her birth weight in kilograms and grams or pounds and ounces? - Numeric
-203. MED-Q14A: What was his/her length at birth in centimetres or inches? - Numeric
-
-**DELIVERY**
-204. MED-Q15: Was this a single birth or twins, or triplets? - Radio: 1=Single birth, 2=Twins, 3=Triplets, 4=More than triplets, 8=Don't know, 9=Refusal-->GO TO MED-Q21A
-205. MED-Q16: Was the delivery vaginal or caesarian? - Radio: 1=Vaginal, 2=Caesarian-->GO TO MED-Q21A [If age 0-11 months only]
-206. MED-Q17: Was ... born head first? - Y/N: 1=Yes, 2=No, 8=Don't know, 9=Refusal
-207. MED-Q18: Were birthing aids used? - Radio: 1=None, 2=Forceps, 3=Cupping glass (suction cup), 8=Don't know, 9=Refusal
-
-**INFANT AFTER BIRTH**
-208. MED-Q21A: Did ... receive special medical care following his/her birth? - Y/N: 1=Yes, 2=No-->Go to MED-Q22, 8=Don't know-->Go to MED-Q22, 9=Refusal-->Go to MED-Q22
-209. MED-Q21B: What type of special medical care was received? (MARK ALL THAT APPLY) - Checkbox: 1=Intensive care, 2=Ventilation/oxygen, 3=Transfer to a specialized hospital, 4=Other, 8=Don't know-->GO TO MED-Q22
-210. MED-Q21C: For how many days, in total, was this care received? - Numeric (3 digits)
-211. MED-Q22: Compared to other babies in general, would you say that ...'s health at birth was: - Radio: 1=Excellent, 2=Very good, 3=Good, 4=Fair, 5=Poor, 8=Don't know, 9=Refusal
-
-**POSTNATAL/POST-DELIVERY PHYSICAL AND MENTAL HEALTH** [Age 0-11 months only]
-212. MED-Q23A: After ...'s delivery, did you/her/his mother suffer from any of the following conditions: postpartum haemorrhage? - Y/N: 1=Yes, 2=No, 8=Don't know, 9=Refusal-->GO TO MED-Q24A
-213. MED-Q23B: Postpartum infection? - Y/N (same)
-214. MED-Q23C1: Postpartum depression? - Y/N (same)
-215. MED-Q23C2: For how long? (ENTER NUMBER OF DAYS OR WEEKS OR MONTHS) - Open text
-216. MED-Q23D: Postpartum hypertension? - Y/N (same)
-217. MED-Q24A: Were/Was you/her/his mother hospitalized for special medical care for any period immediately following the birth of ...? - Y/N: 1=Yes, 2=No-->GO TO MED-Q25
-218. MED-Q24B: For how many days? - Numeric
-
-**BREAST-FEEDING**
-219. MED-Q25: Are/Is you/her/his mother currently breast-feeding ...? - Y/N: 1=Yes-->GO TO TEMPERAMENT SECTION, 2=No
-220. MED-Q26: Did you/his mother breast-feed him/her even if only for a short time? - Y/N: 1=Yes, 2=No-->GO TO TEMPERAMENT SECTION
-221. MED-Q27: For how long? (DO NOT READ LIST. MARK ONE ONLY.) - Radio: 01=Less than 1 week, 02=1-4 weeks, 03=5-8 weeks, 04=9-12 weeks, 05=3-6 months, 06=7-9 months, 07=10-12 months, 08=13-16 months, 09=More than 16 months
-222. MED-Q28: What was the main reason you/her/his mother stopped breast-feeding him/her? (DO NOT READ LIST. MARK ALL THAT APPLY.) - Checkbox: 01=Not enough milk/hungry baby, 02=Inconvenience/fatigue, 03=Difficulty with BF techniques, 04=Sore nipples/engorged breast, 05=Mother's illness, 06=Planned to stop at this time, 07=Baby weaned himself/herself, 08=Physician told me/her to stop, 09=Returned to work/school, 10=Partner/father wanted me/her to stop, 11=Formula feeding preferable, 12=Wanted to drink alcohol, 13=Other
-
----
-
-#### Temperament (pp. 68-83) - 37 questions
-
-223. TMP-Q1: How easy or difficult is it for you to calm or soothe ... when he/she is upset? - Scale 1-7: 1=Very easy, 4=About average, 7=Difficult, 9=Refusal-->GO TO NEXT SECTION
-224. TMP-Q2: How easy or difficult is it for you to predict when he/she will go to sleep and wake up? [If age < 1] - Scale 1-7: 1=Very easy, 4=About average, 7=Difficult, 9=Refusal-->GO TO NEXT SECTION
-225. TMP-Q2A: How consistent is he/she in sticking with his/her sleeping routine? [If age >= 1] - Scale 1-7: 1=Very consistent; little or no variability, 4=Some variability, 7=Very inconsistent; highly variable, 9=Refusal-->GO TO NEXT SECTION
-226. TMP-Q3: How easy or difficult is it for you to predict when he/she will become hungry? [If age < 1] - Scale 1-7: 1=Very easy, 4=About average, 7=Difficult, 9=Refusal-->GO TO NEXT SECTION
-227. TMP-Q3A: How consistent is he/she in sticking with his/her eating routine? [If age >= 1] - Scale 1-7: 1=Very consistent; little or no variability, 4=Some variability, 7=Very inconsistent; highly variable, 9=Refusal-->GO TO NEXT SECTION
-228. TMP-Q4: How easy or difficult is it for you to know what's bothering him/her when he/she cries or fusses? [If age < 3] - Scale 1-7: 1=Very easy, 4=About average, 7=Very difficult, 9=Refusal-->GO TO NEXT SECTION
-229. TMP-Q4A: How easy or difficult is it for you to know what's bothering him/her when he/she is irritable? [If age >= 3] - Scale 1-7: 1=Very easy, 4=About average, 7=Very difficult, 9=Refusal-->GO TO NEXT SECTION
-230. TMP-Q5: How many times per day, on average, does ... get fussy and irritable - for either short or long periods of time? [If age < 3] - Radio: 1=Never, 2=1-2 times per day, 3=3-4 times per day, 4=5-6 times per day, 5=7-9 times per day, 6=10-14 times per day, 7=15 times per day or more, 9=Refusal-->GO TO NEXT SECTION
-231. TMP-Q5A: How many times per day on average does ... get cranky and irritable, for either short or long periods of time? [If age >= 3] - Radio (same as TMP-Q5)
-232. TMP-Q6: How much does he/she cry and fuss in general? [If age < 3] - Scale 1-7: 1=Very little; much less than the average baby/child, 4=Average amount; about as much as the average baby/child, 7=A lot; much more than the average baby/child, 9=Refusal-->GO TO NEXT SECTION
-233. TMP-Q6A: How much does he/she cry, fuss or whine in general? [If age >= 3] - Scale 1-7 (same anchors)
-234. TMP-Q7: How easily does he/she get upset? - Scale 1-7: 1=Very hard to upset -- even by things that upset most babies/children, 4=About average, 7=Very easily upset by things that wouldn't bother most babies/children, 8=Don't know, 9=Refusal-->GO TO NEXT SECTION
-235. TMP-Q8: When he/she gets upset (e.g., before feeding, during diapering, etc.), how vigorously or loudly does he/she cry and fuss? [If age < 1] - Scale 1-7: 1=Very mild intensity or loudness, 4=Moderate intensity or loudness, 7=Very loud or intense, really cuts loose, 9=Refusal-->GO TO NEXT SECTION
-236. TMP-Q8A: When he/she gets upset, how vigorously or loudly does he/she cry and fuss? [If age = 1 or 2] - Scale 1-7 (same anchors)
-237. TMP-Q8B: When he/she gets upset, how vigourously or loudly does he/she cry and whine? [If age >= 3] - Scale 1-7 (same anchors)
-238. TMP-Q9: How does he/she react when you are dressing him/her? - Scale 1-7: 1=Very well -- likes it, 4=About average -- doesn't mind it, 7=Doesn't like it at all, 9=Refusal-->GO TO NEXT SECTION
-239. TMP-Q9A: How does he/she react during hairwashing? - Scale 1-7 (same anchors)
-240. TMP-Q10: How active is ... in general? - Scale 1-7: 1=Very calm and quiet, 4=Average, 7=Very active and vigorous, 8=Don't know, 9=Refusal-->GO TO NEXT SECTION
-241. TMP-Q11: How much does he/she smile and make happy sounds? [If age < 3] - Scale 1-7: 1=A great deal, much more than most infants/children, 4=An average amount, 7=Very little, much less than most infants/children, 9=Refusal-->GO TO NEXT SECTION
-242. TMP-Q11A: How much does he/she smile and laugh? [If age >= 3] - Scale 1-7 (same anchors)
-243. TMP-Q12: What kind of mood is he/she generally in? - Scale 1-7: 1=Very happy and cheerful, 4=Neither serious nor cheerful, 7=Serious, 9=Refusal-->GO TO NEXT SECTION
-244. TMP-Q13: How much does he/she enjoy playing little games with you? [If age 6-11 months] - Scale 1-7: 1=A great deal -- really loves it, 4=About average, 7=Very little -- doesn't like it very much, 9=Refusal-->GO TO NEXT SECTION
-245. TMP-Q13A: How much does he/she enjoy playing with you? [If age >= 1 year] - Scale 1-7 (same anchors)
-246. TMP-Q14: How much does he/she want to be held? [If age < 3] - Scale 1-7: 1=Wants to be free most of the time, 4=Sometimes wants to be held, sometimes not, 7=A great deal -- wants to be held almost all the time, 9=Refusal-->GO TO NEXT SECTION
-247. TMP-Q14A: How much does he/she want to be cuddled? [If age >= 3] - Scale 1-7 (same anchors)
-248. TMP-Q15: How does he/she respond to disruptions and changes in everyday routine, such as when you go to church, a meeting, on trips, etc.? - Scale 1-7: 1=Very favourably, doesn't get upset, 4=About average, 7=Very unfavourably, gets quite upset, 9=Refusal-->GO TO NEXT SECTION
-249. TMP-Q16: How easy is it for you to predict when he/she will need a diaper change? [If age in months < 12] - Scale 1-7: 1=Very easy, 4=About average, 7=Very difficult, 9=Refusal-->GO TO NEXT SECTION
-250. TMP-Q17: How changeable is ...'s mood? [If age in months >= 12] - Scale 1-7: 1=Changes seldom and changes slowly when he/she does change, 4=About average, 7=Changes often and rapidly, 9=Refusal-->GO TO NEXT SECTION
-251. TMP-Q18: How excited does he/she become when people play with or talk to him/her? - Scale 1-7: 1=Very excited, 4=About average, 7=Not at all, 8=Don't know, 9=Refusal-->GO TO NEXT SECTION
-252. TMP-Q19: How does he/she respond to a new person? [If age >= 2] - Scale 1-7 (same pattern)
-253. TMP-Q19A: How does he/she typically respond to a new person? [If age = 3] - Scale 1-7 (same pattern)
-254. TMP-Q20: How does he/she react when taken to a new place? - Scale 1-7 (same pattern)
-255. TMP-Q21A: How well does he/she react when first seeing a new toy or game? - Scale 1-7 (same pattern)
-256. TMP-Q21B: How does he/she usually respond when given a new food? - Scale 1-7 (same pattern)
-257. TMP-Q22: When he/she is put down for a nap or for the night, does he/she fuss or protest? - Scale 1-7 (same pattern)
-258. TMP-Q23A: How easily does ... get used to new things, like new toys, new food, new people, etc.? [If age < 3] - Scale 1-7 (same pattern)
-259. TMP-Q24A: How easy or difficult is it for you to know what to expect from ... when you go to a new place? - Scale 1-7 (same pattern)
-260. TMP-Q25: How does ... react to being dressed or having clothing changed? - Scale 1-7 (same pattern)
-261. TMP-Q26: How long will he/she persist in playing with a single toy? - Scale 1-7 (same pattern)
-262. TMP-Q27A: How well does he/she adapt to new experiences (such as new playthings, new foods, new persons, etc.) eventually? - Scale 1-7 (same pattern)
-263. TMP-Q28: How easy or difficult is it to take him/her places? [If age >= 1] - Scale 1-7: 1=Easy; fun to take baby/child with me, 4=Okay; baby/child may fuss but no real trouble, 7=Difficult; baby/child is usually disruptive, 9=Refusal-->GO TO NEXT SECTION
-264. TMP-Q29: Does he/she persist in playing with objects when he/she is told to leave them alone? - Scale 1-7: 1=Rarely or never persists, 4=Sometimes does and sometimes does not, 7=Almost always persists, 8=Don't know, 9=Refusal-->GO TO NEXT SECTION
-265. TMP-Q30: Does he/she continue to go someplace even when you told him/her something like "stop", "come here", or "no-no"? [If age < 3] - Scale 1-7: 1=Rarely or never, 4=Sometimes does and sometimes does not, 7=Almost always, 9=Refusal-->GO TO NEXT SECTION
-266. TMP-Q30A: Does he/she continue to go someplace even when you told him/her something like "stop", "come here", or "please don't"? [If age >= 3] - Scale 1-7 (same anchors)
-267. TMP-Q31: When removed from something he/she is interested in but should not be getting into, he/she gets upset. - Scale 1-7: 1=Never, 4=Sometimes does and sometimes does not, 7=Always gets very upset, 9=Refusal-->GO TO NEXT SECTION
-268. TMP-Q32: How persistent is he/she in trying to get your attention when you are busy? - Scale 1-7: 1=Doesn't persist at all, 4=Will try, but will only mildly persist, 7=Very persistent -- will do anything to get attention, 8=Don't know, 9=Refusal-->GO TO NEXT SECTION
-269. TMP-Q33: Please rate the overall degree of difficulty ... would present for the average parent. - Scale 1-7: 1=Very easy, 4=Ordinary, some problems, 7=Highly difficult to deal with, 8=Don't know, 9=Refusal-->GO TO NEXT SECTION
-
----
-
-#### Education (Children) (pp. 84-100) - 42 questions
-
-**EDUCATION HISTORY** [Asked of 4-11 year-olds]
-
-270. EDU-Q1: What school grade is ... in? (New Brunswick, Manitoba, Saskatchewan, Alberta or British Columbia) - Radio: 01=Not in school, 02=Kindergarten, 03-14=Grade 1-12, 15=Ungraded
-271. EDU-Q1A: What school grade is ... in? (Newfoundland) - Radio: 01=Not in school, 02=Kindergarten, 03-11=Grade 1-9 Elementary, 12-14=Level 1-3 Secondary, 15=Ungraded
-272. EDU-Q1B: What school grade is ... in? (Quebec) - Radio: 01=Not in school, 02=Junior Kindergarten, 03=Kindergarten, 04-09=Grade 1-6 Elementary, 10-14=Secondary I-V, 15=Ungraded
-273. EDU-Q1C: What school grade is ... in? (Ontario) - Radio: 01=Not in school, 02=Junior Kindergarten, 03=Kindergarten, 04-15=Grade 1-12, 16=OAC Grade 13, 17=Ungraded
-274. EDU-Q1D: What school grade is ... in? (Nova Scotia) - Radio: 01=Not in school, 02=Primary, 03-14=Grade 1-12, 15=Ungraded
-275. EDU-Q1E: What school grade is ... in? (Prince Edward Island) - Radio: 01=Not in school, 02-13=Grade 1-12, 14=Ungraded
-276. EDU-Q2: Did he/she attend junior kindergarten? - Y/N: 1=Yes, 2=No, 8=Don't know, 9=Refusal-->GO TO NEXT SECTION
-277. EDU-Q3: Did he/she attend kindergarten/primary? - Y/N (same codes)
-278. EDU-Q4: Has ... ever skipped a grade at school? (INCLUDE KINDERGARTEN) - Y/N: 1=Yes, 2=No-->GO TO EDU-Q6, 8=Don't know-->GO TO EDU-Q6, 9=Refusal-->GO TO EDU-Q6
-279. EDU-Q5: What grade(s) has he/she skipped? (New Brunswick, Manitoba, Saskatchewan, Alberta, British Columbia) - Radio: 01=Kindergarten, 02-13=Grade 1-12, 98=Don't know, 99=Refusal-->GO TO NEXT SECTION
-280. EDU-Q5A: What grade(s) has he/she skipped? (Newfoundland) - Radio: 01=Kindergarten, 02-10=Grade 1-9 Elementary, 11-13=Level 1-3 Secondary, 98=Don't know, 99=Refusal-->GO TO NEXT SECTION
-281. EDU-Q5B: What grade(s) has he/she skipped? (Quebec) - Radio: 01=Kindergarten, 02-07=Grade 1-6 Elementary, 08-12=Secondary I-V, 98=Don't know, 99=Refusal-->GO TO NEXT SECTION
-282. EDU-Q5C: What grade(s) has he/she skipped? (Ontario) - Radio: 01=Kindergarten, 02-13=Grade 1-12, 14=OAC Grade 13, 98=Don't know, 99=Refusal-->GO TO NEXT SECTION
-283. EDU-Q5D: What grade(s) has he/she skipped? (Nova Scotia) - Radio: 01=Primary, 02-13=Grade 1-12, 98=Don't know, 99=Refusal-->GO TO NEXT SECTION
-284. EDU-Q5E: What grade(s) has he/she skipped? (Prince Edward Island) - Radio: 01-12=Grade 1-12, 98=Don't know, 99=Refusal-->GO TO NEXT SECTION
-285. EDU-Q6: Has ... ever repeated a grade at school (INCLUDE KINDERGARTEN)? - Y/N: 1=Yes, 2=No-->GO TO EDU-Q8, 8=Don't know-->GO TO EDU-Q8, 9=Refusal-->GO TO EDU-Q8
-286. EDU-Q7: What grade(s) has he/she repeated? (NB, MB, SK, AB, BC) - Radio: 01=Kindergarten, 02-13=Grade 1-12, 98=Don't know, 99=Refusal-->GO TO NEXT SECTION
-287. EDU-Q7A: What grade(s) has he/she repeated? (Newfoundland) - Radio (province-specific)
-288. EDU-Q7B: What grade(s) has he/she repeated? (Quebec) - Radio (province-specific)
-289. EDU-Q7C: What grade(s) has he/she repeated? (Ontario) - Radio (province-specific)
-290. EDU-Q7D: What grade(s) has he/she repeated? (Nova Scotia) - Radio (province-specific)
-291. EDU-Q7E: What grade(s) has he/she repeated? (Prince Edward Island) - Radio (province-specific)
-292. EDU-Q8: What type of school is ... currently in? (READ LIST. MARK ONE ONLY.) - Radio: 1=Public school, 2=Catholic school publicly funded, 3=Private school, 4=Other, 8=Don't know, 9=Refusal-->GO TO NEXT SECTION
-
-**CURRENT EDUCATION**
-293. EDU-Q9A: Other than natural progression through the school system in your area, has ... ever changed schools? - Y/N: 1=Yes, 2=No-->GO TO EDU-Q11, 3=Not applicable-->GO TO EDU-Q11, 8=Don't know-->GO TO EDU-Q11, 9=Refusal-->GO TO EDU-Q11
-294. EDU-Q9B: How many times has he/she changed schools? - Numeric
-295. EDU-Q10: For the most recent change in schools, what was the reason for changing? - Radio: 01=Family or child moved, 02=Child not progressing well academically, 03=Child not progressing well in language of instruction, 04=Child not getting along well with others at school, 05=Concerns about school's academic standards or quality, 06=Concerns about school safety or discipline, 07=Concerns about school facilities or resources, 08=Other, 98=Don't know, 99=Refusal-->GO TO NEXT SECTION
-296. EDU-Q11: Aside from school changes, how many times in ...'s life has he/she moved, that is, changed his/her usual place of residence? - Numeric
-297. EDU-Q12A: In what language is he/she mainly taught? - Radio: 1=English, 2=French, 3=Both, 4=Other, 8=Don't know, 9=Refusal-->GO TO NEXT SECTION
-298. EDU-Q12B: What language does he/she speak most often at home? (MARK ALL THAT APPLY.) - Checkbox: 1=English, 2=French, 3=Other, 4=None, 8=Don't know, 9=Refusal-->GO TO NEXT SECTION
-299. EDU-Q13: Since he/she started school in the fall, about how many days has he/she been away from school for any reason? [If age > 5] - Numeric
-
-**GRADE ONE AND OVER**
-300. EDU-Q14A: Based on your knowledge of his/her school work, including his/her report cards, how is ... doing in the following areas at school this year: reading? - Radio: 1=Very well, 2=Well, 3=Average, 4=Poorly, 5=Very poorly, 6=Not applicable, 8=Don't know, 9=Refusal-->GO TO NEXT SECTION
-301. EDU-Q14B: Mathematics? - Radio (same as above)
-302. EDU-Q14C: Written work such as composition? - Radio (same as above)
-303. EDU-Q14D: How is he/she doing overall? - Radio (same as above)
-304. EDU-Q15A: Since ... started school in the fall, has he/she received any help or tutoring outside of school? - Y/N: 1=Yes, 2=No-->GO TO EDU-Q16, 8=Don't know-->GO TO EDU-Q16, 9=Refusal-->GO TO EDU-Q16
-305. EDU-Q15B: How often? - Radio: 1=Once a week or less often, 2=Twice a week, 3=More than twice a week, 8=Don't know, 9=Refusal-->GO TO NEXT SECTION
-306. EDU-Q16: Since ... started school in the fall how many times have you been contacted by his/her school regarding his/her behaviour at school? - Radio: 1=None/once, 2=Twice/three times, 3=Four or more times, 8=Don't know, 9=Refusal-->GO TO NEXT SECTION
-307. EDU-Q17: With regard to how he/she feels about school, how often does he/she look forward to going to school? - Radio: 1=Almost never, 2=Rarely, 3=Sometimes, 4=Often, 5=Almost always, 8=Don't know, 9=Refusal-->GO TO NEXT SECTION
-308. EDU-Q18A: How important is it to you that ... have good grades in school? [If age >= 8] - Radio: 1=Very important, 2=Important, 3=Somewhat important, 4=Not important at all, 8=Don't know, 9=Refusal-->GO TO NEXT SECTION
-309. EDU-Q18B: How far do you hope he/she will go in school? - Radio: 1=Primary school, 2=Secondary or high school, 3=Go to community college/technical college or CEGEP, 4=Go to university, 5=Learn a trade, 6=Other, 8=Don't know, 9=Refusal-->GO TO NEXT SECTION
-310. EDU-Q19A: Academic progress is very important at this school. - Scale: 1=Strongly agree, 2=Agree, 3=Disagree, 4=Strongly disagree, 8=Don't know, 9=Refusal
-311. EDU-Q19B: Most children in this school enjoy being there. - Scale (same)
-312. EDU-Q19C: Parents are made to feel welcome in this school. - Scale (same)
-313. EDU-Q19D: School spirit is very high. - Scale (same)
-314. EDU-Q20: Does ... receive special education because a physical, emotional, behavioral, or some other problem limits the kind or amount of school work he/she can do? - Y/N: 1=Yes, 2=No, 8=Don't know, 9=Refusal
-
----
-
-#### Literacy (pp. 101-104) - 17 questions
-
-315. LIT-Q1: Do you or another adult ever read to ..., or show him/her pictures or wordless baby books? [Age 0-23 months] - Y/N: 1=Yes, 2=No-->GO TO ACTIVITIES SECTION, 8=Don't know-->GO TO ACTIVITIES SECTION, 9=Refusal-->GO TO ACTIVITIES SECTION
-316. LIT-Q2: How often do you do this? - Radio: 01=Rarely, 02=Less than once a month, 03=Once a month, 04=A few times a month, 05=Once a week, 06=A few times a week, 07=Daily, 08=Many times each day, 98=Don't know, 99=Refusal-->GO TO ACTIVITIES SECTION
-317. LIT-Q3: How old was he/she when you started to do this (to nearest month)? - Numeric (months)
-318. LIT-Q4: How often does ... look at books, magazines, comics, etc. on his/her own? [Age 2-4] - Radio (frequency scale)
-319. LIT-Q5: How often does he/she play with pencils or markers doing real or pretend writing? [Age 2-4] - Radio (frequency scale)
-320. LIT-Q6A: Have you or another adult ever read aloud to ... on a regular basis? [Age 5] - Y/N: 1=Yes, 2=No-->GO TO LIT-Q8, 8=Don't know-->GO TO LIT-C9, 9=Refusal-->GO TO ACTIVITIES SECTION
-321. LIT-Q6B1: How old was he/she when you started (to the nearest month of age)? - Numeric
-322. LIT-Q7: Currently, how often do you or another adult read to him/her? [Age 2-4] - Radio: 01=Never or rarely, 02=Less than once a month, 03=Once a month, 04=A few times a month, 05=Once a week, 06=A few times a week, 07=Daily, 08=Many times each day, 98=Don't know, 99=Refusal
-323. LIT-Q7A: Currently, how often do you or another adult read aloud to him/her or listen to him/her read or attempt to read aloud? [Age 6-7] - Radio (same frequency scale)
-324. LIT-Q7B: Currently, how often do you or another adult read aloud to him/her or listen to him/her read? [Age 8-11] - Radio (same frequency scale)
-325. LIT-Q8: How often do you help or encourage him/her to write or pretend to write? - Radio (frequency scale)
-326. LIT-Q9: How often is ... assigned homework? [Age >= 5] - Radio: 1=Never-->GO TO LIT-C12A, 2=Less than once a month, 3=Once a month, 4=A few times a month, 5=Once a week, 6=A few times a week, 7=Daily, 8=Don't know-->GO TO LIT-C12A, 9=Refusal-->GO TO ACTIVITIES SECTION
-327. LIT-Q10A: On days when he/she is assigned homework, how much time does he/she usually spend doing homework? - Numeric (minutes/hours)
-328. LIT-Q11: How often do you check his/her homework or provide help with homework? - Radio: 1=Never or rarely, 2=Less than once a month, 3=Once a month, 4=A few times a month, 5=Once a week, 6=A few times a week, 7=Daily, 8=Don't know, 9=Refusal-->GO TO ACTIVITIES SECTION
-329. LIT-Q12: How often does ... look at books or try to read on his/her own? [Age = 6] - Radio (frequency scale)
-330. LIT-Q12A: How often does ... read for pleasure? [Age >= 7] - Radio (frequency scale)
-331. LIT-Q13: How often does he/she talk about a book with family or friends? - Radio (frequency scale)
-332. LIT-Q14: How often does he/she go to the library, including the school library? - Radio (frequency scale)
-
----
-
-#### Activities (pp. 105-108) - 11 questions
-
-333. ACT-Q1: How often does ... participate in unorganized sports or physical activities (e.g., swimming, bike riding, playing ball)? - Radio (frequency scale)
-334. ACT-Q2: How often does ... participate in organized sports (e.g., hockey, gymnastics, swimming lessons, martial arts, etc.)? - Radio (frequency scale)
-335. ACT-Q3: How often does ... participate in lessons or instruction in other organized physical activities (dance, yoga, etc.)? - Radio (frequency scale)
-336. ACT-Q4: How often does ... participate in clubs, groups, or community programs for children? - Radio (frequency scale)
-337. ACT-Q5: How often does ... participate in lessons or instruction in art, drama, or music (non-school)? - Radio (frequency scale)
-338. ACT-Q6: How often does ... play with toys, games, etc.? - Radio (frequency scale)
-339. ACT-Q7: How often does ... watch TV or videos? - Radio (frequency scale)
-340. ACT-Q8: How often does ... use a computer? - Radio (frequency scale)
-341. ACT-Q9: About how many hours a day does ... watch TV or videos on a normal school day? - Numeric
-342. ACT-Q10: About how many hours a day does ... watch TV or videos on a non-school day? - Numeric
-343. ACT-Q11: How often does ... play games with other children? - Radio (frequency scale)
-
----
-
-#### Behaviour (pp. 109-116) - 42 questions
-
-**Age 0-3 years (BEH section):**
-344. BEH-Q1A: How often would you say that ... is: (a) able to pay attention for a long period of time? - Scale: 1=Never or not yet, 2=Rarely, 3=Sometimes, 4=Often, 5=Always
-345. BEH-Q1B: (b) shows a readiness to try new experiences? - Scale (same)
-346. BEH-Q1C: (c) explores new surroundings? - Scale (same)
-347. BEH-Q1D: (d) is curious? - Scale (same)
-348. BEH-Q1E: (e) tends to be overly active? - Scale (same)
-349. BEH-Q1F: (f) tends to be impulsive and act without thinking? - Scale (same)
-350. BEH-Q1G: (g) is usually in a happy mood? - Scale (same)
-351. BEH-Q1H: (h) is cooperative and compliant? - Scale (same)
-352. BEH-Q1I: (i) is not easily upset? - Scale (same)
-353. BEH-Q1J: (j) waits for his turn in games? - Scale (same)
-
-**Age 4-11 years (BEH section):**
-354. BEH-Q2A: How often would you say that ... (a) Can't sit still, is restless or hyperactive? - Scale: 1=Never or not true, 2=Sometimes or somewhat true, 3=Often or very true
-355. BEH-Q2B: (b) Is distractible, has trouble sticking to any activity? - Scale (same)
-356. BEH-Q2C: (c) Fidgets? - Scale (same)
-357. BEH-Q2D: (d) Can't concentrate, can't pay attention for long? - Scale (same)
-358. BEH-Q2E: (e) Is impulsive, acts without thinking? - Scale (same)
-359. BEH-Q2F: (f) Has difficulty awaiting turn in games or groups? - Scale (same)
-360. BEH-Q2G: (g) Cannot settle to anything for more than a few moments? - Scale (same)
-361. BEH-Q2H: (h) Is inattentive? - Scale (same)
-362. BEH-Q2I: (i) Gets into many fights? - Scale (same)
-363. BEH-Q2J: (j) When another child accidentally hurts him/her, assumes that the other child meant to do it, and then reacts with anger and fighting? - Scale (same)
-364. BEH-Q2K: (k) Physically attacks people? - Scale (same)
-365. BEH-Q2L: (l) Threatens people? - Scale (same)
-366. BEH-Q2M: (m) Is cruel, bullies or is mean to others? - Scale (same)
-367. BEH-Q2N: (n) Kicks, bites, hits other children? - Scale (same)
-368. BEH-Q2O: (o) Seems to be unhappy, sad or depressed? - Scale (same)
-369. BEH-Q2P: (p) Is not as happy as other children? - Scale (same)
-370. BEH-Q2Q: (q) Is too fearful or anxious? - Scale (same)
-371. BEH-Q2R: (r) Is worried? - Scale (same)
-372. BEH-Q2S: (s) Cries a lot? - Scale (same)
-373. BEH-Q2T: (t) Appears miserable, unhappy, tearful, or distressed? - Scale (same)
-374. BEH-Q2U: (u) Is nervous, high-strung or tense? - Scale (same)
-375. BEH-Q2V: (v) Has trouble enjoying himself/herself? - Scale (same)
-376. BEH-Q2W: (w) Shows concern for other people's feelings? - Scale (same)
-377. BEH-Q2X: (x) Will try to help someone who has been hurt? - Scale (same)
-378. BEH-Q2Y: (y) Volunteers to help clear up a mess someone else has made? - Scale (same)
-379. BEH-Q2Z: (z) If there is a quarrel or dispute, will try to stop it? - Scale (same)
-380. BEH-Q2AA: (aa) Offers to help other children who are having difficulty with a task? - Scale (same)
-381. BEH-Q2BB: (bb) Comforts a child who is crying or upset? - Scale (same)
-382. BEH-Q2CC: (cc) Spontaneously helps to pick up objects which another child has dropped? - Scale (same)
-383. BEH-Q2DD: (dd) Will invite bystanders to join in a game? - Scale (same)
-384. BEH-Q2EE: (ee) Has vandalized or destroyed things on purpose? - Scale (same)
-385. BEH-Q2FF: (ff) Has stolen things? - Scale (same)
-386. BEH-Q2GG: (gg) Has told lies or cheated? - Scale (same)
-
-**Age 2-3 years additional:**
-387. BEH-Q3A: Is ... able to follow simple directions? - Y/N: 1=Yes, 2=No
-388. BEH-Q3B: Is he/she able to demonstrate his/her wants? - Y/N
-389. BEH-Q3C: Is he/she eager to learn new things? - Y/N
-390. BEH-Q3D: Is he/she able to separate easily from parents? - Y/N
-
----
-
-#### Motor and Social Development (pp. 117-121) - 15 questions
-
-391. MSD-Q1: Can ... do the following: throw a ball? [Age-appropriate items] - Y/N: 1=Yes, 2=No
-392. MSD-Q2: Kick a ball forward? - Y/N
-393. MSD-Q3: Pedal a tricycle or bicycle? - Y/N
-394. MSD-Q4: Climb stairs with alternating feet? - Y/N
-395. MSD-Q5: Hop on one foot? - Y/N
-396. MSD-Q6: Walk on a line (foot in front of foot)? - Y/N
-397. MSD-Q7: Count to 10? - Y/N
-398. MSD-Q8: Use sentences of 5 or more words? - Y/N
-399. MSD-Q9: Make himself/herself understood by strangers? - Y/N
-400. MSD-Q10: Know 4 or more colours? - Y/N
-401. MSD-Q11: Write his/her own name? - Y/N
-402. MSD-Q12: Draw a picture of a person (at least 3 body parts)? - Y/N
-403. MSD-Q13: Show organized play with other children? - Y/N
-404. MSD-Q14: Wash and dry hands and face? - Y/N
-405. MSD-Q15: Get dressed and undressed by himself/herself? - Y/N
-
----
-
-#### Relationships (pp. 122-124) - 7 questions
-
-406. REL-I1: **The following questions are about ...'s relationship with you and other adults and children.** - Intro
-407. REL-Q1: How well does ... get along with you? - Radio: 1=Very well, no problems, 2=Quite well, hardly any problems, 3=Pretty well, occasional problems, 4=Not too well, frequent problems, 5=Not well at all, constant problems, 8=Don't know, 9=Refusal
-408. REL-Q2: How well does ... get along with other children? - Radio (same as REL-Q1)
-409. REL-Q3: How well does ... get along with brothers and sisters? - Radio (same as REL-Q1)
-410. REL-Q4: How well does ... get along with his/her father/mother (other parent)? - Radio (same as REL-Q1)
-411. REL-Q5: How well does ... get along with other adults (non-family)? - Radio (same as REL-Q1)
-412. REL-Q6: How many close friends does ... have? - Numeric
-413. REL-Q7: How often does ... see his/her friends outside school? - Radio: 1=Every day, 2=A few times a week, 3=About once a week, 4=About once a month, 5=Less than once a month, 6=Never, 8=Don't know, 9=Refusal
-
----
-
-#### Parenting (pp. 125-129) - 19 questions
-
-414. PAR-I1: **The following questions are about the ways you interact with ....** - Intro
-415. PAR-Q1A: How often do you praise ..., by saying something like "Good for you!" or "What a nice thing you did!" or "That's good going!"? - Radio: 1=Many times each day, 2=A few times each day, 3=About once or twice a day, 4=A few times a week, 5=About once a week or less, 8=Don't know, 9=Refusal
-416. PAR-Q1B: How often do you and ... talk or play with each other, focusing attention on each other for five minutes or more, just for fun? - Radio (same frequency)
-417. PAR-Q1C: How often do you and ... laugh together? - Radio (same frequency)
-418. PAR-Q1D: How often do you do something special with ... that he/she enjoys? - Radio (same frequency)
-419. PAR-Q1E: How often do you play sports, hobbies or games with ...? - Radio (same frequency)
-420. PAR-Q2A: How often do you get annoyed with ... for saying or doing something he/she is not supposed to? - Radio (same frequency)
-421. PAR-Q2B: Of all the times you talk to ... about his/her behaviour, how often is it praise? - Radio: 1=Never, 2=Less than half the time, 3=About half the time, 4=More than half the time, 5=All the time, 8=Don't know, 9=Refusal
-422. PAR-Q2C: Of all the times you talk to ... about his/her behaviour, how often is it disapproval? - Radio (same as PAR-Q2B)
-423. PAR-Q2D: How often do you get angry and raise your voice at or scold ...? - Radio (frequency scale)
-424. PAR-Q3A: When ... breaks the rules or does things that he/she is not supposed to, how often do you: (a) raise your voice, scold or yell at him/her? - Radio: 1=Never, 2=Rarely, 3=Sometimes, 4=Often, 5=Always, 8=Don't know, 9=Refusal
-425. PAR-Q3B: (b) calmly discuss the problem? - Radio (same)
-426. PAR-Q3C: (c) use physical punishment (e.g. spanking)? - Radio (same)
-427. PAR-Q3D: (d) describe alternative ways of behaving which are acceptable? - Radio (same)
-428. PAR-Q3E: (e) take away privileges (TV, going out, etc.)? - Radio (same)
-429. PAR-Q3F: (f) send him/her to his/her room? - Radio (same)
-430. PAR-Q3G: (g) use a "time out" (make him/her sit or stand in a corner)? - Radio (same)
-431. PAR-Q3H: (h) try to make him/her feel ashamed or guilty? - Radio (same)
-432. PAR-Q4: How often do you and ... (your spouse/partner) disagree about how to handle ...? - Radio: 1=Never, 2=Rarely, 3=Sometimes, 4=Often, 5=Always, 8=Don't know, 9=Refusal, NA=No spouse/partner
-433. PAR-Q5: How much difficulty do you and your spouse/partner have in managing ... (controlling his/her behaviour)? - Radio: 1=No difficulty at all, 2=A little difficulty, 3=A moderate amount of difficulty, 4=A lot of difficulty, 8=Don't know, 9=Refusal
-
----
-
-#### Family & Custody History (pp. 130-155) - 44 questions
-
-**GENERAL INFORMATION**
-434. CUS-Q1: I'd like to ask a few questions regarding ...'s family. Is ... your biological child, adopted child or a foster child? - Radio: 1=Biological, 2=Adopted, 3=Foster child
-435. CUS-Q2: What is your relationship to the child? - Radio: 1=Mother, 2=Father, 3=Step-mother, 4=Step-father, 5=Other
-436. CUS-Q3: Does ... have any biological brothers or sisters (include half-brothers/sisters)? - Y/N: 1=Yes, 2=No
-437. CUS-Q4: How many biological brothers or sisters does ... have? - Numeric
-438. CUS-Q5: Are ...'s biological parents currently living together? - Y/N: 1=Yes-->GO TO CHILD CARE SECTION, 2=No
-
-**IF PARENTS NOT LIVING TOGETHER:**
-439. CUS-Q6: What was the main reason for the parents' separation? - Radio: codes for various reasons
-440. CUS-Q7: When did ...'s parents separate? - Date (month/year)
-441. CUS-Q8: What was ...'s age at that time? - Numeric
-442. CUS-Q9A: Is ...'s biological mother still alive? - Y/N
-443. CUS-Q9B: Is ...'s biological father still alive? - Y/N
-444. CUS-Q10A: What was ...'s biological mother's marital status before the separation? - Radio
-445. CUS-Q10B: What was ...'s biological father's marital status before the separation? - Radio
-446. CUS-Q11A-E: What were the custody arrangements? - Multiple sub-questions about custody type
-
-**LIVING ARRANGEMENTS AFTER SEPARATION:**
-447. CUS-Q12: With whom did ... go on living at the time of the separation? - Radio: 1=Mother only, 2=Father only, 3=Shared time basis mostly mother-->GO TO CUS-Q16, 4=Shared time basis mostly father-->GO TO CUS-Q16, 5=Equally shared time mother and father-->GO TO CUS-Q16, 6=Other-->GO TO CUS-Q17, 8=Don't know-->GO TO CUS-C18A, 9=Refusal-->GO TO CHILD CARE SECTION
-448. CUS-Q13: At that time, what type of contact did ... have with his/her other parent? - Radio: 01=Regular visiting every week, 02=Regular visiting every two weeks, 03=Regular visiting monthly, 04=Irregular visiting on holidays only, 05=Irregular visiting without set pattern, 06=Telephone or letter contact only, 07=No contact at all, 08=Other, 98=Don't know, 99=Refusal-->GO TO CHILD CARE SECTION
-449. CUS-Q14: Since then, how many times has the type of contact changed? - Radio: 1=None-->GO TO CUS-Q19A, 2=Once, 3=Twice, 4=Three times, 5=Four or more times, 8=Don't know, 9=Refusal-->GO TO CHILD CARE SECTION
-450. CUS-Q15A: What type of contact does ... now have with his/her other parent? - Radio: 01-11 (various contact types), 98=Don't know, 99=Refusal-->GO TO CHILD CARE SECTION
-451. CUS-Q15B: How much time does ... live at his/her other parent's home? - Checkbox (MARK ALL THAT APPLY): 01=On weekdays not weekends, 02=Every other night, ..., 11=Other, 98=Don't know, 99=Refusal
-
-**SHARED CUSTODY:**
-452. CUS-Q16: At that time, how much time did ... live at his/her other parent's home? (MARK ALL THAT APPLY) - Checkbox: 01=On weekdays not weekends, 02=Every other night, 03=One week out of two, 04=Two weeks alternately, 05=Every weekend, 06=One weekend out of two, 07=Less than two days every month, 08=Some holidays, 09=Other, 98=Don't know, 99=Refusal-->GO TO CHILD CARE SECTION
-453. CUS-Q17: How many times would you say these living arrangements have changed over time? - Radio: 1=None-->GO TO CUS-Q19A, 2=Once, 3=Twice, 4=Three times, 5=Four or more times, 8=Don't know, 9=Refusal-->GO TO CHILD CARE SECTION
-454. CUS-Q18A: Currently, how much time does ... live at his/her other parent's home? (MARK ALL THAT APPLY) - Checkbox: 01-13 (various arrangements), 98=Don't know, 99=Refusal-->GO TO CHILD CARE SECTION
-455. CUS-Q18B: Which type of contact does ... now have with his/her other parent? - Radio: 1-7 (contact types), 8=Don't know, 9=Refusal-->GO TO CHILD CARE SECTION
-
-**BOTH CASES - CURRENT STATUS:**
-456. CUS-Q19A: Has a court order modified the custody of ... since his/her parents separated (or divorced)? - Y/N: 1=Yes, 2=No-->GO TO CUS-Q19C, 8=Don't know-->GO TO CUS-Q19C, 9=Refusal-->GO TO CHILD CARE SECTION
-457. CUS-Q19B: Is he/she now in: - Radio: 1=Sole custody of mother, 2=Sole custody of father, 3=Shared physical custody of both parents, 4=Other, 8=Don't know, 9=Refusal-->GO TO CHILD CARE SECTION
-458. CUS-Q19C: Between ...'s parents, has the question of living arrangements or visiting rights been: - Radio: 1=A great source of tension, 2=Some source of tension, 3=Very little source of tension, 4=No source of tension at all, 8=Don't know, 9=Refusal-->GO TO CHILD CARE SECTION
-
-**SUBSEQUENT UNIONS OF MOTHER:**
-459. CUS-Q20A: Has ...'s mother entered into another marriage, common-law relationship or common-law relationship that resulted in marriage? (MARK ALL THAT APPLY) - Checkbox: 1=Yes a marriage, 2=Yes a common-law relationship, 3=Yes a common-law relationship that resulted in marriage, 4=No, 8=Don't know, 9=Refusal
-460. CUS-Q20B: When did ...'s mother start living with her new partner? - Date (month/year)
-461. CUS-Q20C: When did the marriage take place? - Date (month/year)
-462. CUS-Q20D: When they started living together, did ... live in the household with his/her mother's new partner? - Radio: 1=Yes full-time, 2=Yes part-time, 3=No, 8=Don't know, 9=Refusal-->GO TO CHILD CARE SECTION
-463. CUS-Q20E: Did the mother's new partner have any children of his own? - Y/N: 1=Yes, 2=No-->GO TO CUS-Q20H, 8=Don't know-->GO TO CUS-Q20H, 9=Refusal-->GO TO CHILD CARE SECTION
-464. CUS-Q20F: How many? - Numeric
-465. CUS-Q20G: Did he/she/they live in the household with their father? (MARK ALL THAT APPLY) - Checkbox: 1=Yes all of them full-time, 2=Yes all of them part-time, 3=Yes some of them full-time, 4=Yes some of them part-time, 5=No none of them, 8=Don't know, 9=Refusal-->GO TO CHILD CARE SECTION
-466. CUS-Q20H: Did ...'s mother have any children with this new spouse/partner? - Y/N: 1=Yes, 2=No-->GO TO CUS-C21, 8=Don't know-->GO TO CUS-C21, 9=Refusal-->GO TO CHILD CARE SECTION
-467. CUS-Q20I: How many? - Numeric
-
-**SUBSEQUENT UNIONS OF FATHER:**
-468. CUS-Q21A: Has ...'s father entered into another marriage, common-law relationship or common-law relationship that resulted in marriage? (MARK ALL THAT APPLY) - Checkbox: 1=Yes a marriage-->GO TO CUS-Q21C, 2=Yes a common-law relationship, 3=Yes a common-law relationship that resulted in marriage, 4=No-->GO TO CUS-C22, 8=Don't know-->GO TO CUS-C22, 9=Refusal-->GO TO CHILD CARE SECTION
-469. CUS-Q21B: When did ...'s father start living with his new partner? - Date (month/year)
-470. CUS-Q21C: When did the marriage take place? - Date (month/year)
-471. CUS-Q21D: When they started living together, did ... live in the household with his/her father's new partner? - Radio: 1=Yes full-time, 2=Yes part-time, 3=No, 8=Don't know, 9=Refusal-->GO TO CHILD CARE SECTION
-472. CUS-Q21E: Did the father's new partner have any children of her own? - Y/N: 1=Yes, 2=No-->GO TO CUS-Q21H, 8=Don't know-->GO TO CUS-Q21H, 9=Refusal-->GO TO CHILD CARE SECTION
-473. CUS-Q21F: How many? - Numeric
-474. CUS-Q21G: Did he/she/they live in the household with their mother? (MARK ALL THAT APPLY) - Checkbox: 1-5 (same as CUS-Q20G), 8=Don't know, 9=Refusal-->GO TO CHILD CARE SECTION
-475. CUS-Q21H: Did ...'s father have any children with this new spouse/partner? - Y/N: 1=Yes, 2=No-->GO TO CUS-C22, 8=Don't know-->GO TO CUS-C22, 9=Refusal-->GO TO CHILD CARE SECTION
-476. CUS-Q21I: How many? - Numeric
-
-**BREAK-UP OF NEW UNION:**
-477. CUS-Q22A: Has this other union of ...'s mother or father broken up? - Radio: 1=Yes mother's union, 2=Yes father's union, 3=Yes both unions, 4=No-->GO TO CUS-C25A, 8=Don't know-->GO TO CUS-C25A, 9=Refusal-->GO TO CHILD CARE SECTION
-478. CUS-Q22B: When did that happen? (IF BOTH, USE DATE OF FIRST EVENT) - Date (month/year)
-479. CUS-Q22C: With whom did ... go on living after it happened? - Radio: 1=Mother full-time, 2=Father full-time, 3=Part-time mother and father, 8=Don't know, 9=Refusal-->GO TO CHILD CARE SECTION
-480. CUS-Q23: Did ... live through any other family reconstitution between then and now? - Y/N: 1=Yes, 2=No, 8=Don't know, 9=Refusal-->GO TO CHILD CARE SECTION
-
----
-
-#### Child Care (pp. 156-161) - 28 questions
-
-481. CAR-Q1A: Do you currently use child care such as daycare or babysitting while you (and your spouse/partner) are at work or studying? - Y/N: 1=Yes, 2=No-->GO TO CAR-C6, 8=Don't know-->GO TO END OF CHILD CARE SECTION, 9=Refusal-->GO TO END OF CHILD CARE SECTION
-482. CAR-Q1B: Care provided in someone else's home by a non-relative? - Y/N: 1=Yes, 2=No-->GO TO CAR-Q1C, 8=Don't know-->GO TO CAR-Q1C, 9=Refusal-->GO TO CAR-Q1C
-483. CAR-Q1B1: For about how many hours per week is that? - Numeric
-484. CAR-Q1B2: Is the person providing this care licensed by the government or approved by a family daycare agency? - Y/N: 1=Yes, 2=No, 8=Don't know, 9=Refusal
-485. CAR-Q1C: Care in someone else's home by a relative? - Y/N: 1=Yes, 2=No-->GO TO CAR-Q1D, 3=No and no other arrangement-->GO TO CAR-I2, 8=Don't know-->GO TO CAR-Q1D, 9=Refusal-->GO TO CAR-Q1D
-486. CAR-Q1C1: For about how many hours per week is that? - Numeric
-487. CAR-Q1C2: Is the person providing this care licensed by the government or approved by a family daycare agency? - Y/N: 1=Yes, 2=No, 8=Don't know, 9=Refusal
-488. CAR-Q1D: Care in own home by brother or sister of the child? - Y/N: 1=Yes, 2=No-->GO TO CAR-Q1E, 3=No and no other arrangement-->GO TO CAR-I2, 4=Not applicable-->GO TO CAR-Q1E, 8=Don't know-->GO TO CAR-Q1E, 9=Refusal-->GO TO CAR-Q1E
-489. CAR-Q1D1: For about how many hours per week is that? - Numeric
-490. CAR-Q1E: Care in own home by a relative other than a sister or brother of the child? - Y/N: 1=Yes, 2=No-->GO TO CAR-Q1F, 3=No and no other arrangement-->GO TO CAR-I2, 8=Don't know-->GO TO CAR-Q1F, 9=Refusal-->GO TO CAR-Q1F
-491. CAR-Q1E1: For about how many hours per week is that? - Numeric
-492. CAR-Q1F: Care in own home by a non-relative? - Y/N: 1=Yes, 2=No-->GO TO CAR-Q1G, 3=No and no other arrangement-->GO TO CAR-I2, 8=Don't know-->GO TO CAR-Q1G, 9=Refusal-->GO TO CAR-Q1G
-493. CAR-Q1F1: For about how many hours per week is that? - Numeric
-494. CAR-Q1G: Care in a daycare centre (including at workplace)? - Y/N: 1=Yes, 2=No-->GO TO CAR-C1H, 3=No and no other arrangement-->GO TO CAR-I2, 8=Don't know-->GO TO CAR-C1H, 9=Refusal-->GO TO CAR-C1H
-495. CAR-Q1G1: For about how many hours per week is that? - Numeric
-496. CAR-Q1G2: Is the child care program or daycare centre operated on a profit or non-profit basis (include government sponsored care)? - Radio: 1=Profit, 2=Non-profit, 8=Don't know, 9=Refusal
-497. CAR-Q1H: Care in a before or after school program? [If age 4-11] - Y/N: 1=Yes, 2=No-->GO TO CAR-C1I, 3=No and no other arrangement-->GO TO CAR-I2, 8=Don't know-->GO TO CAR-C1I, 9=Refusal-->GO TO CAR-C1I
-498. CAR-Q1H1: For about how many hours per week is that? - Numeric
-499. CAR-Q1I: Is ... in his/her own care (e.g. before/after school)? [If age 6-11] - Y/N: 1=Yes, 2=No-->GO TO CAR-Q1J, 3=No and no other arrangement-->GO TO CAR-I2, 8=Don't know-->GO TO CAR-Q1J, 9=Refusal-->GO TO CAR-Q1J
-500. CAR-Q1I1: For about how many hours per week is that? - Numeric
-501. CAR-Q1J: Do you currently use other child care arrangements? - Y/N: 1=Yes, 2=No-->GO TO CAR-I2, 8=Don't know-->GO TO CAR-I2, 9=Refusal-->GO TO CAR-I2
-502. CAR-Q1J1: For about how many hours per week is that? - Numeric
-503. CAR-Q2: When did you start using this child care arrangement? - Date (month/year)
-504. CAR-Q3: During the past 6 months, how well has he/she gotten along with his/her main child care provider? [If age < 5] - Radio: 1=Very well no problems, 2=Quite well hardly any problems, 3=Pretty well occasional problems, 4=Not too well frequent problems, 5=Not well at all constant problems, 8=Don't know, 9=Refusal
-505. CAR-Q4: In the past 12 months, how many times have you changed your main child care arrangement and/or caregiver, excluding periods of care by yourself (or spouse/partner)? - Radio: 1=None, 2=1, 3=2, 4=3 or 4, 5=5 or more, 8=Don't know, 9=Refusal
-506. CAR-Q5: What were the reasons for changing? (DO NOT READ. MARK ALL THAT APPLY.) - Checkbox: 1=Dissatisfaction with caregiver/program, 2=Caregiver/program no longer available, 3=Family or child moved/parental work status or custody arrangement changed, 4=Changes in child or child's needs, 5=A preferred arrangement became available, 6=Cost, 7=Other, 8=Don't know, 9=Refusal
-507. CAR-Q6: Have you ever used child care for ... while you (and your spouse/partner) were at work or studying? [If no current care] - Y/N: 1=Yes, 2=No-->GO TO END OF CHILD CARE SECTION, 8=Don't know-->GO TO END, 9=Refusal-->GO TO END
-508. CAR-Q7: Overall, how many changes in child care arrangements has ... experienced since you began using child care, excluding periods of care by yourself (or spouse/partner)? - Numeric (2 digits)
-509. CAR-Q8: Last summer while ... was not in school, what type of child care arrangement did you use while you (and your spouse/partner) were at work/studying? (MARK ALL THAT APPLY.) [If age >= 6] - Checkbox: 01=Day care centre, 02=Care in someone else's home by a non-relative, 03=Care in someone else's home by a relative, 04=Care in own home by a non-relative, 05=Care in own home by brother/sister, 06=Care in own home by other relative, 07=Child in own care, 08=Structured summer program, 09=Other, 10=Not applicable, 98=Don't know, 99=Refusal
-
----
-
-## TOTAL UNIQUE QUESTION NODES: ~509
+## TOTAL UNIQUE QUESTION NODES: ~843

@@ -98,24 +98,7 @@ However, the NOTE for AGE 4-5 says: "HLT-Q1-Q5; HLT-Q6A, Q7A; HLT-Q8-Q19" -- mea
 
 **In the QML:** The declarative version makes this explicit. Q6A has `precondition: child_age >= 4 and child_age <= 5` (from the NOTE), while Q6 has `precondition: child_age >= 6` (from the GOTO). The Z3 solver confirms both are reachable (CONDITIONAL) with non-overlapping age ranges.
 
-### P2: Vision Routing Creates Unreachable Path for Certain Outcomes
-
-| Source | Route |
-|--------|-------|
-| HLT-Q6 (p45) | "1 YES ---> GO TO HLT-Q9" |
-| HLT-Q6 (p45) | "2 NO" (falls through to Q7) |
-| HLT-Q6 (p45) | "8 DON'T KNOW ---> GO TO HLT-Q3" (sic -- should be Q8?) |
-| HLT-Q6 (p45) | "9 REFUSAL ---> GO TO HLT-Q11" |
-
-The DON'T KNOW response at HLT-Q6 routes to "HLT-Q3" which is the **height question** from earlier in the section. This is clearly a typographical error -- it should route to HLT-Q8 (the "able to see at all?" question) or HLT-Q11 (hearing section).
-
-**PDF evidence:**
-- p45: *"8 DON'T KNOW --->GO TO HLT-Q3"* (Q3 asks about height)
-- p46: HLT-Q7 answer 2 routes "NO ---> GO TO HLT-Q8" and answer 8 routes "DON'T KNOW ---> GO TO HLT-Q8"
-
-**Impact:** In the imperative version, a DON'T KNOW response at Q6 would send the interviewer back to the height question, creating an infinite loop (Q3 -> Q4 -> Q5 -> C6 -> Q6 -> DON'T KNOW -> Q3). The CATI system likely catches this, but the paper specification contains a circular reference.
-
-### P3: Motor and Social Development Has Overlapping Month Ranges
+### P2: Motor and Social Development Has Overlapping Month Ranges
 
 | Source | Question Range |
 |--------|---------------|
@@ -143,7 +126,7 @@ But the exit points also differ: MSD-C23 says "IF AGE IN MONTHS = 4 TO 6 MONTHS 
 
 Neither approach is clean, revealing that the MSD section was designed as an imperative sliding window, not a declarative constraint system.
 
-### P4: Behaviour Section Age Gate Inconsistency (0-11 Months vs "AGE < 1")
+### P3: Behaviour Section Age Gate Inconsistency (0-11 Months vs "AGE < 1")
 
 | Source | Gate |
 |--------|------|
@@ -161,7 +144,7 @@ However, for a child who is 11 months and 29 days old, both criteria include the
 
 The NOTE lists "AGE 1 YEAR" as getting Q1-Q5, confirming that age 1 should get Q5, not Q5A. But the boundary between "0-11 MONTHS" and "1 YEAR" depends on whether age is recorded in months or rounded years.
 
-### P5: Custody Section Multi-Conditional Routing Creates Dead Paths
+### P4: Custody Section Multi-Conditional Routing Creates Dead Paths
 
 CUS-C1A (p130) has a 4-way conditional:
 
@@ -182,7 +165,7 @@ This creates a path where a non-eldest child who lived with the respondent at bi
 **PDF evidence:**
 - p130: CUS-C1A full conditional chain
 
-### P6: CUS-C10 Phantom Variable References
+### P5: CUS-C10 Phantom Variable References
 
 CUS-C10 (p142) has this complex conditional:
 
@@ -201,7 +184,7 @@ CUS-C10 (p142) has this complex conditional:
 - p142: *"CUS-Q9B Has one of ...'s parents died?"* -- asked via different routing path
 - p142: CUS-C10 full conditional chain
 
-### P7: Asymmetric DON'T KNOW/REFUSAL Routing Across Sections
+### P6: Asymmetric DON'T KNOW/REFUSAL Routing Across Sections
 
 Throughout the questionnaire, REFUSAL responses are routed inconsistently:
 
@@ -218,7 +201,7 @@ In the Family Functioning section, a single REFUSAL at any item in the FNC-Q1 ba
 
 **In the declarative version**, this asymmetry is invisible because REFUSAL is not a valid response code in QML (only the substantive response options 1-4 are modeled). The imperative GOTO routing for REFUSAL creates hidden skip paths that bypass large sections of the questionnaire. These paths are **dead code in the declarative version** -- they exist in the PDF but have no QML equivalent, meaning the validator cannot detect the inconsistent treatment of refusals.
 
-### P8: Literacy Section Age Gate Creates Impossible Path for Age 5
+### P7: Literacy Section Age Gate Creates Impossible Path for Age 5
 
 LIT-C4 (p102) has this routing:
 
@@ -262,7 +245,6 @@ A 5-year-old continues to LIT-Q12 ("How often does the child look at books or tr
 | Category | Imperative (PDF) | Declarative (QML) |
 |----------|------------------|-------------------|
 | **Age gate contradictions** | Hidden by sequential GOTO -- interviewer follows routing without seeing NOTE conflicts | Forced into explicit preconditions -- validator can flag when NOTE age ranges don't match GOTO conditions |
-| **Cross-reference errors** | DON'T KNOW -> Q3 circular reference invisible in paper flow | Would create cycle or unreachable item in QML (caught by validator) |
 | **Overlapping month ranges** | Each age tier has a single GOTO entry point -- overlap is implicit | Must be expressed as overlapping preconditions -- makes the sliding window design explicit |
 | **Unit inconsistency** | Years vs months used interchangeably in routing | Forces choice: single age variable or separate year/month variables |
 | **REFUSAL asymmetry** | Each REFUSAL has its own GOTO target -- inconsistency spread across 244 pages | Refusals are outside the QML model -- asymmetry becomes invisible but also unverifiable |
@@ -272,17 +254,16 @@ A 5-year-old continues to LIT-Q12 ("How often does the child look at books or tr
 
 The Z3 QML validator found the NLSCY questionnaire to be **structurally valid** with no dependency cycles, no unreachable items, and no infeasible postconditions. This is primarily because the survey uses **child age as a one-directional routing variable** -- it is set once and never modified by downstream responses, avoiding the feedback loop pattern found in the LFS questionnaire.
 
-However, the declarative conversion exposed **8 categories of problems** in the original 244-page CATI questionnaire:
+However, the declarative conversion exposed **7 categories of problems** in the original 244-page CATI questionnaire:
 
 1. **Age boundary contradictions** (P1) -- HLT section NOTE vs GOTO age ranges disagree on which questions are asked for ages 4-5
-2. **Circular reference in DON'T KNOW routing** (P2) -- HLT-Q6 DON'T KNOW routes to Q3 (height question), creating an infinite loop
-3. **Overlapping month ranges in MSD** (P3) -- 8 age tiers with sliding window design that cannot be cleanly expressed declaratively
-4. **Unit inconsistency in age gates** (P4) -- BEH section uses months in NOTE but years in GOTO routing
-5. **Dead conditional branches in custody** (P5) -- CUS-C1A has redundant first condition that is subsumed by third condition
-6. **Phantom variable references** (P6) -- CUS-C10 references both CUS-Q9A and CUS-Q9B which are on mutually exclusive paths
-7. **Asymmetric REFUSAL routing** (P7) -- REFUSAL skips entire sections in some cases, only subsections in others
-8. **Conditional path contradicts section NOTE** (P8) -- LIT section NOTE lists Q7A as always asked for age 5, but routing makes it conditional on Q6A
+2. **Overlapping month ranges in MSD** (P2) -- 8 age tiers with sliding window design that cannot be cleanly expressed declaratively
+3. **Unit inconsistency in age gates** (P3) -- BEH section uses months in NOTE but years in GOTO routing
+4. **Dead conditional branches in custody** (P4) -- CUS-C1A has redundant first condition that is subsumed by third condition
+5. **Phantom variable references** (P5) -- CUS-C10 references both CUS-Q9A and CUS-Q9B which are on mutually exclusive paths
+6. **Asymmetric REFUSAL routing** (P6) -- REFUSAL skips entire sections in some cases, only subsections in others
+7. **Conditional path contradicts section NOTE** (P7) -- LIT section NOTE lists Q7A as always asked for age 5, but routing makes it conditional on Q6A
 
-These problems are nearly impossible to detect by reading the 244-page PDF, where each question's routing appears locally correct. The GOTO-based design masks contradictions between section headers and actual routing logic, circular references in skip patterns, and dead conditional branches. The declarative approach forces all constraints to be globally consistent, making structural issues immediately visible to formal verification tools.
+These problems are nearly impossible to detect by reading the 244-page PDF, where each question's routing appears locally correct. The GOTO-based design masks contradictions between section headers and actual routing logic, dead conditional branches, and phantom variable references. The declarative approach forces all constraints to be globally consistent, making structural issues immediately visible to formal verification tools.
 
 The NLSCY's complexity (15+ sections, 8 age tiers, month-based developmental milestones, respondent-type gates, and sibling-completion flags) represents a significant challenge for imperative CATI design. The declarative QML version, while necessarily simplified for the validator, reveals that the original questionnaire's local correctness does not guarantee global consistency.
