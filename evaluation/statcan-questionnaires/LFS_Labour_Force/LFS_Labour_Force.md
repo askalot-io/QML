@@ -1,7 +1,7 @@
 # LFS Labour Force Survey: Declarative Conversion Analysis
 
 **Source:** Statistics Canada, Catalogue no. 71-543, Appendix B
-**QML File:** `evaluation/statcan-questionnaires/LFS_Labour_Force.qml`
+**QML File:** `evaluation/statcan-questionnaires/LFS_Labour_Force/LFS_Labour_Force.qml`
 **Date:** 2026-03-21 (revised)
 
 ## Objective

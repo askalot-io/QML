@@ -15,9 +15,10 @@ The argument is the path to a PDF questionnaire file. If a relative path is give
 
 Read these files to understand QML syntax and conversion patterns:
 
-- `/root/QML/QML/.claude/skills/write-qml/SKILL.md` — Core QML writing guide
-- `/root/QML/QML/.claude/skills/write-qml/references/qml-full-reference.md` — Complete syntax reference
-- `/root/QML/QML/.claude/skills/write-qml/references/goto-conversion-guide.md` — GOTO-to-declarative conversion patterns
+- `.claude/skills/write-qml/SKILL.md` — Core QML writing guide
+- `.claude/skills/write-qml/references/qml-full-reference.md` — Complete syntax reference
+- `.claude/skills/write-qml/references/goto-conversion-guide.md` — GOTO-to-declarative conversion patterns
+- `.claude/skills/evaluate-questionnaire/SKILL.md` — Evaluation pipeline phases and multi-file output
 
 ## Step 2: Read the PDF — Build a Question Inventory
 
@@ -54,7 +55,24 @@ Follow the validation checklist from SKILL.md before saving. Pay special attenti
 - Producer items before consumer items
 - No unsupported Python features in code blocks (no len, sum, max, min, append)
 
-Write the QML file to `/root/QML/QML/evaluation/`, using the PDF's base name (without the `.pdf` extension) plus `.qml`. For example, `quest25.pdf` becomes `/root/QML/QML/evaluation/quest25.qml`.
+### Multi-File Output
+
+Create a per-questionnaire subdirectory and generate one QML file per section:
+
+```
+evaluation/<category>/SURVEY_NAME/
+  01_section_name.qml
+  02_section_name.qml
+  ...
+```
+
+Each section file must be a **complete, standalone QML file** with its own `qmlVersion`,
+`codeInit` (only the variables that section reads/writes), and `blocks`. Use zero-padded
+sequential prefixes (`01_`, `02_`, ...) for ordering.
+
+The section files are the final deliverable — there is no merged file. Each section is
+validated independently. For large questionnaires, use subagents per section (see the
+evaluate-questionnaire skill for the subagent strategy).
 
 ## Step 4: Validate
 
@@ -102,15 +120,15 @@ This step is critical. Go back to your question inventory from Step 2 and verify
 
 ## Step 6: Write the Analysis Report
 
-Write a Markdown analysis report to the same directory as the PDF, using the pattern `{BaseName}_Analysis.md` (e.g., `quest25_Analysis.md` stays next to `quest25.pdf`).
+Write a Markdown analysis report to the per-questionnaire subdirectory as `SURVEY_NAME.md` (e.g., `evaluation/reference-questionnaires/SURVEY_NAME/SURVEY_NAME.md`).
 
-Follow the structure established by the existing analyses (see examples in `evaluation/statcan-questionnaires/` and `evaluation/reference-questionnaires/`):
+Follow the structure established by the existing analyses (see examples in `evaluation/statcan-questionnaires/{NAME}/` and `evaluation/reference-questionnaires/{NAME}/`):
 
 ```markdown
 # {Survey Title}: Declarative Conversion Analysis
 
 **Source:** {Organization}, {full survey name}, {page count} pages
-**QML File:** `evaluation/{filename}.qml`
+**QML File:** `evaluation/<category>/SURVEY_NAME/SURVEY_NAME.qml`
 **Date:** {today's date YYYY-MM-DD}
 
 ## Objective

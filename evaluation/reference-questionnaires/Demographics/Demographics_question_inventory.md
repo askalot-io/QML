@@ -7,7 +7,7 @@
 - **Pages**: 14
 - **Language**: English
 - **Type**: CATI interviewer-administered household demographics booklet
-- **QML File**: `evaluation/reference-questionnaires/Demographics.qml`
+- **QML File**: `evaluation/reference-questionnaires/Demographics/Demographics.qml`
 
 ## Structure
 The booklet is a flat field enumeration of demographic variables collected per person in a household roster loop. It contains no explicit routing instructions -- all skip logic is implicit in the CATI system. The QML conversion organizes the 51 items into 10 blocks:

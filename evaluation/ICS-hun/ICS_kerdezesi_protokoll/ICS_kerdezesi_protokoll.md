@@ -1,7 +1,7 @@
 # ICS Kérdezési Protokoll v2.0: Declarative Conversion Analysis
 
 **Source:** Hungarian National Ambulance Service (OMSZ), Emergency Medical Dispatch Triage Protocol v2.0, 66 pages
-**QML File:** `evaluation/ICS-hun/ICS_kerdezesi_protokoll_v2.0_2023.12.19.qml`
+**QML File:** `evaluation/ICS-hun/ICS_kerdezesi_protokoll/ICS_kerdezesi_protokoll.qml`
 **Date:** 2026-03-20
 
 ## Objective

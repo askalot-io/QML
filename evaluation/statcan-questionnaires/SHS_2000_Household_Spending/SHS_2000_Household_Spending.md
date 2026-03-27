@@ -1,7 +1,7 @@
 # SHS 2000 Household Spending Survey: Declarative Conversion Analysis
 
 **Source:** Statistics Canada, Catalogue no. 8-5400-77.1, Survey of Household Spending in 2000
-**QML File:** `evaluation/statcan-questionnaires/SHS_2000_Household_Spending.qml`
+**QML File:** `evaluation/statcan-questionnaires/SHS_2000_Household_Spending/SHS_2000_Household_Spending.qml`
 **Date:** 2026-03-19
 
 ## Objective

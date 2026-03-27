@@ -34,13 +34,13 @@ Each phase has a clear deliverable and gate condition. Do NOT skip phases.
 
 ## Output Artifacts
 
-For a questionnaire named `SURVEY_NAME`, the pipeline produces these files in the same
-directory as the source PDF:
+For a questionnaire named `SURVEY_NAME`, the pipeline produces these files in a
+per-questionnaire subdirectory under `evaluation/<category>/SURVEY_NAME/`:
 
 | Artifact | File | Phase |
 |----------|------|-------|
 | Question inventory | `SURVEY_NAME_question_inventory.md` | 1-2 |
-| QML file | `SURVEY_NAME.qml` | 3 |
+| Section QML files | `NN_section_name.qml` | 3 |
 | Analysis report | `SURVEY_NAME.md` | 4 |
 
 ---
@@ -221,60 +221,84 @@ flag immediately — the inventory may have been built against a different versi
 Transform the verified inventory into a declarative QML file. For QML language syntax,
 controls, code blocks, and execution order rules, refer to the **`write-qml` skill**.
 
-### Subagent Strategy: Per-Block Generation
+### Subagent Strategy: Per-Section QML Files
 
-For large questionnaires, launch **subagents per block** to generate QML blocks in
-parallel. Each subagent receives:
+For large questionnaires, launch **subagents per section** to generate independent QML
+files in parallel. Each subagent receives:
 
-1. The relevant inventory section(s) for its block
+1. The relevant inventory section(s) for its block(s)
 2. QML language rules (from the `write-qml` skill: controls, preconditions, postconditions,
    code block constraints, execution order)
-3. A list of variables it may **read** (produced by prior blocks)
-4. A list of variables it should **produce** (needed by subsequent blocks)
+3. A list of variables it may **read** (produced by prior sections)
+4. A list of variables it should **produce** (needed by subsequent sections)
 
-Each subagent outputs a YAML fragment containing one complete block:
-
-```yaml
-- id: b_section_name
-  title: "Section Title"
-  precondition:         # optional block-level gate
-    - predicate: age >= 15
-  items:
-    - id: q_item_1
-      kind: Question
-      ...
-```
-
-Along with a manifest of variables it **reads** and **writes** in codeBlocks.
-
-### Coordinator: Assembly
-
-After all block subagents complete, the coordinator:
-
-1. **Collects variable manifests** from all blocks — every variable referenced in any
-   precondition, postcondition, or codeBlock across all blocks
-2. **Builds the `codeInit` section** — initializes every discovered variable (typically
-   to 0). Variables must be initialized before any item references them.
-3. **Orders blocks** according to the questionnaire's logical flow (matching inventory
-   section order)
-4. **Assembles the final QML file**:
+Each subagent outputs a **complete, standalone `.qml` file** — not a YAML fragment:
 
 ```yaml
 qmlVersion: "1.0"
 questionnaire:
-  title: "Survey Title"
+  title: "Section Title"
   codeInit: |
-    # All variables discovered from block fragments
+    # ONLY variables this section reads or writes
     var1 = 0
     var2 = 0
   blocks:
-    - id: b_section_1
-      ...
-    - id: b_section_2
-      ...
+    - id: b_section_name
+      title: "Section Title"
+      items:
+        - id: q_item_1
+          kind: Question
+          ...
 ```
 
-5. **Runs the validation checklist** (see below) on the assembled file
+Each section file must be a valid QML file on its own. This allows independent validation
+and parallel development. Along with the file, each subagent returns a variable manifest
+listing all variables it **reads** and **writes** in codeBlocks.
+
+### Section File Naming
+
+Section files live directly in the questionnaire subdirectory with zero-padded sequential
+prefixes for sort ordering:
+
+```
+SURVEY_NAME/
+  01_demographics.qml
+  02_health.qml
+  03_labour_force.qml
+  ...
+```
+
+The name after the prefix should be a short, lowercase, snake_case identifier derived
+from the section title in the source PDF. The prefix determines the intended flow order.
+
+Each section file is a **standalone deliverable** — the final output is the set of
+section files, not a merged file. This enables:
+- Independent validation per section
+- Parallel subagent generation
+- Easier review and maintenance
+- Clear mapping from PDF sections to QML files
+
+### Coordinator: Validate and Report
+
+After all section subagents complete, the coordinator:
+
+1. **Validates each section file independently**:
+   ```bash
+   cd /root/QML && \
+   uv run python .claude/skills/write-qml/scripts/validate_qml.py \
+     evaluation/<category>/SURVEY_NAME/NN_section.qml
+   ```
+   Fix any structural errors. Cross-section variable references (variables set
+   in one section, read in another) will appear as free variables — that is
+   expected at the per-section level.
+
+2. **Collects validation results** from all section files: item counts, classifications,
+   cycles, and any issues found.
+
+3. **Produces aggregate statistics** for the report: total items across all sections,
+   total variables, total preconditions, etc.
+
+4. **Runs the validation checklist** (see below) across all section files
 
 ### Conversion Patterns: GOTO to Declarative
 
@@ -430,6 +454,16 @@ hidden in the imperative version.
 
 [Interpretation of classifications]
 
+## Section Files
+
+| # | File | Block(s) | Items | Variables Read | Variables Written |
+|---|------|----------|-------|----------------|-------------------|
+| 01 | `sections/01_demographics.qml` | b_demographics | N | — | age, sex |
+| 02 | `sections/02_health.qml` | b_health | N | age, sex | health_flag |
+| ... | ... | ... | ... | ... | ... |
+
+**Unified file:** `SURVEY_NAME.qml` (N items total, M blocks, K variables)
+
 ## Problems in the Original [Source] (Exposed by Declarative Conversion)
 
 ### P1: [Problem Title]
@@ -487,16 +521,18 @@ documented in Cross-Check Fixes or noted as limitations, not listed as Problems.
 
 ## Existing Evaluation Corpus
 
-The `evaluation/` directory contains 18 completed conversions for reference:
+The `evaluation/` directory contains 18 completed conversions organized in per-questionnaire
+subfolders:
 
-- **`ICS-hun/`** — Hungarian emergency dispatch protocol (66 pages, 242 items, 46 cycles
-  detected — waterfall "first YES wins" pattern)
-- **`reference-questionnaires/`** — International surveys: ACS 2025, BRFSS 2023,
+- **`ICS-hun/ICS_kerdezesi_protokoll/`** — Hungarian emergency dispatch protocol (66 pages,
+  242 items, 46 cycles — waterfall "first YES wins" pattern)
+- **`reference-questionnaires/{NAME}/`** — International surveys: ACS 2025, BRFSS 2023,
   DHS-8 (M/W), ESS Round 12, Demographics module
-- **`statcan-questionnaires/`** — 10 Statistics Canada CATI questionnaires (33-303 pages,
-  154-1153 items) with complete inventories, QML files, and analysis reports
+- **`statcan-questionnaires/{NAME}/`** — 10 Statistics Canada CATI questionnaires (33-303
+  pages, 154-1153 items) with complete inventories, QML files, and analysis reports
 
-Use these as reference for format, depth, and problem categorization.
+Each subfolder contains the source PDF, question inventory, QML file(s), and analysis
+report. Use these as reference for format, depth, and problem categorization.
 
 ## Reference Files
 

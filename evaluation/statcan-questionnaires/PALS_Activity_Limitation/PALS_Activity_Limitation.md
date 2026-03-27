@@ -1,7 +1,7 @@
 # PALS Activity Limitation Survey (Children Under 15): Declarative Conversion Analysis
 
 **Source:** Statistics Canada, Participation and Activity Limitation Survey 2001, Form 03 (Children - Under 15)
-**QML File:** `evaluation/statcan-questionnaires/PALS_Activity_Limitation.qml`
+**QML File:** `evaluation/statcan-questionnaires/PALS_Activity_Limitation/PALS_Activity_Limitation.qml`
 **Date:** 2026-03-21 (revised)
 
 ## Objective

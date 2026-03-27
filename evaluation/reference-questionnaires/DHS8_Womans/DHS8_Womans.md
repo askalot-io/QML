@@ -1,7 +1,7 @@
 # DHS-8 Model Woman's Questionnaire: Declarative Conversion Analysis
 
 **Source:** Demographic and Health Surveys Program, DHS-8 Model Woman's Questionnaire (14 Feb 2023, DHSQ8)
-**QML File:** `evaluation/reference-questionnaires/DHS8_Womans_QRE_EN_14Feb2023_DHSQ8.qml`
+**QML File:** `evaluation/reference-questionnaires/DHS8_Womans/DHS8_Womans.qml`
 **Date:** 2026-03-21 (revised)
 
 ## Objective

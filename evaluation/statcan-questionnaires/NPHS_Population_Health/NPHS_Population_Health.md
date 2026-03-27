@@ -1,7 +1,7 @@
 # NPHS National Population Health Survey: Declarative Conversion Analysis
 
 **Source:** Statistics Canada, National Population Health Survey, Content For Main Survey, May 1, 1994
-**QML File:** `evaluation/statcan-questionnaires/NPHS_Population_Health.qml`
+**QML File:** `evaluation/statcan-questionnaires/NPHS_Population_Health/NPHS_Population_Health.qml`
 **Date:** 2026-03-19
 
 ## Objective

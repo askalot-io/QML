@@ -1,7 +1,7 @@
 # DHS-8 Model Man's Questionnaire: Declarative Conversion Analysis
 
 **Source:** DHS Program (ICF), DHS-8 Model Man's Questionnaire, Formatting Date 03 Feb 2023, 24 pages
-**QML File:** `evaluation/reference-questionnaires/DHS8_Mans_QRE_EN_03Feb2023_DHSQ8.qml`
+**QML File:** `evaluation/reference-questionnaires/DHS8_Mans/DHS8_Mans.qml`
 **Date:** 2026-03-21 (revised)
 
 ## Objective
