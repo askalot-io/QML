@@ -715,72 +715,67 @@ A cycle occurs when:
 2. Item B (which depends on A) writes to `v` in its codeBlock
 3. This creates: `v` → A → ... → B → `v` (cycle)
 
-### Real-world example (Statistics Canada LFS)
+### Apparent real-world example (Statistics Canada LFS)
+
+The LFS PATH variable was initially thought to create a feedback loop:
 
 ```
-Q132 precondition: path != 7        (reads path)
-Q132 → Q133 → Q134 → Q136         (chain dependency)
-Q136 codeBlock: path = 3            (writes path)
+Q132 routing: "If PATH = 7, go to 137"  (reads PATH)
+Q132 → Q133 → Q134 → Q136              (chain dependency)
+Q136 codeBlock: PATH = 3                (writes PATH)
 ```
 
-Cycle: `path → Q132 → Q133 → Q134 → Q136 → path`
+Apparent cycle: `PATH → Q132 → Q133 → Q134 → Q136 → PATH`
 
-### Why this works in imperative but fails in declarative
+**This turned out to be a false alarm.** The "If PATH = 7" gate only tests whether
+Q100 was answered with "Permanently unable to work" (code 3). This can always be
+expressed as a direct outcome reference: `q_100.outcome != 3`. When preconditions
+reference the source item directly instead of using a routing variable, no cycle exists.
 
-In GOTO-based execution:
-- Q132 reads `path_v1` (set earlier by Q100)
-- Q136 creates `path_v2` (a new value)
-- These are implicitly two DIFFERENT temporal snapshots
+### The lesson: trace the variable back to its source
 
-In QML's dependency graph:
-- There is ONE `path` node, not versioned snapshots
-- Q132 depends on `path` (reads it)
-- `path` depends on Q136 (Q136 writes it)
-- Q136 depends on Q132 (through the chain)
-- Result: CYCLE detected by Z3
+When you see a routing variable in a precondition that appears to create a cycle, ask:
+"Which upstream item SET this variable?" If it was set by a single item, replace the
+variable reference with `q_item.outcome` directly. The cycle disappears because the
+precondition now references a fixed upstream item, not a mutable variable.
 
-### Solutions
+```yaml
+# WRONG: introduces unnecessary variable, risks cycle
+codeInit: |
+  path = 0
 
-**Solution 1: Use separate variables for different phases**
+- id: q_100
+  codeBlock: |
+    if q_100.outcome == 3:
+        path = 7
+
+- id: q_133
+  precondition:
+    - predicate: path != 7      # reads path → potential cycle with downstream writes
+
+# RIGHT: direct outcome reference, no variable needed, no cycle possible
+- id: q_133
+  precondition:
+    - predicate: q_100.outcome != 3    # traces the condition to its source
+```
+
+This is the preferred solution. Only use routing variables when the condition depends on
+**multiple upstream items** or **computed state** that cannot be expressed as a single
+outcome reference.
+
+### When a real cycle exists
+
+Real cycles occur when the routing variable genuinely depends on multiple items whose
+values are not known until downstream processing. In that case, you may need separate
+variables for different phases:
 
 ```yaml
 codeInit: |
-  initial_path = 0    # Set during classification
-  detailed_path = 0   # Set during detailed assessment
-
-# Classification phase
-- id: q100_worked
-  codeBlock: |
-    if q100_worked.outcome == 1:
-        initial_path = 1
-
-# Items that gate on initial classification
-- id: q132_layoff_reason
-  precondition:
-    - predicate: initial_path != 7    # reads initial_path
-
-# Downstream refinement writes to different variable
-- id: q136_weeks
-  codeBlock: |
-    if q134_return_date.outcome == 1:
-        detailed_path = 3    # writes detailed_path (no cycle)
+  initial_class = 0    # Set during classification
+  detailed_class = 0   # Set during detailed assessment
 ```
 
-**Solution 2: Restructure the precondition to avoid reading the variable**
-
-Instead of `path != 7`, check the ORIGINAL condition that set path=7:
-
-```yaml
-# Instead of: precondition: path != 7
-# Use the original condition:
-- id: q132_layoff_reason
-  precondition:
-    - predicate: q105_permanently_unable.outcome != 1    # the condition that sets path=7
-```
-
-This breaks the cycle because Q132 no longer depends on the `path` variable.
-
-**Solution 3: Accept the cycle and document it**
+**Solution: Accept the cycle and document it**
 
 If the cycle is inherent to the questionnaire design, document it. The Z3 validator
 will flag it but the questionnaire can still function at runtime (FlowProcessor doesn't
@@ -937,41 +932,40 @@ Always add a Textarea follow-up with a precondition:
     maxLength: 200
 ```
 
-### Pitfall 8: PATH variable snapshot pattern
+### Pitfall 8: PATH variable — trace to source before introducing variables
 
-When a classification variable (PATH) is set during an initial screening phase and read
-by a later detailed phase, but the detailed phase also needs to REFINE the classification,
-use separate variables for the initial and refined classifications. This is the most
-reliable way to prevent dependency cycles:
+When a classification variable (PATH) appears to create a feedback loop, **first check
+whether the gate condition can be expressed as a direct outcome reference** to the upstream
+item that set the variable. This eliminates the cycle entirely without introducing extra
+variables.
 
 ```yaml
+# WRONG: introduces a variable that creates a cycle risk
 codeInit: |
-  initial_class = 0    # Set during screening (Q1-Q10)
-  detailed_class = 0   # Set during detailed assessment (Q50-Q80)
+  path = 0
 
-# Screening sets initial_class
-- id: q_screener
+- id: q_100
   codeBlock: |
-    if q_screener.outcome == 1:
-        initial_class = 1
+    if q_100.outcome == 3:
+        path = 7
 
-# Detailed section reads initial_class, writes detailed_class
-- id: q_detail
+- id: q_133
   precondition:
-    - predicate: initial_class == 1
-  codeBlock: |
-    if q_detail.outcome == 3:
-        detailed_class = 2    # refines, doesn't overwrite initial_class
+    - predicate: path != 7    # reads path — downstream items write path → cycle!
 
-# Later sections can read either variable without cycles
-- id: q_followup
+# RIGHT: reference the source item directly — no variable, no cycle
+- id: q_133
   precondition:
-    - predicate: detailed_class == 2
+    - predicate: q_100.outcome != 3    # traces to the item that would have set path=7
 ```
 
-The rule: **a variable that is READ in preconditions should NOT be WRITTEN in codeBlocks
-of items that are downstream of those preconditions.** If you need both read and write,
-use two variables — one for the "before" state and one for the "after" state.
+Only use a separate snapshot variable (`initial_class` / `detailed_class`) when the gate
+condition genuinely depends on **multiple upstream items or computed state** that cannot be
+expressed as a single `q_item.outcome` reference.
+
+The rule: **prefer `q_item.outcome` references over routing variables.** Variables should
+only exist for computation, aggregation, counting, or consolidating outcomes from mutually
+exclusive items.
 
 ### Pitfall 9: Waterfall cascade with shared routing variable
 
@@ -1052,21 +1046,24 @@ They illustrate recurring patterns and pitfalls at scale.
 
 ### LFS Labour Force Survey
 
-**Scale**: 83 items, 13 blocks, 77 preconditions, 10 global variables
-**Z3 validation**: FAIL (3 dependency cycles)
+**Scale**: 77 items, 13 blocks, 76 preconditions, 12 global variables
+**Z3 validation**: PASS (0 dependency cycles)
 
 **Key patterns used**:
 - PATH variable (values 1-7) for respondent classification
 - Block-level preconditions for section gating
 - Chain dependencies for layoff detail questions (Pattern 6)
-- Additional variables (`discouraged_worker`, `past_job_path7`) for special routing
+- Direct outcome references for PATH-based gates (e.g., `q_100.outcome != 3` instead of `path != 7`)
 
-**Cycle found**: PATH variable feedback loop in Q132-Q136 chain. The PATH variable is
-both read (in preconditions) and written (in codeBlocks) by downstream items, creating
-3 cycles. Fix: use the snapshot pattern (Pitfall 8) with `initial_path` and `detailed_path`.
+**Initial false alarm**: The PATH variable appeared to create a feedback loop in the
+Q132-Q136 chain. However, all PATH-based gates trace back to Q100's outcome and can be
+expressed as direct outcome references, eliminating any cycle. This discovery led to the
+key lesson below.
 
-**Lessons**: Age cutoff contradiction (15 vs 16 in different sections), undefined
-intermediate states (PATH=0), discouraged workers breaking the PATH taxonomy.
+**Lessons**: PATH "feedback loops" are often modeling artifacts — trace the variable back
+to its source item and use `q_item.outcome` directly. Also: asymmetric age thresholds
+across sections (14 for education, 15 for labour force, 16 for marital status), undefined
+intermediate states (PATH=0).
 
 ### GSS Victimization Survey
 
@@ -1145,7 +1142,7 @@ proper min/max for dollar amounts).
 |-------|-----------|--------------------------|
 | Missing filter/severity gates | 6/10 | Pattern 7 |
 | DK/Refused options omitted | 8/10 | Pitfall 2 |
-| PATH variable feedback loops | 2/10 | Variable Feedback Loops, Pitfall 8 |
+| PATH variable feedback loops (false alarms) | 2/10 | Variable Feedback Loops — trace back to source item |
 | Waterfall cascade with shared variable | 1/11 | Pitfall 9 |
 | Age boundary off-by-one | 4/10 | Pitfall 5 |
 | Missing "Other (specify)" follow-ups | 7/10 | Pitfall 7 |

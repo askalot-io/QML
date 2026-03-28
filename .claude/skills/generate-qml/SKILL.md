@@ -140,7 +140,8 @@ The `hint` is shown to the respondent when validation fails. Make hints specific
 
 ### codeInit — Global Variable Setup
 
-Runs once before the questionnaire starts. Initialize ALL variables here:
+Runs once before the questionnaire starts. Initialize variables here — but **only variables
+that store computed, aggregated, or maintained state**:
 
 ```yaml
 questionnaire:
@@ -151,9 +152,63 @@ questionnaire:
     is_eligible = 0
 ```
 
+**Do NOT create variables that merely copy an item's outcome.** Every item's outcome is
+always accessible via `q_item.outcome` in preconditions and codeBlocks. A variable like
+`smoking_status = q_smoking.outcome` is redundant — use `q_smoking.outcome` directly.
+
+Variables are justified ONLY when they:
+- **Compute or derive** a value from multiple inputs (e.g., `actual_hours = q_151.outcome - q_153.outcome + q_155.outcome`)
+- **Aggregate or count** across items (e.g., `symptom_count = symptom_count + 1`)
+- **Classify** based on conditional logic (e.g., `if q_100.outcome == 1: path = 1`)
+- **Consolidate** outcomes from mutually exclusive items (e.g., `respondent_age` set by either `q_age_dob` or `q_age_manual`)
+
+```yaml
+# WRONG: variable just copies the outcome
+codeBlock: |
+  smoking_status = q_smoking.outcome   # redundant!
+
+# Later precondition uses the copy:
+precondition:
+  - predicate: smoking_status == 1     # should be q_smoking.outcome == 1
+
+# RIGHT: use the outcome directly
+precondition:
+  - predicate: q_smoking.outcome == 1
+```
+
+### Extern Variables — Cross-Section Variable Handover
+
+When a questionnaire is split across multiple QML files (e.g., `01_household.qml`,
+`04_restriction_chronic.qml`), later files may depend on variables collected in earlier
+ones. Use Python type annotations in `codeInit` to declare these as extern variables
+with domain constraints:
+
+```yaml
+codeInit: |
+  age: range(0, 120)
+  sex: {1, 2}
+  marital_status: {1, 2, 3, 4, 5, 6, 7}
+```
+
+| Syntax | Z3 domain constraint | Runtime default |
+|---|---|---|
+| `age: range(0, 120)` | `0 <= age <= 120` | `0` (range start) |
+| `sex: {1, 2}` | `sex == 1 OR sex == 2` | `1` (sorted minimum) |
+
+Rules:
+- **Annotation without value** (`age: range(0, 120)`) → extern declaration with domain constraint
+- **Annotation with value** (`x: int = 5`) → normal assignment, NOT extern
+- A fixed assignment following an annotation (e.g., `age = 0`) is suppressed in Z3 — the
+  domain constraint takes precedence, so the solver sees the full range
+- At runtime, unassigned annotated variables are initialized to their domain minimum
+
+Use extern variables when a section references demographics or classifications computed
+in a prior section. Without the annotation, `age = 0` would over-constrain Z3 and make
+preconditions like `age >= 18` classify as NEVER reachable.
+
 ### codeBlock — Per-Item Logic
 
-Runs after an item's postcondition passes. Updates global variables:
+Runs after an item's postcondition passes. Updates computed/aggregated variables:
 
 ```yaml
 - id: q_smoking
@@ -226,6 +281,9 @@ Before outputting the QML, verify every point:
 9. Postcondition hints are specific and user-friendly
 10. Multiple precondition predicates correctly express AND logic (use `or` within a single
     predicate for OR logic)
+11. **No redundant outcome-copying variables** — every variable in `codeInit` must serve a
+    purpose beyond copying `q_item.outcome`. If a precondition can reference `q_item.outcome`
+    directly, do NOT create a variable for it
 
 ## Workflow
 

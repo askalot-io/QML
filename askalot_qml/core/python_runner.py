@@ -216,6 +216,21 @@ class PythonRunner:
             # Execute the code safely
             try:
                 exec(code, global_env, local_env)
+
+                # Initialize annotated-but-unassigned variables (extern declarations).
+                # Type annotations like `age: range(0, 120)` create __annotations__
+                # entries but don't assign a value. We initialize them so cross-section
+                # variables exist in the runtime context with a valid default.
+                annotations = local_env.pop('__annotations__', {})
+                for var_name, ann in annotations.items():
+                    if var_name not in local_env:
+                        if isinstance(ann, range):
+                            local_env[var_name] = ann.start
+                        elif isinstance(ann, (set, frozenset)):
+                            local_env[var_name] = next(iter(sorted(ann)), 0)
+                        else:
+                            local_env[var_name] = 0
+
                 # Add the captured output to the environment
                 local_env['__output__'] = self.captured_output
                 return local_env

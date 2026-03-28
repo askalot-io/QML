@@ -2,6 +2,10 @@
 
 This file provides guidance to Claude Code when working with the QML (Questionnaire Markup Language) processing and validation module.
 
+## Repository Relationship
+
+This repository (`askalot-io/QML`) is a standalone extraction of QML-related code. The canonical source is the `askalot_qml` shared module inside the full Askalot system at `/Project/askalot/shared/modules/askalot_qml/`. Changes are periodically synced from the Askalot repository to this one. When asked to "bring over" or sync changes, diff the `askalot_qml/` package and tests between the two locations and apply the delta here.
+
 ## Skills
 
 Four skills handle QML work:
@@ -301,6 +305,28 @@ Key elements:
 ### Block-Level Precondition Inheritance
 
 Blocks can define preconditions that apply to all items within them. During QMLLoader flattening (`_flatten_blocks`), block-level preconditions are prepended to each item's own preconditions with `_source: 'block'` and `_block_id` tags for tracking. Items also get `_block_precondition_count` to indicate how many inherited preconditions they carry. This eliminates repetitive per-item preconditions when an entire section is conditional.
+
+### Cross-Section Variable Handover (Extern Variables)
+
+When a research study is split across multiple QML files (e.g., `01_household.qml`, `04_restriction_chronic.qml`), later files may depend on variables collected in earlier ones. Use Python type annotations in `codeInit` to declare these extern variables with domain constraints:
+
+```yaml
+codeInit: |
+  age: range(0, 120)
+  sex: {1, 2}
+  marital_status: {1, 2, 3, 4, 5, 6, 7}
+```
+
+| Syntax | Z3 domain constraint | Runtime default |
+|---|---|---|
+| `age: range(0, 120)` | `age_0 >= 0 AND age_0 <= 120` | `0` (range start) |
+| `sex: {1, 2}` | `sex_0 == 1 OR sex_0 == 2` | `1` (sorted minimum) |
+
+**How it works:**
+- StaticBuilder recognizes `ast.AnnAssign` nodes (annotation without value) and creates Z3 variables with domain constraints instead of fixed values
+- PythonRunner initializes annotated-but-unassigned variables at runtime so they exist in the execution context
+- A fixed assignment following an annotation (e.g., `age = 0`) is suppressed in Z3 — the domain constraint takes precedence
+- Annotations with values (e.g., `x: int = 5`) are treated as normal assignments, not extern declarations
 
 ### Domain Constraints for Z3
 

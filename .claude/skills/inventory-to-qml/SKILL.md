@@ -151,8 +151,18 @@ uv run python .claude/skills/generate-qml/scripts/validate_qml.py \
 ```
 
 Fix any structural errors. Cross-section variable references (variables set in one
-section, read in another) will appear as free variables — that is expected at the
-per-section level.
+section, read in another) should be declared as **extern variables** using type
+annotations in `codeInit`:
+
+```yaml
+codeInit: |
+  age: range(0, 120)
+  sex: {1, 2}
+```
+
+This gives Z3 domain constraints instead of fixed values, so preconditions like
+`age >= 18` classify as CONDITIONAL (not NEVER). See the `generate-qml` skill for
+full extern variable syntax.
 
 ### QML Validation Checklist
 
@@ -174,6 +184,10 @@ Before proceeding to the judgement agent, verify every point:
     (use separate variables for initial and refined classification)
 14. Age boundaries match the source exactly (watch off-by-one: >= 15 vs >= 16)
 15. Waterfall/cascade patterns use direct outcome references, NOT shared routing variables
+16. **No redundant outcome-copying variables** — use `q_item.outcome` directly in preconditions
+    instead of creating variables like `q156_outcome = q_156.outcome`. Variables are only for
+    computation, aggregation, counting, conditional classification, or consolidating outcomes
+    from mutually exclusive items
 
 ## Step 3: Judgement Agent — Verify QML Fidelity
 

@@ -92,6 +92,11 @@ class StaticBuilder:
         self.item_details: Dict[str, Dict[str, Any]] = {}  # Maps item_id to item details
         self.item_order: List[str] = []  # Processing order for ItemClassifier
 
+        # Extern variables declared via type annotations in codeInit.
+        # These are cross-section variables handed over from another QML file.
+        # They get domain constraints (range/set) instead of fixed-value constraints.
+        self._extern_vars: Set[str] = set()
+
         # Build SSA and constraints
         self._build()
 
@@ -291,6 +296,15 @@ class StaticBuilder:
                                     target.value.id, node.value, enclosing_deps, context_id
                                 )
 
+                elif isinstance(node, ast.AnnAssign):
+                    # Handle type-annotated declarations: age: range(0, 120), sex: {1, 2}
+                    # These declare extern variables with domain constraints (no fixed value).
+                    if (node.target and isinstance(node.target, ast.Name)
+                            and node.value is None):
+                        var_name = node.target.id
+                        if var_name not in self.item_vars:
+                            self._register_extern_variable(var_name, node.annotation)
+
                 elif isinstance(node, ast.AugAssign):
                     # Handle augmented assignments: score += q1.outcome
                     enclosing_deps = self._get_enclosing_if_deps(node, parent_map)
@@ -364,15 +378,75 @@ class StaticBuilder:
             self.version_history[var_name] = []
         self.version_history[var_name].append((new_version, context_id))
 
-        # Build constraint for assignment - store in codeblock_constraints
+        # Build constraint for assignment - store in codeblock_constraints.
+        # Skip fixed-value constraints for extern variables in __init__ — they
+        # already have domain constraints from their annotation and a fixed
+        # assignment (e.g., age = 0) would over-constrain them.
         if z3_value is not None:
-            if context_id != '__init__':
+            if context_id == '__init__' and var_name in self._extern_vars:
+                pass  # Domain constraint from annotation is sufficient
+            elif context_id != '__init__':
                 self.codeblock_constraints.append(Implies(
                     self.item_vars[context_id] >= 0,
                     z3_var == z3_value
                 ))
             else:
                 self.codeblock_constraints.append(z3_var == z3_value)
+
+    def _register_extern_variable(self, var_name: str, annotation: ast.AST):
+        """Register an extern variable from a type annotation in codeInit.
+
+        Extern variables represent values handed over from a preceding QML file.
+        Instead of a fixed assignment (age = 0), they get domain constraints:
+          age: range(0, 120)  →  age_0 >= 0 AND age_0 <= 120
+          sex: {1, 2}        →  sex_0 == 1 OR sex_0 == 2
+
+        The variable is created at SSA version 0 with the domain constraints
+        appended to self.domain_constraints (part of base constraint B).
+        """
+        self._extern_vars.add(var_name)
+
+        # Create SSA version 0
+        versioned_name = f"{var_name}_0"
+        z3_var = Int(versioned_name, self.ctx)
+        self.z3_vars[versioned_name] = z3_var
+        self.version_map[var_name] = 0
+        if var_name not in self.version_history:
+            self.version_history[var_name] = []
+        self.version_history[var_name].append((0, '__init__'))
+
+        # Initialize dependency graph node
+        var_node = f"var:{var_name}"
+        if var_node not in self.dependency_graph:
+            self.dependency_graph[var_node] = set()
+
+        self.variable_definitions[(var_name, 0)] = '__init__'
+
+        # Parse annotation and add domain constraints
+        if isinstance(annotation, ast.Call):
+            # range(min, max) → z3_var >= min AND z3_var <= max
+            if (isinstance(annotation.func, ast.Name)
+                    and annotation.func.id == 'range'
+                    and len(annotation.args) >= 2):
+                lo = annotation.args[0]
+                hi = annotation.args[1]
+                if isinstance(lo, ast.Constant) and isinstance(lo.value, (int, float)):
+                    self.domain_constraints.append(z3_var >= int(lo.value))
+                if isinstance(hi, ast.Constant) and isinstance(hi.value, (int, float)):
+                    self.domain_constraints.append(z3_var <= int(hi.value))
+        elif isinstance(annotation, ast.Set):
+            # {v1, v2, ...} → Or(z3_var == v1, z3_var == v2, ...)
+            values = []
+            for elt in annotation.elts:
+                if isinstance(elt, ast.Constant) and isinstance(elt.value, (int, float)):
+                    values.append(int(elt.value))
+            if values:
+                if len(values) == 1:
+                    self.domain_constraints.append(z3_var == values[0])
+                else:
+                    self.domain_constraints.append(
+                        Or(*[z3_var == v for v in values])
+                    )
 
     def _register_outcome_assignment(
         self, item_id: str, value_node: ast.AST,
