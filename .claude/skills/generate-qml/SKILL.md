@@ -1,5 +1,5 @@
 ---
-name: write-qml
+name: generate-qml
 description: >
   Write QML (Questionnaire Markup Language) files for the Askalot survey platform.
   Use this skill when the user wants to create, write, generate, or design a NEW
@@ -8,7 +8,7 @@ description: >
   QML files, fixing validation errors in QML files, and translating regulations or
   compliance rules into survey form. For converting existing imperative questionnaires
   (PDF, CATI, paper surveys with GOTO-based routing) into QML, use the
-  evaluate-questionnaire skill instead. Trigger on: QML writing, new questionnaire
+  build-inventory, inventory-to-qml, and write-analysis skills instead. Trigger on: QML writing, new questionnaire
   design, survey creation from requirements, QML modification, QML syntax questions,
   or extending an existing QML file.
 ---
@@ -108,6 +108,11 @@ precondition:
   - predicate: q_age.outcome >= 18
   - predicate: q_consent.outcome == 1
 ```
+
+Both preconditions and postconditions are lists of predicates, semantically equivalent
+to a single conjunction. The reason for using a list instead of one big `and` expression
+is that each predicate carries its own `hint` — when a predicate fails, only its
+specific hint is shown. This lets you give targeted feedback for each condition.
 
 Multiple predicates are AND-ed — all must be true. Use `and`/`or` within a single
 predicate for complex logic:
@@ -238,38 +243,15 @@ Before outputting the QML, verify every point:
 
 ## Validation
 
-### Local Validation Script
-
-After writing a QML file, validate it using the bundled script. It runs all four formal
-verification steps from the thesis validation hierarchy:
+After writing a QML file, validate it:
 
 ```bash
 cd /root/QML && \
-uv run python .claude/skills/write-qml/scripts/validate_qml.py <path-to-qml-file> [--json]
+uv run python .claude/skills/generate-qml/scripts/validate_qml.py <path-to-qml-file> [--json]
 ```
 
-The four verification steps (always run in order):
-
-1. **Per-item classification** — Witness formula W_i = B AND P_i AND NOT Q_i
-   Classifies each item's precondition reachability (ALWAYS/CONDITIONAL/NEVER) and
-   postcondition invariant (TAUTOLOGICAL/CONSTRAINING/INFEASIBLE/NONE).
-   Detects NEVER reachable items and INFEASIBLE postconditions.
-
-2. **Global satisfiability** — F = B AND conjunction(P_i => Q_i)
-   Checks whether at least one valid questionnaire completion exists.
-   UNSAT means accumulated postconditions conflict — no execution path is valid.
-
-3. **Dependency loops** — QMLTopology with stable Kahn's algorithm
-   Builds the dependency graph and detects cycles via Z3 ordering constraints
-   and Kahn's algorithm. Cycles indicate variable feedback loops.
-
-4. **Path-based reachability** — A_i = B AND conjunction over Pred(i) of (P_j => Q_j)
-   For each CONDITIONAL item, checks accumulated reachability under predecessor
-   postconditions. Detects dead code that per-item and global checks miss.
-
-Use `--json` for machine-readable output. Exit code 0 = valid, 1 = issues found, 2 = error.
-
-Always run validation after writing a QML file.
+Exit code 0 = valid, 1 = issues found, 2 = error. For detailed Z3 analysis and
+interpreting classifications, see the `write-analysis` skill.
 
 ### Platform Validation via MCP
 

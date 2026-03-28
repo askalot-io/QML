@@ -3,7 +3,7 @@
 QML Validator — CLI tool for formally verifying QML questionnaire files.
 
 Runs all four validation steps from the thesis validation hierarchy
-(see docs/thesis/chapters/comprehensive_validation.tex):
+(see TODO):
 
   Step 1: Per-item classification with witness formula W_i = B ∧ P_i ∧ ¬Q_i
   Step 2: Global satisfiability F = B ∧ ∧(P_i ⇒ Q_i)

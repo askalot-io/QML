@@ -4,12 +4,14 @@ This file provides guidance to Claude Code when working with the QML (Questionna
 
 ## Skills
 
-Two skills handle QML work:
+Four skills handle QML work:
 
-- **`write-qml`** — QML language reference for writing new questionnaires from scratch
-- **`evaluate-questionnaire`** — 4-phase pipeline for converting imperative questionnaires (PDF/CATI) to declarative QML and producing validation analysis reports
+- **`generate-qml`** — QML language reference for writing new questionnaires from scratch
+- **`build-inventory`** — PDF/CATI → structured question inventory with judgement agent verification
+- **`inventory-to-qml`** — Question inventory → per-section QML files with judgement agent verification
+- **`write-analysis`** — Z3 validation → analysis report with judgement agent verification of findings
 
-These are distinct: `write-qml` is the language guide, `evaluate-questionnaire` is the conversion/analysis workflow.
+The `/evaluate-questionnaire` command orchestrates all three pipeline skills in sequence. It auto-detects existing artifacts and resumes from the appropriate phase.
 
 ## Evaluation Corpus
 
@@ -30,7 +32,7 @@ New evaluations produce **multiple QML files per questionnaire** (one per sectio
 ## Running the Validator
 
 ```bash
-cd /root/QML && uv run python .claude/skills/write-qml/scripts/validate_qml.py <path-to-qml> [--json]
+cd /root/QML && uv run python .claude/skills/generate-qml/scripts/validate_qml.py <path-to-qml> [--json]
 ```
 
 Exit codes: 0 = valid, 1 = issues found, 2 = error.
