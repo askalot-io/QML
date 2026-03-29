@@ -1,12 +1,14 @@
 ---
 name: inventory-to-qml
 description: >
-  Convert a verified question inventory into declarative QML section files.
-  Transforms imperative GOTO-based routing into preconditions, postconditions,
-  and code blocks. Produces one standalone QML file per section with independent
-  Z3 validation. Includes a judgement agent that verifies the QML faithfully
-  represents the inventory. Trigger on: inventory to QML, QML generation from
-  inventory, section QML files, GOTO conversion, declarative conversion.
+  Convert a verified question inventory into declarative QML files. Groups
+  related survey sections into thematic files (10–25 per questionnaire), with
+  each section as a block within its file. Transforms imperative GOTO-based
+  routing into preconditions, postconditions, and code blocks. Each file passes
+  Z3 validation independently. Includes a judgement agent that verifies the QML
+  faithfully represents the inventory. Trigger on: inventory to QML, QML
+  generation from inventory, section QML files, GOTO conversion, declarative
+  conversion.
 ---
 
 # Inventory to QML
@@ -37,55 +39,116 @@ For QML language syntax, controls, code blocks, and execution order rules:
 
 ---
 
-## Step 1: Per-Section QML Generation (Subagents)
+## Step 1: Plan Section Grouping
 
-For large questionnaires, launch **subagents per section** to generate independent QML
-files in parallel. Each subagent receives:
+Before generating any QML, plan how to group the inventory's sections into QML files.
+Each QML file contains **multiple blocks** — one block per original survey section.
+The goal is to produce a manageable number of thematic files (typically 10–25 for a
+large questionnaire), not one file per section.
 
-1. The relevant inventory section(s) for its block(s)
+### Grouping Criteria
+
+Group sections that share any of these characteristics:
+
+1. **Thematic relatedness** — sections on the same health topic belong together
+   (e.g., mammography + breast exam + breast self-exam → one "breast screening" file)
+2. **Shared variables** — sections that read each other's outcomes should be in the
+   same file. This eliminates cross-file extern declarations and gives Z3 full
+   visibility into the dependency chain.
+3. **Structural similarity** — sections that follow the same pattern (e.g., 11
+   preventive screening modules that all use "ever had? → when? → why not?") belong
+   in one file with one block per module.
+4. **Conditional dependency** — a section that only activates based on another
+   section's outcome should be with its parent (e.g., diabetes care with chronic
+   conditions, since diabetes care is gated on the chronic conditions checklist).
+
+### Variable Scope Rules
+
+When sections are grouped into the **same QML file**:
+- Variables set by one block's codeBlocks are directly available to later blocks
+- Item outcomes (`q_item.outcome`) are directly referenceable in preconditions
+- No extern declarations needed — everything shares one `codeInit` scope
+
+When sections are in **different QML files**:
+- Use extern variable declarations (type annotations without values) in `codeInit`:
+  ```yaml
+  codeInit: |
+    age: range(12, 120)
+    sex: {1, 2}
+  ```
+- This gives Z3 domain constraints instead of fixed values
+
+**Grouping decisions should minimize cross-file externs.** If section B reads 5
+variables from section A, they should be in the same file. Universal variables like
+`age`, `sex`, and `is_proxy` will always be cross-file externs (they come from the
+demographics file).
+
+### Example Grouping (CCHS 2005 — 74 sections → 20 files)
+
+| File | Sections | Rationale |
+|------|----------|-----------|
+| `01_demographics_general_health` | ANC, GEN, HWT, SDC | Who the person is |
+| `02_lifestyle` | ORG, SLP, CIH | Daily habits and improvement |
+| `03_chronic_conditions` | CCC, DIA | DIA depends entirely on CCC |
+| `07_preventive_screening` | FLU, BPC, PAP, MAM, BRX, BSX, EYX, PCU, PSA, CCS, DEN | 11 modules, same pattern |
+| `10_smoking_tobacco` | SSB, SMK, SCH, NDE, SCA, SPC, YSM, ETS | All share SMK outcomes |
+
+### File Naming
+
+Files use zero-padded sequential prefixes with short snake_case topic names:
+
+```
+SURVEY_NAME/
+  01_demographics_general_health.qml
+  02_lifestyle.qml
+  03_chronic_conditions.qml
+  ...
+```
+
+## Step 2: Per-File QML Generation (Subagents)
+
+For large questionnaires, launch **subagents per grouped file** to generate QML files
+in parallel. Each subagent receives:
+
+1. The relevant inventory sections for all blocks in its file
 2. QML language rules (from the `generate-qml` skill: controls, preconditions,
    postconditions, code block constraints, execution order)
-3. A list of variables it may **read** (produced by prior sections)
-4. A list of variables it should **produce** (needed by subsequent sections)
+3. The list of extern variables it needs from other files
+4. The list of variables it produces that other files will need
 
-Each subagent outputs a **complete, standalone `.qml` file** — not a YAML fragment:
+Each subagent outputs a **complete, standalone `.qml` file** with multiple blocks:
 
 ```yaml
 qmlVersion: "1.0"
 questionnaire:
-  title: "Section Title"
+  title: "Chronic Conditions"
   codeInit: |
-    # ONLY variables this section reads or writes
-    var1 = 0
-    var2 = 0
+    age: range(12, 120)
+    sex: {1, 2}
+    has_skin_cancer = 0
   blocks:
-    - id: b_section_name
-      title: "Section Title"
+    - id: b_chronic_conditions
+      title: "Chronic Conditions Checklist"
       items:
-        - id: q_item_1
+        - id: q_ccc_food_allergies
+          kind: Question
+          ...
+    - id: b_diabetes_care
+      title: "Diabetes Care"
+      precondition:
+        - predicate: q_ccc_diabetes.outcome == 1
+      items:
+        - id: q_dia_a1c_test
           kind: Question
           ...
 ```
 
-Each section file must be a valid QML file on its own. Along with the file, each
-subagent returns a variable manifest listing all variables it **reads** and **writes**
-in codeBlocks.
+Each block within the file maps to one original survey section. Block-level
+preconditions gate entire sections (e.g., diabetes care is only shown if the
+respondent reported having diabetes in the chronic conditions block above it).
 
-### Section File Naming
-
-Section files live directly in the questionnaire subdirectory with zero-padded sequential
-prefixes for sort ordering:
-
-```
-SURVEY_NAME/
-  01_demographics.qml
-  02_health.qml
-  03_labour_force.qml
-  ...
-```
-
-The name after the prefix should be a short, lowercase, snake_case identifier derived
-from the section title in the source. The prefix determines the intended flow order.
+Variables set in earlier blocks' codeBlocks are directly available to later blocks
+— no extern declarations needed within the same file.
 
 ### Conversion Patterns: GOTO to Declarative
 
@@ -140,9 +203,9 @@ codeInit: |
     - predicate: symptom_count >= 5
 ```
 
-## Step 2: Validate Each Section
+## Step 3: Validate Each File
 
-After all section subagents complete, validate each section file independently:
+After all subagents complete, validate each grouped QML file independently:
 
 ```bash
 cd /root/QML && \
@@ -189,13 +252,13 @@ Before proceeding to the judgement agent, verify every point:
     computation, aggregation, counting, conditional classification, or consolidating outcomes
     from mutually exclusive items
 
-## Step 3: Judgement Agent — Verify QML Fidelity
+## Step 4: Judgement Agent — Verify QML Fidelity
 
 After validation passes, launch a **judgement subagent** that independently verifies
 the QML against the inventory. The judgement agent receives:
 
 - The inventory file path
-- All section QML file paths
+- All grouped QML file paths
 - The source text file path (for cross-referencing routing)
 
 The judgement agent must NOT have generated the QML — it acts as an independent reviewer.

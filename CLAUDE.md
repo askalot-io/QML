@@ -24,14 +24,15 @@ The `/evaluate-questionnaire` command orchestrates all three pipeline skills in 
 ```
 evaluation/<category>/SURVEY_NAME/
   source.pdf                         # Original (keep original filename)
+  SURVEY_NAME_ocr.md                 # Text extraction from PDF (pdftotext or tesseract)
   SURVEY_NAME_question_inventory.md  # Intermediate representation (Phase 1-2)
   SURVEY_NAME.md                     # Analysis report (Phase 4)
   NN_section_name.qml                # Section QML files (Phase 3)
 ```
 
-Categories: `statcan-questionnaires/`, `reference-questionnaires/`, `ICS-hun/`
+Categories: `census-demographics/`, `medical-health/`, `sociology/`, `education-psychology/`, `market-research/`, `compliance-risk/`, `safety-critical/`, `legal-regulatory/`, `infrastructure-inspection/`
 
-New evaluations produce **multiple QML files per questionnaire** (one per section, prefixed `01_`, `02_`, ...), not a single monolithic file. Each section file is a complete standalone QML with its own `qmlVersion` and `codeInit`.
+New evaluations produce **multiple QML files per questionnaire** (typically 10–25, prefixed `01_`, `02_`, ...), each grouping related survey sections as **blocks** within the file. Each file is a complete standalone QML with its own `qmlVersion` and `codeInit`. Sections that share variables or are thematically related belong in the same file to minimize cross-file extern declarations.
 
 ## Running the Validator
 
