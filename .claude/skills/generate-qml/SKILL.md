@@ -63,6 +63,26 @@ Key structural rules:
 - All IDs must be unique across the entire questionnaire
 - Convention: block IDs start with `b_`, question IDs with `q_`
 
+### One questionnaire = one QML file
+
+A questionnaire is **never** split across multiple QML files. Each questionnaire
+is a single file with one `qmlVersion`, one `questionnaire`, one `codeInit`, and
+one ordered `blocks:` list. The original survey's sections become blocks inside
+that one file — they are not separate files.
+
+There is **no `extern`, no `import`, no `include`** mechanism for sharing state
+across files. Cross-file variable sharing was prototyped briefly and removed;
+any pattern that looks like a Python type-annotation in `codeInit`
+(`age: range(0, 120)`, `sex: {1, 2}`) is the dead remnant of that prototype and
+**must not be used** — Python annotations do not assign a value, so the variable
+is undefined at runtime, and Z3 cannot infer its domain.
+
+If you encounter a legacy questionnaire stored as numbered section files
+(`01_foo.qml`, `02_bar.qml`, ...) in older corpus folders, that is a historical
+artifact from an earlier pipeline. The fix is to **merge the sections into one
+file**, not to extend the split. See "Merging legacy multi-file questionnaires"
+at the end of this skill.
+
 ## Item Kinds
 
 | Kind | Purpose | Requires | Outcome Type |
@@ -152,6 +172,13 @@ questionnaire:
     is_eligible = 0
 ```
 
+`codeInit` only accepts plain Python statements. Do **not** use Python's
+type-annotation syntax (`age: range(0, 120)`, `sex: {1, 2}`) — these are
+no-op annotations that never assign a value, leaving the variable
+undefined when later code reads it. Use ordinary assignments
+(`age = 0`, `sex = 0`) and let Z3 infer the domain from the producer
+item's input control (see "Cross-block state" below).
+
 **Do NOT create variables that merely copy an item's outcome.** Every item's outcome is
 always accessible via `q_item.outcome` in preconditions and codeBlocks. A variable like
 `smoking_status = q_smoking.outcome` is redundant — use `q_smoking.outcome` directly.
@@ -175,6 +202,71 @@ precondition:
 precondition:
   - predicate: q_smoking.outcome == 1
 ```
+
+### Cross-block state
+
+A QML file has **one** `codeInit` scope and **one** dependency graph. Every
+variable initialized in `codeInit` is visible to every block that comes after
+its producer. There is nothing else to do — no extern declarations, no
+imports, no namespace markers. The shared scope is the mechanism.
+
+The canonical pattern for a variable that one block produces and a later
+block consumes:
+
+```yaml
+codeInit: |
+  age = 0       # neutral default; producer reassigns below
+
+blocks:
+  - id: b_demographics
+    items:
+      - id: q_demo_age
+        kind: Question
+        title: "What is your age?"
+        codeBlock: |
+          age = q_demo_age.outcome
+        input:
+          control: Editbox
+          min: 0
+          max: 120
+
+  - id: b_health
+    items:
+      - id: q_smoke
+        kind: Question
+        title: "Do you smoke?"
+        precondition:
+          - predicate: age >= 12     # reads the variable set above
+        input:
+          control: Switch
+          on: "Yes"
+          off: "No"
+```
+
+What the static builder sees:
+1. `codeInit` defines `age = 0`.
+2. The codeBlock on `q_demo_age` reassigns `age` from an `Editbox` outcome
+   whose declared domain is `[0, 120]`. The Z3 SSA tracker propagates that
+   domain into `age`, so subsequent preconditions reason about
+   `age ∈ [0, 120]`.
+3. The precondition `age >= 12` on `q_smoke` is then classified as
+   CONDITIONAL — Z3 knows both `age >= 12` and `age < 12` are reachable
+   completions.
+
+Two rules fall out of this:
+
+- **Initialize every cross-block variable in `codeInit`** with a neutral
+  default (`0`, `-1`, whatever fits). Without the initialization, the
+  static builder cannot construct a base constraint for the variable and
+  will report the consumer's precondition as unsatisfiable.
+- **The producer block must come before the consumer block** in the
+  ordered `blocks:` list. The dependency graph is built from the textual
+  order plus the data-flow edges; an out-of-order producer creates a
+  cycle or a missing definition. When converting a survey, this is
+  usually free — the original presentation order already respects data
+  flow — but if the source instrument asks demographics last and uses
+  them in early branching, you must reorder the blocks so demographics
+  comes first.
 
 ### codeBlock — Per-Item Logic
 
@@ -254,6 +346,13 @@ Before outputting the QML, verify every point:
 11. **No redundant outcome-copying variables** — every variable in `codeInit` must serve a
     purpose beyond copying `q_item.outcome`. If a precondition can reference `q_item.outcome`
     directly, do NOT create a variable for it
+12. **One file** — the questionnaire lives in a single `<SURVEY>.qml`, not multiple
+    section files. The original survey's sections become blocks within that file.
+13. **No annotation-style declarations in `codeInit`** — `age: range(0, 120)` is a
+    no-op Python annotation, not an assignment. Use `age = 0`.
+14. **Producer blocks come before consumer blocks** in the `blocks:` list. If a
+    block's precondition reads a variable, the block that writes that variable
+    must be ordered earlier.
 
 ## Workflow
 
@@ -301,3 +400,51 @@ When working with the Askalot platform:
 - **`references/goto-conversion-guide.md`** — Detailed GOTO-to-declarative conversion
   patterns with real-world examples. Read this when you need to understand how imperative
   routing maps to QML preconditions and code blocks.
+
+## Merging legacy multi-file questionnaires
+
+If the user asks you to fix or extend a questionnaire that exists as numbered
+section files (`01_household.qml`, `02_two_week_disability.qml`, ...), the
+right answer is almost always to merge them into one file first. The split
+came from an extern-variable prototype that was reverted; the files are no
+longer a supported configuration.
+
+The merge is a textual concatenation, not a YAML round-trip — round-tripping
+through a YAML loader strips the comments and the per-item ordering hints
+that domain reviewers rely on. Procedure:
+
+1. **Inventory cross-section variables.** For every section file, look at its
+   `codeInit`. Variables initialized to a literal (`age = 0`) are produced
+   downstream; variables shown with annotation syntax (`age: range(0, 120)`)
+   are extern declarations that need to disappear — record the variable name
+   and its expected domain. The producer sections are the ones that assign
+   the variable in an item's `codeBlock`.
+
+2. **Check for ID collisions.** Block IDs and item IDs must be unique across
+   the entire merged file. Run `grep -hE '^    - id: ' *.qml | sort | uniq -d`
+   for blocks and the equivalent at item-indent level. Collisions are common
+   for generic IDs like `b_administration` or `b_intro`. Rename one side
+   before merging — if the renamed block is referenced from a precondition or
+   codeBlock, update those references too.
+
+3. **Build the merged header.** Write a fresh top-level `qmlVersion`,
+   `questionnaire`, `title`, and `codeInit`. The merged `codeInit` initializes
+   every cross-section variable with a neutral literal (no annotation
+   syntax). Order the initializers by which producer block sets them.
+
+4. **Concatenate the blocks.** For each section file in producer-before-consumer
+   order, take everything after the `  blocks:` marker line and append it to
+   the merged file under the single `blocks:` list. A short section header
+   comment (`# === SECTION 03: Health Care Utilization ===`) at each boundary
+   makes the merged file navigable.
+
+5. **Validate.** Run the validator on the merged file. The most common
+   failures after a merge are: (a) a variable that some section was reading
+   via the dead extern syntax was never initialized in the merged
+   `codeInit`; (b) a block was placed before its producer; (c) an ID
+   collision was missed. All three surface as either Z3 unsat or a topology
+   error.
+
+6. **Delete the old section files.** Once the merged file validates, `git rm`
+   the numbered section files. Leaving them in place invites future Claudes
+   to edit the wrong artifact.

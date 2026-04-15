@@ -38,7 +38,31 @@ repository ships a Python CLI that rasterizes each PDF page with
 AWS Bedrock**, with parallel per-page calls and a cached system prompt.
 It is the single authoritative preprocessor.
 
-### Run the preprocessor
+### 1a. First, always check for an existing intermediate
+
+Before running anything, check whether the intermediate already exists:
+
+```bash
+ls "$(dirname "$PDF")"/*_text.md 2>/dev/null
+```
+
+If a `_text.md` file is already present next to the source PDF, **use
+it directly** — skip straight to Step 2. Re-running the preprocessor
+when a valid `_text.md` exists wastes Bedrock spend and burns cycles.
+Only invoke `askalot-inventory` when the intermediate is missing.
+
+`_text.md` is the single canonical text intermediate. Ignore any other
+extension variants that might be sitting next to the PDF — the only
+input you work from is `_text.md`.
+
+**Prior inventory iterations:** If a sibling file such as
+`<SURVEY>_question_inventory_v2.md` (or any other `_vN.md` variant)
+exists alongside the canonical inventory, read it before rebuilding
+from scratch. These are almost always fix-up iterations that already
+patched issues you would otherwise rediscover, and inheriting from
+them saves a full rebuild cycle.
+
+### 1b. Run the preprocessor (only if no intermediate exists)
 
 ```bash
 uv run askalot-inventory evaluation/<category>/<SURVEY>/source.pdf
@@ -79,24 +103,6 @@ Useful flags:
 - `--concurrency 4` — lower concurrency if you hit Bedrock throttling.
 - `--skip-cache` — bypass the cache and re-extract from scratch.
 
-### Always prefer the existing intermediate
-
-Before running anything, check whether the intermediate already exists:
-
-```bash
-ls "$(dirname "$PDF")"/*_text.md 2>/dev/null
-```
-
-If a `_text.md` file is already present next to the source PDF, use it
-directly. Only invoke `askalot-inventory` when it is missing.
-
-**Legacy filenames:** Some older conversions still have `_ocr.md` (from
-a `pdftotext` pipeline) or `_text.md` (from a Docling pipeline) next
-to the PDF. Those remain as benchmark references. When both a legacy
-file and a `_text.md` exist, always prefer `_text.md`. When only a
-legacy file exists, you may read it, but the preferred path is to
-regenerate a fresh `_text.md` with `askalot-inventory`.
-
 ### Work from `_text.md`, never from the PDF
 
 Two reasons:
@@ -133,14 +139,61 @@ explicit headings.
 For questionnaires with multiple sections/modules, launch **subagents per section** to
 build inventory entries in parallel:
 
-1. **Coordinator** reads the full text file and identifies section boundaries (line ranges)
+1. **Coordinator** reads the full text file, runs the **scope enumeration pass**
+   (below), and identifies section boundaries (line ranges)
 2. **Subagents** (one per section) each receive:
    - The text file path and their assigned line range
    - The node type reference table (below)
    - The inventory entry format specification (below)
 3. Each subagent produces a Markdown fragment for its section
 4. **Coordinator** assembles all fragments into `SURVEY_NAME_question_inventory.md`
-   with the document header and verification status section
+   with the document header, scope declaration, and verification status section
+
+### Scope enumeration (do this first — it is the contract against silent omissions)
+
+Before spawning any subagents, the coordinator enumerates **every** top-level
+unit in the text file: main sections, sub-modules, appendices, alternate-form
+questionnaires, teacher/principal/proxy instruments, self-report forms, admin
+pages, code sheets, and anything else that carries questions. Produce this
+list by scanning headers and table-of-contents markers:
+
+```bash
+grep -nE "^(# |## |### |APPENDIX [A-Z]|SECTION [A-Z]|MODULE |PART )" \
+  "$(dirname "$PDF")/SURVEY_NAME_text.md"
+```
+
+Cross-check the result against any table of contents that appears near the
+start of the text file — TOCs often mention modules that don't announce
+themselves with consistent headers later on.
+
+**Default: every enumerated unit is IN SCOPE.** Appendices, teacher/principal
+questionnaires, proxy forms, and supplementary modules all contain questions
+that downstream QML generation needs. Excluding them silently is the single
+biggest failure mode of this skill — it happened to the NLSCY conversion,
+which lost ~100 items across five appendices because the builder decided
+mid-flight that appendices were "out of scope".
+
+If the user has explicitly asked for a narrower scope (e.g. "just the core
+questionnaire, skip the teacher form"), or a unit is genuinely not a
+questionnaire (e.g. a coding manual, a data dictionary, a list of interviewer
+codes with no questions attached), mark it as OUT OF SCOPE — but **record
+the exclusion and its reason in the inventory header**:
+
+```markdown
+## Scope
+
+| Unit | Pages | Status | Reason |
+|---|---:|---|---|
+| Main Questionnaire (Sections A–G) | 1–160 | IN | core questionnaire |
+| Appendix A: 10–11 year olds self-report | 162–170 | IN | contains 30+ items |
+| Appendix C: Teacher questionnaire | 172–212 | IN | TCH-* items |
+| Appendix D: Principal questionnaire | 213–228 | IN | OBS-* items |
+| Appendix B: Interviewer code sheet | 161 | OUT | not a questionnaire (coding reference only) |
+```
+
+The judgement agent (Step 3) uses this table as the ground truth for module
+coverage — anything marked IN must have inventory entries, and anything
+marked OUT must have a stated reason.
 
 ### Node Types to Capture
 
@@ -248,6 +301,59 @@ A3. "How much do you feel you belong to your local area?" — Scale (0–6):
 CHLT to AHL). Renaming destroys traceability between the inventory and source document,
 making verification impossible and confusing domain reviewers.
 
+**Preserve source annotations verbatim.** Several kinds of parenthetical and
+inline markers carry real semantics and must be kept inside the question or
+option text:
+
+- **Version markers** such as `***NEW***`, `(new 2023)`, `(retained from 2019)`
+  — these tell a future analyst when an item entered or left the instrument.
+  BRFSS_2023 MMU.05 ("dab it") and MMU.06 ("use it in some other way") are
+  2023 additions flagged this way; an inventory that drops the marker hides
+  a version-break.
+- **Regional / jurisdiction variants** such as
+  `Grade 9–10 (Quebec: Secondary II or lower)` or
+  `(Newfoundland and Labrador: 1st year of secondary)` — these are
+  interviewer mapping instructions, not stylistic flourishes. Dropping them
+  makes the code semantically ambiguous for respondents in those
+  jurisdictions.
+- **Historical / legacy labels** such as `Inuit (Eskimo)` — the parenthetical
+  is the term the questionnaire explicitly preserves for longitudinal data
+  alignment. Silently modernising the label breaks comparability across
+  waves.
+- **Interviewer instructions and administration hints** such as
+  `(READ CATEGORIES)`, `(DO NOT READ)`, `(MARK ONE ONLY)`,
+  `(PROBE IF NECESSARY)`, `(IF RESPONDENT HESITATES, ADD ...)`,
+  "INTERVIEWER: confirm the address before proceeding",
+  "Ask only if respondent is over 18", "Do not read aloud unless asked",
+  consistency checks like "If Q5 > Q4, probe and correct", and any
+  other verbal guidance from the source. **Keep all of these.** They are
+  not cosmetic — they are the raw material for precondition and
+  postcondition generation downstream. A hint like "Ask only if
+  respondent is over 18" becomes a precondition on the item; a consistency
+  check like "If Q5 > Q4, probe" becomes a postcondition; a
+  `(DO NOT READ)` on response option 99 tells the QML generator the
+  option is interviewer-only and should not appear in the respondent UI.
+  Dropping these turns a routable instrument into a flat list of
+  unreachable questions.
+
+When in doubt, keep the annotation. The cost of an extra parenthetical is
+zero; the cost of a silently lost interviewer hint, version marker, or
+regional variant is a precondition that never gets written, a
+postcondition that never fires, or an analysis bug that surfaces months
+later.
+
+**Defend against OCR transcription artifacts.** The `_text.md` file is
+usually very clean, but vision-model extraction occasionally produces
+typos in question IDs or routing targets (e.g. `EMPPRE-J1-Q7E` where every
+neighbouring item in the same section uses the dotted form `EMPPRE-J1.Q7B`).
+When an ID in a GOTO target doesn't match the canonical pattern used
+elsewhere in the same section, and no such ID is defined anywhere in the
+text file, treat it as a transcription artifact: verify against
+neighbouring items, use the canonical form, and leave a short note in the
+inventory entry so a reviewer can audit the decision. Do not blindly copy
+a malformed ID into the inventory and do not silently drop the routing —
+both make the inventory worse than the text it was built from.
+
 ### Inventory Document Structure
 
 ```markdown
@@ -284,7 +390,8 @@ verifies the inventory against the source. The judgement agent receives:
 
 - The `_text.md` intermediate file path (primary source for grep-based verification)
 - The completed inventory file path
-- Instructions to check the three dimensions below
+- Instructions to run the five checks below (module coverage, question
+  coverage, routing coverage, node type coverage, annotation preservation)
 
 **Important**: The judgement agent should always work from the `_text.md`
 file, not the PDF. This ensures grep-based counts are accurate and reproducible.
@@ -292,9 +399,38 @@ file, not the PDF. This ensures grep-based counts are accurate and reproducible.
 The judgement agent must NOT have written the inventory — it acts as an independent
 reviewer.
 
-### (a) Question Coverage
+### (a) Module Coverage (gate — run this first)
 
-For each section, count question IDs in the source vs the inventory:
+Before counting IDs inside sections, verify that **every enumerated unit is
+represented**. This is the single most important check, because the most
+expensive failure mode of this skill is silently dropping an entire module
+or appendix — not losing individual items within a module that is otherwise
+present. Counting IDs inside a section that was never extracted will not
+flag the gap.
+
+Build a module manifest from the source and compare it to the inventory:
+
+```bash
+# 1. What does the text file contain?
+grep -nE "^(# |## |### |APPENDIX [A-Z]|SECTION [A-Z]|MODULE |PART )" \
+  "$(dirname "$PDF")/SURVEY_NAME_text.md"
+
+# 2. What does the inventory claim to cover?
+grep -nE "^### |^## Section|^## Appendix|^## Module" \
+  SURVEY_NAME_question_inventory.md
+```
+
+Every unit marked IN SCOPE in the Step 2 scope table must have an
+inventory section. If a unit marked IN is missing, flag it immediately and
+block — do not proceed to (b) or (c) until the gap is closed. If a unit
+is marked OUT, verify the stated reason is sound (the unit really isn't a
+questionnaire — it's a coding manual, a data dictionary, an interviewer
+code sheet, etc.). Silent exclusions — a unit missing from both IN and OUT
+— are never acceptable; the scope table must be exhaustive.
+
+### (b) Question Coverage
+
+For each in-scope section, count question IDs in the source vs the inventory:
 ```bash
 grep -c "^CCC_Q\|CCC_Q" SURVEY_NAME_text.md    # count source questions in CCC section
 ```
@@ -302,18 +438,26 @@ grep -c "^CCC_Q\|CCC_Q" SURVEY_NAME_text.md    # count source questions in CCC s
 Include appendices, alternate-form sections, child/proxy modules, and age-specific
 sub-sections — these are commonly missed.
 
-### (b) Routing Coverage
+### (c) Routing Coverage
 
 Count items with GOTO/skip in the source vs items with routing annotations in the
 inventory. Every `GO TO`, `IF...GO TO`, and filter checkpoint must appear.
 
-### (c) Node Type Coverage
+### (d) Node Type Coverage
 
 Verify all three node types are captured (questions, checks/filters, constraints).
 The most common omissions:
 - Checks/filters: caused entire skip paths to vanish in 4/10 inventories
 - Constraints: lost validation rules and derived variables needed for section routing in 6/10 inventories
 - DK/Refusal branches: created incomplete routing graphs in 5/10 inventories
+
+### (e) Annotation Preservation
+
+Spot-check a handful of items carrying source annotations (version markers,
+regional variants, interviewer instructions, historical labels — see the
+"Preserve source annotations verbatim" rule in Step 2) and confirm the
+annotations survived into the inventory text. Missing annotations are
+usually systematic — if one is dropped, dozens probably are.
 
 ### Judgement Agent Output
 
