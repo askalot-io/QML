@@ -30,78 +30,103 @@ with verification status showing 0 missing items across all sections.
 
 ---
 
-## Step 1: PDF Preprocessing
+## Step 1: Produce the text intermediate
 
-### OCR text file (`_ocr.md`)
+Do **not** hand-roll OCR with `pdftotext` or `tesseract` yourself. The
+repository ships a Python CLI that rasterizes each PDF page with
+`pdftoppm` and extracts verbatim text via **Claude Sonnet 4.6 vision on
+AWS Bedrock**, with parallel per-page calls and a cached system prompt.
+It is the single authoritative preprocessor.
 
-Each questionnaire folder may already contain a pre-extracted text file with the
-`_ocr.md` suffix (e.g., `BRFSS_2023_ocr.md` alongside `BRFSS_2023.pdf`). **Always
-check for this file first** — if it exists, use it as the primary source instead of
-re-extracting from the PDF.
-
-```bash
-ls "$(dirname "$PDF")/"*_ocr.md
-```
-
-If no `_ocr.md` file exists, create one using the two-tier extraction below.
-
-### Tier 1: `pdftotext` (digital PDFs)
+### Run the preprocessor
 
 ```bash
-pdftotext -layout -nodiag source.pdf SURVEY_NAME_ocr.md
+uv run askalot-inventory evaluation/<category>/<SURVEY>/source.pdf
 ```
 
-- `-layout` preserves spatial formatting (question IDs, response codes, indentation)
-- `-nodiag` discards diagonal text (watermarks/holograms that pollute output)
+This writes one artifact next to the source PDF and a copy in the cache:
 
-**Quality check** — verify extraction produced usable output:
-```bash
-pages=$(pdfinfo source.pdf | grep "^Pages:" | awk '{print $2}')
-lines=$(wc -l < SURVEY_NAME_ocr.md)
-ratio=$(echo "scale=1; $lines / $pages" | bc)
-echo "lines/page = $ratio"
-```
-
-If `lines/page < 5`, the PDF is scanned/image-based and pdftotext failed. Fall
-back to Tier 2.
-
-### Tier 2: Tesseract OCR (scanned PDFs)
-
-For scanned or image-based PDFs where pdftotext produces near-empty output:
-
-```bash
-mkdir -p /tmp/ocr_pages
-pdftoppm -png -r 300 source.pdf /tmp/ocr_pages/page
-for img in $(ls /tmp/ocr_pages/page-*.png | sort); do
-  tesseract "$img" stdout 2>/dev/null
-  echo -e "\n---PAGE BREAK---\n"
-done > SURVEY_NAME_ocr.md
-rm -rf /tmp/ocr_pages
-```
-
-Tesseract output may contain checkbox artifacts (`O` for circles, `L` for form
-lines) but question text, routing instructions, and response options are readable.
-
-### Place the `_ocr.md` next to the source PDF
-
-The extracted text file lives in the same directory as the PDF:
 ```
 evaluation/<category>/SURVEY_NAME/
-  source.pdf                         # Original PDF
-  SURVEY_NAME_ocr.md                 # Text extraction (this step)
+  source.pdf                         # Original PDF (kept)
+  SURVEY_NAME_text.md                # Claude-vision text extraction (THIS is the text you work from)
   SURVEY_NAME_question_inventory.md  # Inventory (Step 2-3)
   SURVEY_NAME.md                     # Analysis report (later)
+
+~/.cache/askalot_qml/inventory/<sha256>/
+  source.sha256
+  text.md                            # Authoritative cached copy of SURVEY_NAME_text.md
 ```
 
-Work from the `_ocr.md` file, not the PDF. This avoids:
-1. **Non-linear PDF page ordering** — some PDFs have pages in non-sequential order
-2. **Agent timeouts** — large PDFs (130+ pages) cause processing failures
-3. **Searchability** — text files support grep for systematic verification
+The run is cached by SHA-256 of the source bytes. The first run on a
+66-page questionnaire costs ~$1 in Bedrock spend and takes ~30s with the
+default `--concurrency 8`. Re-runs on the same file are near-instant —
+the cached `text.md` is reused without any Bedrock calls.
 
-After extraction, locate section boundaries:
+**Prerequisites (verify before running):**
+- `pdftoppm -v` succeeds (`apt install poppler-utils` if not)
+- `aws sts get-caller-identity` returns credentials with
+  `bedrock:InvokeModel` permission on
+  `us.anthropic.claude-sonnet-4-6`. If the user has not yet run
+  `aws sso login`, stop and ask them to do so.
+- `AWS_REGION` is set, or pass `--aws-region us-west-2` explicitly.
+
+Useful flags:
+- `--max-pages 3` — only extract the first N pages, for quick wiring
+  tests before burning budget on a full run.
+- `--dpi 200` — higher resolution if text-dense pages come out sparse
+  (default 150 is enough for almost every CATI instrument).
+- `--concurrency 4` — lower concurrency if you hit Bedrock throttling.
+- `--skip-cache` — bypass the cache and re-extract from scratch.
+
+### Always prefer the existing intermediate
+
+Before running anything, check whether the intermediate already exists:
+
 ```bash
-grep -n "_BEG\|SECTION [A-Z]" SURVEY_NAME_ocr.md
+ls "$(dirname "$PDF")"/*_text.md 2>/dev/null
 ```
+
+If a `_text.md` file is already present next to the source PDF, use it
+directly. Only invoke `askalot-inventory` when it is missing.
+
+**Legacy filenames:** Some older conversions still have `_ocr.md` (from
+a `pdftotext` pipeline) or `_text.md` (from a Docling pipeline) next
+to the PDF. Those remain as benchmark references. When both a legacy
+file and a `_text.md` exist, always prefer `_text.md`. When only a
+legacy file exists, you may read it, but the preferred path is to
+regenerate a fresh `_text.md` with `askalot-inventory`.
+
+### Work from `_text.md`, never from the PDF
+
+Two reasons:
+1. **Agent latency** — large questionnaires (130+ pages) make PDF-level
+   reads slow and unreliable.
+2. **Searchability** — the extracted markdown is plain UTF-8 text, so
+   `grep`, `rg`, line-ranges, and per-section slicing all work normally.
+
+After the intermediate is in place, locate section boundaries from the
+markdown directly:
+
+```bash
+grep -n "^--- page \|^# \|^## \|SECTION [A-Z]\|_BEG" \
+  "$(dirname "$PDF")/SURVEY_NAME_text.md"
+```
+
+The extractor emits `--- page N ---` separators between pages and
+preserves the source document's textual section headers. Use those as
+the primary section boundary signal, and fall back to in-body markers
+(`SECTION`, `_BEG`) when the source questionnaire doesn't carry
+explicit headings.
+
+### When things go wrong
+
+- **Bedrock throttling** — re-run with `--concurrency 4` (or lower) and
+  `--log-level DEBUG` to see per-page timings.
+- **Sparse extraction on a dense page** — bump `--dpi 200` or `--dpi 225`
+  and re-run with `--skip-cache`.
+- **AWS credentials expired** — run `aws sso login` again.
+- **boto3 dependency missing** — run `uv sync`.
 
 ## Step 2: Per-Section Extraction (Subagents)
 
@@ -257,12 +282,12 @@ making verification impossible and confusing domain reviewers.
 After assembling the inventory, launch a **judgement subagent** that independently
 verifies the inventory against the source. The judgement agent receives:
 
-- The `_ocr.md` text file path (primary source for grep-based verification)
+- The `_text.md` intermediate file path (primary source for grep-based verification)
 - The completed inventory file path
 - Instructions to check the three dimensions below
 
-**Important**: The judgement agent should always work from the `_ocr.md` file, not
-the PDF. This ensures grep-based counts are accurate and reproducible.
+**Important**: The judgement agent should always work from the `_text.md`
+file, not the PDF. This ensures grep-based counts are accurate and reproducible.
 
 The judgement agent must NOT have written the inventory — it acts as an independent
 reviewer.
@@ -271,7 +296,7 @@ reviewer.
 
 For each section, count question IDs in the source vs the inventory:
 ```bash
-grep -c "^CCC_Q" SURVEY_NAME_ocr.md    # count source questions in CCC section
+grep -c "^CCC_Q\|CCC_Q" SURVEY_NAME_text.md    # count source questions in CCC section
 ```
 
 Include appendices, alternate-form sections, child/proxy modules, and age-specific

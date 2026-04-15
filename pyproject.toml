@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "askalot_qml"
-version = "1.7.0"
+version = "1.7.1"
 description = "QML processing and analysis engine for Askalot platform"
 authors = [
     {name = "Askalot Team", email = "team@askalot.io"}
@@ -25,6 +25,7 @@ dependencies = [
     "PyYAML>=6.0.0",
     "jsonschema>=4.0.0",
     "z3-solver==4.15.3.0",
+    "boto3>=1.40.0",
 ]
 
 [project.optional-dependencies]
@@ -47,9 +48,14 @@ Homepage = "https://github.com/psaghelyi/askalot"
 Repository = "https://github.com/psaghelyi/askalot"
 Issues = "https://github.com/psaghelyi/askalot/issues"
 
+[project.scripts]
+askalot-inventory = "askalot_inventory.cli:main"
+
 [tool.hatch.build.targets.wheel]
-packages = ["askalot_qml"]
-artifacts = ["askalot_qml/schema/*.json"]
+packages = ["askalot_qml", "askalot_inventory"]
+artifacts = [
+    "askalot_qml/schema/*.json",
+]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

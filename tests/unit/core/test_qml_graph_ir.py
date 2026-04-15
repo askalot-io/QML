@@ -198,9 +198,10 @@ class TestGraphIRStructure(unittest.TestCase):
         diagram = create_diagram(state)
         graph = diagram.generate_base_graph()
 
-        item_node = graph['nodes'][0]
-        self.assertEqual(item_node['item_type'], 'question')
-        self.assertEqual(item_node['control_type'], 'radio')
+        item_nodes = [n for n in graph['nodes'] if n['type'] == 'item']
+        self.assertEqual(len(item_nodes), 1)
+        self.assertEqual(item_nodes[0]['item_type'], 'question')
+        self.assertEqual(item_nodes[0]['control_type'], 'radio')
 
 
 @pytest.mark.unit

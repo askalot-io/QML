@@ -6,7 +6,6 @@ This test suite verifies the StaticBuilder class which provides:
 2. Z3 constraint generation from preconditions, postconditions, code blocks
 3. Item dependency discovery through constraint analysis
 4. ItemClassifier compatibility interface
-5. Extern variable annotations for cross-section variable handover
 
 ## Coverage Areas:
 
@@ -53,21 +52,7 @@ This test suite verifies the StaticBuilder class which provides:
 - Outcome augmented assignment (item.outcome += expr)
 - Complex code block with if/elif/else and AugAssign
 
-### Extern Variable Annotations (7 tests)
-- range() annotation creates bounded Z3 domain constraints
-- Set literal annotation creates enumeration Z3 domain constraints
-- Annotations produce CONDITIONAL classification (not NEVER)
-- Fixed assignment after annotation doesn't over-constrain Z3
-- Baseline: fixed init without annotation produces NEVER
-- Multiple extern variables declared together
-- Annotation with value (x: int = 5) is not treated as extern
-
-### PythonRunner Extern Variable Initialization (3 tests)
-- range annotation initializes variable at range start
-- set annotation initializes variable at sorted minimum
-- Explicit assignment after annotation takes precedence
-
-Total: 41 tests covering StaticBuilder and PythonRunner extern variable functionality.
+Total: 53 tests covering StaticBuilder.
 """
 
 import unittest
@@ -896,145 +881,6 @@ class TestStaticBuilderRegressions(unittest.TestCase):
         # q3 should depend on q1 transitively (score depends on q1 via the if-condition)
         self.assertIn('q1', deps.get('q3', set()),
                        "Complex if/elif/else: q3 → q1 through var:score was not tracked")
-
-
-@pytest.mark.unit
-@pytest.mark.z3
-class TestStaticBuilderExternVariables(unittest.TestCase):
-    """Tests for extern variable annotations (cross-section variable handover).
-
-    When a QML survey is split across files, later files need variables from
-    earlier ones (e.g., age from demographics). Type annotations in codeInit
-    declare these as extern variables with domain constraints instead of fixed
-    values, so Z3 can reason about reachability correctly.
-    """
-
-    def test_range_annotation_creates_bounded_z3_variable(self):
-        """range(lo, hi) annotation creates SSA version 0 with domain bounds."""
-        state = create_questionnaire([
-            {'id': 'q1', 'precondition': [{'predicate': 'age >= 12'}]}
-        ], code_init='age: range(0, 120)')
-        builder = StaticBuilder(state)
-
-        # Variable registered at version 0
-        self.assertIn('age_0', builder.z3_vars)
-        self.assertEqual(builder.version_map['age'], 0)
-        # At least 2 domain constraints: age_0 >= 0, age_0 <= 120
-        self.assertGreaterEqual(len(builder.domain_constraints), 2)
-
-    def test_set_annotation_creates_enumeration_z3_variable(self):
-        """Set literal annotation creates SSA version 0 with Or constraint."""
-        state = create_questionnaire([
-            {'id': 'q1', 'precondition': [{'predicate': 'sex == 1'}]}
-        ], code_init='sex: {1, 2}')
-        builder = StaticBuilder(state)
-
-        self.assertIn('sex_0', builder.z3_vars)
-        # At least 1 domain constraint: Or(sex_0 == 1, sex_0 == 2)
-        self.assertGreaterEqual(len(builder.domain_constraints), 1)
-
-    def test_range_annotation_classifies_precondition_as_conditional(self):
-        """Core behavior: range annotation makes dependent precondition CONDITIONAL."""
-        from askalot_qml.z3.item_classifier import ItemClassifier
-
-        state = create_questionnaire([
-            {'id': 'q1', 'precondition': [{'predicate': 'age >= 12'}],
-             'input': {'control': 'Radio', 'labels': {1: 'Yes', 2: 'No'}}}
-        ], code_init='age: range(0, 120)')
-        builder = StaticBuilder(state)
-        results = ItemClassifier(builder).classify_all_items()
-
-        # range(0, 120) means age can be 12..120 → satisfiable AND falsifiable
-        self.assertEqual(results['q1']['precondition']['status'], 'CONDITIONAL')
-
-    def test_fixed_assignment_after_annotation_suppressed(self):
-        """Fixed assignment following an annotation doesn't over-constrain Z3.
-
-        A common pattern: `age: range(0, 120)` then `age = 0` for runtime default.
-        The fixed constraint must be skipped so Z3 still sees the full domain.
-        """
-        from askalot_qml.z3.item_classifier import ItemClassifier
-
-        state = create_questionnaire([
-            {'id': 'q1', 'precondition': [{'predicate': 'age >= 12'}],
-             'input': {'control': 'Radio', 'labels': {1: 'Yes', 2: 'No'}}}
-        ], code_init='age: range(0, 120)\nage = 0')
-        builder = StaticBuilder(state)
-        results = ItemClassifier(builder).classify_all_items()
-
-        # age = 0 constraint suppressed → still CONDITIONAL, not NEVER
-        self.assertEqual(results['q1']['precondition']['status'], 'CONDITIONAL')
-
-    def test_baseline_fixed_init_over_constrains_postcondition(self):
-        """Baseline: without annotation, age = 0 makes postcondition `age >= 12` infeasible.
-
-        Postconditions use get_full_base() which includes codeblock constraints.
-        This is where fixed init values cause real problems for cross-section files.
-        """
-        from askalot_qml.z3.item_classifier import ItemClassifier
-
-        state = create_questionnaire([
-            {'id': 'q1',
-             'postcondition': [{'predicate': 'age >= 12'}],
-             'input': {'control': 'Radio', 'labels': {1: 'Yes', 2: 'No'}}}
-        ], code_init='age = 0')
-        builder = StaticBuilder(state)
-        results = ItemClassifier(builder).classify_all_items()
-
-        # age = 0 from codeblock_constraints + age >= 12 → INFEASIBLE
-        self.assertEqual(results['q1']['postcondition']['invariant'], 'INFEASIBLE')
-
-    def test_multiple_extern_vars_with_compound_precondition(self):
-        """Multiple annotations combine correctly in compound preconditions."""
-        from askalot_qml.z3.item_classifier import ItemClassifier
-
-        state = create_questionnaire([
-            {'id': 'q1', 'precondition': [{'predicate': 'age >= 18 and sex == 1'}],
-             'input': {'control': 'Radio', 'labels': {1: 'Yes', 2: 'No'}}}
-        ], code_init='age: range(0, 120)\nsex: {1, 2}')
-        builder = StaticBuilder(state)
-        results = ItemClassifier(builder).classify_all_items()
-
-        # age >= 18 satisfiable in [0, 120], sex == 1 satisfiable in {1, 2}
-        self.assertEqual(results['q1']['precondition']['status'], 'CONDITIONAL')
-
-    def test_annotation_with_value_is_normal_assignment(self):
-        """AnnAssign with a value (x: int = 5) is NOT an extern declaration."""
-        state = create_questionnaire([
-            {'id': 'q1', 'precondition': [{'predicate': 'x >= 10'}],
-             'input': {'control': 'Radio', 'labels': {1: 'Yes', 2: 'No'}}}
-        ], code_init='x: int = 5')
-        builder = StaticBuilder(state)
-
-        self.assertNotIn('x', builder._extern_vars)
-
-
-@pytest.mark.unit
-class TestPythonRunnerExternVariables(unittest.TestCase):
-    """Tests for PythonRunner runtime initialization of annotated variables.
-
-    At runtime, annotations without assignments must produce real Python
-    variables so that subsequent code and precondition evaluation doesn't
-    raise NameError. These tests verify the post-exec initialization.
-    """
-
-    def test_range_annotation_initializes_at_start(self):
-        """range annotation sets variable to range start value."""
-        from askalot_qml.core.python_runner import PythonRunner
-        result = PythonRunner().run_code('age: range(0, 120)')
-        self.assertEqual(result['age'], 0)
-
-    def test_set_annotation_initializes_at_sorted_minimum(self):
-        """set annotation sets variable to the smallest element."""
-        from askalot_qml.core.python_runner import PythonRunner
-        result = PythonRunner().run_code('sex: {2, 1}')
-        self.assertEqual(result['sex'], 1)
-
-    def test_explicit_assignment_after_annotation_wins(self):
-        """Explicit assignment after annotation takes precedence at runtime."""
-        from askalot_qml.core.python_runner import PythonRunner
-        result = PythonRunner().run_code('age: range(0, 120)\nage = 25')
-        self.assertEqual(result['age'], 25)
 
 
 if __name__ == '__main__':

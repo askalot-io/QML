@@ -176,36 +176,6 @@ precondition:
   - predicate: q_smoking.outcome == 1
 ```
 
-### Extern Variables — Cross-Section Variable Handover
-
-When a questionnaire is split across multiple QML files (e.g., `01_household.qml`,
-`04_restriction_chronic.qml`), later files may depend on variables collected in earlier
-ones. Use Python type annotations in `codeInit` to declare these as extern variables
-with domain constraints:
-
-```yaml
-codeInit: |
-  age: range(0, 120)
-  sex: {1, 2}
-  marital_status: {1, 2, 3, 4, 5, 6, 7}
-```
-
-| Syntax | Z3 domain constraint | Runtime default |
-|---|---|---|
-| `age: range(0, 120)` | `0 <= age <= 120` | `0` (range start) |
-| `sex: {1, 2}` | `sex == 1 OR sex == 2` | `1` (sorted minimum) |
-
-Rules:
-- **Annotation without value** (`age: range(0, 120)`) → extern declaration with domain constraint
-- **Annotation with value** (`x: int = 5`) → normal assignment, NOT extern
-- A fixed assignment following an annotation (e.g., `age = 0`) is suppressed in Z3 — the
-  domain constraint takes precedence, so the solver sees the full range
-- At runtime, unassigned annotated variables are initialized to their domain minimum
-
-Use extern variables when a section references demographics or classifications computed
-in a prior section. Without the annotation, `age = 0` would over-constrain Z3 and make
-preconditions like `age >= 18` classify as NEVER reachable.
-
 ### codeBlock — Per-Item Logic
 
 Runs after an item's postcondition passes. Updates computed/aggregated variables:

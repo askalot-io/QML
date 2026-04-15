@@ -21,9 +21,12 @@ If a relative path is given, resolve it relative to the working directory.
 Before starting, check what artifacts already exist in the evaluation directory to
 determine which phase to resume from:
 
-1. **Check for QML section files** (`*.qml` in the directory):
-   - If QML files exist → resume from **Phase 3: Write Analysis Report**
+1. **Check for the QML file** (`SURVEY_NAME.qml` in the directory):
+   - If the QML file exists → resume from **Phase 3: Write Analysis Report**
    - Read the `write-analysis` skill and proceed directly to report generation
+   - Note: some historical evaluations contain multiple `NN_section_name.qml`
+     files from an earlier pipeline version. Treat these as existing artifacts
+     and resume to Phase 3; do not regenerate or merge them
 
 2. **Check for question inventory** (`*_question_inventory.md` in the directory):
    - If inventory exists with `READY FOR QML` status → resume from **Phase 2: Inventory to QML**
@@ -31,7 +34,11 @@ determine which phase to resume from:
    - Read the `inventory-to-qml` skill and proceed
 
 3. **No artifacts found** (or input is a PDF file):
-   - Start from **Phase 1: Build Inventory**
+   - Check for an existing text intermediate next to the source:
+     `<stem>_text.md` (current), `<stem>_docling.md` (legacy, Docling),
+     `<stem>_ocr.md` (legacy, pdftotext). If `_text.md` exists, reuse it
+     directly. Otherwise start from **Phase 1: Build Inventory** which
+     regenerates `_text.md` via Claude vision on Bedrock.
    - Read the `build-inventory` skill and proceed from the beginning
 
 Report which phase you are starting from and why.
@@ -52,9 +59,10 @@ Also read the QML language references:
 - `.claude/skills/generate-qml/references/qml-full-reference.md`
 - `.claude/skills/generate-qml/references/goto-conversion-guide.md`
 
-Convert the inventory into per-section QML files, validate each with Z3, and run the
-judgement agent to verify fidelity. Gate: 0 unjustified missing items, all sections
-pass validation.
+Convert the inventory into a single `SURVEY_NAME.qml` file (the survey's original
+sections become ordered blocks inside it), validate it with Z3, and run the
+judgement agent to verify fidelity. A questionnaire is never split across multiple
+QML files. Gate: 0 unjustified missing items, file passes validation.
 
 ## Phase 3: Write Analysis Report
 
@@ -71,7 +79,7 @@ All artifacts go in `evaluation/<category>/SURVEY_NAME/`:
 | Artifact | File | Phase |
 |----------|------|-------|
 | Question inventory | `SURVEY_NAME_question_inventory.md` | 1 |
-| Section QML files | `NN_section_name.qml` | 2 |
+| QML file | `SURVEY_NAME.qml` | 2 |
 | Analysis report | `SURVEY_NAME.md` | 3 |
 
 ## Phase 4: Process Feedback Report
