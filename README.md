@@ -1,6 +1,11 @@
 # Questionnaire Markup Language Compiler and Validator
 
-[![License: CC BY-NC 4.0](https://img.shields.io/badge/License-CC%20BY--NC%204.0-lightgrey.svg)](https://creativecommons.org/licenses/by-nc/4.0/)
+> License & usage posture. This repository is source-available, **not
+> OSI-approved**, and licensed under PolyForm Noncommercial 1.0.0 — a
+> non-commercial license. You may read, run, modify, and cite the code
+> for any non-commercial purpose (research, teaching, evaluation, personal
+> use). Commercial use requires a separate license from Askalot. This
+> replaces the prior CC BY-NC 4.0 statement. See LICENSE](./LICENSE).
 
 ## Overview
 
