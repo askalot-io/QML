@@ -3,14 +3,26 @@
 Pragmatic Z3 compiler with improved basic type handling for questionnaire validation
 Focuses on better boolean representation while keeping Python's dynamic nature
 """
-from z3 import (
-    Context, ExprRef, BoolRef, ArithRef,
-    Int, IntVal, Bool, BoolVal,
-    And, Or, Not, If,
-)
+
 import ast
 import logging
-from typing import Dict, Union, List, Any
+from typing import Any
+
+from z3 import (
+    And,
+    ArithRef,
+    Bool,
+    BoolRef,
+    BoolVal,
+    Context,
+    ExprRef,
+    If,
+    Int,
+    IntVal,
+    Not,
+    Or,
+)
+
 
 class PragmaticZ3Compiler(ast.NodeVisitor):
     """
@@ -18,18 +30,27 @@ class PragmaticZ3Compiler(ast.NodeVisitor):
     Maintains Python's dynamic typing while improving Z3 representation.
     """
 
-    def __init__(self, predefined: Dict[str, ExprRef], item_id: str = "", z3var_func=None, ctx: Context = None, text_items: set = None):
+    def __init__(
+        self,
+        predefined: dict[str, ExprRef],
+        item_id: str = "",
+        z3var_func=None,
+        ctx: Context = None,
+        text_items: set = None,
+    ):
         self.constraints = []
-        self.env = {k: v for k, v in predefined.items()}
+        self.env = dict(predefined.items())
         self.gen = 0
         self.item_id = item_id
         self.ctx = ctx
-        self.z3var_func = z3var_func or (lambda name: Int(name, self.ctx) if self.ctx else Int(name))
+        self.z3var_func = z3var_func or (
+            lambda name: Int(name, self.ctx) if self.ctx else Int(name)
+        )
         self.logger = logging.getLogger(__name__)
         # Set of item IDs with Textarea controls (string outcomes, no Z3 variables)
         self.text_items = text_items or set()
 
-    def _e(self, node: ast.AST) -> Union[ExprRef, List[ExprRef]]:
+    def _e(self, node: ast.AST) -> ExprRef | list[ExprRef]:
         """Evaluate an expression node"""
         return self.visit(node)
 
@@ -72,7 +93,7 @@ class PragmaticZ3Compiler(ast.NodeVisitor):
 
     def visit_Attribute(self, n: ast.Attribute):
         """Handle attribute access like item.outcome"""
-        if isinstance(n.value, ast.Name) and n.attr == 'outcome':
+        if isinstance(n.value, ast.Name) and n.attr == "outcome":
             item_id = n.value.id
             # Textarea controls have string outcomes — return sentinel 0 instead of creating a Z3 variable
             if item_id in self.text_items:
@@ -82,17 +103,17 @@ class PragmaticZ3Compiler(ast.NodeVisitor):
                 return self.env[var_name]
             self.env[var_name] = self.z3var_func(var_name)
             return self.env[var_name]
-        name = getattr(n.value, 'id', type(n.value).__name__)
+        name = getattr(n.value, "id", type(n.value).__name__)
         raise ValueError(f"Unsupported attribute access: {name}.{n.attr}")
 
     def visit_Call(self, n: ast.Call):
         """Handle function calls including type casting"""
         if isinstance(n.func, ast.Name):
-            if n.func.id == 'print':
+            if n.func.id == "print":
                 return IntVal(0, self.ctx)
-            elif n.func.id == 'range':
+            elif n.func.id == "range":
                 return self.visit(n.args[0]) if n.args else IntVal(0, self.ctx)
-            elif n.func.id == 'int':
+            elif n.func.id == "int":
                 if n.args:
                     arg = self._e(n.args[0])
                     if isinstance(arg, BoolRef):
@@ -102,7 +123,7 @@ class PragmaticZ3Compiler(ast.NodeVisitor):
                     else:
                         return IntVal(0, self.ctx)
                 return IntVal(0, self.ctx)
-            elif n.func.id == 'bool':
+            elif n.func.id == "bool":
                 if n.args:
                     arg = self._e(n.args[0])
                     if isinstance(arg, BoolRef):
@@ -112,7 +133,7 @@ class PragmaticZ3Compiler(ast.NodeVisitor):
                     else:
                         return BoolVal(False, self.ctx)
                 return BoolVal(False, self.ctx)
-            elif n.func.id == 'abs':
+            elif n.func.id == "abs":
                 if n.args:
                     arg = self._to_z3_int(self._e(n.args[0]))
                     return If(arg >= 0, arg, -arg)
@@ -167,7 +188,7 @@ class PragmaticZ3Compiler(ast.NodeVisitor):
             raise ValueError(f"Mismatched ops/comparators: {len(n.ops)} vs {len(n.comparators)}")
         clauses = []
         lhs = self._e(n.left)
-        for op, comp in zip(n.ops, n.comparators):
+        for op, comp in zip(n.ops, n.comparators, strict=False):
             rhs = self._e(comp)
             if isinstance(op, ast.Gt):
                 clauses.append(lhs > rhs)
@@ -210,7 +231,7 @@ class PragmaticZ3Compiler(ast.NodeVisitor):
         """Handle boolean operations with proper boolean context"""
         # Convert all operands to boolean context
         bool_values = [self._to_z3_bool(self._e(val)) for val in n.values]
-        
+
         if isinstance(n.op, ast.And):
             return And(bool_values)
         elif isinstance(n.op, ast.Or):
@@ -241,7 +262,7 @@ class PragmaticZ3Compiler(ast.NodeVisitor):
             for target in n.targets:
                 if isinstance(target, ast.Name):
                     self._assign_to_name(target, rhs_expr)
-                elif isinstance(target, ast.Attribute) and target.attr == 'outcome':
+                elif isinstance(target, ast.Attribute) and target.attr == "outcome":
                     self._assign_to_outcome(target, rhs_expr)
                 else:
                     self.logger.warning(
@@ -254,7 +275,7 @@ class PragmaticZ3Compiler(ast.NodeVisitor):
         rhs_expr = self._e(n.value)
 
         # Handle attribute assignment (item.outcome = value)
-        if isinstance(target, ast.Attribute) and target.attr == 'outcome':
+        if isinstance(target, ast.Attribute) and target.attr == "outcome":
             self._assign_to_outcome(target, rhs_expr)
             return
 
@@ -265,7 +286,7 @@ class PragmaticZ3Compiler(ast.NodeVisitor):
                     f"Tuple unpacking size mismatch or non-tuple RHS in {self.item_id}, skipping"
                 )
                 return
-            for elt, val in zip(target.elts, rhs_expr):
+            for elt, val in zip(target.elts, rhs_expr, strict=False):
                 if isinstance(elt, ast.Name):
                     self._assign_to_name(elt, val)
                 else:
@@ -340,7 +361,7 @@ class PragmaticZ3Compiler(ast.NodeVisitor):
             current_val = self.env.get(target.id)
             if current_val is None:
                 current_val = IntVal(0, self.ctx)
-        elif isinstance(target, ast.Attribute) and target.attr == 'outcome':
+        elif isinstance(target, ast.Attribute) and target.attr == "outcome":
             # Handle attribute augmented assignment (item.outcome += value)
             if isinstance(target.value, ast.Name):
                 item_id = target.value.id
@@ -385,7 +406,7 @@ class PragmaticZ3Compiler(ast.NodeVisitor):
             self.gen += 1
             self.constraints.append(ssa_var == new_value)
             self.env[target.id] = ssa_var
-        elif isinstance(target, ast.Attribute) and target.attr == 'outcome':
+        elif isinstance(target, ast.Attribute) and target.attr == "outcome":
             # Update attribute value with SSA
             if isinstance(target.value, ast.Name):
                 item_id = target.value.id
@@ -400,20 +421,32 @@ class PragmaticZ3Compiler(ast.NodeVisitor):
     def visit_If(self, n: ast.If):
         """Handle if statements with proper boolean conditions"""
         cond = self._to_z3_bool(self._e(n.test))
-        
+
         # Process branches
-        then_c = PragmaticZ3Compiler(self.env.copy(), f"{self.item_id}_then_{self.gen}", self.z3var_func, ctx=self.ctx, text_items=self.text_items)
+        then_c = PragmaticZ3Compiler(
+            self.env.copy(),
+            f"{self.item_id}_then_{self.gen}",
+            self.z3var_func,
+            ctx=self.ctx,
+            text_items=self.text_items,
+        )
         then_c.gen = self.gen
         for s in n.body:
             then_c.visit(s)
 
-        else_c = PragmaticZ3Compiler(self.env.copy(), f"{self.item_id}_else_{self.gen}", self.z3var_func, ctx=self.ctx, text_items=self.text_items)
+        else_c = PragmaticZ3Compiler(
+            self.env.copy(),
+            f"{self.item_id}_else_{self.gen}",
+            self.z3var_func,
+            ctx=self.ctx,
+            text_items=self.text_items,
+        )
         else_c.gen = then_c.gen
         for s in n.orelse:
             else_c.visit(s)
-        
+
         self.gen = else_c.gen
-        
+
         # Merge variables
         merged = set(then_c.env) | set(else_c.env)
         for name in merged:
@@ -451,7 +484,7 @@ class PragmaticZ3Compiler(ast.NodeVisitor):
                 self.constraints.append(fresh == If(cond, t_int, e_int))
 
             self.env[name] = fresh
-        
+
         self.constraints += then_c.constraints + else_c.constraints
 
     def visit_For(self, n: ast.For):
@@ -465,10 +498,11 @@ class PragmaticZ3Compiler(ast.NodeVisitor):
         loop_var = n.target.id
 
         # Handle range() loops
-        if (isinstance(n.iter, ast.Call) and
-            isinstance(n.iter.func, ast.Name) and
-            n.iter.func.id == "range"):
-
+        if (
+            isinstance(n.iter, ast.Call)
+            and isinstance(n.iter.func, ast.Name)
+            and n.iter.func.id == "range"
+        ):
             if len(n.iter.args) == 1 and isinstance(n.iter.args[0], ast.Constant):
                 K = n.iter.args[0].value
                 if not isinstance(K, int) or K < 0 or K > 20:
@@ -515,7 +549,7 @@ class PragmaticZ3Compiler(ast.NodeVisitor):
     def visit_Tuple(self, n: ast.Tuple):
         """Handle tuple literals"""
         return [self._e(elt) for elt in n.elts]
-        
+
     def visit_Set(self, n: ast.Set):
         """Handle set literals"""
         return [self._e(elt) for elt in n.elts]
@@ -525,4 +559,4 @@ class PragmaticZ3Compiler(ast.NodeVisitor):
             self.visit(s)
 
     def visit_Expr(self, n):
-        self._e(n.value) 
+        self._e(n.value)

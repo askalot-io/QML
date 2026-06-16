@@ -17,14 +17,14 @@ This is the third and most thorough level of the validation hierarchy:
 2. Global validation - checks if any valid completion exists
 3. Path-based validation - detects dead code from accumulated constraints
 
-Reference: docs/thesis/chapters/comprehensive_validation.tex, Definition 2.5
+Reference: askalot-research/thesis/chapters/comprehensive_validation.tex, Definition 2.5
 """
 
 import logging
 from dataclasses import dataclass, field
-from typing import Dict, Any, List, Set, Optional, TYPE_CHECKING
+from typing import TYPE_CHECKING
 
-from z3 import Solver, Implies, And, BoolVal, sat, unsat
+from z3 import Implies, Solver, sat, unsat
 
 from askalot_qml.z3.static_builder import StaticBuilder
 
@@ -35,20 +35,22 @@ if TYPE_CHECKING:
 @dataclass
 class ItemReachabilityResult:
     """Result of accumulated reachability check for a single item."""
+
     item_id: str
     per_item_status: str  # ALWAYS, CONDITIONAL, NEVER (from per-item check)
     accumulated_reachable: bool
     is_dead_code: bool  # True if CONDITIONAL per-item but not accumulated-reachable
-    predecessors: List[str] = field(default_factory=list)
+    predecessors: list[str] = field(default_factory=list)
     message: str = ""
 
 
 @dataclass
 class PathValidationResult:
     """Result of path-based validation for entire questionnaire."""
+
     has_dead_code: bool
-    dead_code_items: List[str] = field(default_factory=list)
-    item_results: Dict[str, ItemReachabilityResult] = field(default_factory=dict)
+    dead_code_items: list[str] = field(default_factory=list)
+    item_results: dict[str, ItemReachabilityResult] = field(default_factory=dict)
     message: str = ""
 
 
@@ -123,10 +125,10 @@ class PathBasedValidator:
             has_dead_code=has_dead_code,
             dead_code_items=dead_code_items,
             item_results=item_results,
-            message=message
+            message=message,
         )
 
-    def _build_predecessors_map(self, topological_order: List[str]) -> Dict[str, List[str]]:
+    def _build_predecessors_map(self, topological_order: list[str]) -> dict[str, list[str]]:
         """
         Build map of predecessors for each item based on dependency graph.
 
@@ -149,14 +151,11 @@ class PathBasedValidator:
             deps = self._get_transitive_dependencies(item_id)
             # Filter to only include items that come before in topological order
             item_idx = topo_index[item_id]
-            predecessors[item_id] = [
-                dep for dep in topological_order[:item_idx]
-                if dep in deps
-            ]
+            predecessors[item_id] = [dep for dep in topological_order[:item_idx] if dep in deps]
 
         return predecessors
 
-    def _get_transitive_dependencies(self, item_id: str) -> Set[str]:
+    def _get_transitive_dependencies(self, item_id: str) -> set[str]:
         """
         Get all transitive dependencies for an item.
 
@@ -178,9 +177,7 @@ class PathBasedValidator:
         return visited
 
     def _check_item_reachability(
-        self,
-        item_id: str,
-        predecessors_map: Dict[str, List[str]]
+        self, item_id: str, predecessors_map: dict[str, list[str]]
     ) -> ItemReachabilityResult:
         """
         Check accumulated reachability for a single item.
@@ -199,7 +196,7 @@ class PathBasedValidator:
                 per_item_status="UNKNOWN",
                 accumulated_reachable=True,
                 is_dead_code=False,
-                message="Item not found in builder details"
+                message="Item not found in builder details",
             )
 
         predecessors = predecessors_map.get(item_id, [])
@@ -220,6 +217,7 @@ class PathBasedValidator:
         else:
             # Check if always reachable: UNSAT(B ∧ ¬P_i)?
             from z3 import Not
+
             s_always = Solver(ctx=self.ctx)
             s_always.add(base, Not(P_i))
             always_reachable = s_always.check() == unsat
@@ -233,7 +231,7 @@ class PathBasedValidator:
                 accumulated_reachable=False,
                 is_dead_code=False,  # NEVER is a per-item issue, not dead code
                 predecessors=predecessors,
-                message="Item is NEVER reachable (per-item check)"
+                message="Item is NEVER reachable (per-item check)",
             )
 
         # If per-item is ALWAYS, check accumulated reachability for completeness
@@ -245,7 +243,7 @@ class PathBasedValidator:
                 accumulated_reachable=True,
                 is_dead_code=False,
                 predecessors=predecessors,
-                message="Item is ALWAYS reachable with no dependencies"
+                message="Item is ALWAYS reachable with no dependencies",
             )
 
         # Build accumulated formula: A_i = B ∧ ∧{j∈Pred(i)}(P_j ⇒ Q_j)
@@ -265,8 +263,21 @@ class PathBasedValidator:
         solver.add(P_i)
         accumulated_reachable = solver.check() == sat
 
-        # Dead code: CONDITIONAL per-item but not accumulated-reachable
-        is_dead_code = (per_item_status == "CONDITIONAL" and not accumulated_reachable)
+        # Dead code: CONDITIONAL per-item but not accumulated-reachable.
+        #
+        # U2 classification-safety (R5/R7): an item registered as
+        # conditionally-present (Sample draw / Roster bit) is sampling-absent
+        # by design, not dead code. Accumulated predecessor postconditions
+        # making its precondition unsatisfiable just means it is not drawn on
+        # those paths — legitimate, never a design error. Exclude it from
+        # dead-code regardless of accumulated reachability (the core C4
+        # regression guard: a reachable-but-never-drawn item is not dead).
+        is_conditionally_present = self.builder.is_conditionally_present(item_id)
+        is_dead_code = (
+            per_item_status == "CONDITIONAL"
+            and not accumulated_reachable
+            and not is_conditionally_present
+        )
 
         if is_dead_code:
             message = (
@@ -276,8 +287,8 @@ class PathBasedValidator:
             )
         elif not accumulated_reachable and per_item_status == "ALWAYS":
             message = (
-                f"Warning: ALWAYS reachable per-item but accumulated constraints "
-                f"make it unreachable. This may indicate conflicting postconditions."
+                "Warning: ALWAYS reachable per-item but accumulated constraints "
+                "make it unreachable. This may indicate conflicting postconditions."
             )
         else:
             message = "Item is reachable under accumulated constraints"
@@ -288,10 +299,10 @@ class PathBasedValidator:
             accumulated_reachable=accumulated_reachable,
             is_dead_code=is_dead_code,
             predecessors=predecessors,
-            message=message
+            message=message,
         )
 
-    def get_dead_code_items(self) -> List[str]:
+    def get_dead_code_items(self) -> list[str]:
         """
         Get list of dead code items.
 
@@ -311,21 +322,27 @@ class PathBasedValidator:
         lines.append("=" * 60)
         lines.append("PATH-BASED VALIDATION (Accumulated Reachability)")
         lines.append("=" * 60)
-        lines.append(f"\nStatus: {'DEAD CODE DETECTED' if result.has_dead_code else 'ALL REACHABLE'}")
+        lines.append(
+            f"\nStatus: {'DEAD CODE DETECTED' if result.has_dead_code else 'ALL REACHABLE'}"
+        )
         lines.append(f"Message: {result.message}")
 
         if result.dead_code_items:
-            lines.append(f"\nDead Code Items:")
+            lines.append("\nDead Code Items:")
             for item_id in result.dead_code_items:
                 item_result = result.item_results.get(item_id)
                 if item_result:
                     lines.append(f"  - {item_id}: {item_result.message}")
 
-        lines.append(f"\nItem Reachability Summary:")
+        lines.append("\nItem Reachability Summary:")
         for item_id, item_result in result.item_results.items():
             status = "DEAD" if item_result.is_dead_code else "OK"
             acc = "✓" if item_result.accumulated_reachable else "✗"
-            preds = f" (deps: {', '.join(item_result.predecessors)})" if item_result.predecessors else ""
+            preds = (
+                f" (deps: {', '.join(item_result.predecessors)})"
+                if item_result.predecessors
+                else ""
+            )
             lines.append(
                 f"  {item_id}: per-item={item_result.per_item_status}, "
                 f"accumulated={acc}, status={status}{preds}"

@@ -29,11 +29,10 @@ import unittest
 from pathlib import Path
 
 import pytest
-from z3 import Context, Int, BoolVal, Solver, And, Not, Implies, sat, unsat
-
 from askalot_qml.core.qml_loader import QMLLoader
 from askalot_qml.core.validation_processor import ValidationProcessor
 from askalot_qml.models.qml_state import QMLState
+from z3 import And, BoolVal, Context, Implies, Int, Not, Solver, sat, unsat
 
 # Path to fixture files
 FIXTURES_DIR = Path(__file__).parent.parent / "fixtures"
@@ -50,6 +49,7 @@ def load_qml_fixture(filename: str) -> QMLState:
 # ---------------------------------------------------------------------------
 # Helpers: GC pressure using the GLOBAL context (reproduces the crash)
 # ---------------------------------------------------------------------------
+
 
 def _create_and_discard_z3_objects_global(count: int = 100):
     """Create Z3 objects on the GLOBAL context and let them become garbage."""
@@ -72,6 +72,7 @@ def _gc_pressure_thread_global(stop_event: threading.Event, intensity: int = 50)
 # ---------------------------------------------------------------------------
 # Helpers: GC pressure using a DEDICATED context (the fix)
 # ---------------------------------------------------------------------------
+
 
 def _create_and_discard_z3_objects_isolated(count: int = 100):
     """Create Z3 objects on a DEDICATED context — isolated from other threads."""
@@ -96,6 +97,7 @@ def _gc_pressure_thread_isolated(stop_event: threading.Event, intensity: int = 5
 # SECTION A: Known-broken tests (global context, expected to crash/fail)
 # ===========================================================================
 
+
 @pytest.mark.integration
 @pytest.mark.z3
 class TestZ3GlobalContextRace(unittest.TestCase):
@@ -105,7 +107,9 @@ class TestZ3GlobalContextRace(unittest.TestCase):
     when Z3 objects on the global context are accessed from multiple threads.
     """
 
-    @pytest.mark.skip(reason="Z3 global context is not thread-safe — segfault kills the process (not catchable)")
+    @pytest.mark.skip(
+        reason="Z3 global context is not thread-safe — segfault kills the process (not catchable)"
+    )
     def test_concurrent_solvers_global_context_crashes(self):
         """Z3 solver ops on global context + background GC thread → crash.
 
@@ -162,6 +166,7 @@ class TestZ3GlobalContextRace(unittest.TestCase):
 # ===========================================================================
 # SECTION B: Fixed tests — explicit z3.Context() per analysis
 # ===========================================================================
+
 
 @pytest.mark.integration
 @pytest.mark.z3
@@ -225,10 +230,10 @@ class TestZ3ExplicitContextIsolation(unittest.TestCase):
             gc_thread.join(timeout=5)
 
         self.assertEqual(
-            errors, [],
-            f"Z3 with explicit context should NOT crash under GC pressure.\n"
-            f"Errors:\n"
-            + "\n".join(f"  iteration {i}: {e}" for i, e in errors[:5])
+            errors,
+            [],
+            "Z3 with explicit context should NOT crash under GC pressure.\n"
+            "Errors:\n" + "\n".join(f"  iteration {i}: {e}" for i, e in errors[:5]),
         )
 
     def test_parallel_solvers_with_explicit_contexts(self):
@@ -258,20 +263,17 @@ class TestZ3ExplicitContextIsolation(unittest.TestCase):
                     with lock:
                         errors.append((thread_id, i, str(e)))
 
-        threads = [
-            threading.Thread(target=solver_work, args=(tid, 20))
-            for tid in range(4)
-        ]
+        threads = [threading.Thread(target=solver_work, args=(tid, 20)) for tid in range(4)]
         for t in threads:
             t.start()
         for t in threads:
             t.join(timeout=60)
 
         self.assertEqual(
-            errors, [],
-            f"Parallel Z3 with explicit contexts should NOT crash.\n"
-            f"Errors:\n"
-            + "\n".join(f"  thread {tid} iter {i}: {e}" for tid, i, e in errors[:5])
+            errors,
+            [],
+            "Parallel Z3 with explicit contexts should NOT crash.\n"
+            "Errors:\n" + "\n".join(f"  thread {tid} iter {i}: {e}" for tid, i, e in errors[:5]),
         )
 
     def test_explicit_context_produces_correct_results(self):
@@ -320,6 +322,7 @@ class TestZ3ExplicitContextIsolation(unittest.TestCase):
 # ===========================================================================
 # SECTION C: Baseline (single-threaded, no GC pressure)
 # ===========================================================================
+
 
 @pytest.mark.integration
 @pytest.mark.z3

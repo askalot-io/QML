@@ -57,17 +57,17 @@ Note: These tests verify that Z3 can model different execution paths and that
 the correct path is satisfied based on the condition values.
 """
 
-import unittest
-import pytest
 import ast
-from z3 import *
+import unittest
 
+import pytest
 from askalot_qml.z3.pragmatic_compiler import PragmaticZ3Compiler
+from z3 import *
 
 
 def compile_and_solve(code: str, predefined=None):
     """Helper to compile code and return solver with constraints."""
-    compiler = PragmaticZ3Compiler(predefined or {}, 'test')
+    compiler = PragmaticZ3Compiler(predefined or {}, "test")
     tree = ast.parse(code)
     compiler.visit(tree)
 
@@ -94,7 +94,7 @@ if condition:
 """)
         self.assertEqual(solver.check(), sat)
         model = solver.model()
-        self.assertEqual(model.eval(compiler.env['result']).as_long(), 42)
+        self.assertEqual(model.eval(compiler.env["result"]).as_long(), 42)
 
     def test_if_false_condition(self):
         """Test simple if statement with false condition."""
@@ -106,7 +106,7 @@ if condition:
 """)
         self.assertEqual(solver.check(), sat)
         model = solver.model()
-        self.assertEqual(model.eval(compiler.env['result']).as_long(), 99)
+        self.assertEqual(model.eval(compiler.env["result"]).as_long(), 99)
 
     def test_if_comparison_condition(self):
         """Test if statement with comparison condition."""
@@ -118,7 +118,7 @@ if x > 5:
 """)
         self.assertEqual(solver.check(), sat)
         model = solver.model()
-        self.assertEqual(model.eval(compiler.env['result']).as_long(), 100)
+        self.assertEqual(model.eval(compiler.env["result"]).as_long(), 100)
 
     def test_if_complex_condition(self):
         """Test if statement with complex boolean condition."""
@@ -132,7 +132,7 @@ if (a > b) and c:
 """)
         self.assertEqual(solver.check(), sat)
         model = solver.model()
-        self.assertEqual(model.eval(compiler.env['result']).as_long(), 200)
+        self.assertEqual(model.eval(compiler.env["result"]).as_long(), 200)
 
     # ========== If-Else Statements ==========
 
@@ -147,7 +147,7 @@ else:
 """)
         self.assertEqual(solver.check(), sat)
         model = solver.model()
-        self.assertEqual(model.eval(compiler.env['result']).as_long(), 42)
+        self.assertEqual(model.eval(compiler.env["result"]).as_long(), 42)
 
     def test_if_else_false_branch(self):
         """Test if-else taking false branch."""
@@ -160,7 +160,7 @@ else:
 """)
         self.assertEqual(solver.check(), sat)
         model = solver.model()
-        self.assertEqual(model.eval(compiler.env['result']).as_long(), 99)
+        self.assertEqual(model.eval(compiler.env["result"]).as_long(), 99)
 
     def test_if_else_with_arithmetic(self):
         """Test if-else with arithmetic in branches."""
@@ -173,7 +173,7 @@ else:
 """)
         self.assertEqual(solver.check(), sat)
         model = solver.model()
-        self.assertEqual(model.eval(compiler.env['result']).as_long(), 14)  # 7 * 2
+        self.assertEqual(model.eval(compiler.env["result"]).as_long(), 14)  # 7 * 2
 
     def test_if_else_multiple_assignments(self):
         """Test if-else with multiple assignments in branches."""
@@ -190,7 +190,7 @@ else:
 """)
         self.assertEqual(solver.check(), sat)
         model = solver.model()
-        self.assertEqual(model.eval(compiler.env['result']).as_long(), 3)
+        self.assertEqual(model.eval(compiler.env["result"]).as_long(), 3)
 
     # ========== Elif Chains ==========
 
@@ -209,7 +209,7 @@ else:
 """)
         self.assertEqual(solver.check(), sat)
         model = solver.model()
-        self.assertEqual(model.eval(compiler.env['result']).as_long(), 0)
+        self.assertEqual(model.eval(compiler.env["result"]).as_long(), 0)
 
     def test_elif_middle_true(self):
         """Test elif chain with middle condition true."""
@@ -226,7 +226,7 @@ else:
 """)
         self.assertEqual(solver.check(), sat)
         model = solver.model()
-        self.assertEqual(model.eval(compiler.env['result']).as_long(), 1)
+        self.assertEqual(model.eval(compiler.env["result"]).as_long(), 1)
 
     def test_elif_else_branch(self):
         """Test elif chain reaching else branch."""
@@ -243,7 +243,7 @@ else:
 """)
         self.assertEqual(solver.check(), sat)
         model = solver.model()
-        self.assertEqual(model.eval(compiler.env['result']).as_long(), 2)
+        self.assertEqual(model.eval(compiler.env["result"]).as_long(), 2)
 
     def test_elif_no_else(self):
         """Test elif chain without else branch."""
@@ -259,7 +259,7 @@ elif x < 20:
 """)
         self.assertEqual(solver.check(), sat)
         model = solver.model()
-        self.assertEqual(model.eval(compiler.env['result']).as_long(), 1)
+        self.assertEqual(model.eval(compiler.env["result"]).as_long(), 1)
 
     # ========== Nested If Statements ==========
 
@@ -275,7 +275,7 @@ if x > 5:
 """)
         self.assertEqual(solver.check(), sat)
         model = solver.model()
-        self.assertEqual(model.eval(compiler.env['result']).as_long(), 100)
+        self.assertEqual(model.eval(compiler.env["result"]).as_long(), 100)
 
     def test_nested_if_inner_false(self):
         """Test nested if with inner condition false."""
@@ -289,7 +289,7 @@ if x > 5:
 """)
         self.assertEqual(solver.check(), sat)
         model = solver.model()
-        self.assertEqual(model.eval(compiler.env['result']).as_long(), 0)
+        self.assertEqual(model.eval(compiler.env["result"]).as_long(), 0)
 
     def test_nested_if_else(self):
         """Test nested if-else statements."""
@@ -309,7 +309,7 @@ else:
 """)
         self.assertEqual(solver.check(), sat)
         model = solver.model()
-        self.assertEqual(model.eval(compiler.env['result']).as_long(), 100)
+        self.assertEqual(model.eval(compiler.env["result"]).as_long(), 100)
 
     def test_deeply_nested_conditionals(self):
         """Test deeply nested conditional statements."""
@@ -330,7 +330,7 @@ else:
 """)
         self.assertEqual(solver.check(), sat)
         model = solver.model()
-        self.assertEqual(model.eval(compiler.env['result']).as_long(), 1000)
+        self.assertEqual(model.eval(compiler.env["result"]).as_long(), 1000)
 
     # ========== Complex Control Flow ==========
 
@@ -346,7 +346,9 @@ result = x + y
 """)
         self.assertEqual(solver.check(), sat)
         model = solver.model()
-        self.assertEqual(model.eval(compiler.env['result']).as_long(), 20)  # (5+10) + (10-5) = 15 + 5
+        self.assertEqual(
+            model.eval(compiler.env["result"]).as_long(), 20
+        )  # (5+10) + (10-5) = 15 + 5
 
     def test_if_with_boolean_toggle(self):
         """Test if statement toggling boolean values."""
@@ -362,7 +364,7 @@ result = value
 """)
         self.assertEqual(solver.check(), sat)
         model = solver.model()
-        self.assertEqual(model.eval(compiler.env['result']).as_long(), 25)  # (10*2) + 5
+        self.assertEqual(model.eval(compiler.env["result"]).as_long(), 25)  # (10*2) + 5
 
     def test_conditional_accumulation(self):
         """Test conditional accumulation pattern."""
@@ -383,7 +385,7 @@ result = score
 """)
         self.assertEqual(solver.check(), sat)
         model = solver.model()
-        self.assertEqual(model.eval(compiler.env['result']).as_long(), 30)  # 10 + 20
+        self.assertEqual(model.eval(compiler.env["result"]).as_long(), 30)  # 10 + 20
 
     def test_conditional_with_arithmetic_condition(self):
         """Test conditional with arithmetic expression in condition."""
@@ -398,7 +400,9 @@ else:
 """)
         self.assertEqual(solver.check(), sat)
         model = solver.model()
-        self.assertEqual(model.eval(compiler.env['result']).as_long(), 100)  # (5+3) > (2*3) = 8 > 6 = True
+        self.assertEqual(
+            model.eval(compiler.env["result"]).as_long(), 100
+        )  # (5+3) > (2*3) = 8 > 6 = True
 
     def test_max_pattern(self):
         """Test max pattern using if-else."""
@@ -413,7 +417,7 @@ result = maximum
 """)
         self.assertEqual(solver.check(), sat)
         model = solver.model()
-        self.assertEqual(model.eval(compiler.env['result']).as_long(), 15)
+        self.assertEqual(model.eval(compiler.env["result"]).as_long(), 15)
 
     def test_min_pattern(self):
         """Test min pattern using if-else."""
@@ -428,7 +432,7 @@ result = minimum
 """)
         self.assertEqual(solver.check(), sat)
         model = solver.model()
-        self.assertEqual(model.eval(compiler.env['result']).as_long(), 10)
+        self.assertEqual(model.eval(compiler.env["result"]).as_long(), 10)
 
     def test_abs_pattern(self):
         """Test absolute value pattern using if-else."""
@@ -442,7 +446,7 @@ result = abs_x
 """)
         self.assertEqual(solver.check(), sat)
         model = solver.model()
-        self.assertEqual(model.eval(compiler.env['result']).as_long(), 7)
+        self.assertEqual(model.eval(compiler.env["result"]).as_long(), 7)
 
     def test_clamp_pattern(self):
         """Test clamp/bound pattern using if-elif-else."""
@@ -460,7 +464,7 @@ result = clamped
 """)
         self.assertEqual(solver.check(), sat)
         model = solver.model()
-        self.assertEqual(model.eval(compiler.env['result']).as_long(), 10)
+        self.assertEqual(model.eval(compiler.env["result"]).as_long(), 10)
 
     # ========== Edge Cases ==========
 
@@ -475,7 +479,7 @@ result = result  # Result unchanged
 """)
         self.assertEqual(solver.check(), sat)
         model = solver.model()
-        self.assertEqual(model.eval(compiler.env['result']).as_long(), 100)
+        self.assertEqual(model.eval(compiler.env["result"]).as_long(), 100)
 
     def test_single_branch_multiple_conditions(self):
         """Test single if with complex combined conditions."""
@@ -490,7 +494,7 @@ if (a < b) and (b < c) and d and (a + b == c):
 """)
         self.assertEqual(solver.check(), sat)
         model = solver.model()
-        self.assertEqual(model.eval(compiler.env['result']).as_long(), 1000)
+        self.assertEqual(model.eval(compiler.env["result"]).as_long(), 1000)
 
     def test_if_condition_with_not(self):
         """Test if condition with NOT operator."""
@@ -504,7 +508,7 @@ else:
 """)
         self.assertEqual(solver.check(), sat)
         model = solver.model()
-        self.assertEqual(model.eval(compiler.env['result']).as_long(), 42)
+        self.assertEqual(model.eval(compiler.env["result"]).as_long(), 42)
 
     # ========== Ternary Expressions (IfExp) ==========
 
@@ -516,7 +520,7 @@ result = 42 if condition else 99
 """)
         self.assertEqual(solver.check(), sat)
         model = solver.model()
-        self.assertEqual(model.eval(compiler.env['result']).as_long(), 42)
+        self.assertEqual(model.eval(compiler.env["result"]).as_long(), 42)
 
     def test_ternary_false_branch(self):
         """Ternary with false condition selects orelse."""
@@ -526,7 +530,7 @@ result = 42 if condition else 99
 """)
         self.assertEqual(solver.check(), sat)
         model = solver.model()
-        self.assertEqual(model.eval(compiler.env['result']).as_long(), 99)
+        self.assertEqual(model.eval(compiler.env["result"]).as_long(), 99)
 
     def test_ternary_with_comparison(self):
         """Ternary with comparison as condition."""
@@ -536,7 +540,7 @@ result = 1 if x > 5 else 0
 """)
         self.assertEqual(solver.check(), sat)
         model = solver.model()
-        self.assertEqual(model.eval(compiler.env['result']).as_long(), 1)
+        self.assertEqual(model.eval(compiler.env["result"]).as_long(), 1)
 
     def test_ternary_with_arithmetic_branches(self):
         """Ternary branches can contain arithmetic expressions."""
@@ -546,7 +550,7 @@ result = x * 2 if x > 5 else x + 10
 """)
         self.assertEqual(solver.check(), sat)
         model = solver.model()
-        self.assertEqual(model.eval(compiler.env['result']).as_long(), 14)
+        self.assertEqual(model.eval(compiler.env["result"]).as_long(), 14)
 
     def test_ternary_in_larger_expression(self):
         """Ternary used inside a larger arithmetic expression."""
@@ -557,7 +561,7 @@ result = bonus + (5 if x > 2 else 0)
 """)
         self.assertEqual(solver.check(), sat)
         model = solver.model()
-        self.assertEqual(model.eval(compiler.env['result']).as_long(), 15)
+        self.assertEqual(model.eval(compiler.env["result"]).as_long(), 15)
 
     def test_nested_ternary(self):
         """Nested ternary: a if c1 else (b if c2 else c)."""
@@ -567,21 +571,25 @@ result = 1 if x > 20 else (2 if x > 10 else 3)
 """)
         self.assertEqual(solver.check(), sat)
         model = solver.model()
-        self.assertEqual(model.eval(compiler.env['result']).as_long(), 2)
+        self.assertEqual(model.eval(compiler.env["result"]).as_long(), 2)
 
     def test_ternary_with_symbolic_variable(self):
         """Ternary with a symbolic (predefined) variable."""
         from z3 import Int
-        score = Int('S_q1')
-        predefined = {'S_q1': score}
-        solver, compiler = compile_and_solve("""
+
+        score = Int("S_q1")
+        predefined = {"S_q1": score}
+        solver, compiler = compile_and_solve(
+            """
 category = 1 if S_q1 > 50 else 0
-""", predefined)
+""",
+            predefined,
+        )
         solver.add(score == 60)
         self.assertEqual(solver.check(), sat)
         model = solver.model()
-        self.assertEqual(model.eval(compiler.env['category']).as_long(), 1)
+        self.assertEqual(model.eval(compiler.env["category"]).as_long(), 1)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     unittest.main()

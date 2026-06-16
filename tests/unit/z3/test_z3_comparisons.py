@@ -61,17 +61,17 @@ expressions to Z3 boolean constraints.
 Total: 37 tests covering all comparison scenarios in QML preconditions.
 """
 
-import unittest
-import pytest
 import ast
-from z3 import *
+import unittest
 
+import pytest
 from askalot_qml.z3.pragmatic_compiler import PragmaticZ3Compiler
+from z3 import *
 
 
 def compile_and_solve(code: str, predefined=None):
     """Helper to compile code and return solver with constraints."""
-    compiler = PragmaticZ3Compiler(predefined or {}, 'test')
+    compiler = PragmaticZ3Compiler(predefined or {}, "test")
     tree = ast.parse(code)
     compiler.visit(tree)
 
@@ -97,7 +97,7 @@ result = a == b
 """)
         self.assertEqual(solver.check(), sat)
         model = solver.model()
-        self.assertTrue(is_true(model.eval(compiler.env['result'])))
+        self.assertTrue(is_true(model.eval(compiler.env["result"])))
 
     def test_equal_integers_false(self):
         """Test equality of different integers."""
@@ -108,7 +108,7 @@ result = a == b
 """)
         self.assertEqual(solver.check(), sat)
         model = solver.model()
-        self.assertTrue(is_false(model.eval(compiler.env['result'])))
+        self.assertTrue(is_false(model.eval(compiler.env["result"])))
 
     def test_equal_booleans_true(self):
         """Test equality of equal booleans."""
@@ -119,7 +119,7 @@ result = a == b
 """)
         self.assertEqual(solver.check(), sat)
         model = solver.model()
-        self.assertTrue(is_true(model.eval(compiler.env['result'])))
+        self.assertTrue(is_true(model.eval(compiler.env["result"])))
 
     def test_equal_booleans_false(self):
         """Test equality of different booleans."""
@@ -130,7 +130,7 @@ result = a == b
 """)
         self.assertEqual(solver.check(), sat)
         model = solver.model()
-        self.assertTrue(is_false(model.eval(compiler.env['result'])))
+        self.assertTrue(is_false(model.eval(compiler.env["result"])))
 
     def test_equal_zero(self):
         """Test equality with zero."""
@@ -141,7 +141,7 @@ result = a == b
 """)
         self.assertEqual(solver.check(), sat)
         model = solver.model()
-        self.assertTrue(is_true(model.eval(compiler.env['result'])))
+        self.assertTrue(is_true(model.eval(compiler.env["result"])))
 
     def test_equal_negative(self):
         """Test equality with negative numbers."""
@@ -152,7 +152,7 @@ result = a == b
 """)
         self.assertEqual(solver.check(), sat)
         model = solver.model()
-        self.assertTrue(is_true(model.eval(compiler.env['result'])))
+        self.assertTrue(is_true(model.eval(compiler.env["result"])))
 
     # ========== Inequality Tests ==========
 
@@ -165,7 +165,7 @@ result = a != b
 """)
         self.assertEqual(solver.check(), sat)
         model = solver.model()
-        self.assertTrue(is_true(model.eval(compiler.env['result'])))
+        self.assertTrue(is_true(model.eval(compiler.env["result"])))
 
     def test_not_equal_integers_false(self):
         """Test inequality of equal integers."""
@@ -176,7 +176,7 @@ result = a != b
 """)
         self.assertEqual(solver.check(), sat)
         model = solver.model()
-        self.assertTrue(is_false(model.eval(compiler.env['result'])))
+        self.assertTrue(is_false(model.eval(compiler.env["result"])))
 
     def test_not_equal_booleans(self):
         """Test inequality of different booleans."""
@@ -187,7 +187,7 @@ result = a != b
 """)
         self.assertEqual(solver.check(), sat)
         model = solver.model()
-        self.assertTrue(is_true(model.eval(compiler.env['result'])))
+        self.assertTrue(is_true(model.eval(compiler.env["result"])))
 
     # ========== Less Than Tests ==========
 
@@ -200,7 +200,7 @@ result = a < b
 """)
         self.assertEqual(solver.check(), sat)
         model = solver.model()
-        self.assertTrue(is_true(model.eval(compiler.env['result'])))
+        self.assertTrue(is_true(model.eval(compiler.env["result"])))
 
     def test_less_than_false(self):
         """Test less than with false condition."""
@@ -211,7 +211,7 @@ result = a < b
 """)
         self.assertEqual(solver.check(), sat)
         model = solver.model()
-        self.assertTrue(is_false(model.eval(compiler.env['result'])))
+        self.assertTrue(is_false(model.eval(compiler.env["result"])))
 
     def test_less_than_equal(self):
         """Test less than with equal values."""
@@ -222,7 +222,7 @@ result = a < b
 """)
         self.assertEqual(solver.check(), sat)
         model = solver.model()
-        self.assertTrue(is_false(model.eval(compiler.env['result'])))
+        self.assertTrue(is_false(model.eval(compiler.env["result"])))
 
     def test_less_than_negative(self):
         """Test less than with negative numbers."""
@@ -233,7 +233,7 @@ result = a < b
 """)
         self.assertEqual(solver.check(), sat)
         model = solver.model()
-        self.assertTrue(is_true(model.eval(compiler.env['result'])))
+        self.assertTrue(is_true(model.eval(compiler.env["result"])))
 
     def test_less_than_zero(self):
         """Test less than with zero."""
@@ -244,7 +244,7 @@ result = a < b
 """)
         self.assertEqual(solver.check(), sat)
         model = solver.model()
-        self.assertTrue(is_true(model.eval(compiler.env['result'])))
+        self.assertTrue(is_true(model.eval(compiler.env["result"])))
 
     # ========== Less Than or Equal Tests ==========
 
@@ -257,7 +257,7 @@ result = a <= b
 """)
         self.assertEqual(solver.check(), sat)
         model = solver.model()
-        self.assertTrue(is_true(model.eval(compiler.env['result'])))
+        self.assertTrue(is_true(model.eval(compiler.env["result"])))
 
     def test_less_equal_true_equal(self):
         """Test <= with equal values."""
@@ -268,7 +268,7 @@ result = a <= b
 """)
         self.assertEqual(solver.check(), sat)
         model = solver.model()
-        self.assertTrue(is_true(model.eval(compiler.env['result'])))
+        self.assertTrue(is_true(model.eval(compiler.env["result"])))
 
     def test_less_equal_false(self):
         """Test <= with greater than condition."""
@@ -279,7 +279,7 @@ result = a <= b
 """)
         self.assertEqual(solver.check(), sat)
         model = solver.model()
-        self.assertTrue(is_false(model.eval(compiler.env['result'])))
+        self.assertTrue(is_false(model.eval(compiler.env["result"])))
 
     # ========== Greater Than Tests ==========
 
@@ -292,7 +292,7 @@ result = a > b
 """)
         self.assertEqual(solver.check(), sat)
         model = solver.model()
-        self.assertTrue(is_true(model.eval(compiler.env['result'])))
+        self.assertTrue(is_true(model.eval(compiler.env["result"])))
 
     def test_greater_than_false(self):
         """Test greater than with false condition."""
@@ -303,7 +303,7 @@ result = a > b
 """)
         self.assertEqual(solver.check(), sat)
         model = solver.model()
-        self.assertTrue(is_false(model.eval(compiler.env['result'])))
+        self.assertTrue(is_false(model.eval(compiler.env["result"])))
 
     def test_greater_than_equal(self):
         """Test greater than with equal values."""
@@ -314,7 +314,7 @@ result = a > b
 """)
         self.assertEqual(solver.check(), sat)
         model = solver.model()
-        self.assertTrue(is_false(model.eval(compiler.env['result'])))
+        self.assertTrue(is_false(model.eval(compiler.env["result"])))
 
     def test_greater_than_negative(self):
         """Test greater than with negative numbers."""
@@ -325,7 +325,7 @@ result = a > b
 """)
         self.assertEqual(solver.check(), sat)
         model = solver.model()
-        self.assertTrue(is_true(model.eval(compiler.env['result'])))
+        self.assertTrue(is_true(model.eval(compiler.env["result"])))
 
     # ========== Greater Than or Equal Tests ==========
 
@@ -338,7 +338,7 @@ result = a >= b
 """)
         self.assertEqual(solver.check(), sat)
         model = solver.model()
-        self.assertTrue(is_true(model.eval(compiler.env['result'])))
+        self.assertTrue(is_true(model.eval(compiler.env["result"])))
 
     def test_greater_equal_true_equal(self):
         """Test >= with equal values."""
@@ -349,7 +349,7 @@ result = a >= b
 """)
         self.assertEqual(solver.check(), sat)
         model = solver.model()
-        self.assertTrue(is_true(model.eval(compiler.env['result'])))
+        self.assertTrue(is_true(model.eval(compiler.env["result"])))
 
     def test_greater_equal_false(self):
         """Test >= with less than condition."""
@@ -360,7 +360,7 @@ result = a >= b
 """)
         self.assertEqual(solver.check(), sat)
         model = solver.model()
-        self.assertTrue(is_false(model.eval(compiler.env['result'])))
+        self.assertTrue(is_false(model.eval(compiler.env["result"])))
 
     # ========== Mixed Type Comparisons ==========
 
@@ -373,7 +373,7 @@ result = int(a) == b
 """)
         self.assertEqual(solver.check(), sat)
         model = solver.model()
-        self.assertTrue(is_true(model.eval(compiler.env['result'])))
+        self.assertTrue(is_true(model.eval(compiler.env["result"])))
 
     def test_compare_false_zero(self):
         """Test comparison of False with 0."""
@@ -384,7 +384,7 @@ result = int(a) == b
 """)
         self.assertEqual(solver.check(), sat)
         model = solver.model()
-        self.assertTrue(is_true(model.eval(compiler.env['result'])))
+        self.assertTrue(is_true(model.eval(compiler.env["result"])))
 
     # ========== Complex Comparisons ==========
 
@@ -398,7 +398,7 @@ result = (a < b) and (c > a)
 """)
         self.assertEqual(solver.check(), sat)
         model = solver.model()
-        self.assertTrue(is_true(model.eval(compiler.env['result'])))  # (5<10) and (7>5) = True
+        self.assertTrue(is_true(model.eval(compiler.env["result"])))  # (5<10) and (7>5) = True
 
     def test_comparison_or_operation(self):
         """Test comparison results with OR."""
@@ -410,7 +410,9 @@ result = (a > b) or (c < a)
 """)
         self.assertEqual(solver.check(), sat)
         model = solver.model()
-        self.assertTrue(is_true(model.eval(compiler.env['result'])))  # (5>10) or (3<5) = False or True = True
+        self.assertTrue(
+            is_true(model.eval(compiler.env["result"]))
+        )  # (5>10) or (3<5) = False or True = True
 
     def test_negated_comparison(self):
         """Test NOT with comparison."""
@@ -421,7 +423,9 @@ result = not (a > b)
 """)
         self.assertEqual(solver.check(), sat)
         model = solver.model()
-        self.assertTrue(is_true(model.eval(compiler.env['result'])))  # not (5>10) = not False = True
+        self.assertTrue(
+            is_true(model.eval(compiler.env["result"]))
+        )  # not (5>10) = not False = True
 
     def test_multiple_comparisons(self):
         """Test multiple independent comparisons."""
@@ -436,7 +440,7 @@ final = result1 and result2 and result3
 """)
         self.assertEqual(solver.check(), sat)
         model = solver.model()
-        self.assertTrue(is_true(model.eval(compiler.env['final'])))
+        self.assertTrue(is_true(model.eval(compiler.env["final"])))
 
     # ========== Edge Cases ==========
 
@@ -449,7 +453,7 @@ result = (a + b) > 7
 """)
         self.assertEqual(solver.check(), sat)
         model = solver.model()
-        self.assertTrue(is_true(model.eval(compiler.env['result'])))  # (5+3) > 7 = 8 > 7 = True
+        self.assertTrue(is_true(model.eval(compiler.env["result"])))  # (5+3) > 7 = 8 > 7 = True
 
     def test_comparison_both_sides_arithmetic(self):
         """Test comparison with arithmetic on both sides."""
@@ -462,7 +466,9 @@ result = (a + b) >= (c * d)
 """)
         self.assertEqual(solver.check(), sat)
         model = solver.model()
-        self.assertTrue(is_true(model.eval(compiler.env['result'])))  # (5+3) >= (2*4) = 8 >= 8 = True
+        self.assertTrue(
+            is_true(model.eval(compiler.env["result"]))
+        )  # (5+3) >= (2*4) = 8 >= 8 = True
 
     def test_comparison_with_variable_reassignment(self):
         """Test comparison after variable reassignment."""
@@ -474,7 +480,7 @@ result = a < b
 """)
         self.assertEqual(solver.check(), sat)
         model = solver.model()
-        self.assertTrue(is_true(model.eval(compiler.env['result'])))  # 8 < 10 = True
+        self.assertTrue(is_true(model.eval(compiler.env["result"])))  # 8 < 10 = True
 
     def test_comparison_chain_not_supported(self):
         """Document that chained comparisons are not yet supported."""
@@ -486,7 +492,7 @@ result = (1 < x) and (x < 10)
 """)
         self.assertEqual(solver.check(), sat)
         model = solver.model()
-        self.assertTrue(is_true(model.eval(compiler.env['result'])))
+        self.assertTrue(is_true(model.eval(compiler.env["result"])))
 
     def test_comparison_transitivity(self):
         """Test transitivity of comparisons."""
@@ -502,7 +508,7 @@ all_true = result1 and result2 and result3
 """)
         self.assertEqual(solver.check(), sat)
         model = solver.model()
-        self.assertTrue(is_true(model.eval(compiler.env['all_true'])))
+        self.assertTrue(is_true(model.eval(compiler.env["all_true"])))
 
     def test_comparison_reflexivity(self):
         """Test reflexivity of equality."""
@@ -512,7 +518,7 @@ result = a == a
 """)
         self.assertEqual(solver.check(), sat)
         model = solver.model()
-        self.assertTrue(is_true(model.eval(compiler.env['result'])))
+        self.assertTrue(is_true(model.eval(compiler.env["result"])))
 
     def test_comparison_symmetry(self):
         """Test symmetry of equality."""
@@ -525,8 +531,8 @@ both = result1 and result2
 """)
         self.assertEqual(solver.check(), sat)
         model = solver.model()
-        self.assertTrue(is_true(model.eval(compiler.env['both'])))
+        self.assertTrue(is_true(model.eval(compiler.env["both"])))
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     unittest.main()

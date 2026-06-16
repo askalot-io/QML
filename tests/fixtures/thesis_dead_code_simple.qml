@@ -20,6 +20,7 @@ questionnaire:
 
   blocks:
     - id: block1
+      kind: Sequence
       title: "Rating Block"
       items:
         - id: q_rating

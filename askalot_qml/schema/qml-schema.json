@@ -1,6 +1,7 @@
 {
-  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "Questionnaire Markup Language",
+  "version": "1.1.1",
   "type": "object",
   "required": [
     "qmlVersion",
@@ -8,14 +9,15 @@
   ],
   "properties": {
     "qmlVersion": {
-      "type": "string"
+      "type": "string",
+      "description": "Minimum QML schema version (Major.Minor.Patch, compatibility semantics) this document requires. Decoupled from the askalot_qml package version; the canonical current schema version is the top-level 'version' field of this schema, exposed in code as askalot_qml.schema.QML_SCHEMA_VERSION. Advisory today (the loader does not yet gate on it); a loader compatibility gate is a planned follow-up."
     },
     "questionnaire": {
       "type": "object",
-      "$ref": "#/definitions/Questionnaire"
+      "$ref": "#/$defs/Questionnaire"
     }
   },
-  "definitions": {
+  "$defs": {
     "Questionnaire": {
       "type": "object",
       "required": [
@@ -27,25 +29,25 @@
         },
         "codeInit": {
           "description": "Code block which is executed before the questionnaire is started",
-          "$ref": "#/definitions/CodeBlock"
+          "$ref": "#/$defs/CodeBlock"
         },
         "precondition": {
           "type": "array",
           "items": {
-            "$ref": "#/definitions/Condition"
+            "$ref": "#/$defs/Condition"
           }
         },
         "postcondition": {
           "type": "array",
           "items": {
-            "$ref": "#/definitions/Condition"
+            "$ref": "#/$defs/Condition"
           }
         },
         "blocks": {
           "type": "array",
           "minItems": 1,
           "items": {
-            "$ref": "#/definitions/Block"
+            "$ref": "#/$defs/Block"
           }
         }
       }
@@ -54,11 +56,21 @@
       "type": "object",
       "required": [
         "id",
+        "kind",
         "items"
       ],
       "properties": {
         "id": {
           "type": "string"
+        },
+        "kind": {
+          "type": "string",
+          "enum": [
+            "Sequence",
+            "Roster",
+            "Sample"
+          ],
+          "description": "Block kind (mandatory). 'Sequence' visits inner items once in declared order. 'Roster' repeats inner items based on a bitmask iterateOver expression. 'Sample' asks up to 'count' (N) of its inner items drawn from the eligible pool; the optional 'is_random' attribute switches between declared/topological order (false, default) and per-execution randomised order (true)."
         },
         "title": {
           "type": "string"
@@ -66,23 +78,134 @@
         "precondition": {
           "type": "array",
           "items": {
-            "$ref": "#/definitions/Condition"
+            "$ref": "#/$defs/Condition"
           }
         },
         "postcondition": {
           "type": "array",
           "items": {
-            "$ref": "#/definitions/Condition"
+            "$ref": "#/$defs/Condition"
           }
+        },
+        "iterateOver": {
+          "type": "string",
+          "description": "Roster only: Python expression resolving to an integer bitmask. Set bits whose key appears in 'labels' drive iteration."
+        },
+        "labels": {
+          "$ref": "#/$defs/Labels",
+          "description": "Roster only: map of power-of-2 integer keys to display strings; declares the universe of possible iterations."
+        },
+        "count": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Sample only: the N in 'ask up to N items'. Mandatory for Sample blocks (no schema default — a missing count is an authoring error, not a silent fallback). At runtime the engine asks exactly N items from the eligible pool, or fewer only when preconditions exhaust the pool."
+        },
+        "is_random": {
+          "type": "boolean",
+          "default": false,
+          "description": "Sample only: when true, inner-item order is randomised per survey execution (preserving dependencies — independent topology trees are permuted as contiguous blocks). When false or omitted, items run in canonical declared/topological order. Optional; defaults to false."
         },
         "items": {
           "type": "array",
           "minItems": 1,
           "items": {
-            "$ref": "#/definitions/Item"
+            "$ref": "#/$defs/Item"
           }
         }
-      }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "Roster"
+              }
+            },
+            "required": [
+              "kind"
+            ]
+          },
+          "then": {
+            "required": [
+              "iterateOver",
+              "labels"
+            ],
+            "not": {
+              "anyOf": [
+                {
+                  "required": [
+                    "as"
+                  ]
+                },
+                {
+                  "required": [
+                    "maxEntries"
+                  ]
+                }
+              ]
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "Sequence"
+              }
+            },
+            "required": [
+              "kind"
+            ]
+          },
+          "then": {
+            "not": {
+              "anyOf": [
+                {
+                  "required": [
+                    "iterateOver"
+                  ]
+                },
+                {
+                  "required": [
+                    "labels"
+                  ]
+                }
+              ]
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "Sample"
+              }
+            },
+            "required": [
+              "kind"
+            ]
+          },
+          "then": {
+            "required": [
+              "count"
+            ],
+            "not": {
+              "anyOf": [
+                {
+                  "required": [
+                    "iterateOver"
+                  ]
+                },
+                {
+                  "required": [
+                    "labels"
+                  ]
+                }
+              ]
+            }
+          }
+        }
+      ]
     },
     "Item": {
       "type": "object",
@@ -109,18 +232,18 @@
         "precondition": {
           "type": "array",
           "items": {
-            "$ref": "#/definitions/Condition"
+            "$ref": "#/$defs/Condition"
           }
         },
         "postcondition": {
           "type": "array",
           "items": {
-            "$ref": "#/definitions/Condition"
+            "$ref": "#/$defs/Condition"
           }
         },
         "codeBlock": {
           "description": "Code block which is executed after the item is evaluated",
-          "$ref": "#/definitions/CodeBlock"
+          "$ref": "#/$defs/CodeBlock"
         }
       },
       "allOf": [
@@ -145,7 +268,7 @@
           "then": {
             "properties": {
               "input": {
-                "$ref": "#/definitions/Input"
+                "$ref": "#/$defs/Input"
               }
             },
             "required": [
@@ -170,7 +293,7 @@
                 }
               },
               "input": {
-                "$ref": "#/definitions/Input"
+                "$ref": "#/$defs/Input"
               }
             },
             "required": [
@@ -202,7 +325,7 @@
                 }
               },
               "input": {
-                "$ref": "#/definitions/Input"
+                "$ref": "#/$defs/Input"
               }
             },
             "required": [
@@ -305,7 +428,7 @@
           "then": {
             "properties": {
               "labels": {
-                "$ref": "#/definitions/Labels"
+                "$ref": "#/$defs/Labels"
               },
               "default": {
                 "type": "integer",
@@ -328,7 +451,7 @@
           "then": {
             "properties": {
               "labels": {
-                "$ref": "#/definitions/Labels"
+                "$ref": "#/$defs/Labels"
               },
               "default": {
                 "type": "integer",
@@ -351,7 +474,7 @@
           "then": {
             "properties": {
               "labels": {
-                "$ref": "#/definitions/Labels"
+                "$ref": "#/$defs/Labels"
               },
               "left": {
                 "type": "string"
@@ -461,7 +584,7 @@
                 "type": "string"
               },
               "labels": {
-                "$ref": "#/definitions/Labels"
+                "$ref": "#/$defs/Labels"
               }
             },
             "required": [

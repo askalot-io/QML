@@ -16,6 +16,7 @@ questionnaire:
 
   blocks:
     - id: block1
+      kind: Sequence
       title: "Demographics"
       items:
         - id: q_age

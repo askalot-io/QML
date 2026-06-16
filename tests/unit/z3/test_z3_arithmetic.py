@@ -42,17 +42,17 @@ Z3 constraints.
 Total: 44 tests covering all arithmetic scenarios in QML code blocks.
 """
 
-import unittest
-import pytest
 import ast
-from z3 import *
+import unittest
 
+import pytest
 from askalot_qml.z3.pragmatic_compiler import PragmaticZ3Compiler
+from z3 import *
 
 
 def compile_and_solve(code: str, predefined=None):
     """Helper to compile code and return solver with constraints."""
-    compiler = PragmaticZ3Compiler(predefined or {}, 'test')
+    compiler = PragmaticZ3Compiler(predefined or {}, "test")
     tree = ast.parse(code)
     compiler.visit(tree)
 
@@ -74,21 +74,21 @@ class TestPythonToZ3Arithmetic(unittest.TestCase):
         solver, compiler = compile_and_solve("result = 5 + 3")
         self.assertEqual(solver.check(), sat)
         model = solver.model()
-        self.assertEqual(model.eval(compiler.env['result']).as_long(), 8)
+        self.assertEqual(model.eval(compiler.env["result"]).as_long(), 8)
 
     def test_add_negative_integers(self):
         """Test addition with negative integers."""
         solver, compiler = compile_and_solve("result = -5 + 3")
         self.assertEqual(solver.check(), sat)
         model = solver.model()
-        self.assertEqual(model.eval(compiler.env['result']).as_long(), -2)
+        self.assertEqual(model.eval(compiler.env["result"]).as_long(), -2)
 
     def test_add_zero(self):
         """Test addition with zero."""
         solver, compiler = compile_and_solve("result = 0 + 42")
         self.assertEqual(solver.check(), sat)
         model = solver.model()
-        self.assertEqual(model.eval(compiler.env['result']).as_long(), 42)
+        self.assertEqual(model.eval(compiler.env["result"]).as_long(), 42)
 
     def test_add_boolean_to_integer(self):
         """Test boolean + integer (Python coercion: True=1, False=0)."""
@@ -98,7 +98,7 @@ result = b + 10
 """)
         self.assertEqual(solver.check(), sat)
         model = solver.model()
-        self.assertEqual(model.eval(compiler.env['result']).as_long(), 11)
+        self.assertEqual(model.eval(compiler.env["result"]).as_long(), 11)
 
     def test_add_two_booleans(self):
         """Test boolean + boolean arithmetic."""
@@ -109,14 +109,14 @@ result = a + b
 """)
         self.assertEqual(solver.check(), sat)
         model = solver.model()
-        self.assertEqual(model.eval(compiler.env['result']).as_long(), 1)  # 1 + 0
+        self.assertEqual(model.eval(compiler.env["result"]).as_long(), 1)  # 1 + 0
 
     def test_add_chain(self):
         """Test chained addition."""
         solver, compiler = compile_and_solve("result = 1 + 2 + 3 + 4")
         self.assertEqual(solver.check(), sat)
         model = solver.model()
-        self.assertEqual(model.eval(compiler.env['result']).as_long(), 10)
+        self.assertEqual(model.eval(compiler.env["result"]).as_long(), 10)
 
     def test_add_with_variables(self):
         """Test addition with variables."""
@@ -127,7 +127,7 @@ result = x + y
 """)
         self.assertEqual(solver.check(), sat)
         model = solver.model()
-        self.assertEqual(model.eval(compiler.env['result']).as_long(), 12)
+        self.assertEqual(model.eval(compiler.env["result"]).as_long(), 12)
 
     # ========== Subtraction Tests ==========
 
@@ -136,21 +136,21 @@ result = x + y
         solver, compiler = compile_and_solve("result = 10 - 3")
         self.assertEqual(solver.check(), sat)
         model = solver.model()
-        self.assertEqual(model.eval(compiler.env['result']).as_long(), 7)
+        self.assertEqual(model.eval(compiler.env["result"]).as_long(), 7)
 
     def test_subtract_negative_result(self):
         """Test subtraction resulting in negative."""
         solver, compiler = compile_and_solve("result = 3 - 10")
         self.assertEqual(solver.check(), sat)
         model = solver.model()
-        self.assertEqual(model.eval(compiler.env['result']).as_long(), -7)
+        self.assertEqual(model.eval(compiler.env["result"]).as_long(), -7)
 
     def test_subtract_from_zero(self):
         """Test subtraction from zero."""
         solver, compiler = compile_and_solve("result = 0 - 5")
         self.assertEqual(solver.check(), sat)
         model = solver.model()
-        self.assertEqual(model.eval(compiler.env['result']).as_long(), -5)
+        self.assertEqual(model.eval(compiler.env["result"]).as_long(), -5)
 
     def test_subtract_boolean_from_integer(self):
         """Test integer - boolean."""
@@ -160,7 +160,7 @@ result = 10 - b
 """)
         self.assertEqual(solver.check(), sat)
         model = solver.model()
-        self.assertEqual(model.eval(compiler.env['result']).as_long(), 9)
+        self.assertEqual(model.eval(compiler.env["result"]).as_long(), 9)
 
     # ========== Multiplication Tests ==========
 
@@ -169,35 +169,35 @@ result = 10 - b
         solver, compiler = compile_and_solve("result = 6 * 7")
         self.assertEqual(solver.check(), sat)
         model = solver.model()
-        self.assertEqual(model.eval(compiler.env['result']).as_long(), 42)
+        self.assertEqual(model.eval(compiler.env["result"]).as_long(), 42)
 
     def test_multiply_by_zero(self):
         """Test multiplication by zero."""
         solver, compiler = compile_and_solve("result = 100 * 0")
         self.assertEqual(solver.check(), sat)
         model = solver.model()
-        self.assertEqual(model.eval(compiler.env['result']).as_long(), 0)
+        self.assertEqual(model.eval(compiler.env["result"]).as_long(), 0)
 
     def test_multiply_by_one(self):
         """Test multiplication by one (identity)."""
         solver, compiler = compile_and_solve("result = 42 * 1")
         self.assertEqual(solver.check(), sat)
         model = solver.model()
-        self.assertEqual(model.eval(compiler.env['result']).as_long(), 42)
+        self.assertEqual(model.eval(compiler.env["result"]).as_long(), 42)
 
     def test_multiply_negative(self):
         """Test multiplication with negative numbers."""
         solver, compiler = compile_and_solve("result = -3 * 4")
         self.assertEqual(solver.check(), sat)
         model = solver.model()
-        self.assertEqual(model.eval(compiler.env['result']).as_long(), -12)
+        self.assertEqual(model.eval(compiler.env["result"]).as_long(), -12)
 
     def test_multiply_two_negatives(self):
         """Test multiplication of two negative numbers."""
         solver, compiler = compile_and_solve("result = -3 * -4")
         self.assertEqual(solver.check(), sat)
         model = solver.model()
-        self.assertEqual(model.eval(compiler.env['result']).as_long(), 12)
+        self.assertEqual(model.eval(compiler.env["result"]).as_long(), 12)
 
     def test_multiply_boolean(self):
         """Test multiplication with boolean."""
@@ -207,7 +207,7 @@ result = b * 100
 """)
         self.assertEqual(solver.check(), sat)
         model = solver.model()
-        self.assertEqual(model.eval(compiler.env['result']).as_long(), 100)
+        self.assertEqual(model.eval(compiler.env["result"]).as_long(), 100)
 
     def test_multiply_by_false(self):
         """Test multiplication by False (0)."""
@@ -217,7 +217,7 @@ result = 42 * b
 """)
         self.assertEqual(solver.check(), sat)
         model = solver.model()
-        self.assertEqual(model.eval(compiler.env['result']).as_long(), 0)
+        self.assertEqual(model.eval(compiler.env["result"]).as_long(), 0)
 
     # ========== Division Tests ==========
 
@@ -226,21 +226,21 @@ result = 42 * b
         solver, compiler = compile_and_solve("result = 10 / 2")
         self.assertEqual(solver.check(), sat)
         model = solver.model()
-        self.assertEqual(model.eval(compiler.env['result']).as_long(), 5)
+        self.assertEqual(model.eval(compiler.env["result"]).as_long(), 5)
 
     def test_floor_divide(self):
         """Test floor division."""
         solver, compiler = compile_and_solve("result = 10 // 3")
         self.assertEqual(solver.check(), sat)
         model = solver.model()
-        self.assertEqual(model.eval(compiler.env['result']).as_long(), 3)
+        self.assertEqual(model.eval(compiler.env["result"]).as_long(), 3)
 
     def test_divide_with_remainder(self):
         """Test division with remainder (floor division)."""
         solver, compiler = compile_and_solve("result = 7 // 2")
         self.assertEqual(solver.check(), sat)
         model = solver.model()
-        self.assertEqual(model.eval(compiler.env['result']).as_long(), 3)
+        self.assertEqual(model.eval(compiler.env["result"]).as_long(), 3)
 
     def test_divide_negative(self):
         """Test division with negative numbers."""
@@ -249,7 +249,7 @@ result = 42 * b
         model = solver.model()
         # Python's floor division rounds toward negative infinity
         # -10 // 3 = floor(-3.33...) = -4
-        self.assertEqual(model.eval(compiler.env['result']).as_long(), -4)
+        self.assertEqual(model.eval(compiler.env["result"]).as_long(), -4)
 
     # ========== Modulo Tests ==========
 
@@ -258,21 +258,21 @@ result = 42 * b
         solver, compiler = compile_and_solve("result = 10 % 3")
         self.assertEqual(solver.check(), sat)
         model = solver.model()
-        self.assertEqual(model.eval(compiler.env['result']).as_long(), 1)
+        self.assertEqual(model.eval(compiler.env["result"]).as_long(), 1)
 
     def test_modulo_no_remainder(self):
         """Test modulo with no remainder."""
         solver, compiler = compile_and_solve("result = 10 % 5")
         self.assertEqual(solver.check(), sat)
         model = solver.model()
-        self.assertEqual(model.eval(compiler.env['result']).as_long(), 0)
+        self.assertEqual(model.eval(compiler.env["result"]).as_long(), 0)
 
     def test_modulo_by_one(self):
         """Test modulo by 1 (always 0)."""
         solver, compiler = compile_and_solve("result = 42 % 1")
         self.assertEqual(solver.check(), sat)
         model = solver.model()
-        self.assertEqual(model.eval(compiler.env['result']).as_long(), 0)
+        self.assertEqual(model.eval(compiler.env["result"]).as_long(), 0)
 
     # ========== Complex Expressions ==========
 
@@ -281,21 +281,23 @@ result = 42 * b
         solver, compiler = compile_and_solve("result = 2 + 3 * 4")
         self.assertEqual(solver.check(), sat)
         model = solver.model()
-        self.assertEqual(model.eval(compiler.env['result']).as_long(), 14)  # Not 20
+        self.assertEqual(model.eval(compiler.env["result"]).as_long(), 14)  # Not 20
 
     def test_parentheses(self):
         """Test parentheses override precedence."""
         solver, compiler = compile_and_solve("result = (2 + 3) * 4")
         self.assertEqual(solver.check(), sat)
         model = solver.model()
-        self.assertEqual(model.eval(compiler.env['result']).as_long(), 20)
+        self.assertEqual(model.eval(compiler.env["result"]).as_long(), 20)
 
     def test_nested_operations(self):
         """Test deeply nested arithmetic."""
         solver, compiler = compile_and_solve("result = ((10 - 3) * 2 + 5) // 3")
         self.assertEqual(solver.check(), sat)
         model = solver.model()
-        self.assertEqual(model.eval(compiler.env['result']).as_long(), 6)  # ((7*2+5)//3) = 19//3 = 6
+        self.assertEqual(
+            model.eval(compiler.env["result"]).as_long(), 6
+        )  # ((7*2+5)//3) = 19//3 = 6
 
     def test_mixed_operations(self):
         """Test mix of all operations."""
@@ -303,7 +305,7 @@ result = 42 * b
         self.assertEqual(solver.check(), sat)
         model = solver.model()
         # 10 + 12 - 4 + 1 = 19
-        self.assertEqual(model.eval(compiler.env['result']).as_long(), 19)
+        self.assertEqual(model.eval(compiler.env["result"]).as_long(), 19)
 
     # ========== Augmented Assignment Tests ==========
 
@@ -316,7 +318,7 @@ result = x
 """)
         self.assertEqual(solver.check(), sat)
         model = solver.model()
-        self.assertEqual(model.eval(compiler.env['result']).as_long(), 15)
+        self.assertEqual(model.eval(compiler.env["result"]).as_long(), 15)
 
     def test_minus_equals(self):
         """Test -= operator."""
@@ -327,7 +329,7 @@ result = x
 """)
         self.assertEqual(solver.check(), sat)
         model = solver.model()
-        self.assertEqual(model.eval(compiler.env['result']).as_long(), 7)
+        self.assertEqual(model.eval(compiler.env["result"]).as_long(), 7)
 
     def test_times_equals(self):
         """Test *= operator."""
@@ -338,7 +340,7 @@ result = x
 """)
         self.assertEqual(solver.check(), sat)
         model = solver.model()
-        self.assertEqual(model.eval(compiler.env['result']).as_long(), 15)
+        self.assertEqual(model.eval(compiler.env["result"]).as_long(), 15)
 
     def test_divide_equals(self):
         """Test //= operator."""
@@ -349,7 +351,7 @@ result = x
 """)
         self.assertEqual(solver.check(), sat)
         model = solver.model()
-        self.assertEqual(model.eval(compiler.env['result']).as_long(), 3)
+        self.assertEqual(model.eval(compiler.env["result"]).as_long(), 3)
 
     def test_mod_equals(self):
         """Test %= operator."""
@@ -360,7 +362,7 @@ result = x
 """)
         self.assertEqual(solver.check(), sat)
         model = solver.model()
-        self.assertEqual(model.eval(compiler.env['result']).as_long(), 1)
+        self.assertEqual(model.eval(compiler.env["result"]).as_long(), 1)
 
     def test_augmented_chain(self):
         """Test chain of augmented assignments."""
@@ -375,7 +377,7 @@ result = x
         self.assertEqual(solver.check(), sat)
         model = solver.model()
         # ((5+3)*2-6)//2 = (16-6)//2 = 10//2 = 5
-        self.assertEqual(model.eval(compiler.env['result']).as_long(), 5)
+        self.assertEqual(model.eval(compiler.env["result"]).as_long(), 5)
 
     # ========== Edge Cases ==========
 
@@ -384,7 +386,7 @@ result = x
         solver, compiler = compile_and_solve("result = 1000000 * 1000000")
         self.assertEqual(solver.check(), sat)
         model = solver.model()
-        self.assertEqual(model.eval(compiler.env['result']).as_long(), 1000000000000)
+        self.assertEqual(model.eval(compiler.env["result"]).as_long(), 1000000000000)
 
     def test_zero_edge_cases(self):
         """Test various operations with zero."""
@@ -398,7 +400,7 @@ result = a + b + c + d + e
 """)
         self.assertEqual(solver.check(), sat)
         model = solver.model()
-        self.assertEqual(model.eval(compiler.env['result']).as_long(), 0)
+        self.assertEqual(model.eval(compiler.env["result"]).as_long(), 0)
 
     # ========== abs() Built-in ==========
 
@@ -407,21 +409,21 @@ result = a + b + c + d + e
         solver, compiler = compile_and_solve("result = abs(7)")
         self.assertEqual(solver.check(), sat)
         model = solver.model()
-        self.assertEqual(model.eval(compiler.env['result']).as_long(), 7)
+        self.assertEqual(model.eval(compiler.env["result"]).as_long(), 7)
 
     def test_abs_negative(self):
         """abs of negative number returns positive."""
         solver, compiler = compile_and_solve("result = abs(-7)")
         self.assertEqual(solver.check(), sat)
         model = solver.model()
-        self.assertEqual(model.eval(compiler.env['result']).as_long(), 7)
+        self.assertEqual(model.eval(compiler.env["result"]).as_long(), 7)
 
     def test_abs_zero(self):
         """abs(0) is 0."""
         solver, compiler = compile_and_solve("result = abs(0)")
         self.assertEqual(solver.check(), sat)
         model = solver.model()
-        self.assertEqual(model.eval(compiler.env['result']).as_long(), 0)
+        self.assertEqual(model.eval(compiler.env["result"]).as_long(), 0)
 
     def test_abs_variable(self):
         """abs of a variable expression."""
@@ -431,7 +433,7 @@ result = abs(x)
 """)
         self.assertEqual(solver.check(), sat)
         model = solver.model()
-        self.assertEqual(model.eval(compiler.env['result']).as_long(), 15)
+        self.assertEqual(model.eval(compiler.env["result"]).as_long(), 15)
 
     def test_abs_of_expression(self):
         """abs of an arithmetic expression."""
@@ -442,19 +444,22 @@ result = abs(a - b)
 """)
         self.assertEqual(solver.check(), sat)
         model = solver.model()
-        self.assertEqual(model.eval(compiler.env['result']).as_long(), 7)
+        self.assertEqual(model.eval(compiler.env["result"]).as_long(), 7)
 
     def test_abs_symbolic(self):
         """abs of a symbolic variable constrains both positive and negative."""
-        score = Int('S_q1')
-        predefined = {'S_q1': score}
-        solver, compiler = compile_and_solve("""
+        score = Int("S_q1")
+        predefined = {"S_q1": score}
+        solver, compiler = compile_and_solve(
+            """
 diff = abs(S_q1)
-""", predefined)
+""",
+            predefined,
+        )
         solver.add(score == -42)
         self.assertEqual(solver.check(), sat)
         model = solver.model()
-        self.assertEqual(model.eval(compiler.env['diff']).as_long(), 42)
+        self.assertEqual(model.eval(compiler.env["diff"]).as_long(), 42)
 
     def test_abs_in_scoring(self):
         """Real-world pattern: penalty = abs(expected - actual)."""
@@ -465,8 +470,8 @@ penalty = abs(expected - actual)
 """)
         self.assertEqual(solver.check(), sat)
         model = solver.model()
-        self.assertEqual(model.eval(compiler.env['penalty']).as_long(), 23)
+        self.assertEqual(model.eval(compiler.env["penalty"]).as_long(), 23)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     unittest.main()

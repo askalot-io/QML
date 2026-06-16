@@ -2,6 +2,7 @@ questionnaire:
   title: "Basic Survey"
   blocks:
     - id: demographics
+      kind: Sequence
       title: "Demographics"
       items:
         - id: q_age

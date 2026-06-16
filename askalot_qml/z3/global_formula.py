@@ -12,14 +12,14 @@ Where:
 SAT(F) indicates that at least one valid questionnaire completion exists.
 UNSAT(F) indicates accumulated postconditions conflict - no valid completion possible.
 
-Reference: docs/thesis/chapters/comprehensive_validation.tex, Definition 2.1
+Reference: askalot-research/thesis/chapters/comprehensive_validation.tex, Definition 2.1
 """
 
 import logging
 from dataclasses import dataclass
-from typing import Dict, Any, List, Optional
+from typing import Any
 
-from z3 import Solver, Implies, And, BoolVal, sat, unsat, unknown
+from z3 import Implies, Solver, sat, unsat
 
 from askalot_qml.z3.static_builder import StaticBuilder
 
@@ -27,9 +27,10 @@ from askalot_qml.z3.static_builder import StaticBuilder
 @dataclass
 class GlobalFormulaResult:
     """Result of global satisfiability check."""
+
     satisfiable: bool
     status: str  # "SAT", "UNSAT", "UNKNOWN"
-    witness: Optional[Dict[str, Any]] = None  # Example valid assignment if SAT
+    witness: dict[str, Any] | None = None  # Example valid assignment if SAT
     message: str = ""
 
 
@@ -103,24 +104,24 @@ class GlobalFormula:
                 satisfiable=True,
                 status="SAT",
                 witness=witness,
-                message="At least one valid questionnaire completion exists."
+                message="At least one valid questionnaire completion exists.",
             )
         elif result == unsat:
             return GlobalFormulaResult(
                 satisfiable=False,
                 status="UNSAT",
                 message="No valid questionnaire completion exists. "
-                        "Accumulated postconditions conflict."
+                "Accumulated postconditions conflict.",
             )
         else:
             return GlobalFormulaResult(
                 satisfiable=False,
                 status="UNKNOWN",
                 message="Z3 solver returned unknown. "
-                        "The formula may be too complex or require different tactics."
+                "The formula may be too complex or require different tactics.",
             )
 
-    def _extract_witness(self, model) -> Dict[str, Any]:
+    def _extract_witness(self, model) -> dict[str, Any]:
         """
         Extract a witness (example valid assignment) from Z3 model.
 
@@ -150,7 +151,7 @@ class GlobalFormula:
 
         return witness
 
-    def get_conflicting_items(self) -> List[str]:
+    def get_conflicting_items(self) -> list[str]:
         """
         If UNSAT, attempt to find which items' postconditions conflict.
 
@@ -202,7 +203,7 @@ class GlobalFormula:
         lines.append(f"Message: {result.message}")
 
         if result.witness:
-            lines.append(f"\nWitness (example valid completion):")
+            lines.append("\nWitness (example valid completion):")
             for var, value in sorted(result.witness.items()):
                 lines.append(f"  {var} = {value}")
 

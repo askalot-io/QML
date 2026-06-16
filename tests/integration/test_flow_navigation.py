@@ -8,30 +8,20 @@ Tests survey flow including:
 - Topological order respecting dependencies
 """
 
-import pytest
 from pathlib import Path
 from typing import Any, Optional
 
+import pytest
 from askalot_qml.core.flow_processor import FlowProcessor
 from askalot_qml.core.qml_loader import QMLLoader
 from askalot_qml.models.qml_state import QMLState
 
-
 FIXTURES_DIR = Path(__file__).parent.parent / "fixtures"
 
 
-def get_outcome_value(item: dict) -> Optional[Any]:
-    """
-    Extract the outcome value from an item.
-
-    Question items store outcomes as {'_': value}, so we extract the inner value.
-    """
-    outcome = item.get("outcome")
-    if outcome is None:
-        return None
-    if isinstance(outcome, dict) and "_" in outcome:
-        return outcome["_"]
-    return outcome
+def get_outcome_value(item: dict) -> Any | None:
+    """Extract the outcome value from an item — native shape, returned as-is."""
+    return item.get("outcome")
 
 
 def load_qml_fixture(filename: str) -> QMLState:
@@ -50,7 +40,7 @@ class TestFlowInitialization:
     def test_initialization_creates_navigation_path(self):
         """Test that initialization creates a navigation path from topological order."""
         state = load_qml_fixture("branching_flow.qml")
-        processor = FlowProcessor(state)
+        FlowProcessor(state)
 
         nav_path = state.get_navigation_path()
         assert nav_path is not None
@@ -61,7 +51,7 @@ class TestFlowInitialization:
     def test_initialization_executes_code_init(self):
         """Test that codeInit is executed during initialization."""
         state = load_qml_fixture("branching_flow.qml")
-        processor = FlowProcessor(state)
+        FlowProcessor(state)
 
         # Check that score variable was initialized
         first_item = state.get_item("q_start")
@@ -73,15 +63,15 @@ class TestFlowInitialization:
     def test_initialization_sets_items_unvisited(self):
         """Test that all items start as unvisited."""
         state = load_qml_fixture("branching_flow.qml")
-        processor = FlowProcessor(state)
+        FlowProcessor(state)
 
         for item in state.get_items():
-            assert item.get("visited") == False
+            assert item.get("visited") is False
 
     def test_initialization_respects_dependencies_in_navigation_path(self):
         """Test that navigation path respects item dependencies."""
         state = load_qml_fixture("dependencies.qml")
-        processor = FlowProcessor(state)
+        FlowProcessor(state)
 
         nav_path = state.get_navigation_path()
 
@@ -113,7 +103,7 @@ class TestForwardNavigation:
         state = load_qml_fixture("branching_flow.qml")
         processor = FlowProcessor(state)
 
-        current = processor.get_current_item(state)
+        processor.get_current_item(state)
 
         history = state.get_history()
         assert "q_start" in history
@@ -227,7 +217,7 @@ class TestOutcomeStorage:
         processor.process_item(state, "q_start", 1)
 
         item = state.get_item("q_start")
-        assert item["visited"] == True
+        assert item["visited"] is True
 
 
 @pytest.mark.integration
@@ -262,13 +252,13 @@ class TestBackwardNavigation:
         processor.process_item(state, "q_path", 1)
 
         # q_path should be visited
-        assert state.get_item("q_path")["visited"] == True
+        assert state.get_item("q_path")["visited"] is True
 
         # Navigate backward from q_path
         processor.get_current_item(state, backward=True)
 
         # q_path should be unvisited now
-        assert state.get_item("q_path")["visited"] == False
+        assert state.get_item("q_path")["visited"] is False
 
     def test_backward_navigation_updates_history(self):
         """Test that backward navigation removes item from history."""
@@ -602,10 +592,7 @@ class TestPreconditionErrorHandling:
             assert current["id"] == "q_malformed"
 
             # Check that a warning was logged about the malformed precondition
-            assert any(
-                "Unable to evaluate" in record.message
-                for record in caplog.records
-            )
+            assert any("Unable to evaluate" in record.message for record in caplog.records)
 
             # Verify warning is also collected in QMLState for data analysis
             assert state.has_warnings()

@@ -56,17 +56,17 @@ with a unique version number, allowing Z3 to track all variable states and
 reason about sequential code execution.
 """
 
-import unittest
-import pytest
 import ast
-from z3 import *
+import unittest
 
+import pytest
 from askalot_qml.z3.pragmatic_compiler import PragmaticZ3Compiler
+from z3 import *
 
 
 def compile_and_solve(code: str, predefined=None):
     """Helper to compile code and return solver with constraints."""
-    compiler = PragmaticZ3Compiler(predefined or {}, 'test')
+    compiler = PragmaticZ3Compiler(predefined or {}, "test")
     tree = ast.parse(code)
     compiler.visit(tree)
 
@@ -91,7 +91,7 @@ x = 5
         self.assertEqual(solver.check(), sat)
         model = solver.model()
         # Check that x_0 exists and has correct value
-        self.assertEqual(model.eval(compiler.env['x']).as_long(), 5)
+        self.assertEqual(model.eval(compiler.env["x"]).as_long(), 5)
 
     def test_reassignment_creates_new_version(self):
         """Test reassignment creates new SSA version."""
@@ -102,7 +102,7 @@ x = 10
         self.assertEqual(solver.check(), sat)
         model = solver.model()
         # Latest version should be 10
-        self.assertEqual(model.eval(compiler.env['x']).as_long(), 10)
+        self.assertEqual(model.eval(compiler.env["x"]).as_long(), 10)
 
     def test_multiple_reassignments(self):
         """Test multiple reassignments create sequential versions."""
@@ -115,7 +115,7 @@ result = x
 """)
         self.assertEqual(solver.check(), sat)
         model = solver.model()
-        self.assertEqual(model.eval(compiler.env['result']).as_long(), 20)
+        self.assertEqual(model.eval(compiler.env["result"]).as_long(), 20)
 
     def test_reassignment_with_self_reference(self):
         """Test reassignment that references itself."""
@@ -126,7 +126,7 @@ result = x
 """)
         self.assertEqual(solver.check(), sat)
         model = solver.model()
-        self.assertEqual(model.eval(compiler.env['result']).as_long(), 8)
+        self.assertEqual(model.eval(compiler.env["result"]).as_long(), 8)
 
     def test_chain_of_self_references(self):
         """Test chain of self-referencing reassignments."""
@@ -140,7 +140,7 @@ result = x
         self.assertEqual(solver.check(), sat)
         model = solver.model()
         # ((1 + 1) * 2) - 1 = (2 * 2) - 1 = 4 - 1 = 3
-        self.assertEqual(model.eval(compiler.env['result']).as_long(), 3)
+        self.assertEqual(model.eval(compiler.env["result"]).as_long(), 3)
 
     # ========== SSA in Control Flow ==========
 
@@ -154,7 +154,7 @@ result = x
 """)
         self.assertEqual(solver.check(), sat)
         model = solver.model()
-        self.assertEqual(model.eval(compiler.env['result']).as_long(), 10)
+        self.assertEqual(model.eval(compiler.env["result"]).as_long(), 10)
 
     def test_ssa_in_else_branch(self):
         """Test SSA versioning inside else branch."""
@@ -168,7 +168,7 @@ result = x
 """)
         self.assertEqual(solver.check(), sat)
         model = solver.model()
-        self.assertEqual(model.eval(compiler.env['result']).as_long(), 20)
+        self.assertEqual(model.eval(compiler.env["result"]).as_long(), 20)
 
     def test_ssa_conditional_assignment(self):
         """Test SSA with conditional assignment."""
@@ -183,7 +183,7 @@ result = x
 """)
         self.assertEqual(solver.check(), sat)
         model = solver.model()
-        self.assertEqual(model.eval(compiler.env['result']).as_long(), 10)  # 5 * 2
+        self.assertEqual(model.eval(compiler.env["result"]).as_long(), 10)  # 5 * 2
 
     def test_ssa_nested_conditionals(self):
         """Test SSA in nested conditionals."""
@@ -201,7 +201,7 @@ result = x
 """)
         self.assertEqual(solver.check(), sat)
         model = solver.model()
-        self.assertEqual(model.eval(compiler.env['result']).as_long(), 3)  # 1 + 1 + 1
+        self.assertEqual(model.eval(compiler.env["result"]).as_long(), 3)  # 1 + 1 + 1
 
     # ========== Multiple Variables SSA ==========
 
@@ -216,7 +216,7 @@ result = x + y
 """)
         self.assertEqual(solver.check(), sat)
         model = solver.model()
-        self.assertEqual(model.eval(compiler.env['result']).as_long(), 19)  # 7 + 12
+        self.assertEqual(model.eval(compiler.env["result"]).as_long(), 19)  # 7 + 12
 
     def test_multiple_variables_dependent(self):
         """Test SSA with dependent variable assignments."""
@@ -231,7 +231,7 @@ result = x + y
         model = solver.model()
         # x = 5, y = 8, x = 16, y = 12
         # result = 16 + 12 = 28
-        self.assertEqual(model.eval(compiler.env['result']).as_long(), 28)
+        self.assertEqual(model.eval(compiler.env["result"]).as_long(), 28)
 
     def test_swap_pattern(self):
         """Test variable swap pattern with SSA."""
@@ -246,8 +246,8 @@ result_b = b
 """)
         self.assertEqual(solver.check(), sat)
         model = solver.model()
-        self.assertEqual(model.eval(compiler.env['result_a']).as_long(), 10)
-        self.assertEqual(model.eval(compiler.env['result_b']).as_long(), 5)
+        self.assertEqual(model.eval(compiler.env["result_a"]).as_long(), 10)
+        self.assertEqual(model.eval(compiler.env["result_b"]).as_long(), 5)
 
     def test_parallel_assignment_simulation(self):
         """Test simulated parallel assignment using SSA."""
@@ -264,8 +264,8 @@ result_y = y
 """)
         self.assertEqual(solver.check(), sat)
         model = solver.model()
-        self.assertEqual(model.eval(compiler.env['result_x']).as_long(), 10)
-        self.assertEqual(model.eval(compiler.env['result_y']).as_long(), 5)
+        self.assertEqual(model.eval(compiler.env["result_x"]).as_long(), 10)
+        self.assertEqual(model.eval(compiler.env["result_y"]).as_long(), 5)
 
     # ========== SSA with Type Changes ==========
 
@@ -278,7 +278,7 @@ result = x
 """)
         self.assertEqual(solver.check(), sat)
         model = solver.model()
-        self.assertTrue(is_true(model.eval(compiler.env['result'])))
+        self.assertTrue(is_true(model.eval(compiler.env["result"])))
 
     def test_ssa_type_change_bool_to_int(self):
         """Test SSA when variable changes from bool to int."""
@@ -289,7 +289,7 @@ result = x
 """)
         self.assertEqual(solver.check(), sat)
         model = solver.model()
-        self.assertEqual(model.eval(compiler.env['result']).as_long(), 6)
+        self.assertEqual(model.eval(compiler.env["result"]).as_long(), 6)
 
     def test_ssa_mixed_types(self):
         """Test SSA with mixed type assignments."""
@@ -301,7 +301,7 @@ result = x
 """)
         self.assertEqual(solver.check(), sat)
         model = solver.model()
-        self.assertEqual(model.eval(compiler.env['result']).as_long(), 100)
+        self.assertEqual(model.eval(compiler.env["result"]).as_long(), 100)
 
     # ========== SSA in Complex Patterns ==========
 
@@ -316,7 +316,7 @@ result = sum
 """)
         self.assertEqual(solver.check(), sat)
         model = solver.model()
-        self.assertEqual(model.eval(compiler.env['result']).as_long(), 30)
+        self.assertEqual(model.eval(compiler.env["result"]).as_long(), 30)
 
     def test_ssa_factorial_simulation(self):
         """Test SSA simulating factorial calculation."""
@@ -332,7 +332,7 @@ result = result * 5
 """)
         self.assertEqual(solver.check(), sat)
         model = solver.model()
-        self.assertEqual(model.eval(compiler.env['result']).as_long(), 120)
+        self.assertEqual(model.eval(compiler.env["result"]).as_long(), 120)
 
     def test_ssa_fibonacci_step(self):
         """Test SSA simulating Fibonacci sequence step."""
@@ -360,7 +360,7 @@ result = b
         # Step 1: temp=1, a=1, b=1
         # Step 2: temp=2, a=1, b=2
         # Step 3: temp=3, a=2, b=3
-        self.assertEqual(model.eval(compiler.env['result']).as_long(), 3)
+        self.assertEqual(model.eval(compiler.env["result"]).as_long(), 3)
 
     def test_ssa_conditional_update(self):
         """Test SSA with conditional variable updates."""
@@ -378,8 +378,8 @@ result_y = y
 """)
         self.assertEqual(solver.check(), sat)
         model = solver.model()
-        self.assertEqual(model.eval(compiler.env['result_x']).as_long(), 5)  # 10 - 5
-        self.assertEqual(model.eval(compiler.env['result_y']).as_long(), 10)  # 5 * 2
+        self.assertEqual(model.eval(compiler.env["result_x"]).as_long(), 5)  # 10 - 5
+        self.assertEqual(model.eval(compiler.env["result_y"]).as_long(), 10)  # 5 * 2
 
     # ========== SSA Edge Cases ==========
 
@@ -393,7 +393,7 @@ result = x
 """)
         self.assertEqual(solver.check(), sat)
         model = solver.model()
-        self.assertEqual(model.eval(compiler.env['result']).as_long(), 15)
+        self.assertEqual(model.eval(compiler.env["result"]).as_long(), 15)
 
     def test_ssa_same_value_reassignment(self):
         """Test SSA when reassigning same value."""
@@ -404,7 +404,7 @@ result = x
 """)
         self.assertEqual(solver.check(), sat)
         model = solver.model()
-        self.assertEqual(model.eval(compiler.env['result']).as_long(), 5)
+        self.assertEqual(model.eval(compiler.env["result"]).as_long(), 5)
 
     def test_ssa_complex_expression_assignment(self):
         """Test SSA with complex expression assignments."""
@@ -420,7 +420,7 @@ result = x
         self.assertEqual(solver.check(), sat)
         model = solver.model()
         # ((2+3)*4) + (2*3*4) - (2+3+4) = 20 + 24 - 9 = 35
-        self.assertEqual(model.eval(compiler.env['result']).as_long(), 35)
+        self.assertEqual(model.eval(compiler.env["result"]).as_long(), 35)
 
     def test_ssa_shadowing_in_branches(self):
         """Test SSA with variable shadowing in different branches."""
@@ -436,7 +436,7 @@ result = y
 """)
         self.assertEqual(solver.check(), sat)
         model = solver.model()
-        self.assertEqual(model.eval(compiler.env['result']).as_long(), 15)  # 10 + 5
+        self.assertEqual(model.eval(compiler.env["result"]).as_long(), 15)  # 10 + 5
 
     def test_ssa_version_independence(self):
         """Test that SSA versions are independent."""
@@ -449,7 +449,7 @@ result = old_x + x
 """)
         self.assertEqual(solver.check(), sat)
         model = solver.model()
-        self.assertEqual(model.eval(compiler.env['result']).as_long(), 15)  # 5 + 10
+        self.assertEqual(model.eval(compiler.env["result"]).as_long(), 15)  # 5 + 10
 
     # ========== Tuple Unpacking ==========
 
@@ -458,17 +458,17 @@ result = old_x + x
         solver, compiler = compile_and_solve("a, b = 1, 0")
         self.assertEqual(solver.check(), sat)
         model = solver.model()
-        self.assertEqual(model.eval(compiler.env['a']).as_long(), 1)
-        self.assertEqual(model.eval(compiler.env['b']).as_long(), 0)
+        self.assertEqual(model.eval(compiler.env["a"]).as_long(), 1)
+        self.assertEqual(model.eval(compiler.env["b"]).as_long(), 0)
 
     def test_tuple_unpacking_three_vars(self):
         """Three-variable tuple unpacking."""
         solver, compiler = compile_and_solve("x, y, z = 10, 20, 30")
         self.assertEqual(solver.check(), sat)
         model = solver.model()
-        self.assertEqual(model.eval(compiler.env['x']).as_long(), 10)
-        self.assertEqual(model.eval(compiler.env['y']).as_long(), 20)
-        self.assertEqual(model.eval(compiler.env['z']).as_long(), 30)
+        self.assertEqual(model.eval(compiler.env["x"]).as_long(), 10)
+        self.assertEqual(model.eval(compiler.env["y"]).as_long(), 20)
+        self.assertEqual(model.eval(compiler.env["z"]).as_long(), 30)
 
     def test_tuple_unpacking_with_expressions(self):
         """Tuple unpacking where RHS contains expressions."""
@@ -478,8 +478,8 @@ a, b = base + 1, base * 2
 """)
         self.assertEqual(solver.check(), sat)
         model = solver.model()
-        self.assertEqual(model.eval(compiler.env['a']).as_long(), 6)
-        self.assertEqual(model.eval(compiler.env['b']).as_long(), 10)
+        self.assertEqual(model.eval(compiler.env["a"]).as_long(), 6)
+        self.assertEqual(model.eval(compiler.env["b"]).as_long(), 10)
 
     def test_tuple_unpacking_usable_later(self):
         """Unpacked variables can be used in subsequent code."""
@@ -489,16 +489,16 @@ result = a + b
 """)
         self.assertEqual(solver.check(), sat)
         model = solver.model()
-        self.assertEqual(model.eval(compiler.env['result']).as_long(), 10)
+        self.assertEqual(model.eval(compiler.env["result"]).as_long(), 10)
 
     def test_tuple_unpacking_from_list(self):
         """Unpacking from a list literal [1, 2]."""
         solver, compiler = compile_and_solve("a, b = [10, 20]")
         self.assertEqual(solver.check(), sat)
         model = solver.model()
-        self.assertEqual(model.eval(compiler.env['a']).as_long(), 10)
-        self.assertEqual(model.eval(compiler.env['b']).as_long(), 20)
+        self.assertEqual(model.eval(compiler.env["a"]).as_long(), 10)
+        self.assertEqual(model.eval(compiler.env["b"]).as_long(), 20)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     unittest.main()

@@ -2,6 +2,7 @@ questionnaire:
   title: "Block Precondition Survey"
   blocks:
     - id: screening
+      kind: Sequence
       title: "Screening"
       items:
         - id: q_age
@@ -23,6 +24,7 @@ questionnaire:
               2: Canada
               3: Other
     - id: employment
+      kind: Sequence
       title: "Employment"
       precondition:
         - predicate: "q_age.outcome <= 2"
@@ -44,6 +46,7 @@ questionnaire:
           input:
             control: Editbox
     - id: retirement
+      kind: Sequence
       title: "Retirement"
       precondition:
         - predicate: "q_age.outcome == 3"

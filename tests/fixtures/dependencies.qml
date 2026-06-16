@@ -2,6 +2,7 @@ questionnaire:
   title: "Survey with Dependencies"
   blocks:
     - id: screening
+      kind: Sequence
       title: "Screening"
       items:
         - id: q_employed
@@ -29,6 +30,7 @@ questionnaire:
             min: 0
             max: 50
     - id: education
+      kind: Sequence
       title: "Education"
       items:
         - id: q_degree

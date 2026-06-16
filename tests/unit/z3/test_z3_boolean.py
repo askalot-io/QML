@@ -46,17 +46,17 @@ Note: Explicit type casting tests (int(), bool()) are in test_z3_type_casting.py
 Total: 30 tests covering all boolean logic scenarios in QML preconditions and code blocks.
 """
 
-import unittest
-import pytest
 import ast
-from z3 import *
+import unittest
 
+import pytest
 from askalot_qml.z3.pragmatic_compiler import PragmaticZ3Compiler
+from z3 import *
 
 
 def compile_and_solve(code: str, predefined=None):
     """Helper to compile code and return solver with constraints."""
-    compiler = PragmaticZ3Compiler(predefined or {}, 'test')
+    compiler = PragmaticZ3Compiler(predefined or {}, "test")
     tree = ast.parse(code)
     compiler.visit(tree)
 
@@ -78,14 +78,14 @@ class TestPythonToZ3Boolean(unittest.TestCase):
         solver, compiler = compile_and_solve("x = True")
         self.assertEqual(solver.check(), sat)
         model = solver.model()
-        self.assertTrue(is_true(model.eval(compiler.env['x'])))
+        self.assertTrue(is_true(model.eval(compiler.env["x"])))
 
     def test_false_literal(self):
         """Test False literal conversion."""
         solver, compiler = compile_and_solve("x = False")
         self.assertEqual(solver.check(), sat)
         model = solver.model()
-        self.assertTrue(is_false(model.eval(compiler.env['x'])))
+        self.assertTrue(is_false(model.eval(compiler.env["x"])))
 
     def test_boolean_assignment_chain(self):
         """Test chain of boolean assignments."""
@@ -97,7 +97,7 @@ result = c
 """)
         self.assertEqual(solver.check(), sat)
         model = solver.model()
-        self.assertTrue(is_true(model.eval(compiler.env['result'])))
+        self.assertTrue(is_true(model.eval(compiler.env["result"])))
 
     # ========== Boolean AND Operations ==========
 
@@ -110,7 +110,7 @@ result = a and b
 """)
         self.assertEqual(solver.check(), sat)
         model = solver.model()
-        self.assertTrue(is_true(model.eval(compiler.env['result'])))
+        self.assertTrue(is_true(model.eval(compiler.env["result"])))
 
     def test_and_true_false(self):
         """Test True and False."""
@@ -121,7 +121,7 @@ result = a and b
 """)
         self.assertEqual(solver.check(), sat)
         model = solver.model()
-        self.assertTrue(is_false(model.eval(compiler.env['result'])))
+        self.assertTrue(is_false(model.eval(compiler.env["result"])))
 
     def test_and_false_false(self):
         """Test False and False."""
@@ -132,7 +132,7 @@ result = a and b
 """)
         self.assertEqual(solver.check(), sat)
         model = solver.model()
-        self.assertTrue(is_false(model.eval(compiler.env['result'])))
+        self.assertTrue(is_false(model.eval(compiler.env["result"])))
 
     def test_and_chain(self):
         """Test chained AND operations."""
@@ -145,7 +145,7 @@ result = a and b and c and d
 """)
         self.assertEqual(solver.check(), sat)
         model = solver.model()
-        self.assertTrue(is_false(model.eval(compiler.env['result'])))
+        self.assertTrue(is_false(model.eval(compiler.env["result"])))
 
     def test_and_with_integer(self):
         """Test AND with integer (non-zero is True)."""
@@ -156,7 +156,7 @@ result = a and b
 """)
         self.assertEqual(solver.check(), sat)
         model = solver.model()
-        self.assertTrue(is_true(model.eval(compiler.env['result'])))
+        self.assertTrue(is_true(model.eval(compiler.env["result"])))
 
     def test_and_with_zero(self):
         """Test AND with zero (zero is False)."""
@@ -167,7 +167,7 @@ result = a and b
 """)
         self.assertEqual(solver.check(), sat)
         model = solver.model()
-        self.assertTrue(is_false(model.eval(compiler.env['result'])))
+        self.assertTrue(is_false(model.eval(compiler.env["result"])))
 
     # ========== Boolean OR Operations ==========
 
@@ -180,7 +180,7 @@ result = a or b
 """)
         self.assertEqual(solver.check(), sat)
         model = solver.model()
-        self.assertTrue(is_true(model.eval(compiler.env['result'])))
+        self.assertTrue(is_true(model.eval(compiler.env["result"])))
 
     def test_or_true_false(self):
         """Test True or False."""
@@ -191,7 +191,7 @@ result = a or b
 """)
         self.assertEqual(solver.check(), sat)
         model = solver.model()
-        self.assertTrue(is_true(model.eval(compiler.env['result'])))
+        self.assertTrue(is_true(model.eval(compiler.env["result"])))
 
     def test_or_false_false(self):
         """Test False or False."""
@@ -202,7 +202,7 @@ result = a or b
 """)
         self.assertEqual(solver.check(), sat)
         model = solver.model()
-        self.assertTrue(is_false(model.eval(compiler.env['result'])))
+        self.assertTrue(is_false(model.eval(compiler.env["result"])))
 
     def test_or_chain(self):
         """Test chained OR operations."""
@@ -215,7 +215,7 @@ result = a or b or c or d
 """)
         self.assertEqual(solver.check(), sat)
         model = solver.model()
-        self.assertTrue(is_true(model.eval(compiler.env['result'])))
+        self.assertTrue(is_true(model.eval(compiler.env["result"])))
 
     # ========== Boolean NOT Operations ==========
 
@@ -227,7 +227,7 @@ result = not a
 """)
         self.assertEqual(solver.check(), sat)
         model = solver.model()
-        self.assertTrue(is_false(model.eval(compiler.env['result'])))
+        self.assertTrue(is_false(model.eval(compiler.env["result"])))
 
     def test_not_false(self):
         """Test not False."""
@@ -237,7 +237,7 @@ result = not a
 """)
         self.assertEqual(solver.check(), sat)
         model = solver.model()
-        self.assertTrue(is_true(model.eval(compiler.env['result'])))
+        self.assertTrue(is_true(model.eval(compiler.env["result"])))
 
     def test_double_negation(self):
         """Test double negation."""
@@ -247,7 +247,7 @@ result = not not a
 """)
         self.assertEqual(solver.check(), sat)
         model = solver.model()
-        self.assertTrue(is_true(model.eval(compiler.env['result'])))
+        self.assertTrue(is_true(model.eval(compiler.env["result"])))
 
     def test_not_integer(self):
         """Test NOT with integer."""
@@ -257,7 +257,7 @@ result = not a
 """)
         self.assertEqual(solver.check(), sat)
         model = solver.model()
-        self.assertTrue(is_false(model.eval(compiler.env['result'])))  # not 5 = False
+        self.assertTrue(is_false(model.eval(compiler.env["result"])))  # not 5 = False
 
     def test_not_zero(self):
         """Test NOT with zero."""
@@ -267,7 +267,7 @@ result = not a
 """)
         self.assertEqual(solver.check(), sat)
         model = solver.model()
-        self.assertTrue(is_true(model.eval(compiler.env['result'])))  # not 0 = True
+        self.assertTrue(is_true(model.eval(compiler.env["result"])))  # not 0 = True
 
     # ========== Mixed Boolean Operations ==========
 
@@ -282,7 +282,7 @@ result = a or b and c
         self.assertEqual(solver.check(), sat)
         model = solver.model()
         # a or (b and c) = True or False = True
-        self.assertTrue(is_true(model.eval(compiler.env['result'])))
+        self.assertTrue(is_true(model.eval(compiler.env["result"])))
 
     def test_parentheses_override(self):
         """Test parentheses override precedence."""
@@ -295,7 +295,7 @@ result = (a or b) and c
         self.assertEqual(solver.check(), sat)
         model = solver.model()
         # (True or False) and True = True and True = True
-        self.assertTrue(is_true(model.eval(compiler.env['result'])))
+        self.assertTrue(is_true(model.eval(compiler.env["result"])))
 
     def test_complex_boolean_expression(self):
         """Test complex boolean expression."""
@@ -309,7 +309,7 @@ result = (a and b) or (c and not d)
         self.assertEqual(solver.check(), sat)
         model = solver.model()
         # (True and False) or (True and True) = False or True = True
-        self.assertTrue(is_true(model.eval(compiler.env['result'])))
+        self.assertTrue(is_true(model.eval(compiler.env["result"])))
 
     def test_demorgan_law1(self):
         """Test De Morgan's law: not(A and B) = (not A) or (not B)."""
@@ -322,8 +322,8 @@ result2 = (not a) or (not b)
         self.assertEqual(solver.check(), sat)
         model = solver.model()
         # Both should be equal
-        r1 = is_true(model.eval(compiler.env['result1']))
-        r2 = is_true(model.eval(compiler.env['result2']))
+        r1 = is_true(model.eval(compiler.env["result1"]))
+        r2 = is_true(model.eval(compiler.env["result2"]))
         self.assertEqual(r1, r2)
 
     def test_demorgan_law2(self):
@@ -337,8 +337,8 @@ result2 = (not a) and (not b)
         self.assertEqual(solver.check(), sat)
         model = solver.model()
         # Both should be equal
-        r1 = is_true(model.eval(compiler.env['result1']))
-        r2 = is_true(model.eval(compiler.env['result2']))
+        r1 = is_true(model.eval(compiler.env["result1"]))
+        r2 = is_true(model.eval(compiler.env["result2"]))
         self.assertEqual(r1, r2)
 
     # ========== Boolean in Arithmetic Context ==========
@@ -352,7 +352,7 @@ result = a + b
 """)
         self.assertEqual(solver.check(), sat)
         model = solver.model()
-        self.assertEqual(model.eval(compiler.env['result']).as_long(), 1)  # 1 + 0
+        self.assertEqual(model.eval(compiler.env["result"]).as_long(), 1)  # 1 + 0
 
     def test_boolean_multiplication(self):
         """Test boolean values in multiplication."""
@@ -363,7 +363,7 @@ result = a * b
 """)
         self.assertEqual(solver.check(), sat)
         model = solver.model()
-        self.assertEqual(model.eval(compiler.env['result']).as_long(), 1)  # 1 * 1
+        self.assertEqual(model.eval(compiler.env["result"]).as_long(), 1)  # 1 * 1
 
     def test_boolean_sum(self):
         """Test summing boolean values (counting True values)."""
@@ -376,7 +376,7 @@ result = a + b + c + d
 """)
         self.assertEqual(solver.check(), sat)
         model = solver.model()
-        self.assertEqual(model.eval(compiler.env['result']).as_long(), 3)  # Count of True
+        self.assertEqual(model.eval(compiler.env["result"]).as_long(), 3)  # Count of True
 
     # Note: Explicit type casting tests (int(), bool()) are in test_z3_type_casting.py
 
@@ -392,7 +392,7 @@ result = a and b and c
 """)
         self.assertEqual(solver.check(), sat)
         model = solver.model()
-        self.assertTrue(is_true(model.eval(compiler.env['result'])))
+        self.assertTrue(is_true(model.eval(compiler.env["result"])))
 
     def test_any_true(self):
         """Test any() equivalent with booleans."""
@@ -404,7 +404,7 @@ result = a or b or c
 """)
         self.assertEqual(solver.check(), sat)
         model = solver.model()
-        self.assertTrue(is_true(model.eval(compiler.env['result'])))
+        self.assertTrue(is_true(model.eval(compiler.env["result"])))
 
     def test_xor_simulation(self):
         """Test XOR using boolean operations (A xor B = (A and not B) or (not A and B))."""
@@ -415,7 +415,7 @@ result = (a and not b) or (not a and b)
 """)
         self.assertEqual(solver.check(), sat)
         model = solver.model()
-        self.assertTrue(is_true(model.eval(compiler.env['result'])))  # True XOR False = True
+        self.assertTrue(is_true(model.eval(compiler.env["result"])))  # True XOR False = True
 
     def test_implication_simulation(self):
         """Test implication (A implies B = not A or B)."""
@@ -426,8 +426,8 @@ result = (not a) or b
 """)
         self.assertEqual(solver.check(), sat)
         model = solver.model()
-        self.assertTrue(is_true(model.eval(compiler.env['result'])))  # True implies True = True
+        self.assertTrue(is_true(model.eval(compiler.env["result"])))  # True implies True = True
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     unittest.main()

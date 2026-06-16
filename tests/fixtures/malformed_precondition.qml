@@ -2,6 +2,7 @@ questionnaire:
   title: "Survey with Malformed Precondition"
   blocks:
     - id: main
+      kind: Sequence
       title: "Main"
       items:
         - id: q_first

@@ -6,22 +6,21 @@ This test suite verifies the three-level validation hierarchy from the thesis:
 2. Global validation (GlobalFormula) - F = B ∧ ∧(P_i ⇒ Q_i)
 3. Path-based validation (PathBasedValidator) - A_i = B ∧ ∧{j∈Pred(i)}(P_j ⇒ Q_j)
 
-Reference: docs/thesis/chapters/comprehensive_validation.tex
+Reference: askalot-research/thesis/chapters/comprehensive_validation.tex
 """
 
 import unittest
-import pytest
 from pathlib import Path
 
+import pytest
+from askalot_qml.core.qml_engine import QMLEngine
 from askalot_qml.core.qml_loader import QMLLoader
 from askalot_qml.models.qml_state import QMLState
-from askalot_qml.core.qml_engine import QMLEngine
 from askalot_qml.z3 import (
-    ItemClassifier,
     GlobalFormula,
+    ItemClassifier,
     PathBasedValidator,
 )
-
 
 # Path to fixture files
 FIXTURES_DIR = Path(__file__).parent.parent / "fixtures"
@@ -70,7 +69,7 @@ class TestTheoremLocalInvalidityNotGlobal(unittest.TestCase):
         self.assertNotEqual(
             postcond.get("invariant"),
             "INFEASIBLE",
-            "q_experience postcondition should not be INFEASIBLE"
+            "q_experience postcondition should not be INFEASIBLE",
         )
 
     def test_global_formula_is_sat(self):
@@ -79,8 +78,7 @@ class TestTheoremLocalInvalidityNotGlobal(unittest.TestCase):
         result = global_formula.check()
 
         self.assertTrue(
-            result.satisfiable,
-            "Global formula should be SAT (valid completions exist)"
+            result.satisfiable, "Global formula should be SAT (valid completions exist)"
         )
         self.assertEqual(result.status, "SAT")
 
@@ -89,10 +87,7 @@ class TestTheoremLocalInvalidityNotGlobal(unittest.TestCase):
         validator = PathBasedValidator(self.engine.static_builder, self.engine.topology)
         result = validator.validate()
 
-        self.assertFalse(
-            result.has_dead_code,
-            "No dead code should be detected"
-        )
+        self.assertFalse(result.has_dead_code, "No dead code should be detected")
         self.assertEqual(len(result.dead_code_items), 0)
 
 
@@ -126,7 +121,7 @@ class TestTheoremAccumulatedConstraintsUnsatisfiable(unittest.TestCase):
             self.assertNotEqual(
                 invariant,
                 "INFEASIBLE",
-                f"{item_id} should not be INFEASIBLE when checked independently"
+                f"{item_id} should not be INFEASIBLE when checked independently",
             )
 
     def test_global_formula_is_unsat(self):
@@ -135,8 +130,7 @@ class TestTheoremAccumulatedConstraintsUnsatisfiable(unittest.TestCase):
         result = global_formula.check()
 
         self.assertFalse(
-            result.satisfiable,
-            "Global formula should be UNSAT (accumulated constraints conflict)"
+            result.satisfiable, "Global formula should be UNSAT (accumulated constraints conflict)"
         )
         self.assertEqual(result.status, "UNSAT")
 
@@ -171,7 +165,7 @@ class TestTheoremGlobalNotSufficient(unittest.TestCase):
         self.assertEqual(
             precond.get("status"),
             "CONDITIONAL",
-            "q_feedback precondition should be CONDITIONAL per-item"
+            "q_feedback precondition should be CONDITIONAL per-item",
         )
 
     def test_global_formula_is_sat(self):
@@ -180,8 +174,7 @@ class TestTheoremGlobalNotSufficient(unittest.TestCase):
         result = global_formula.check()
 
         self.assertTrue(
-            result.satisfiable,
-            "Global formula should be SAT (implication is vacuously true)"
+            result.satisfiable, "Global formula should be SAT (implication is vacuously true)"
         )
 
     def test_dead_code_detected(self):
@@ -189,14 +182,9 @@ class TestTheoremGlobalNotSufficient(unittest.TestCase):
         validator = PathBasedValidator(self.engine.static_builder, self.engine.topology)
         result = validator.validate()
 
-        self.assertTrue(
-            result.has_dead_code,
-            "Dead code should be detected"
-        )
+        self.assertTrue(result.has_dead_code, "Dead code should be detected")
         self.assertIn(
-            "q_feedback",
-            result.dead_code_items,
-            "q_feedback should be identified as dead code"
+            "q_feedback", result.dead_code_items, "q_feedback should be identified as dead code"
         )
 
     def test_dead_code_item_details(self):
@@ -247,7 +235,7 @@ class TestAccumulatedReachabilityExample(unittest.TestCase):
             self.assertLess(
                 income_idx,
                 assist_idx,
-                "q_income should come before q_low_income_assist in topological order"
+                "q_income should come before q_low_income_assist in topological order",
             )
 
     def test_per_item_conditional(self):
@@ -261,7 +249,7 @@ class TestAccumulatedReachabilityExample(unittest.TestCase):
         self.assertEqual(
             precond.get("status"),
             "CONDITIONAL",
-            "q_low_income_assist precondition should be CONDITIONAL per-item"
+            "q_low_income_assist precondition should be CONDITIONAL per-item",
         )
 
     def test_global_formula_is_sat(self):
@@ -269,24 +257,18 @@ class TestAccumulatedReachabilityExample(unittest.TestCase):
         global_formula = GlobalFormula(self.engine.static_builder)
         result = global_formula.check()
 
-        self.assertTrue(
-            result.satisfiable,
-            "Global formula should be SAT"
-        )
+        self.assertTrue(result.satisfiable, "Global formula should be SAT")
 
     def test_dead_code_detected(self):
         """q_low_income_assist should be detected as dead code."""
         validator = PathBasedValidator(self.engine.static_builder, self.engine.topology)
         result = validator.validate()
 
-        self.assertTrue(
-            result.has_dead_code,
-            "Dead code should be detected"
-        )
+        self.assertTrue(result.has_dead_code, "Dead code should be detected")
         self.assertIn(
             "q_low_income_assist",
             result.dead_code_items,
-            "q_low_income_assist should be identified as dead code"
+            "q_low_income_assist should be identified as dead code",
         )
 
     def test_independent_item_not_dead_code(self):
@@ -297,7 +279,7 @@ class TestAccumulatedReachabilityExample(unittest.TestCase):
         self.assertNotIn(
             "q_tax_bracket",
             result.dead_code_items,
-            "q_tax_bracket should NOT be dead code (it's independent)"
+            "q_tax_bracket should NOT be dead code (it's independent)",
         )
 
     def test_predecessor_relationship(self):
@@ -312,7 +294,7 @@ class TestAccumulatedReachabilityExample(unittest.TestCase):
         self.assertIn(
             "q_income",
             q_assist_result.predecessors,
-            "q_income should be a predecessor of q_low_income_assist"
+            "q_income should be a predecessor of q_low_income_assist",
         )
 
 
@@ -340,7 +322,7 @@ class TestValidationHierarchyRelationships(unittest.TestCase):
 
         # All items should have TAUTOLOGICAL or NONE postconditions
         all_safe = True
-        for item_id, classification in classifications.items():
+        for _item_id, classification in classifications.items():
             postcond = classification.get("postcondition", {})
             invariant = postcond.get("invariant", "UNKNOWN")
             if invariant not in ("TAUTOLOGICAL", "NONE"):
@@ -354,7 +336,7 @@ class TestValidationHierarchyRelationships(unittest.TestCase):
 
             self.assertTrue(
                 result.satisfiable,
-                "If all postconditions are TAUTOLOGICAL/NONE, global should be SAT"
+                "If all postconditions are TAUTOLOGICAL/NONE, global should be SAT",
             )
 
     def test_global_necessary_for_paths(self):
@@ -371,16 +353,12 @@ class TestValidationHierarchyRelationships(unittest.TestCase):
         # If global is UNSAT, path-based should also find issues
         if not global_result.satisfiable:
             validator = PathBasedValidator(engine.static_builder, engine.topology)
-            path_result = validator.validate()
+            validator.validate()
 
             # When global is UNSAT, all items effectively become problematic
             # The path-based validator may detect this as dead code or other issues
             # At minimum, the questionnaire is not completable
-            self.assertEqual(
-                global_result.status,
-                "UNSAT",
-                "Global formula should be UNSAT"
-            )
+            self.assertEqual(global_result.status, "UNSAT", "Global formula should be UNSAT")
 
 
 if __name__ == "__main__":

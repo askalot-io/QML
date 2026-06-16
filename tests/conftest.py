@@ -1,9 +1,10 @@
 """Test configuration for askalot_qml."""
 
-import pytest
-from pathlib import Path
-import tempfile
 import os
+import tempfile
+from pathlib import Path
+
+import pytest
 
 
 @pytest.fixture
@@ -60,8 +61,9 @@ def sample_qml_file(test_qml_dir, sample_qml_content):
 def test_schema_path():
     """Path to bundled QML schema."""
     from askalot_qml.schema import SCHEMA_PATH
+
     return SCHEMA_PATH
 
 
 # Ensure test environment
-os.environ.setdefault('PYTHONPATH', str(Path(__file__).parent.parent))
+os.environ.setdefault("PYTHONPATH", str(Path(__file__).parent.parent))

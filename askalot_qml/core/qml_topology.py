@@ -8,10 +8,9 @@ This module uses StaticBuilder's dependency graph to build topology:
 - Topological ordering with stable priority queue for deterministic output
 """
 
-import logging
-from typing import Dict, Set, List, Optional, Tuple
-from collections import deque
 import heapq
+import logging
+from collections import deque
 
 from askalot_qml.models.qml_state import QMLState
 from askalot_qml.z3.static_builder import StaticBuilder
@@ -40,20 +39,20 @@ class QMLTopology:
         self.static_builder = static_builder
 
         # Get item list for ordering
-        self.items = [item['id'] for item in self.state.get_all_items() if item.get('id')]
+        self.items = [item["id"] for item in self.state.get_all_items() if item.get("id")]
 
         # Dependency graph from SSA analysis
-        self.dependencies: Dict[str, Set[str]] = {}
+        self.dependencies: dict[str, set[str]] = {}
 
         # Reverse dependency graph
-        self.reverse_dependencies: Dict[str, Set[str]] = {}
+        self.reverse_dependencies: dict[str, set[str]] = {}
 
         # Topological order — always populated. When cycles exist, cycle
         # members are linearized in QML file order at their natural position.
-        self.topological_order: List[str] = []
+        self.topological_order: list[str] = []
 
         # Cycle detection results
-        self.cycles: List[List[str]] = []
+        self.cycles: list[list[str]] = []
         self.has_cycles: bool = False
 
         # Build topology — cycle detection is integrated into Kahn's algorithm
@@ -82,7 +81,9 @@ class QMLTopology:
             if deps:
                 self.logger.debug(f"  {item_id} depends on: {', '.join(sorted(deps))}")
 
-    def _find_cycle_among(self, remaining: Set[str], working_deps: Dict[str, Set[str]]) -> Optional[List[str]]:
+    def _find_cycle_among(
+        self, remaining: set[str], working_deps: dict[str, set[str]]
+    ) -> list[str] | None:
         """Find one cycle among the stuck items using DFS.
 
         All items in `remaining` have non-zero in-degree within the
@@ -92,10 +93,10 @@ class QMLTopology:
         Returns:
             Cycle as list of item IDs (without closing duplicate), or None.
         """
-        visited: Set[str] = set()
-        rec_stack: Set[str] = set()
+        visited: set[str] = set()
+        rec_stack: set[str] = set()
 
-        def dfs(node: str, path: List[str]) -> Optional[List[str]]:
+        def dfs(node: str, path: list[str]) -> list[str] | None:
             visited.add(node)
             rec_stack.add(node)
             path.append(node)
@@ -211,7 +212,7 @@ class QMLTopology:
         else:
             self.logger.info(f"Computed topological order for {len(result)} items")
 
-    def get_topological_order(self) -> List[str]:
+    def get_topological_order(self) -> list[str]:
         """Get the topological order of items.
 
         Always returns an ordering. When cycles exist, cycle members are
@@ -220,18 +221,18 @@ class QMLTopology:
         """
         return self.topological_order.copy()
 
-    def get_cycles(self) -> List[List[str]]:
+    def get_cycles(self) -> list[list[str]]:
         """Get all detected cycles."""
         return self.cycles.copy()
 
-    def get_dependency_chains(self) -> Dict[str, Set[str]]:
+    def get_dependency_chains(self) -> dict[str, set[str]]:
         """
         Get dependency chains for each item.
         Returns a dict mapping each item to its dependencies.
         """
         return {item_id: deps.copy() for item_id, deps in self.dependencies.items()}
 
-    def get_components(self) -> List[Set[str]]:
+    def get_components(self) -> list[set[str]]:
         """
         Get connected components in the dependency graph.
         Each component is a set of interdependent items.
@@ -239,7 +240,7 @@ class QMLTopology:
         visited = set()
         components = []
 
-        def explore_component(start_item: str) -> Set[str]:
+        def explore_component(start_item: str) -> set[str]:
             """Explore a component using BFS."""
             component = set()
             queue = deque([start_item])
@@ -273,43 +274,140 @@ class QMLTopology:
         self.logger.debug(f"Found {len(components)} connected components")
         return components
 
-    def get_statistics(self) -> Dict[str, any]:
+    def get_block_scoped_components(self, block_item_ids: set[str]) -> list[set[str]]:
+        """Connected components restricted to a Sample block's own items (U4).
+
+        This is the block-local analogue of ``get_components``: it partitions
+        ONLY the items in ``block_item_ids`` into connected components, walking
+        edges of ``self.dependencies`` / ``self.reverse_dependencies`` but
+        traversing an edge only when BOTH endpoints are inside the block. An
+        edge crossing the block boundary (a Sample item depending on an item
+        outside the block, or vice versa) does NOT merge components — that
+        external dependency is a fixed predecessor the runtime evaluates
+        before the block is entered, never a reason to fuse two Sample
+        components into one randomizable unit.
+
+        **Same graph Z3 enumerates (R9 — the whole reason the cap is
+        validation-time).** ``self.dependencies`` / ``self.reverse_dependencies``
+        are built in ``_build_dependency_graph`` directly from
+        ``static_builder.get_item_dependencies()`` — the transitively
+        variable-resolved item→item graph the StaticBuilder constructs and that
+        every Z3 consumer (ItemClassifier, PathBasedValidator) sees. Restricting
+        that exact graph to the block's items therefore counts components over
+        precisely the dependency structure Z3 enumerates, including
+        variable-mediated transitive edges. A loader-time syntactic pre-parse
+        would partition a *different* graph → unsound; this is why R9 moved to
+        validation time.
+
+        Args:
+            block_item_ids: item IDs of one Sample block's inner items.
+
+        Returns:
+            List of components (each a set of item IDs ⊆ ``block_item_ids``),
+            in stable QML file order of their first member. An empty block
+            yields ``[]`` (the caller treats ``T == 0`` as the base case of
+            exactly one — empty — ordering, no divide-by-zero).
+        """
+        scope = {i for i in block_item_ids if i in self.dependencies}
+        visited: set[str] = set()
+        components: list[set[str]] = []
+
+        def explore_component(start_item: str) -> set[str]:
+            component: set[str] = set()
+            queue = deque([start_item])
+            while queue:
+                current = queue.popleft()
+                if current in visited:
+                    continue
+                visited.add(current)
+                component.add(current)
+                # Only traverse edges whose neighbour is also in this block:
+                # cross-block edges are fixed external predecessors, not a
+                # reason to fuse two independent Sample components.
+                for dep in self.dependencies.get(current, set()):
+                    if dep in scope and dep not in visited:
+                        queue.append(dep)
+                for dep in self.reverse_dependencies.get(current, set()):
+                    if dep in scope and dep not in visited:
+                        queue.append(dep)
+            return component
+
+        # Iterate in stable QML file order (self.items) so component order is
+        # deterministic — the contiguous-tree-block permutation enumerated by
+        # U4 must be reproducible across runs and match the runtime freeze.
+        for item_id in self.items:
+            if item_id in scope and item_id not in visited:
+                components.append(explore_component(item_id))
+
+        self.logger.debug(
+            f"Block-scoped components: {len(components)} over {len(scope)} items"
+        )
+        return components
+
+    def linearize_component(
+        self, component: set[str], topo_index: dict[str, int] | None = None
+    ) -> list[str]:
+        """Order a component's items by their position in the topological sort.
+
+        The Sample contiguous-tree-block model emits each component in its fixed
+        intra-component order — the topology's stable-Kahn linearization (which
+        is also the cycle-tolerant ordering for cyclic components). Both
+        ``static_builder._emit_sample_conditional_presence`` (validation-time
+        ordering enumeration) and ``flow_processor._sample_canonical_order``
+        (runtime canonical order) call this so the runtime freeze is provably
+        one of the orderings Z3 enumerated.
+
+        ``topo_index`` may be precomputed by the caller (when it would otherwise
+        be rebuilt on every call); when ``None`` it is derived from the current
+        topological order. Items not in the topology fall to the end in stable
+        membership order, matching the prior inline implementations.
+        """
+        if topo_index is None:
+            topo_index = {iid: idx for idx, iid in enumerate(self.get_topological_order())}
+        return sorted(component, key=lambda i: topo_index.get(i, len(topo_index)))
+
+    def get_statistics(self) -> dict[str, any]:
         """Get statistics about the dependency topology."""
         components = self.get_components()
         stats = {
-            'total_items': len(self.items),
-            'total_components': len(components),
-            'has_cycles': self.has_cycles,
-            'num_cycles': len(self.cycles),
-            'cycles': self.get_cycles() if self.has_cycles else [],
-            'topological_order_exists': True,
-            'topological_order': self.topological_order,
+            "total_items": len(self.items),
+            "total_components": len(components),
+            "has_cycles": self.has_cycles,
+            "num_cycles": len(self.cycles),
+            "cycles": self.get_cycles() if self.has_cycles else [],
+            "topological_order_exists": True,
+            "topological_order": self.topological_order,
         }
 
         # Component sizes
-        stats['component_sizes'] = [len(c) for c in components]
-        stats['isolated_items'] = len([c for c in components if len(c) == 1])
+        stats["component_sizes"] = [len(c) for c in components]
+        stats["isolated_items"] = len([c for c in components if len(c) == 1])
 
         # Dependency stats
         total_dependencies = sum(len(deps) for deps in self.dependencies.values())
-        stats['total_dependencies'] = total_dependencies
-        stats['items_with_dependencies'] = len([item for item, deps in self.dependencies.items() if deps])
+        stats["total_dependencies"] = total_dependencies
+        stats["items_with_dependencies"] = len(
+            [item for item, deps in self.dependencies.items() if deps]
+        )
 
         # Find most dependent items
         if self.dependencies:
             most_dependent = max(self.dependencies.items(), key=lambda x: len(x[1]))
             if most_dependent[1]:  # Has dependencies
-                stats['most_dependent_item'] = (most_dependent[0], len(most_dependent[1]))
+                stats["most_dependent_item"] = (most_dependent[0], len(most_dependent[1]))
 
         # Find most depended upon items
         if self.reverse_dependencies:
             most_depended_upon = max(self.reverse_dependencies.items(), key=lambda x: len(x[1]))
             if most_depended_upon[1]:  # Has dependents
-                stats['most_depended_upon_item'] = (most_depended_upon[0], len(most_depended_upon[1]))
+                stats["most_depended_upon_item"] = (
+                    most_depended_upon[0],
+                    len(most_depended_upon[1]),
+                )
 
         return stats
 
-    def get_dependency_layers(self) -> List[Set[str]]:
+    def get_dependency_layers(self) -> list[set[str]]:
         """
         Group items into layers based on their dependencies.
         Items in the same layer have no dependencies on each other.
@@ -375,11 +473,11 @@ class QMLTopology:
     def debug_dump(self) -> str:
         """Generate debug output."""
         lines = []
-        lines.append("="*60)
+        lines.append("=" * 60)
         lines.append("QML TOPOLOGY DEBUG DUMP")
-        lines.append("="*60)
+        lines.append("=" * 60)
 
-        lines.append(f"\n📊 Summary:")
+        lines.append("\n📊 Summary:")
         lines.append(f"  Total items: {len(self.items)}")
         lines.append(f"  Has cycles: {self.has_cycles}")
         lines.append(f"  Number of cycles: {len(self.cycles)}")
@@ -388,7 +486,7 @@ class QMLTopology:
         if self.cycles:
             lines.append("\n⚠️  Cycles Detected by Z3:")
             for i, cycle in enumerate(self.cycles):
-                lines.append(f"  Cycle {i+1}: {' -> '.join(cycle)}")
+                lines.append(f"  Cycle {i + 1}: {' -> '.join(cycle)}")
 
         lines.append("\n🔗 Dependencies (from Z3 analysis):")
         for item_id in self.items:
@@ -410,7 +508,7 @@ class QMLTopology:
         components = self.get_components()
         lines.append(f"\n🏝️  Connected Components ({len(components)}):")
         for i, component in enumerate(components):
-            lines.append(f"  Component {i+1}: {', '.join(sorted(component))}")
+            lines.append(f"  Component {i + 1}: {', '.join(sorted(component))}")
 
         # SSA information
         lines.append("\n" + self.static_builder.debug_dump())

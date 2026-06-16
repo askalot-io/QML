@@ -17,15 +17,14 @@ YAML parsing through Z3 constraint generation to item classification.
 """
 
 import unittest
-import pytest
 from pathlib import Path
 
+import pytest
 from askalot_qml.core.qml_loader import QMLLoader
-from askalot_qml.models.qml_state import QMLState
-from askalot_qml.z3.static_builder import StaticBuilder
 from askalot_qml.core.qml_topology import QMLTopology
+from askalot_qml.models.qml_state import QMLState
 from askalot_qml.z3.item_classifier import ItemClassifier
-
+from askalot_qml.z3.static_builder import StaticBuilder
 
 # Path to fixture files
 FIXTURES_DIR = Path(__file__).parent.parent / "fixtures"
@@ -106,6 +105,7 @@ questionnaire:
   title: Scalar Predicate Test
   blocks:
     - id: main
+      kind: Sequence
       items:
         - id: q1
           kind: Question
@@ -170,6 +170,7 @@ questionnaire:
   title: Invalid Predicate Test
   blocks:
     - id: main
+      kind: Sequence
       items:
         - id: q1
           kind: Question
@@ -306,7 +307,7 @@ class TestDependencyDiscovery(unittest.TestCase):
         builder = StaticBuilder(state)
 
         deps = builder.get_item_dependencies()
-        for item_id, item_deps in deps.items():
+        for _item_id, item_deps in deps.items():
             self.assertEqual(len(item_deps), 0)
 
     def test_precondition_dependencies(self):
@@ -335,16 +336,10 @@ class TestDependencyDiscovery(unittest.TestCase):
         self.assertIsNotNone(order)
 
         # q_employed must come before q_job_title
-        self.assertLess(
-            order.index("q_employed"),
-            order.index("q_job_title")
-        )
+        self.assertLess(order.index("q_employed"), order.index("q_job_title"))
 
         # q_degree must come before q_field
-        self.assertLess(
-            order.index("q_degree"),
-            order.index("q_field")
-        )
+        self.assertLess(order.index("q_degree"), order.index("q_field"))
 
 
 @pytest.mark.integration
@@ -381,7 +376,7 @@ class TestCycleDetection(unittest.TestCase):
         self.assertIsNotNone(order)
         self.assertTrue(topology.has_cycles)
         # All items appear in the order
-        all_item_ids = {item['id'] for item in state.get_all_items() if item.get('id')}
+        all_item_ids = {item["id"] for item in state.get_all_items() if item.get("id")}
         self.assertEqual(set(order), all_item_ids)
 
 
@@ -495,20 +490,29 @@ class TestEndToEndPipeline(unittest.TestCase):
 
 @pytest.mark.integration
 class TestBlockPreconditionPropagation(unittest.TestCase):
-    """Tests for block-level precondition inheritance by enclosed items."""
+    """Block preconditions stay on the block object (R25 — no item-list merge).
+
+    Downstream consumers (FlowProcessor at runtime, StaticBuilder at Z3
+    constraint-build time) compose ``block.precondition + item.precondition``
+    when they need the combined view. The loader's job is just to lift
+    blocks and items to top-level arrays and preserve each scope's
+    conditions where the author wrote them.
+    """
 
     def _load_from_string(self, qml_content: str) -> QMLState:
         loader = QMLLoader(schema_path=None)
         data = loader.load_from_string(qml_content)
         return QMLState(data)
 
-    def test_block_precondition_inherited_by_items_without_preconditions(self):
-        """Items without their own preconditions inherit the block's preconditions."""
+    def test_block_precondition_stays_on_block(self):
+        """The block keeps its precondition; items don't inherit it at the
+        list level."""
         state = self._load_from_string("""
 questionnaire:
   title: Block Inheritance Test
   blocks:
     - id: conditional_block
+      kind: Sequence
       precondition:
         - predicate: "q_gate.outcome == 1"
       items:
@@ -519,22 +523,27 @@ questionnaire:
           kind: Question
           title: Question B
 """)
+        blocks_by_id = {b["id"]: b for b in state.get_blocks()}
+        gated_block = blocks_by_id["conditional_block"]
+        self.assertEqual(len(gated_block["precondition"]), 1)
+        self.assertEqual(gated_block["precondition"][0]["predicate"], "q_gate.outcome == 1")
+
+        # Items keep their OWN precondition list — empty here, since neither
+        # q_a nor q_b declared one. No merged copy of the block's predicate.
         q_a = state.get_item("q_a")
         q_b = state.get_item("q_b")
+        self.assertFalse(q_a.get("precondition"))
+        self.assertFalse(q_b.get("precondition"))
 
-        self.assertEqual(len(q_a["precondition"]), 1)
-        self.assertEqual(q_a["precondition"][0]["predicate"], "q_gate.outcome == 1")
-
-        self.assertEqual(len(q_b["precondition"]), 1)
-        self.assertEqual(q_b["precondition"][0]["predicate"], "q_gate.outcome == 1")
-
-    def test_block_precondition_prepended_to_item_preconditions(self):
-        """Block preconditions are prepended before item's own preconditions."""
+    def test_block_and_item_preconditions_kept_separate(self):
+        """The block's preconditions stay on the block; the item's own
+        precondition list contains ONLY the item-authored entry."""
         state = self._load_from_string("""
 questionnaire:
-  title: Prepend Test
+  title: Separation Test
   blocks:
     - id: filtered_block
+      kind: Sequence
       precondition:
         - predicate: "q_gate.outcome == 1"
           hint: Block-level gate
@@ -546,14 +555,24 @@ questionnaire:
             - predicate: "q_other.outcome > 5"
               hint: Item-level filter
 """)
+        block = next(b for b in state.get_blocks() if b["id"] == "filtered_block")
         q_detail = state.get_item("q_detail")
 
-        # Block precondition first, then item precondition
-        self.assertEqual(len(q_detail["precondition"]), 2)
-        self.assertEqual(q_detail["precondition"][0]["predicate"], "q_gate.outcome == 1")
-        self.assertEqual(q_detail["precondition"][0]["hint"], "Block-level gate")
-        self.assertEqual(q_detail["precondition"][1]["predicate"], "q_other.outcome > 5")
-        self.assertEqual(q_detail["precondition"][1]["hint"], "Item-level filter")
+        self.assertEqual(
+            block["precondition"],
+            [
+                {"predicate": "q_gate.outcome == 1", "hint": "Block-level gate"},
+            ],
+        )
+        # Item list has its own predicate only, no block prefix and no marker.
+        self.assertEqual(
+            q_detail["precondition"],
+            [
+                {"predicate": "q_other.outcome > 5", "hint": "Item-level filter"},
+            ],
+        )
+        self.assertNotIn("_block_precondition_count", q_detail)
+        self.assertTrue(all("_source" not in c for c in q_detail["precondition"]))
 
     def test_block_without_precondition_does_not_affect_items(self):
         """Items in blocks without preconditions are unchanged."""
@@ -562,6 +581,7 @@ questionnaire:
   title: No Block Precondition Test
   blocks:
     - id: plain_block
+      kind: Sequence
       items:
         - id: q_plain
           kind: Question
@@ -583,17 +603,19 @@ questionnaire:
         self.assertEqual(q_with_own["precondition"][0]["predicate"], "q_plain.outcome > 0")
 
     def test_multiple_blocks_mixed_preconditions(self):
-        """Only items in blocks with preconditions inherit them."""
+        """Each block keeps its own precondition list; items get none."""
         state = self._load_from_string("""
 questionnaire:
   title: Mixed Blocks Test
   blocks:
     - id: open_block
+      kind: Sequence
       items:
         - id: q_open
           kind: Question
           title: Open question
     - id: gated_block
+      kind: Sequence
       precondition:
         - predicate: "q_open.outcome == 1"
       items:
@@ -601,20 +623,27 @@ questionnaire:
           kind: Question
           title: Gated question
 """)
+        blocks_by_id = {b["id"]: b for b in state.get_blocks()}
         q_open = state.get_item("q_open")
         q_gated = state.get_item("q_gated")
 
+        # Block precondition lives on the block; item list is empty.
+        self.assertFalse(blocks_by_id["open_block"].get("precondition"))
+        self.assertEqual(
+            blocks_by_id["gated_block"]["precondition"],
+            [{"predicate": "q_open.outcome == 1"}],
+        )
         self.assertFalse(q_open.get("precondition"))
-        self.assertEqual(len(q_gated["precondition"]), 1)
-        self.assertEqual(q_gated["precondition"][0]["predicate"], "q_open.outcome == 1")
+        self.assertFalse(q_gated.get("precondition"))
 
-    def test_multiple_block_preconditions_all_propagated(self):
-        """All block-level preconditions propagate to each item."""
+    def test_multiple_block_preconditions_kept_on_block(self):
+        """All block-level preconditions live on the block as a list."""
         state = self._load_from_string("""
 questionnaire:
   title: Multi Precondition Test
   blocks:
     - id: multi_gate
+      kind: Sequence
       precondition:
         - predicate: "q_gate1.outcome == 1"
         - predicate: "q_gate2.outcome == 1"
@@ -623,19 +652,24 @@ questionnaire:
           kind: Question
           title: Inner question
 """)
+        block = next(b for b in state.get_blocks() if b["id"] == "multi_gate")
         q_inner = state.get_item("q_inner")
 
-        self.assertEqual(len(q_inner["precondition"]), 2)
-        self.assertEqual(q_inner["precondition"][0]["predicate"], "q_gate1.outcome == 1")
-        self.assertEqual(q_inner["precondition"][1]["predicate"], "q_gate2.outcome == 1")
+        self.assertEqual(len(block["precondition"]), 2)
+        self.assertEqual(block["precondition"][0]["predicate"], "q_gate1.outcome == 1")
+        self.assertEqual(block["precondition"][1]["predicate"], "q_gate2.outcome == 1")
+        # Item keeps no copy of either.
+        self.assertFalse(q_inner.get("precondition"))
 
     def test_block_scalar_predicate_normalization(self):
-        """Block-level scalar predicates (bool) are normalized to strings."""
+        """Block-level scalar predicates (bool) are normalized to strings on
+        the block itself."""
         state = self._load_from_string("""
 questionnaire:
   title: Block Normalization Test
   blocks:
     - id: always_block
+      kind: Sequence
       precondition:
         - predicate: true
       items:
@@ -643,11 +677,10 @@ questionnaire:
           kind: Question
           title: Always shown
 """)
-        q_always = state.get_item("q_always")
-
-        self.assertEqual(len(q_always["precondition"]), 1)
-        self.assertEqual(q_always["precondition"][0]["predicate"], "True")
-        self.assertIsInstance(q_always["precondition"][0]["predicate"], str)
+        block = next(b for b in state.get_blocks() if b["id"] == "always_block")
+        self.assertEqual(len(block["precondition"]), 1)
+        self.assertEqual(block["precondition"][0]["predicate"], "True")
+        self.assertIsInstance(block["precondition"][0]["predicate"], str)
 
     def test_block_preconditions_stripped_from_block_metadata(self):
         """Flattened block metadata retains preconditions but not items."""
@@ -656,6 +689,7 @@ questionnaire:
   title: Block Metadata Test
   blocks:
     - id: gated
+      kind: Sequence
       title: Gated Block
       precondition:
         - predicate: "x == 1"
@@ -738,16 +772,25 @@ class TestBlockPreconditionPipeline(unittest.TestCase):
         result_retired = classifier.classify_item("q_retired")
         self.assertEqual(result_retired["precondition"]["status"], "CONDITIONAL")
 
-    def test_block_precondition_merged_item_has_combined_preconditions(self):
-        """q_job_title has both block and item preconditions in the loaded state."""
+    def test_block_and_item_preconditions_compose_in_static_builder(self):
+        """R25: the loader doesn't merge, but StaticBuilder's item_details
+        composes block + item preconditions so ItemClassifier still sees
+        the combined view."""
         state = load_qml_fixture("block_preconditions.qml")
 
+        # Loader: q_job_title carries ONLY its own precondition.
         q_job = state.get_item("q_job_title")
-        self.assertEqual(len(q_job["precondition"]), 2)
-        # Block precondition first
-        self.assertEqual(q_job["precondition"][0]["predicate"], "q_age.outcome <= 2")
-        # Item precondition second
-        self.assertEqual(q_job["precondition"][1]["predicate"], "q_employed.outcome == 1")
+        self.assertEqual(len(q_job["precondition"]), 1)
+        self.assertEqual(q_job["precondition"][0]["predicate"], "q_employed.outcome == 1")
+
+        # StaticBuilder: when populating item_details for ItemClassifier,
+        # the block precondition is prepended onto the item's own list.
+        builder = StaticBuilder(state)
+        details = builder.item_details["q_job_title"]
+        composed = details["preconditions"]
+        self.assertEqual(len(composed), 2)
+        self.assertEqual(composed[0]["predicate"], "q_age.outcome <= 2")
+        self.assertEqual(composed[1]["predicate"], "q_employed.outcome == 1")
 
 
 if __name__ == "__main__":

@@ -16,15 +16,15 @@ input. Instead of crashing, these patterns should either be handled
 correctly or logged with warnings and skipped gracefully.
 """
 
-import unittest
-import pytest
 import ast
+import unittest
+
+import pytest
+from askalot_qml.z3.pragmatic_compiler import PragmaticZ3Compiler
 from z3 import *
 
-from askalot_qml.z3.pragmatic_compiler import PragmaticZ3Compiler
 
-
-def compile_code(code: str, predefined=None, item_id='test'):
+def compile_code(code: str, predefined=None, item_id="test"):
     """Helper to compile code and return compiler state."""
     compiler = PragmaticZ3Compiler(predefined or {}, item_id)
     tree = ast.parse(code)
@@ -41,14 +41,14 @@ class TestPragmaticZ3CompilerRobustness(unittest.TestCase):
         """Multi-target assignment (a = b = 5) should not crash."""
         compiler = compile_code("a = b = 5")
         # Both variables should be assigned
-        self.assertIn('a', compiler.env)
-        self.assertIn('b', compiler.env)
+        self.assertIn("a", compiler.env)
+        self.assertIn("b", compiler.env)
 
     def test_tuple_unpacking_no_crash(self):
         """Tuple unpacking (a, b = 1, 2) should assign both variables."""
         compiler = compile_code("a, b = 1, 2")
-        self.assertIn('a', compiler.env)
-        self.assertIn('b', compiler.env)
+        self.assertIn("a", compiler.env)
+        self.assertIn("b", compiler.env)
 
     def test_subscript_assignment_no_crash(self):
         """Subscript assignment (arr[0] = 5) should not crash."""
@@ -69,21 +69,21 @@ class TestPragmaticZ3CompilerRobustness(unittest.TestCase):
 
     def test_not_in_operator_no_crash(self):
         """NotIn operator (x not in [1, 2]) should produce valid constraint."""
-        predefined = {'x': Int('x')}
+        predefined = {"x": Int("x")}
         compiler = compile_code("result = x not in [1, 2, 3]", predefined)
-        self.assertIn('result', compiler.env)
+        self.assertIn("result", compiler.env)
         # Should have a constraint for the assignment
         self.assertGreater(len(compiler.constraints), 0)
 
     def test_not_in_operator_semantics(self):
         """NotIn operator should produce correct Z3 constraint."""
-        predefined = {'x': Int('x')}
+        predefined = {"x": Int("x")}
         compiler = compile_code("result = x not in [1, 2, 3]", predefined)
 
         # Verify that x=4 satisfies "not in [1,2,3]"
         solver = Solver()
         solver.add(compiler.constraints)
-        solver.add(predefined['x'] == 4)
+        solver.add(predefined["x"] == 4)
         self.assertEqual(solver.check(), sat)
 
     def test_augassign_unsupported_target_no_crash(self):
@@ -96,10 +96,10 @@ class TestPragmaticZ3CompilerRobustness(unittest.TestCase):
 
     def test_multi_target_outcome_assignment_no_crash(self):
         """Multi-target with outcome attribute (a = item.outcome = 5) should not crash."""
-        predefined = {'S_q1': Int('S_q1')}
-        compiler = compile_code("a = q1.outcome = 5", predefined, item_id='test')
-        self.assertIn('a', compiler.env)
+        predefined = {"S_q1": Int("S_q1")}
+        compiler = compile_code("a = q1.outcome = 5", predefined, item_id="test")
+        self.assertIn("a", compiler.env)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     unittest.main()

@@ -5,6 +5,7 @@ questionnaire:
     risk_level = 0
   blocks:
     - id: assessment
+      kind: Sequence
       title: "Risk Assessment"
       items:
         - id: q_age

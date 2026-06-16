@@ -31,6 +31,7 @@ questionnaire:
 
   blocks:
     - id: block1
+      kind: Sequence
       title: "Test Block"
       items:
         - id: q1

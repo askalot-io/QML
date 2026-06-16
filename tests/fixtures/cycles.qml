@@ -2,6 +2,7 @@ questionnaire:
   title: "Survey with Cycles (Invalid)"
   blocks:
     - id: main
+      kind: Sequence
       title: "Cyclic Questions"
       items:
         - id: q_a

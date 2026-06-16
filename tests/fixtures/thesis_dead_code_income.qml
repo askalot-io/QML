@@ -24,6 +24,7 @@ questionnaire:
 
   blocks:
     - id: block1
+      kind: Sequence
       title: "Financial Information"
       items:
         - id: q_income

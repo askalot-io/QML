@@ -37,14 +37,13 @@ Gap analysis:
 """
 
 import unittest
-import pytest
 from pathlib import Path
 
+import pytest
+from askalot_qml.core.qml_engine import QMLEngine
 from askalot_qml.core.qml_loader import QMLLoader
 from askalot_qml.models.qml_state import QMLState
-from askalot_qml.core.qml_engine import QMLEngine
-from askalot_qml.z3 import ItemClassifier, GlobalFormula
-
+from askalot_qml.z3 import GlobalFormula, ItemClassifier
 
 FIXTURES_DIR = Path(__file__).parent.parent / "fixtures"
 
@@ -78,33 +77,25 @@ class TestStaticBuilderTracksCodeBlockVariables(unittest.TestCase):
 
     def test_ssa_versions_created_for_var1(self):
         """StaticBuilder creates SSA versions for var1 from codeBlocks."""
-        self.assertIn(
-            "var1",
-            self.builder.version_map,
-            "var1 should be tracked in SSA version map"
-        )
+        self.assertIn("var1", self.builder.version_map, "var1 should be tracked in SSA version map")
         # Should have multiple versions (from codeInit, q1, q2)
         self.assertGreaterEqual(
             self.builder.version_map.get("var1", -1),
             1,
-            "var1 should have at least 2 versions (from q1 and q2 codeBlocks)"
+            "var1 should have at least 2 versions (from q1 and q2 codeBlocks)",
         )
 
     def test_z3_variables_created_for_var1_versions(self):
         """Z3 variables are created for each SSA version of var1."""
         var1_vars = [name for name in self.builder.z3_vars.keys() if name.startswith("var1_")]
-        self.assertGreater(
-            len(var1_vars),
-            0,
-            "Should have SSA versions of var1 in z3_vars"
-        )
+        self.assertGreater(len(var1_vars), 0, "Should have SSA versions of var1 in z3_vars")
 
     def test_behavioral_constraints_created(self):
         """StaticBuilder creates behavioral constraints from codeBlock assignments."""
         self.assertGreater(
             len(self.builder.constraints),
             0,
-            "StaticBuilder should create constraints from codeBlock assignments"
+            "StaticBuilder should create constraints from codeBlock assignments",
         )
 
     def test_domain_constraints_created(self):
@@ -112,7 +103,7 @@ class TestStaticBuilderTracksCodeBlockVariables(unittest.TestCase):
         self.assertGreater(
             len(self.builder.domain_constraints),
             0,
-            "Domain constraints should exist for items with min/max"
+            "Domain constraints should exist for items with min/max",
         )
 
 
@@ -153,7 +144,7 @@ class TestPerItemValidationWithComputedVariables(unittest.TestCase):
         self.assertEqual(
             invariant,
             "INFEASIBLE",
-            f"With codeBlock constraints, q4 postcondition should be INFEASIBLE, got {invariant}"
+            f"With codeBlock constraints, q4 postcondition should be INFEASIBLE, got {invariant}",
         )
 
     def test_q_globally_false_is_true_with_codeblock_constraints(self):
@@ -172,7 +163,7 @@ class TestPerItemValidationWithComputedVariables(unittest.TestCase):
 
         self.assertTrue(
             q_globally_false,
-            "q_globally_false should be True with codeBlock constraints (var1 bounded)"
+            "q_globally_false should be True with codeBlock constraints (var1 bounded)",
         )
 
 
@@ -205,7 +196,7 @@ class TestGlobalValidationWithComputedVariables(unittest.TestCase):
         # If behavioral constraints were included: would depend on the formula
         self.assertTrue(
             result.satisfiable,
-            f"Global formula should be SAT with domain-only base, got {result.status}"
+            f"Global formula should be SAT with domain-only base, got {result.status}",
         )
 
 
@@ -236,7 +227,7 @@ class TestCodeBlockConstraintsSeparation(unittest.TestCase):
         self.assertEqual(
             len(self.builder.codeblock_constraints),
             3,
-            f"Should have 3 codeBlock constraints (init + q1 + q2), got {len(self.builder.codeblock_constraints)}"
+            f"Should have 3 codeBlock constraints (init + q1 + q2), got {len(self.builder.codeblock_constraints)}",
         )
 
     def test_postcondition_not_in_codeblock_constraints(self):
@@ -248,7 +239,7 @@ class TestCodeBlockConstraintsSeparation(unittest.TestCase):
         self.assertNotIn(
             "1000",
             codeblock_str,
-            "Postcondition (var1 - 1000 > q2.outcome) should not be in codeblock_constraints"
+            "Postcondition (var1 - 1000 > q2.outcome) should not be in codeblock_constraints",
         )
 
     def test_full_base_uses_codeblock_constraints(self):
@@ -275,19 +266,19 @@ class TestDebugOutput(unittest.TestCase):
     def test_print_debug_dump(self):
         """Print debug info for manual inspection."""
         debug_output = self.builder.debug_dump()
-        print("\n" + "="*60)
+        print("\n" + "=" * 60)
         print("STATIC BUILDER DEBUG DUMP")
-        print("="*60)
+        print("=" * 60)
         print(debug_output)
-        print("="*60)
+        print("=" * 60)
 
         self.assertIn("var1", debug_output, "Debug dump should mention var1")
 
     def test_print_all_constraints(self):
         """Print all constraints for manual inspection."""
-        print("\n" + "="*60)
+        print("\n" + "=" * 60)
         print("Z3 CONSTRAINTS ANALYSIS")
-        print("="*60)
+        print("=" * 60)
 
         print(f"\nDomain constraints ({len(self.builder.domain_constraints)}):")
         print("  (These define valid value ranges for item outcomes)")
@@ -304,20 +295,20 @@ class TestDebugOutput(unittest.TestCase):
         for i, c in enumerate(self.builder.constraints):
             print(f"  {i}: {c}")
 
-        print(f"\nZ3 variables for SSA versions:")
+        print("\nZ3 variables for SSA versions:")
         for name, var in sorted(self.builder.z3_vars.items()):
             print(f"  {name}: {var}")
 
-        print("="*60)
+        print("=" * 60)
 
     def test_print_classification_results(self):
         """Print classification results for all items."""
         classifier = ItemClassifier(self.builder)
         classifications = classifier.classify_all_items()
 
-        print("\n" + "="*60)
+        print("\n" + "=" * 60)
         print("ITEM CLASSIFICATION RESULTS")
-        print("="*60)
+        print("=" * 60)
 
         for item_id, classification in classifications.items():
             precond = classification.get("precondition", {})
@@ -330,7 +321,7 @@ class TestDebugOutput(unittest.TestCase):
             print(f"  q_globally_false: {global_flags.get('q_globally_false', 'N/A')}")
             print(f"  q_globally_true: {global_flags.get('q_globally_true', 'N/A')}")
 
-        print("="*60)
+        print("=" * 60)
 
 
 if __name__ == "__main__":

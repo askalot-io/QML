@@ -1,15 +1,16 @@
 import ast
 import re
-from typing import Optional, Dict, Any
 
 # Import profiling - graceful fallback if not available
 try:
     from askalot_common.profiling import profile_block
 except ImportError:
     from contextlib import contextmanager
+
     @contextmanager
     def profile_block(name, tags=None):
         yield
+
 
 class PythonRunner:
     """A secure Python code execution environment that provides controlled access to specific modules and functions.
@@ -33,37 +34,67 @@ class PythonRunner:
     Note:
         This class provides a secure environment for executing untrusted Python code by limiting available modules and functions.
     """
+
     def __init__(self):
+        import collections
+        import functools
+        import itertools
         import math
         import random
-        import statistics
-        import itertools
-        import functools
-        import collections
         import re
+        import statistics
 
         self._safe_modules = {
-            'math': math,
-            'random': random,
-            'statistics': statistics,
-            'itertools': itertools,
-            'functools': functools,
-            'collections': collections,
-            're': re,
+            "math": math,
+            "random": random,
+            "statistics": statistics,
+            "itertools": itertools,
+            "functools": functools,
+            "collections": collections,
+            "re": re,
         }
 
         self._safe_builtins = {
-            'abs': abs, 'all': all, 'any': any, 'ascii': ascii,
-            'bin': bin, 'bool': bool, 'chr': chr, 'complex': complex,
-            'divmod': divmod, 'enumerate': enumerate, 'filter': filter,
-            'float': float, 'format': format, 'hash': hash, 'hex': hex,
-            'int': int, 'isinstance': isinstance, 'issubclass': issubclass,
-            'iter': iter, 'len': len, 'list': list, 'map': map,
-            'max': max, 'min': min, 'next': next, 'oct': oct,
-            'ord': ord, 'pow': pow, 'range': range, 'repr': repr,
-            'reversed': reversed, 'round': round, 'set': set,
-            'slice': slice, 'sorted': sorted, 'str': str, 'sum': sum,
-            'tuple': tuple, 'zip': zip, 'print': self.safe_print,
+            "abs": abs,
+            "all": all,
+            "any": any,
+            "ascii": ascii,
+            "bin": bin,
+            "bool": bool,
+            "chr": chr,
+            "complex": complex,
+            "divmod": divmod,
+            "enumerate": enumerate,
+            "filter": filter,
+            "float": float,
+            "format": format,
+            "hash": hash,
+            "hex": hex,
+            "int": int,
+            "isinstance": isinstance,
+            "issubclass": issubclass,
+            "iter": iter,
+            "len": len,
+            "list": list,
+            "map": map,
+            "max": max,
+            "min": min,
+            "next": next,
+            "oct": oct,
+            "ord": ord,
+            "pow": pow,
+            "range": range,
+            "repr": repr,
+            "reversed": reversed,
+            "round": round,
+            "set": set,
+            "slice": slice,
+            "sorted": sorted,
+            "str": str,
+            "sum": sum,
+            "tuple": tuple,
+            "zip": zip,
+            "print": self.safe_print,
         }
 
         # Store captured print output
@@ -71,38 +102,53 @@ class PythonRunner:
 
         # Define forbidden node types for AST analysis
         self._forbidden_nodes = {
-            ast.Import, ast.ImportFrom,  # No imports
-            ast.AsyncFunctionDef, ast.ClassDef,  # No class or async function definitions
-            ast.Await, ast.AsyncFor, ast.AsyncWith,  # No async operations
+            ast.Import,
+            ast.ImportFrom,  # No imports
+            ast.AsyncFunctionDef,
+            ast.ClassDef,  # No class or async function definitions
+            ast.Await,
+            ast.AsyncFor,
+            ast.AsyncWith,  # No async operations
         }
 
         # Define forbidden attribute patterns
         self._forbidden_attrs = {
-            '__.+__',  # No dunder methods
-            'eval', 'exec', 'compile',  # No code execution
-            'open', 'file', 'os', 'sys',  # No file/system access
-            'globals', 'locals', 'getattr', 'setattr',  # No dynamic attribute access
-            'subprocess', 'importlib',  # No subprocess or dynamic imports
-            'builtins', '__import__',  # No access to builtin imports
-            'socket', 'requests'  # No network access
+            "__.+__",  # No dunder methods
+            "eval",
+            "exec",
+            "compile",  # No code execution
+            "open",
+            "file",
+            "os",
+            "sys",  # No file/system access
+            "globals",
+            "locals",
+            "getattr",
+            "setattr",  # No dynamic attribute access
+            "subprocess",
+            "importlib",  # No subprocess or dynamic imports
+            "builtins",
+            "__import__",  # No access to builtin imports
+            "socket",
+            "requests",  # No network access
         }
 
     def safe_print(self, *args, **kwargs):
         """A safe wrapper around the built-in print function that captures output"""
         # Convert args to string and join them
         output_str = " ".join(str(arg) for arg in args)
-        
+
         # Add any keyword arguments that might affect formatting
-        if 'sep' in kwargs:
-            output_str = kwargs['sep'].join(str(arg) for arg in args)
-        
+        if "sep" in kwargs:
+            output_str = kwargs["sep"].join(str(arg) for arg in args)
+
         # Capture the output
         self.captured_output.append(output_str)
-        
+
         # Also print to console for debugging
         print("print:", output_str, **kwargs)
 
-    def validate_code(self, code: str) -> Optional[str]:
+    def validate_code(self, code: str) -> str | None:
         """
         Validate code for safety using AST analysis.
 
@@ -123,7 +169,7 @@ class PythonRunner:
         except Exception as e:
             return f"Validation error: {e}"
 
-    def validate_expr(self, expr: str) -> Optional[str]:
+    def validate_expr(self, expr: str) -> str | None:
         """
         Validate expression for safety using AST analysis.
 
@@ -135,7 +181,7 @@ class PythonRunner:
         """
         try:
             # Parse the expression into an AST
-            tree = ast.parse(expr, mode='eval')
+            tree = ast.parse(expr, mode="eval")
 
             # Check for disallowed constructs
             return self._check_ast_safety(tree)
@@ -144,7 +190,7 @@ class PythonRunner:
         except Exception as e:
             return f"Validation error: {e}"
 
-    def _check_ast_safety(self, tree: ast.AST) -> Optional[str]:
+    def _check_ast_safety(self, tree: ast.AST) -> str | None:
         """
         Check if an AST is safe to execute.
 
@@ -196,7 +242,7 @@ class PythonRunner:
         Raises:
             ValueError: If the code contains disallowed constructs
         """
-        with profile_block('qml_run_code'):
+        with profile_block("qml_run_code"):
             # Clear any previous captured output
             self.captured_output = []
 
@@ -206,10 +252,7 @@ class PythonRunner:
                 raise ValueError(f"Unsafe code: {error}")
 
             # Set up execution environment
-            global_env = {
-                '__builtins__': self._safe_builtins,
-                **self._safe_modules
-            }
+            global_env = {"__builtins__": self._safe_builtins, **self._safe_modules}
 
             local_env = {**kwargs}
 
@@ -218,13 +261,13 @@ class PythonRunner:
                 exec(code, global_env, local_env)
 
                 # Add the captured output to the environment
-                local_env['__output__'] = self.captured_output
+                local_env["__output__"] = self.captured_output
                 return local_env
             except Exception as e:
                 # Add the exception to the environment
-                local_env['__error__'] = str(e)
+                local_env["__error__"] = str(e)
                 # Add captured output up to the point of error
-                local_env['__output__'] = self.captured_output
+                local_env["__output__"] = self.captured_output
                 return local_env
 
     def eval_expr(self, expr: str, **kwargs) -> bool:
@@ -241,17 +284,14 @@ class PythonRunner:
         Raises:
             ValueError: If the expression contains disallowed constructs
         """
-        with profile_block('qml_eval_expr'):
+        with profile_block("qml_eval_expr"):
             # Validate expression safety
             error = self.validate_expr(expr)
             if error:
                 raise ValueError(f"Unsafe expression: {error}")
 
             # Set up evaluation environment
-            global_env = {
-                '__builtins__': self._safe_builtins,
-                **self._safe_modules
-            }
+            global_env = {"__builtins__": self._safe_builtins, **self._safe_modules}
 
             local_env = {**kwargs}
 
@@ -261,3 +301,26 @@ class PythonRunner:
             result = eval(expr, global_env, local_env)
             return bool(result)
 
+    def eval_value(self, expr: str, **kwargs):
+        """
+        Safely evaluate an expression and return the RAW result (no bool coercion).
+
+        Use this for non-predicate expressions where the natural type matters —
+        e.g., Roster `iterateOver` which must resolve to an int bitmask.
+        For boolean predicates (preconditions / postconditions) keep using
+        eval_expr() to preserve the long-standing fail-open contract.
+
+        Raises:
+            ValueError: If the expression contains disallowed constructs.
+            Anything raised by `eval` (NameError, TypeError, …) bubbles up so
+            the caller can decide policy (e.g., FlowProcessor surfaces a
+            survey warning and treats the roster pass as empty).
+        """
+        with profile_block("qml_eval_value"):
+            error = self.validate_expr(expr)
+            if error:
+                raise ValueError(f"Unsafe expression: {error}")
+
+            global_env = {"__builtins__": self._safe_builtins, **self._safe_modules}
+            local_env = {**kwargs}
+            return eval(expr, global_env, local_env)

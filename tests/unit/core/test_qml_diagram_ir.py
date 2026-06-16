@@ -1,0 +1,444 @@
+"""
+Unit tests for the positions-free structural IR emitted by QMLDiagramIR.
+
+Tests the IR shape and key invariants introduced by the 2026-05-13
+diagram-viewer rewrite:
+
+- Typed top-level arrays (blocks, items, conditions, variables, edges)
+  replace the legacy flat {nodes, edges} with `type` discriminator.
+- Per-(variable, version) nodes anchor to the defining item via SSA
+  `version_history`, replacing the collapsed `var_<name>` single node.
+- Version-chain edges (v_n -> v_{n+1}) emit for every consecutive pair.
+- Block-kind coloring axis (Sequence/Roster/Sample) is declarative —
+  the IR reports `kind`, the client decides visual encoding.
+- No positions: x/y/width/height/bend_points/arrow_end/arrow_start and
+  the top-level `layout` key never appear on any IR entry.
+- apply_validation_coloring inlines `classification` onto item entries
+  (no separate `classes` map).
+
+These tests construct minimal QMLState instances directly — they exercise
+the emission logic without needing the four brainstorm-named reference
+questionnaires (SAEP/ICS/DHS8/ESS12), which do not live in this repo.
+The data/qml corpus (DORA chapters and demos) is the real integration
+substrate and is exercised via the test_validation_blueprint_response.py
+integration tests.
+"""
+
+import pytest
+from askalot_qml.core.qml_diagram_ir import QMLDiagramIR
+from askalot_qml.core.qml_engine import QMLEngine
+from askalot_qml.models.qml_state import QMLState
+
+
+def _make_state(items_data, code_init="", blocks_data=None):
+    """Build a QMLState for a single-block questionnaire (unless blocks_data provided)."""
+    default_blocks = [{"id": "b1", "title": "Block 1", "kind": "Sequence"}]
+    return QMLState(
+        {
+            "title": "Test",
+            "codeInit": code_init,
+            "blocks": blocks_data or default_blocks,
+            "items": [
+                {
+                    "id": i["id"],
+                    "blockId": i.get("blockId", "b1"),
+                    "kind": i.get("kind", "Question"),
+                    "title": i.get("title", f"Item {i['id']}"),
+                    **{k: v for k, v in i.items() if k not in ("id", "blockId", "kind", "title")},
+                }
+                for i in items_data
+            ],
+        }
+    )
+
+
+def _build_ir(state):
+    engine = QMLEngine(state)
+    return QMLDiagramIR(engine.topology, state).generate_base_graph()
+
+
+class TestIRShape:
+    def test_top_level_arrays_present(self):
+        ir = _build_ir(_make_state([{"id": "q1"}]))
+        for key in ("blocks", "items", "conditions", "variables", "edges", "metadata"):
+            assert key in ir, f"missing IR top-level key {key!r}"
+        # Legacy shape must not leak through
+        assert "nodes" not in ir
+        assert "classes" not in ir
+        assert "layout" not in ir
+
+    def test_no_positions_anywhere(self):
+        """IR is positions-free — no layout coords on any entry."""
+        state = _make_state(
+            [
+                {"id": "q1", "input": {"control": "Editbox", "min": 1, "max": 5}},
+                {"id": "q2", "precondition": [{"predicate": "q1.outcome > 0"}]},
+            ]
+        )
+        ir = _build_ir(state)
+        forbidden = {"x", "y", "width", "height", "bend_points", "arrow_end", "arrow_start"}
+        for bucket in ("blocks", "items", "conditions", "variables", "edges"):
+            for entry in ir[bucket]:
+                assert not (forbidden & set(entry.keys())), f"position leak in {bucket}: {entry}"
+
+    def test_item_entries_carry_block_id_and_kind(self):
+        ir = _build_ir(
+            _make_state(
+                [
+                    {"id": "q1", "kind": "Question"},
+                    {"id": "note1", "kind": "Comment"},
+                ]
+            )
+        )
+        by_id = {i["id"]: i for i in ir["items"]}
+        assert by_id["q1"]["block_id"] == "b1"
+        assert by_id["q1"]["kind"] == "Question"
+        assert by_id["note1"]["kind"] == "Comment"
+
+
+class TestSSAVersions:
+    def test_one_node_per_version(self):
+        """A variable assigned in three item codeBlocks emits three version nodes."""
+        state = _make_state(
+            [
+                {"id": "q1", "codeBlock": "score = 0"},
+                {"id": "q2", "codeBlock": "score = score + 1"},
+                {"id": "q3", "codeBlock": "score = score + 2"},
+            ]
+        )
+        ir = _build_ir(state)
+        score_versions = [v for v in ir["variables"] if v["name"] == "score"]
+        assert len(score_versions) == 3, ir["variables"]
+        versions = sorted(v["version"] for v in score_versions)
+        # Each assignment produces a new version; exact values depend on
+        # StaticBuilder's _get_next_version, but all three must be distinct.
+        assert len(set(versions)) == 3
+        anchors = {v["version"]: v["anchor_item_id"] for v in score_versions}
+        # Each version anchored to a known item (not __init__, no codeInit here)
+        assert set(anchors.values()) <= {"q1", "q2", "q3"}
+
+    def test_version_chain_edges_emitted(self):
+        state = _make_state(
+            [
+                {"id": "q1", "codeBlock": "score = 0"},
+                {"id": "q2", "codeBlock": "score = score + 1"},
+            ]
+        )
+        ir = _build_ir(state)
+        chain_edges = [e for e in ir["edges"] if e["kind"] == "version_chain"]
+        # Two versions -> one chain edge between them
+        assert len(chain_edges) == 1
+        assert chain_edges[0]["source"].startswith("var_score_v")
+        assert chain_edges[0]["target"].startswith("var_score_v")
+        assert chain_edges[0]["source"] != chain_edges[0]["target"]
+
+    def test_codeinit_variable_anchors_to_init(self):
+        state = _make_state(
+            [{"id": "q1"}],
+            code_init="flag = 1",
+        )
+        ir = _build_ir(state)
+        flags = [v for v in ir["variables"] if v["name"] == "flag"]
+        assert len(flags) == 1
+        assert flags[0]["anchor_item_id"] == "__init__"
+
+    def test_zero_variables_no_error(self):
+        ir = _build_ir(_make_state([{"id": "q1"}]))
+        assert ir["variables"] == []
+        # No version-chain edges when there are no versions.
+        assert all(e["kind"] != "version_chain" for e in ir["edges"])
+
+
+class TestBlockKind:
+    def test_sequence_and_roster_kinds_reported_declaratively(self):
+        state = QMLState(
+            {
+                "title": "Mixed",
+                "codeInit": "",
+                "blocks": [
+                    {"id": "b_seq", "title": "Seq", "kind": "Sequence"},
+                    {
+                        "id": "b_roster",
+                        "title": "Roster",
+                        "kind": "Roster",
+                        "iterateOver": "q_count.outcome",
+                        "labels": {1: "A", 2: "B", 4: "C"},
+                    },
+                ],
+                "items": [
+                    {
+                        "id": "q_count",
+                        "blockId": "b_seq",
+                        "kind": "Question",
+                        "title": "Count",
+                        "input": {"control": "Editbox", "min": 0, "max": 7},
+                    },
+                    {
+                        "id": "q_name",
+                        "blockId": "b_roster",
+                        "kind": "Question",
+                        "title": "Name",
+                        "input": {"control": "Textarea"},
+                    },
+                ],
+            }
+        )
+        ir = _build_ir(state)
+        by_id = {b["id"]: b for b in ir["blocks"]}
+        assert by_id["b_seq"]["kind"] == "Sequence"
+        assert by_id["b_roster"]["kind"] == "Roster"
+        assert by_id["b_roster"]["label_count"] == 3
+        assert by_id["b_roster"]["iterate_over"] == "q_count.outcome"
+
+
+class TestConditionChiclets:
+    def test_item_precondition_becomes_chiclet(self):
+        state = _make_state(
+            [
+                {"id": "q1", "input": {"control": "Editbox", "min": 0, "max": 10}},
+                {"id": "q2", "precondition": [{"predicate": "q1.outcome > 5"}]},
+            ]
+        )
+        ir = _build_ir(state)
+        q2_preconds = [c for c in ir["conditions"] if c["owner_id"] == "q2" and c["kind"] == "pre"]
+        assert len(q2_preconds) == 1
+        assert q2_preconds[0]["owner_kind"] == "item"
+        assert q2_preconds[0]["predicate"] == "q1.outcome > 5"
+
+    def test_item_outcome_reference_emitted_in_references_and_edges(self):
+        """`q1.outcome > 5` on q2 → q2_pre_0 carries a ref to q1, and the IR
+        emits a `condition_ref` edge from the chiclet to q1."""
+        state = _make_state(
+            [
+                {"id": "q1", "input": {"control": "Editbox", "min": 0, "max": 10}},
+                {"id": "q2", "precondition": [{"predicate": "q1.outcome > 5"}]},
+            ]
+        )
+        ir = _build_ir(state)
+        q2_pre = next(c for c in ir["conditions"] if c["owner_id"] == "q2" and c["kind"] == "pre")
+        assert q2_pre["references"] == [{"kind": "item_outcome", "target_id": "q1"}]
+        cond_ref_edges = [e for e in ir["edges"] if e["kind"] == "condition_ref"]
+        # R26: edges now carry source_kind + ref_kind for handle routing.
+        matching = [
+            e for e in cond_ref_edges if e["source"] == q2_pre["id"] and e["target"] == "q1"
+        ]
+        assert len(matching) == 1
+        assert matching[0]["source_kind"] == "pre"
+        assert matching[0]["ref_kind"] == "item_outcome"
+
+    def test_variable_read_reference_targets_latest_version(self):
+        """A bare `is_adult` reference resolves to the highest emitted version
+        of that variable in the IR."""
+        state = _make_state(
+            [
+                {
+                    "id": "q1",
+                    "input": {"control": "Editbox", "min": 0, "max": 99},
+                    "codeBlock": "is_adult = 1 if q1.outcome >= 18 else 0",
+                },
+                {"id": "q2", "precondition": [{"predicate": "is_adult == 1"}]},
+            ],
+            code_init="is_adult = 0",
+        )
+        ir = _build_ir(state)
+        # Variables: is_adult has two versions (v0 from codeInit, v1 from q1's codeBlock).
+        var_ids = sorted(v["id"] for v in ir["variables"] if v["name"] == "is_adult")
+        assert var_ids == ["var_is_adult_v0", "var_is_adult_v1"]
+        q2_pre = next(c for c in ir["conditions"] if c["owner_id"] == "q2" and c["kind"] == "pre")
+        # Reference points at the latest version (v1), not v0.
+        assert {"kind": "variable_read", "target_id": "var_is_adult_v1"} in q2_pre["references"]
+        cond_ref_edges = [e for e in ir["edges"] if e["kind"] == "condition_ref"]
+        assert any(
+            e["source"] == q2_pre["id"] and e["target"] == "var_is_adult_v1" for e in cond_ref_edges
+        )
+
+    def test_unparseable_predicate_yields_empty_references(self):
+        """Garbage predicates must not crash the emitter — references just
+        come back empty for that condition."""
+        state = _make_state(
+            [
+                {"id": "q1", "input": {"control": "Editbox", "min": 0, "max": 10}},
+                {"id": "q2", "precondition": [{"predicate": "not valid python @"}]},
+            ]
+        )
+        ir = _build_ir(state)
+        q2_pre = next(c for c in ir["conditions"] if c["owner_id"] == "q2" and c["kind"] == "pre")
+        assert q2_pre["references"] == []
+
+    def test_block_level_precondition_pinned_to_block_not_items(self):
+        """Block-level preconditions emit ONCE per block. R25: items only
+        carry their OWN preconditions (loader no longer merges)."""
+        state = QMLState(
+            {
+                "title": "Block pre",
+                "codeInit": "",
+                "blocks": [
+                    {
+                        "id": "b1",
+                        "title": "Gate",
+                        "kind": "Sequence",
+                        "precondition": [{"predicate": "True"}],
+                    },
+                ],
+                "items": [
+                    {
+                        "id": "q1",
+                        "blockId": "b1",
+                        "kind": "Question",
+                        "title": "q1",
+                        "precondition": [{"predicate": "q1.outcome > 0"}],
+                    },
+                    {"id": "q2", "blockId": "b1", "kind": "Question", "title": "q2"},
+                ],
+            }
+        )
+        ir = _build_ir(state)
+        block_preconds = [
+            c for c in ir["conditions"] if c["owner_kind"] == "block" and c["kind"] == "pre"
+        ]
+        # One block-level pre, not two (one per item).
+        assert len(block_preconds) == 1
+        assert block_preconds[0]["owner_id"] == "b1"
+
+        # Item-level chiclets reflect ONLY the items' own preconditions —
+        # not a duplicated block prefix.
+        q1_preconds = [
+            c
+            for c in ir["conditions"]
+            if c["owner_kind"] == "item" and c["owner_id"] == "q1" and c["kind"] == "pre"
+        ]
+        q2_preconds = [
+            c
+            for c in ir["conditions"]
+            if c["owner_kind"] == "item" and c["owner_id"] == "q2" and c["kind"] == "pre"
+        ]
+        assert len(q1_preconds) == 1
+        assert q1_preconds[0]["predicate"] == "q1.outcome > 0"
+        assert q2_preconds == []
+
+
+class TestValidationColoringInlined:
+    def test_classification_added_to_items_not_as_separate_map(self):
+        state = _make_state([{"id": "q1"}])
+        engine = QMLEngine(state)
+        diagram = QMLDiagramIR(engine.topology, state)
+        base = diagram.generate_base_graph()
+        classifications = {
+            "q1": {
+                "precondition": {"status": "ALWAYS"},
+                "postcondition": {"invariant": "NONE", "vacuous": False},
+            },
+        }
+        colored = diagram.apply_validation_coloring(base, classifications=classifications)
+        assert "classes" not in colored
+        q1 = next(i for i in colored["items"] if i["id"] == "q1")
+        assert q1["classification"] == "always"
+
+    def test_items_without_classifications_get_pending(self):
+        state = _make_state([{"id": "q1"}])
+        engine = QMLEngine(state)
+        diagram = QMLDiagramIR(engine.topology, state)
+        base = diagram.generate_base_graph()
+        colored = diagram.apply_validation_coloring(base, classifications=None)
+        q1 = next(i for i in colored["items"] if i["id"] == "q1")
+        assert q1["classification"] == "pending"
+        # No classifications → both raw axes are None so the front-end falls
+        # back to the default border/fill instead of leaving stale colours.
+        assert q1["precondition_status"] is None
+        assert q1["postcondition_invariant"] is None
+
+    def test_raw_precondition_and_postcondition_axes_inlined(self):
+        """The two-axis colour scheme needs raw precondition.status and
+        postcondition.invariant on each item — apply_validation_coloring should
+        forward them verbatim so the diagram front-end can pick border (pre)
+        and fill (post) independently."""
+        state = _make_state([{"id": "q1"}, {"id": "q2"}])
+        engine = QMLEngine(state)
+        diagram = QMLDiagramIR(engine.topology, state)
+        base = diagram.generate_base_graph()
+        classifications = {
+            "q1": {
+                "precondition": {"status": "CONDITIONAL"},
+                "postcondition": {"invariant": "INFEASIBLE", "vacuous": False},
+            },
+            "q2": {
+                "precondition": {"status": "NEVER"},
+                "postcondition": {"invariant": "TAUTOLOGICAL", "vacuous": False},
+            },
+        }
+        colored = diagram.apply_validation_coloring(base, classifications=classifications)
+        q1 = next(i for i in colored["items"] if i["id"] == "q1")
+        q2 = next(i for i in colored["items"] if i["id"] == "q2")
+        assert q1["precondition_status"] == "CONDITIONAL"
+        assert q1["postcondition_invariant"] == "INFEASIBLE"
+        assert q2["precondition_status"] == "NEVER"
+        assert q2["postcondition_invariant"] == "TAUTOLOGICAL"
+
+
+class TestTopologyAndCycles:
+    def test_topology_edges_follow_kahn_order(self):
+        state = _make_state(
+            [
+                {"id": "q1"},
+                {"id": "q2", "precondition": [{"predicate": "q1.outcome > 0"}]},
+                {"id": "q3", "precondition": [{"predicate": "q2.outcome > 0"}]},
+            ]
+        )
+        ir = _build_ir(state)
+        topology = [e for e in ir["edges"] if e["kind"] == "topology"]
+        # Two edges along the 3-item chain: q1 -> q2 -> q3
+        assert len(topology) == 2
+
+    def test_cycle_metadata_populated_when_cycles_exist(self):
+        state = _make_state(
+            [
+                {
+                    "id": "q1",
+                    "input": {"control": "Editbox", "min": 0, "max": 10},
+                    "precondition": [{"predicate": "q2.outcome > 0"}],
+                },
+                {
+                    "id": "q2",
+                    "input": {"control": "Editbox", "min": 0, "max": 10},
+                    "precondition": [{"predicate": "q1.outcome > 0"}],
+                },
+            ]
+        )
+        ir = _build_ir(state)
+        assert ir["metadata"]["has_cycles"] is True
+        assert ir["metadata"]["cycle_nodes"]  # non-empty
+
+
+class TestRealCorpusSmoke:
+    @pytest.mark.parametrize(
+        "filename",
+        [
+            "DORA_Article_5_Governance.qml",
+            "DORA_Article_6_Framework.qml",
+            "DORA_Articles_11-12_Response.qml",
+            "DORA_Articles_13-15_Evolution.qml",
+        ],
+    )
+    def test_dora_qmls_produce_valid_ir(self, filename):
+        """Complex real-world QMLs produce IR with no positions leak."""
+        from pathlib import Path
+
+        from askalot_qml.core.qml_loader import QMLLoader
+
+        data_dir = Path("/Project/askalot/data/qml")
+        if not (data_dir / filename).exists():
+            pytest.skip(f"{filename} not present in data/qml (dev corpus)")
+
+        loader = QMLLoader(qml_dir=data_dir)
+        questionnaire = loader.load_from_file(filename)
+        state = QMLState(questionnaire)
+        ir = _build_ir(state)
+
+        # Contract shape
+        assert isinstance(ir["blocks"], list) and ir["blocks"]
+        assert isinstance(ir["items"], list) and ir["items"]
+        # No positions on any entry
+        forbidden = {"x", "y", "width", "height", "bend_points", "arrow_end", "arrow_start"}
+        for bucket in ("blocks", "items", "conditions", "variables", "edges"):
+            for entry in ir[bucket]:
+                assert not (forbidden & set(entry.keys()))
