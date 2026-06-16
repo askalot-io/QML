@@ -21,6 +21,7 @@ questionnaire:
     # SECTION: household_demographics
     # ===================================================================
     - id: b_household
+      kind: Sequence
       title: "Cover & Household"
       items:
         # COVER_CONTACT: Administrative contact info
@@ -40,6 +41,7 @@ questionnaire:
             person_count = q_cover_count.outcome
 
     - id: b_person_roster
+      kind: Sequence
       title: "Person Roster"
       items:
         # P_Q1: Person name (administrative text field — modeled as Comment)
@@ -144,6 +146,7 @@ questionnaire:
     # SECTION: housing_structure
     # ===================================================================
     - id: b_housing_structure
+      kind: Sequence
       title: "Housing Characteristics"
       items:
         # H_Q1: Building type
@@ -284,6 +287,7 @@ questionnaire:
     # SECTION: housing_technology
     # ===================================================================
     - id: b_housing_technology
+      kind: Sequence
       title: "Technology, Vehicles & Energy"
       items:
         # H_Q10a-c: Computer types (QuestionGroup for uniform Yes/No items)
@@ -403,6 +407,7 @@ questionnaire:
     # ===================================================================
     # --- Utility Costs (Q17a-d) ---
     - id: b_utility_costs
+      kind: Sequence
       title: "Utility Costs"
       items:
         # H_Q17a: Electricity cost
@@ -496,6 +501,7 @@ questionnaire:
 
     # --- Benefits (Q18-Q19) ---
     - id: b_benefits
+      kind: Sequence
       title: "Food Stamps and HOA"
       items:
         # H_Q18: Food Stamps / SNAP
@@ -543,6 +549,7 @@ questionnaire:
 
     # --- Tenure (Q20) ---
     - id: b_tenure
+      kind: Sequence
       title: "Tenure"
       items:
         # H_Q20: Own or rent
@@ -559,6 +566,7 @@ questionnaire:
 
     # --- Renter Block (Q21a-b) — Filter B: rented only ---
     - id: b_renter
+      kind: Sequence
       title: "Renter Costs"
       precondition:
         - predicate: "q_h_q20.outcome == 3"
@@ -584,6 +592,7 @@ questionnaire:
 
     # --- Owner Block (Q22-Q26) — Filter C: owned only ---
     - id: b_owner
+      kind: Sequence
       title: "Owner Costs"
       precondition:
         - predicate: "q_h_q20.outcome in [1, 2]"
@@ -728,6 +737,7 @@ questionnaire:
 
     # --- Mobile Home Costs (Q27) — Filter D: mobile home + owned ---
     - id: b_mobile_home
+      kind: Sequence
       title: "Mobile Home Costs"
       precondition:
         - predicate: "q_h_q20.outcome in [1, 2]"
@@ -747,6 +757,7 @@ questionnaire:
     # SECTION: education_migration
     # ===================================================================
     - id: b_migration
+      kind: Sequence
       title: "Place of Birth & Citizenship"
       items:
         # P_Q7: Where was this person born?
@@ -784,6 +795,7 @@ questionnaire:
             max: 2026
 
     - id: b_education
+      kind: Sequence
       title: "School Enrollment & Educational Attainment"
       items:
         # P_Q10a: School attendance in last 3 months
@@ -848,6 +860,7 @@ questionnaire:
     # SECTION: language_residence
     # ===================================================================
     - id: b_ancestry_language
+      kind: Sequence
       title: "Ancestry & Language"
       items:
         # P_Q13: Ancestry or ethnic origin
@@ -892,6 +905,7 @@ questionnaire:
               4: "Not at all"
 
     - id: b_residence
+      kind: Sequence
       title: "Residence 1 Year Ago"
       items:
         # P_Q15a: Did this person live in this house 1 year ago?
@@ -921,6 +935,7 @@ questionnaire:
     # ===================================================================
     # ── Health Insurance (Q16, Filter G, Q17a-b) ──
     - id: b_health_insurance
+      kind: Sequence
       title: "Health Insurance Coverage"
       items:
         # P_Q16: Health insurance coverage types
@@ -966,6 +981,7 @@ questionnaire:
 
     # ── Disability: Hearing & Vision (Q18a-b) — asked of everyone ──
     - id: b_disability_hearing_vision
+      kind: Sequence
       title: "Disability - Hearing and Vision"
       items:
         # P_Q18a: Hearing difficulty
@@ -988,6 +1004,7 @@ questionnaire:
 
     # ── Disability: Cognitive, Walking, Dressing (Q19a-c) — Filter H: age >= 5 ──
     - id: b_disability_cognitive
+      kind: Sequence
       title: "Disability - Cognitive, Ambulatory, Self-Care"
       precondition:
         - predicate: "person_age >= 5"
@@ -1021,6 +1038,7 @@ questionnaire:
 
     # ── Disability: Errands (Q20) — Filter I: age >= 15 ──
     - id: b_disability_errands
+      kind: Sequence
       title: "Disability - Independent Living"
       precondition:
         - predicate: "person_age >= 15"
@@ -1039,6 +1057,7 @@ questionnaire:
     # ===================================================================
     # ── Marital Status & History (Q21-Q24) — age >= 15 ──
     - id: b_marital_status
+      kind: Sequence
       title: "Marital Status"
       precondition:
         - predicate: "person_age >= 15"
@@ -1115,6 +1134,7 @@ questionnaire:
 
     # ── Fertility (Q25) — Filter J: female age 15-50 ──
     - id: b_fertility
+      kind: Sequence
       title: "Fertility"
       precondition:
         - predicate: "person_sex == 2 and person_age >= 15 and person_age <= 50"
@@ -1130,6 +1150,7 @@ questionnaire:
 
     # ── Grandchildren (Q26a-c) — age >= 15 ──
     - id: b_grandchildren
+      kind: Sequence
       title: "Grandchildren"
       precondition:
         - predicate: "person_age >= 15"
@@ -1174,6 +1195,7 @@ questionnaire:
     # ===================================================================
     # ── Military Service (Q27-Q29) — age >= 15 ──
     - id: b_military
+      kind: Sequence
       title: "Military Service"
       precondition:
         - predicate: "person_age >= 15"
@@ -1244,6 +1266,7 @@ questionnaire:
     # All items gated on person_age >= 15 (Filter I)
     # =========================================================================
     - id: b_work_status
+      kind: Sequence
       title: "Work Status Last Week"
       precondition:
         - predicate: person_age >= 15
@@ -1281,6 +1304,7 @@ questionnaire:
     # Gated on worked_last_week == 1
     # =========================================================================
     - id: b_work_location
+      kind: Sequence
       title: "Work Location"
       precondition:
         - predicate: person_age >= 15
@@ -1347,6 +1371,7 @@ questionnaire:
     # Filter K: Q32 == 1 (car/truck/van) → Q33 carpool
     # =========================================================================
     - id: b_commute
+      kind: Sequence
       title: "Commuting to Work"
       precondition:
         - predicate: person_age >= 15
@@ -1411,6 +1436,7 @@ questionnaire:
     # Complex chain: Q36a → Q36b/Q36c → Q37 → Q38 → Q39
     # =========================================================================
     - id: b_job_search
+      kind: Sequence
       title: "Job Search and Layoff Status"
       precondition:
         - predicate: person_age >= 15
@@ -1504,6 +1530,7 @@ questionnaire:
     # Worked in past 12 months: either worked last week OR Q39 == 1
     # =========================================================================
     - id: b_work_history
+      kind: Sequence
       title: "Work History (Past 12 Months)"
       precondition:
         - predicate: person_age >= 15
@@ -1550,6 +1577,7 @@ questionnaire:
     # Non-workers with Q39 in {1,2} set it in Q39 codeBlock
     # =========================================================================
     - id: b_employer
+      kind: Sequence
       title: "Employer and Occupation Details"
       precondition:
         - predicate: person_age >= 15
@@ -1628,6 +1656,7 @@ questionnaire:
     # All gated on person_age >= 15 (Filter I from disability section)
     # =========================================================================
     - id: b_income
+      kind: Sequence
       title: "Income"
       precondition:
         - predicate: person_age >= 15

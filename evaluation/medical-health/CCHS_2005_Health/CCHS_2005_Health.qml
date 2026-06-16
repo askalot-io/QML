@@ -40,6 +40,7 @@ questionnaire:
     # SECTION: demographics_general_health
     # ===================================================================
     - id: b_age_dob
+      kind: Sequence
       title: Age and Date of Birth
       items:
       - id: q_anc_intro
@@ -93,6 +94,7 @@ questionnaire:
           max: 130
           right: years
     - id: b_general_health
+      kind: Sequence
       title: General Health
       items:
       - id: q_gen_intro
@@ -198,6 +200,7 @@ questionnaire:
             3: Somewhat weak
             4: Very weak
     - id: b_height_weight
+      kind: Sequence
       title: Height and Weight
       items:
       - id: q_hwt_height_range
@@ -321,6 +324,7 @@ questionnaire:
             2: Underweight
             3: Just about right
     - id: b_birth_immigration
+      kind: Sequence
       title: Country of Birth and Immigration
       items:
       - id: q_sdc_r1
@@ -382,6 +386,7 @@ questionnaire:
           max: 2005
           right: year
     - id: b_ethnicity
+      kind: Sequence
       title: Ethnicity and Ancestry
       items:
       - id: q_sdc_q4
@@ -469,6 +474,7 @@ questionnaire:
           placeholder: Specify racial background...
           maxLength: 200
     - id: b_languages
+      kind: Sequence
       title: Languages
       items:
       - id: q_sdc_q5
@@ -586,6 +592,7 @@ questionnaire:
           placeholder: Specify language...
           maxLength: 200
     - id: b_sexual_orientation
+      kind: Sequence
       title: Sexual Orientation
       precondition:
       - predicate: is_proxy == 0
@@ -606,6 +613,7 @@ questionnaire:
     # SECTION: lifestyle
     # ===================================================================
     - id: b_voluntary_orgs
+      kind: Sequence
       title: Voluntary Organizations
       precondition:
       - predicate: is_proxy == 0
@@ -633,6 +641,7 @@ questionnaire:
             4: At least once a year
             5: Not at all
     - id: b_sleep
+      kind: Sequence
       title: Sleep
       precondition:
       - predicate: is_proxy == 0
@@ -690,6 +699,7 @@ questionnaire:
             4: Most of the time
             5: All of the time
     - id: b_changes_health
+      kind: Sequence
       title: Changes Made to Improve Health
       precondition:
       - predicate: is_proxy == 0
@@ -839,6 +849,7 @@ questionnaire:
     # SECTION: chronic_conditions
     # ===================================================================
     - id: b_chronic_conditions
+      kind: Sequence
       title: Chronic Conditions Checklist
       items:
       - id: q_ccc_r011
@@ -1321,6 +1332,7 @@ questionnaire:
           placeholder: Specify the condition...
           maxLength: 80
     - id: b_diabetes_care
+      kind: Sequence
       title: Diabetes Care
       precondition:
       - predicate: q_ccc_q101.outcome == 1
@@ -1535,6 +1547,7 @@ questionnaire:
     # SECTION: medication
     # ===================================================================
     - id: b_medication_use
+      kind: Sequence
       title: Medication Use
       items:
       - id: q_med_r1
@@ -1721,6 +1734,7 @@ questionnaire:
           placeholder: Specify the medication...
           maxLength: 80
     - id: b_medication_exposure
+      kind: Sequence
       title: Medication Exposure
       precondition:
       - predicate: is_proxy == 0
@@ -2039,6 +2053,7 @@ questionnaire:
     # SECTION: health_care
     # ===================================================================
     - id: b_health_care_satisfaction
+      kind: Sequence
       title: Health Care System Satisfaction
       precondition:
       - predicate: is_proxy == 0
@@ -2086,6 +2101,7 @@ questionnaire:
             3: Fair
             4: Poor
     - id: b_regular_doctor_hospital
+      kind: Sequence
       title: Regular Doctor and Hospital Stays
       items:
       - id: q_hcu_r01
@@ -2183,6 +2199,7 @@ questionnaire:
           max: 366
           right: nights
     - id: b_professional_contacts
+      kind: Sequence
       title: Contacts with Health Professionals
       items:
       - id: q_hcu_q02a
@@ -2321,6 +2338,7 @@ questionnaire:
           if q_hcu_q02j.outcome > 0:
               had_health_contact = 1
     - id: b_contact_location
+      kind: Sequence
       title: Location of Most Recent Contact
       precondition:
       - predicate: q_hcu_q02a.outcome > 0 or q_hcu_q02c.outcome > 0 or q_hcu_q02d.outcome > 0
@@ -2363,6 +2381,7 @@ questionnaire:
             2: Through a videoconference
             3: Through another method
     - id: b_selfhelp_alternative
+      kind: Sequence
       title: Self-Help and Alternative Care
       items:
       - id: q_hcu_q04a
@@ -2411,6 +2430,7 @@ questionnaire:
           placeholder: Specify alternative provider...
           maxLength: 200
     - id: b_unmet_needs
+      kind: Sequence
       title: Unmet Health Care Needs
       items:
       - id: q_hcu_q06
@@ -2505,6 +2525,7 @@ questionnaire:
           placeholder: Specify location...
           maxLength: 200
     - id: b_government_home_care
+      kind: Sequence
       title: Government-Covered Home Care
       precondition:
       - predicate: age >= 18
@@ -2550,6 +2571,7 @@ questionnaire:
           placeholder: Specify service type...
           maxLength: 200
     - id: b_private_home_care
+      kind: Sequence
       title: Non-Government Home Care
       precondition:
       - predicate: age >= 18
@@ -2615,6 +2637,7 @@ questionnaire:
           placeholder: Specify service type...
           maxLength: 200
     - id: b_unmet_home_care
+      kind: Sequence
       title: Unmet Home Care Needs
       precondition:
       - predicate: age >= 18
@@ -2701,6 +2724,7 @@ questionnaire:
             8: A volunteer organization
             16: Other
     - id: b_overall_satisfaction
+      kind: Sequence
       title: Overall Health Care Satisfaction
       precondition:
       - predicate: is_proxy == 0
@@ -2745,6 +2769,7 @@ questionnaire:
             4: Somewhat dissatisfied
             5: Very dissatisfied
     - id: b_hospital_satisfaction
+      kind: Sequence
       title: Hospital Care Satisfaction
       precondition:
       - predicate: is_proxy == 0
@@ -2796,6 +2821,7 @@ questionnaire:
             4: Somewhat dissatisfied
             5: Very dissatisfied
     - id: b_physician_satisfaction
+      kind: Sequence
       title: Physician Care Satisfaction
       precondition:
       - predicate: is_proxy == 0
@@ -2846,6 +2872,7 @@ questionnaire:
             4: Somewhat dissatisfied
             5: Very dissatisfied
     - id: b_community_satisfaction
+      kind: Sequence
       title: Community-Based Care Satisfaction
       precondition:
       - predicate: is_proxy == 0
@@ -2890,6 +2917,7 @@ questionnaire:
             4: Somewhat dissatisfied
             5: Very dissatisfied
     - id: b_telehealth_satisfaction
+      kind: Sequence
       title: Telehealth Satisfaction
       precondition:
       - predicate: is_proxy == 0
@@ -2919,6 +2947,7 @@ questionnaire:
     # SECTION: activity_limitations
     # ===================================================================
     - id: b_difficulty_limitations
+      kind: Sequence
       title: Difficulty and Activity Limitations
       items:
       - id: q_rac_r1
@@ -2994,6 +3023,7 @@ questionnaire:
           if q_rac_q2c.outcome == 1 or q_rac_q2c.outcome == 2:
               has_activity_limitation = 1
     - id: b_cause_condition
+      kind: Sequence
       title: Cause of Condition
       precondition:
       - predicate: has_difficulty == 1 or has_activity_limitation == 1
@@ -3051,6 +3081,7 @@ questionnaire:
             3: A little
             4: None at all
     - id: b_need_for_help
+      kind: Sequence
       title: Need for Help with Activities
       items:
       - id: q_rac_q6a
@@ -3110,6 +3141,7 @@ questionnaire:
           false: 'No'
           true: 'Yes'
     - id: b_social_difficulties
+      kind: Sequence
       title: Social Difficulties
       items:
       - id: q_rac_q7a
@@ -3142,6 +3174,7 @@ questionnaire:
           if q_rac_q7a.outcome == 1 or q_rac_q7b.outcome == 1 or q_rac_q7c.outcome == 1:
               needs_help_or_has_social_difficulty = 1
     - id: b_reason_difficulties
+      kind: Sequence
       title: Reason for Difficulties
       precondition:
       - predicate: needs_help_or_has_social_difficulty == 1
@@ -3167,6 +3200,7 @@ questionnaire:
           placeholder: Specify reason...
           maxLength: 200
     - id: b_bed_days
+      kind: Sequence
       title: Bed Days
       items:
       - id: q_twd_intro
@@ -3221,6 +3255,7 @@ questionnaire:
           max: 14
           right: days
     - id: b_cutdown_days
+      kind: Sequence
       title: Cut-Down Days
       precondition:
       - predicate: q_twd_q1.outcome == 0 or (q_twd_q1.outcome == 1 and q_twd_q2.outcome < 14)
@@ -3272,6 +3307,7 @@ questionnaire:
           max: 14
           right: days
     - id: b_extra_effort
+      kind: Sequence
       title: Extra Effort Days
       precondition:
       - predicate: q_twd_q1.outcome == 0 or (q_twd_q1.outcome == 1 and q_twd_q2.outcome < 14)
@@ -3328,6 +3364,7 @@ questionnaire:
     # SECTION: preventive_screening
     # ===================================================================
     - id: b_flu
+      kind: Sequence
       title: Flu Shots
       precondition:
       - predicate: is_proxy == 0
@@ -3383,6 +3420,7 @@ questionnaire:
           placeholder: Specify...
           maxLength: 200
     - id: b_bpc
+      kind: Sequence
       title: Blood Pressure Check
       precondition:
       - predicate: is_proxy == 0
@@ -3440,6 +3478,7 @@ questionnaire:
           placeholder: Specify...
           maxLength: 200
     - id: b_pap
+      kind: Sequence
       title: Pap Smear Test
       precondition:
       - predicate: is_proxy == 0
@@ -3500,6 +3539,7 @@ questionnaire:
           placeholder: Specify...
           maxLength: 200
     - id: b_mam
+      kind: Sequence
       title: Mammography
       precondition:
       - predicate: is_proxy == 0
@@ -3606,6 +3646,7 @@ questionnaire:
           false: 'No'
           true: 'Yes'
     - id: b_brx
+      kind: Sequence
       title: Breast Examinations
       precondition:
       - predicate: is_proxy == 0
@@ -3666,6 +3707,7 @@ questionnaire:
           placeholder: Specify...
           maxLength: 200
     - id: b_bsx
+      kind: Sequence
       title: Breast Self-Examinations
       precondition:
       - predicate: is_proxy == 0
@@ -3714,6 +3756,7 @@ questionnaire:
           placeholder: Specify...
           maxLength: 200
     - id: b_eyx
+      kind: Sequence
       title: Eye Examinations
       precondition:
       - predicate: is_proxy == 0
@@ -3771,6 +3814,7 @@ questionnaire:
           placeholder: Specify...
           maxLength: 200
     - id: b_pcu
+      kind: Sequence
       title: Physical Check-Up
       precondition:
       - predicate: is_proxy == 0
@@ -3837,6 +3881,7 @@ questionnaire:
           placeholder: Specify...
           maxLength: 200
     - id: b_psa
+      kind: Sequence
       title: Prostate Cancer Screening
       precondition:
       - predicate: is_proxy == 0
@@ -3909,6 +3954,7 @@ questionnaire:
             4: 3 years to less than 5 years ago
             5: 5 or more years ago
     - id: b_ccs
+      kind: Sequence
       title: Colorectal Cancer Screening
       precondition:
       - predicate: is_proxy == 0
@@ -4017,6 +4063,7 @@ questionnaire:
           false: 'No'
           true: 'Yes'
     - id: b_den
+      kind: Sequence
       title: Dental Visits
       precondition:
       - predicate: is_proxy == 0
@@ -4088,6 +4135,7 @@ questionnaire:
     # SECTION: nutrition
     # ===================================================================
     - id: b_oral_health
+      kind: Sequence
       title: Oral Health
       precondition:
       - predicate: is_proxy == 0
@@ -4269,6 +4317,7 @@ questionnaire:
             5: Once a week
             6: Less than once a week
     - id: b_food_dietary_changes
+      kind: Sequence
       title: Food/Dietary Changes
       precondition:
       - predicate: is_proxy == 0
@@ -4373,6 +4422,7 @@ questionnaire:
             1: Yes (or sometimes)
             2: 'No'
     - id: b_fruit_vegetable
+      kind: Sequence
       title: Fruit and Vegetable Consumption
       precondition:
       - predicate: is_proxy == 0
@@ -4668,6 +4718,7 @@ questionnaire:
     # SECTION: physical_activity
     # ===================================================================
     - id: b_leisure_activity
+      kind: Sequence
       title: Leisure Physical Activities
       precondition:
       - predicate: is_proxy == 0
@@ -4779,6 +4830,7 @@ questionnaire:
             3: 31 to 60 minutes
             4: More than one hour
     - id: b_work_activity
+      kind: Sequence
       title: Work and Daily Physical Activity
       precondition:
       - predicate: is_proxy == 0
@@ -4825,6 +4877,7 @@ questionnaire:
             3: Usually lift or carry light loads, or have to climb stairs or hills often
             4: Do heavy work or carry very heavy loads
     - id: b_sedentary
+      kind: Sequence
       title: Sedentary Activities
       precondition:
       - predicate: is_proxy == 0
@@ -4895,6 +4948,7 @@ questionnaire:
             7: From 15 to 20 hours
             8: More than 20 hours
     - id: b_protective_equipment
+      kind: Sequence
       title: Use of Protective Equipment
       precondition:
       - predicate: is_proxy == 0
@@ -5063,6 +5117,7 @@ questionnaire:
     # SECTION: smoking_tobacco
     # ===================================================================
     - id: b_sun_safety
+      kind: Sequence
       title: Sun Safety Behaviours
       precondition:
       - predicate: is_proxy == 0
@@ -5203,6 +5258,7 @@ questionnaire:
             2: 15 to 25
             3: More than 25
     - id: b_smoking
+      kind: Sequence
       title: Smoking
       items:
       - id: q_smk_intro
@@ -5472,6 +5528,7 @@ questionnaire:
           min: 3
           max: 115
     - id: b_stages_of_change
+      kind: Sequence
       title: Smoking - Stages of Change
       precondition:
       - predicate: is_proxy == 0
@@ -5510,6 +5567,7 @@ questionnaire:
           min: 1
           max: 95
     - id: b_nicotine_dependence
+      kind: Sequence
       title: Nicotine Dependence
       precondition:
       - predicate: is_proxy == 0
@@ -5555,6 +5613,7 @@ questionnaire:
           false: 'No'
           true: 'Yes'
     - id: b_cessation_aids
+      kind: Sequence
       title: Smoking Cessation Aids
       precondition:
       - predicate: is_proxy == 0
@@ -5666,6 +5725,7 @@ questionnaire:
           false: 'No'
           true: 'Yes'
     - id: b_physician_counselling
+      kind: Sequence
       title: Smoking - Physician Counselling
       precondition:
       - predicate: is_proxy == 0
@@ -5751,6 +5811,7 @@ questionnaire:
           false: 'No'
           true: 'Yes'
     - id: b_youth_smoking
+      kind: Sequence
       title: Youth Smoking
       precondition:
       - predicate: is_proxy == 0
@@ -5819,6 +5880,7 @@ questionnaire:
           false: 'No'
           true: 'Yes'
     - id: b_second_hand_smoke
+      kind: Sequence
       title: Exposure to Second-Hand Smoke
       items:
       - id: q_ets_intro
@@ -5887,6 +5949,7 @@ questionnaire:
     # SECTION: substance_use
     # ===================================================================
     - id: b_alcohol
+      kind: Sequence
       title: Alcohol Use
       items:
       - id: q_alc_intro
@@ -6026,6 +6089,7 @@ questionnaire:
           min: 1
           max: 120
     - id: b_drug_use
+      kind: Sequence
       title: Drug Use
       precondition:
       - predicate: is_proxy == 0
@@ -6500,6 +6564,7 @@ questionnaire:
           left: No interference
           right: Very severe
     - id: b_gambling
+      kind: Sequence
       title: Canadian Problem Gambling Index
       precondition:
       - predicate: is_proxy == 0
@@ -7046,6 +7111,7 @@ questionnaire:
     # SECTION: wellbeing_stress
     # ===================================================================
     - id: b_satisfaction
+      kind: Sequence
       title: Satisfaction with Life
       precondition:
       - predicate: is_proxy == 0
@@ -7154,6 +7220,7 @@ questionnaire:
             4: Dissatisfied
             5: Very dissatisfied
     - id: b_stress_sources
+      kind: Sequence
       title: Stress Sources
       precondition:
       - predicate: is_proxy == 0
@@ -7218,6 +7285,7 @@ questionnaire:
           placeholder: Specify...
           maxLength: 200
     - id: b_stress_coping
+      kind: Sequence
       title: Stress Coping
       precondition:
       - predicate: is_proxy == 0
@@ -7367,6 +7435,7 @@ questionnaire:
             3: Rarely
             4: Never
     - id: b_childhood_stressors
+      kind: Sequence
       title: Childhood and Adult Stressors
       precondition:
       - predicate: is_proxy == 0
@@ -7426,6 +7495,7 @@ questionnaire:
           false: 'No'
           true: 'Yes'
     - id: b_work_stress
+      kind: Sequence
       title: Work Stress
       precondition:
       - predicate: is_proxy == 0
@@ -7591,6 +7661,7 @@ questionnaire:
             3: Not too satisfied
             4: Not at all satisfied
     - id: b_self_esteem
+      kind: Sequence
       title: Self-Esteem
       precondition:
       - predicate: is_proxy == 0
@@ -7670,6 +7741,7 @@ questionnaire:
     # SECTION: social_mental_health
     # ===================================================================
     - id: b_social_support_availability
+      kind: Sequence
       title: Social Support Availability
       precondition:
       - predicate: is_proxy == 0
@@ -7914,6 +7986,7 @@ questionnaire:
           if has_tangible == 1 or has_affection == 1 or has_positive_interaction == 1 or has_emotional_info == 1:
               has_any_support = 1
     - id: b_social_support_utilization
+      kind: Sequence
       title: Social Support Utilization
       precondition:
       - predicate: is_proxy == 0
@@ -8017,6 +8090,7 @@ questionnaire:
             4: Rarely
             5: Never
     - id: b_mental_health_contacts
+      kind: Sequence
       title: Contacts with Mental Health Professionals
       precondition:
       - predicate: is_proxy == 0
@@ -8083,6 +8157,7 @@ questionnaire:
           placeholder: Specify health professional...
           maxLength: 200
     - id: b_distress
+      kind: Sequence
       title: Distress
       precondition:
       - predicate: is_proxy == 0
@@ -8252,6 +8327,7 @@ questionnaire:
             3: A little
             4: Not at all
     - id: b_depression_sadness
+      kind: Sequence
       title: Depression - Sadness Path
       precondition:
       - predicate: is_proxy == 0
@@ -8460,6 +8536,7 @@ questionnaire:
             11: November
             12: December
     - id: b_depression_interest
+      kind: Sequence
       title: Depression - Loss of Interest Path
       precondition:
       - predicate: is_proxy == 0
@@ -8654,6 +8731,7 @@ questionnaire:
             11: November
             12: December
     - id: b_suicidal_thoughts
+      kind: Sequence
       title: Suicidal Thoughts and Attempts
       precondition:
       - predicate: is_proxy == 0
@@ -8726,6 +8804,7 @@ questionnaire:
     # SECTION: health_status
     # ===================================================================
     - id: b_hui
+      kind: Sequence
       title: Health Utilities Index
       items:
       - id: q_hui_qint1
@@ -9039,6 +9118,7 @@ questionnaire:
             3: Some
             4: Most
     - id: b_sf36
+      kind: Sequence
       title: SF-36 Health Status
       items:
       - id: q_sfr_r03a
@@ -9403,6 +9483,7 @@ questionnaire:
     # SECTION: sexual_behaviours
     # ===================================================================
     - id: b_sexual_behaviours
+      kind: Sequence
       title: Sexual Behaviours
       items:
       - id: q_sxb_r01
@@ -9611,6 +9692,7 @@ questionnaire:
     # SECTION: access_waiting
     # ===================================================================
     - id: b_specialist_care
+      kind: Sequence
       title: Specialist Care
       items:
       - id: q_acc_qint10
@@ -9669,6 +9751,7 @@ questionnaire:
           placeholder: Specify other difficulty...
           maxLength: 200
     - id: b_surgery
+      kind: Sequence
       title: Non-Emergency Surgery
       items:
       - id: q_acc_qint20
@@ -9726,6 +9809,7 @@ questionnaire:
           placeholder: Specify other difficulty...
           maxLength: 200
     - id: b_diagnostic_tests
+      kind: Sequence
       title: Diagnostic Tests (MRI, CAT Scan, Angiography)
       items:
       - id: q_acc_qint30
@@ -9782,6 +9866,7 @@ questionnaire:
           placeholder: Specify other difficulty...
           maxLength: 200
     - id: b_health_info
+      kind: Sequence
       title: Health Information and Advice
       items:
       - id: q_acc_qint40
@@ -9962,6 +10047,7 @@ questionnaire:
           placeholder: Specify other difficulty...
           maxLength: 200
     - id: b_routine_care
+      kind: Sequence
       title: Routine and On-Going Care
       items:
       - id: q_acc_qint50
@@ -10088,6 +10174,7 @@ questionnaire:
           placeholder: Specify other difficulty...
           maxLength: 200
     - id: b_immediate_care
+      kind: Sequence
       title: Immediate Care for Minor Health Problem
       items:
       - id: q_acc_qint60
@@ -10256,6 +10343,7 @@ questionnaire:
           placeholder: Specify other difficulty...
           maxLength: 200
     - id: b_wtm_intro
+      kind: Sequence
       title: Waiting Times Introduction
       precondition:
       - predicate: q_acc_q10.outcome == 1 or q_acc_q20.outcome == 1 or q_acc_q30.outcome == 1
@@ -10264,6 +10352,7 @@ questionnaire:
         kind: Comment
         title: Now some additional questions about your experiences waiting for health care services.
     - id: b_wtm_specialist
+      kind: Sequence
       title: Waiting Times - Specialist Visit
       precondition:
       - predicate: q_acc_q10.outcome == 1
@@ -10528,6 +10617,7 @@ questionnaire:
           placeholder: Specify...
           maxLength: 200
     - id: b_wtm_surgery
+      kind: Sequence
       title: Waiting Times - Surgery
       precondition:
       - predicate: q_acc_q20.outcome == 1
@@ -10766,6 +10856,7 @@ questionnaire:
           placeholder: Specify...
           maxLength: 200
     - id: b_wtm_diagnostic
+      kind: Sequence
       title: Waiting Times - Diagnostic Test
       precondition:
       - predicate: q_acc_q30.outcome == 1
@@ -11048,6 +11139,7 @@ questionnaire:
     # SECTION: injuries
     # ===================================================================
     - id: b_repetitive_strain
+      kind: Sequence
       title: Repetitive Strain Injuries
       items:
       - id: q_rep_intro
@@ -11110,6 +11202,7 @@ questionnaire:
           placeholder: Specify activity...
           maxLength: 200
     - id: b_main_injuries
+      kind: Sequence
       title: General Injuries
       items:
       - id: q_inj_intro
@@ -11405,6 +11498,7 @@ questionnaire:
           false: 'No'
           true: 'Yes'
     - id: b_other_injuries
+      kind: Sequence
       title: Other Injuries
       items:
       - id: q_inj_q16
@@ -11432,6 +11526,7 @@ questionnaire:
     # SECTION: labour_education
     # ===================================================================
     - id: b_current_employment
+      kind: Sequence
       title: Current Employment Status
       precondition:
       - predicate: age >= 15
@@ -11462,6 +11557,7 @@ questionnaire:
           false: 'No'
           true: 'Yes'
     - id: b_job_details
+      kind: Sequence
       title: Job Details
       precondition:
       - predicate: age >= 15
@@ -11567,6 +11663,7 @@ questionnaire:
             3: Restricted only in certain places
             4: Not restricted at all
     - id: b_absence_reason
+      kind: Sequence
       title: Reason for Absence
       precondition:
       - predicate: age >= 15
@@ -11627,6 +11724,7 @@ questionnaire:
             3: Use of alcohol or drugs
             4: Another reason
     - id: b_hours_schedule
+      kind: Sequence
       title: Hours and Schedule
       precondition:
       - predicate: age >= 15
@@ -11700,6 +11798,7 @@ questionnaire:
           false: 'No'
           true: 'Yes'
     - id: b_multiple_jobs
+      kind: Sequence
       title: Multiple Jobs Details
       precondition:
       - predicate: age >= 15
@@ -11757,6 +11856,7 @@ questionnaire:
           false: 'No'
           true: 'Yes'
     - id: b_job_search
+      kind: Sequence
       title: Job Search
       precondition:
       - predicate: age >= 15
@@ -11817,6 +11917,7 @@ questionnaire:
             3: Use of alcohol or drugs
             4: Another reason
     - id: b_past_12_months
+      kind: Sequence
       title: Past 12 Months Employment
       precondition:
       - predicate: age >= 15
@@ -11863,6 +11964,7 @@ questionnaire:
           if q_lbf_q03.outcome == 1 or q_lbf_q23.outcome == 1:
               had_multiple_jobs = 1
     - id: b_weeks_worked
+      kind: Sequence
       title: Weeks Worked and Job Search
       precondition:
       - predicate: age >= 15
@@ -11971,6 +12073,7 @@ questionnaire:
             3: Use of alcohol or drugs
             4: Another reason
     - id: b_current_work
+      kind: Sequence
       title: Current Work Status
       precondition:
       - predicate: age >= 15
@@ -12020,6 +12123,7 @@ questionnaire:
           false: 'No'
           true: 'Yes'
     - id: b_job_details
+      kind: Sequence
       title: Job Details
       precondition:
       - predicate: age >= 15
@@ -12064,6 +12168,7 @@ questionnaire:
           max: 167
           right: hours
     - id: b_respondent_education
+      kind: Sequence
       title: Selected Respondent Education
       precondition:
       - predicate: age >= 14
@@ -12129,6 +12234,7 @@ questionnaire:
             1: Full-time
             2: Part-time
     - id: b_other_member_education
+      kind: Sequence
       title: Other Household Member Education
       precondition:
       - predicate: has_other_hh_members_14plus == 1
@@ -12181,6 +12287,7 @@ questionnaire:
     # SECTION: income_housing
     # ===================================================================
     - id: b_insurance
+      kind: Sequence
       title: Insurance Coverage
       items:
       - id: q_ins_qint
@@ -12259,6 +12366,7 @@ questionnaire:
             2: An employer-sponsored plan
             4: A private plan
     - id: b_income_sources
+      kind: Sequence
       title: Income Sources
       items:
       - id: q_inc_qint
@@ -12315,6 +12423,7 @@ questionnaire:
             12: Alimony
             13: Other
     - id: b_household_income
+      kind: Sequence
       title: Household Income Amount
       precondition:
       - predicate: q_inc_q1.outcome % 16384 < 8192
@@ -12420,6 +12529,7 @@ questionnaire:
             4: $80,000 to less than $100,000
             5: $100,000 or more
     - id: b_personal_income
+      kind: Sequence
       title: Personal Income
       precondition:
       - predicate: age >= 15
@@ -12529,6 +12639,7 @@ questionnaire:
             4: $80,000 to less than $100,000
             5: $100,000 or more
     - id: b_food_overview
+      kind: Sequence
       title: Food Situation Overview
       items:
       - id: q_fsc_r010
@@ -12583,6 +12694,7 @@ questionnaire:
           if q_fsc_q020.outcome in [1, 2] or q_fsc_q030.outcome in [1, 2] or q_fsc_q040.outcome in [1, 2]:
               food_insecurity = 1
     - id: b_child_food
+      kind: Sequence
       title: Child Food Situation
       precondition:
       - predicate: has_children == 1
@@ -12623,6 +12735,7 @@ questionnaire:
             2: Sometimes true
             3: Never true
     - id: b_adult_food_detail
+      kind: Sequence
       title: Adult Food Insecurity Details
       precondition:
       - predicate: food_insecurity == 1
@@ -12696,6 +12809,7 @@ questionnaire:
             2: Some months but not every month
             3: Only 1 or 2 months
     - id: b_child_food_detail
+      kind: Sequence
       title: Child Food Insecurity Details
       precondition:
       - predicate: has_children == 1
@@ -12746,6 +12860,7 @@ questionnaire:
           false: 'No'
           true: 'Yes'
     - id: b_dwelling
+      kind: Sequence
       title: Dwelling Characteristics
       items:
       - id: q_dwl_r01
@@ -12799,6 +12914,7 @@ questionnaire:
     # SECTION: administration
     # ===================================================================
     - id: b_weight_measurement
+      kind: Sequence
       title: Weight Measurement
       precondition:
       - predicate: is_proxy == 0
@@ -12908,6 +13024,7 @@ questionnaire:
           placeholder: Specify reason...
           maxLength: 200
     - id: b_height_measurement
+      kind: Sequence
       title: Height Measurement
       precondition:
       - predicate: is_proxy == 0
@@ -13007,6 +13124,7 @@ questionnaire:
           placeholder: Specify reason...
           maxLength: 200
     - id: b_data_linkage
+      kind: Sequence
       title: Data Linkage Consent
       items:
       - id: q_adm_q01a
@@ -13063,6 +13181,7 @@ questionnaire:
           placeholder: Enter health number...
           maxLength: 12
     - id: b_data_sharing
+      kind: Sequence
       title: Data Sharing Consent
       items:
       - id: q_adm_q04a

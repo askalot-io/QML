@@ -33,6 +33,7 @@ questionnaire:
     # A8: Community location (Canada or elsewhere)
     # =========================================================================
     - id: b_social_mobility_respondent
+      kind: Sequence
       title: "Social Mobility (Respondent)"
       items:
         # A1: Country of birth
@@ -242,6 +243,7 @@ questionnaire:
     # B11-B13: Origins (country, ethnicity, language)
     # =========================================================================
     - id: b_father
+      kind: Sequence
       title: "Father's Background"
       items:
         # B_INTRO: Section introduction
@@ -550,6 +552,7 @@ questionnaire:
     # B24-B26: Origins
     # =========================================================================
     - id: b_mother
+      kind: Sequence
       title: "Mother's Background"
       items:
         # B14: Lived with mother at age 15?
@@ -823,6 +826,7 @@ questionnaire:
     # B29: Number of sisters
     # =========================================================================
     - id: b_respondent_origins
+      kind: Sequence
       title: "Respondent's Origins"
       items:
         # B27: Respondent's own first language
@@ -883,6 +887,7 @@ questionnaire:
     # would be generated programmatically.
     # =========================================================================
     - id: b_daily_activities
+      kind: Sequence
       title: "Daily Activities"
       items:
         # D_DAY: Reference day for time diary
@@ -1209,6 +1214,7 @@ questionnaire:
     # No routing/preconditions — all items shown to everyone.
     # =========================================================================
     - id: b_wellbeing
+      kind: Sequence
       title: "Well-being"
       items:
         # E1: General happiness
@@ -1374,6 +1380,7 @@ questionnaire:
     #   6 (Other)         -> lang_path=6 (->M)
     # =========================================================================
     - id: b_language_filter
+      kind: Sequence
       title: "Language Knowledge and Use"
       items:
         # F1: Main language
@@ -1446,6 +1453,7 @@ questionnaire:
     #   G10: asked if respondent knows French or another language
     # =========================================================================
     - id: b_section_g
+      kind: Sequence
       title: "Language — English Main"
       precondition:
         - predicate: lang_path == 1
@@ -1640,6 +1648,7 @@ questionnaire:
     #   H3 = No  (0) → Section N
     # =========================================================================
     - id: b_section_h
+      kind: Sequence
       title: "Language — English and French Bilingual"
       precondition:
         - predicate: lang_path == 2
@@ -1754,6 +1763,7 @@ questionnaire:
     #   J2 = No  (0) → J7 → Section N
     # =========================================================================
     - id: b_section_j
+      kind: Sequence
       title: "Language — English and Other"
       precondition:
         - predicate: lang_path == 3
@@ -1887,6 +1897,7 @@ questionnaire:
     #   K4 = No  (0) → K7 → Section N
     # =========================================================================
     - id: b_section_k
+      kind: Sequence
       title: "Language — French Main"
       precondition:
         - predicate: lang_path == 4
@@ -2038,6 +2049,7 @@ questionnaire:
     #   All items always asked (no conditional branching within section)
     # =========================================================================
     - id: b_section_l
+      kind: Sequence
       title: "Language — French and Other"
       precondition:
         - predicate: lang_path == 5
@@ -2132,6 +2144,7 @@ questionnaire:
     #   M4 = No  (0) → M9 → Section N
     # =========================================================================
     - id: b_section_m
+      kind: Sequence
       title: "Language — Other Main Language"
       precondition:
         - predicate: lang_path == 6
@@ -2305,6 +2318,7 @@ questionnaire:
     # lang_path == 7 means English-only, routed to Section T instead
     # =========================================================================
     - id: b_section_n
+      kind: Sequence
       title: "Language — Childhood and Adolescence"
       precondition:
         - predicate: lang_path != 7
@@ -2470,6 +2484,7 @@ questionnaire:
     #   P1=11-13       → ask P1b (secondary graduation), then GO TO P2
     # =========================================================================
     - id: b_education_work
+      kind: Sequence
       title: "Education and Work"
       precondition:
         - predicate: lang_path in [1, 2, 3, 4, 5, 6]
@@ -2720,6 +2735,7 @@ questionnaire:
     # Q4: Languages with friends
     # =========================================================================
     - id: b_home_language
+      kind: Sequence
       title: "Home Language Use"
       precondition:
         - predicate: lang_path in [1, 2, 3, 4, 5, 6]
@@ -2821,6 +2837,7 @@ questionnaire:
     #   If Q7=0 → worked_12m stays 0, skip to Section R
     # =========================================================================
     - id: b_main_activity
+      kind: Sequence
       title: "Main Activity"
       precondition:
         - predicate: lang_path in [1, 2, 3, 4, 5, 6]
@@ -2880,6 +2897,7 @@ questionnaire:
     # Q12-Q13: Business/work description
     # =========================================================================
     - id: b_employment_details
+      kind: Sequence
       title: "Employment Details"
       precondition:
         - predicate: lang_path in [1, 2, 3, 4, 5, 6]
@@ -2951,6 +2969,7 @@ questionnaire:
     # Q17: Languages for writing (only if Q16=1)
     # =========================================================================
     - id: b_work_language
+      kind: Sequence
       title: "Language at Work"
       precondition:
         - predicate: lang_path in [1, 2, 3, 4, 5, 6]
@@ -3062,6 +3081,7 @@ questionnaire:
     # rows default to the initial value.
     # =========================================================================
     - id: b_federal_contacts
+      kind: Sequence
       title: "Contact with Federal Government"
       precondition:
         - predicate: lang_path in [1, 2, 3, 4, 5, 6]
@@ -3201,6 +3221,7 @@ questionnaire:
     # R8: Doctor language
     # =========================================================================
     - id: b_general_language
+      kind: Sequence
       title: "General Language Questions"
       precondition:
         - predicate: lang_path in [1, 2, 3, 4, 5, 6]
@@ -3280,6 +3301,7 @@ questionnaire:
     # S8: Owned/rented
     # =========================================================================
     - id: b_background
+      kind: Sequence
       title: "Background Characteristics"
       precondition:
         - predicate: lang_path in [1, 2, 3, 4, 5, 6]
@@ -3399,6 +3421,7 @@ questionnaire:
     # S13: How many business only?
     # =========================================================================
     - id: b_telephone
+      kind: Sequence
       title: "Telephone Details"
       precondition:
         - predicate: lang_path in [1, 2, 3, 4, 5, 6]
@@ -3475,6 +3498,7 @@ questionnaire:
     # for the category, with separate Editbox items for amounts when applicable.
     # =========================================================================
     - id: b_income
+      kind: Sequence
       title: "Income"
       precondition:
         - predicate: lang_path in [1, 2, 3, 4, 5, 6]
@@ -3671,6 +3695,7 @@ questionnaire:
     #   T6: Doctor visit language (Radio)
     # =========================================================================
     - id: b_section_t
+      kind: Sequence
       title: "Language — Contact with Federal Government"
       precondition:
         - predicate: lang_path == 7
@@ -3845,6 +3870,7 @@ questionnaire:
     #   U12a: Which languages. Pre: U12 == 1
     # =========================================================================
     - id: b_u_education
+      kind: Sequence
       title: "Education and Language Training"
       precondition:
         - predicate: lang_path == 7
@@ -4047,6 +4073,7 @@ questionnaire:
     # U21a: Which languages. Pre: U21 == 2
     # =========================================================================
     - id: b_u_demographics
+      kind: Sequence
       title: "Demographics"
       precondition:
         - predicate: lang_path == 7
@@ -4191,6 +4218,7 @@ questionnaire:
     # U26: How many business? Pre: U25 == 1
     # =========================================================================
     - id: b_u_telephones
+      kind: Sequence
       title: "Telephone Details"
       precondition:
         - predicate: lang_path == 7
@@ -4285,6 +4313,7 @@ questionnaire:
     # U41: Household income bracket (cascading → single Dropdown)
     # =========================================================================
     - id: b_u_employment
+      kind: Sequence
       title: "Employment and Income"
       precondition:
         - predicate: lang_path == 7

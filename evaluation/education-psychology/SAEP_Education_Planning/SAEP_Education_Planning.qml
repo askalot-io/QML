@@ -18,6 +18,7 @@ questionnaire:
     # SECTION: screening
     # ===================================================================
     - id: b_screening
+      kind: Sequence
       title: "Introduction and Screening"
       items:
         - id: q_a1_num_children
@@ -51,6 +52,7 @@ questionnaire:
     # Applies to all children regardless of age.
     # =========================================================================
     - id: b_child1_demographics
+      kind: Sequence
       title: "Child 1 - Demographics and General Questions"
       items:
         # Child 1 sex
@@ -120,6 +122,7 @@ questionnaire:
     # Block precondition: age >= 5 (children 0-4 skip entire block).
     # =========================================================================
     - id: b_child1_school
+      kind: Sequence
       title: "Child 1 - School Questions"
       precondition:
         - predicate: q_b_child1_age.outcome >= 5
@@ -565,6 +568,7 @@ questionnaire:
     # B22-B29 gated on having saved (B20=1) or planning to save (B21=1).
     # =========================================================================
     - id: b_child1_pse_planning
+      kind: Sequence
       title: "Child 1 - Planning for Post-Secondary Education"
       items:
         # B20: Ever saved for PSE?
@@ -833,6 +837,7 @@ questionnaire:
     # B30 filter: only if B20=Yes (actually saved). Otherwise skip to B42.
     # =========================================================================
     - id: b_child1_savings_details
+      kind: Sequence
       title: "Child 1 - Savings for Post-Secondary Education"
       precondition:
         - predicate: q_b20_saved.outcome == 1
@@ -1060,6 +1065,7 @@ questionnaire:
     # Always shown regardless of previous savings answers.
     # =========================================================================
     - id: b_child1_outside_savings
+      kind: Sequence
       title: "Child 1 - Outside Household Savings"
       items:
         # B42: Outside household savings?
@@ -1095,6 +1101,7 @@ questionnaire:
     # Applies to all children regardless of age.
     # =========================================================================
     - id: b_child2_demographics
+      kind: Sequence
       title: "Child 2 - Demographics and General Questions"
       items:
         # Child 2 sex
@@ -1164,6 +1171,7 @@ questionnaire:
     # Block precondition: age >= 5 (children 0-4 skip entire block).
     # =========================================================================
     - id: b_child2_school
+      kind: Sequence
       title: "Child 2 - School Questions"
       precondition:
         - predicate: q_c_child2_age.outcome >= 5
@@ -1609,6 +1617,7 @@ questionnaire:
     # B22-B29 gated on having saved (B20=1) or planning to save (B21=1).
     # =========================================================================
     - id: b_child2_pse_planning
+      kind: Sequence
       title: "Child 2 - Planning for Post-Secondary Education"
       items:
         # B20: Ever saved for PSE?
@@ -1877,6 +1886,7 @@ questionnaire:
     # B30 filter: only if B20=Yes (actually saved). Otherwise skip to B42.
     # =========================================================================
     - id: b_child2_savings_details
+      kind: Sequence
       title: "Child 2 - Savings for Post-Secondary Education"
       precondition:
         - predicate: q_c20_saved.outcome == 1
@@ -2104,6 +2114,7 @@ questionnaire:
     # Always shown regardless of previous savings answers.
     # =========================================================================
     - id: b_child2_outside_savings
+      kind: Sequence
       title: "Child 2 - Outside Household Savings"
       items:
         # B42: Outside household savings?
@@ -2139,6 +2150,7 @@ questionnaire:
     # Applies to all children regardless of age.
     # =========================================================================
     - id: b_child3_demographics
+      kind: Sequence
       title: "Child 3 - Demographics and General Questions"
       items:
         # Child 3 sex
@@ -2208,6 +2220,7 @@ questionnaire:
     # Block precondition: age >= 5 (children 0-4 skip entire block).
     # =========================================================================
     - id: b_child3_school
+      kind: Sequence
       title: "Child 3 - School Questions"
       precondition:
         - predicate: q_d_child3_age.outcome >= 5
@@ -2653,6 +2666,7 @@ questionnaire:
     # B22-B29 gated on having saved (B20=1) or planning to save (B21=1).
     # =========================================================================
     - id: b_child3_pse_planning
+      kind: Sequence
       title: "Child 3 - Planning for Post-Secondary Education"
       items:
         # B20: Ever saved for PSE?
@@ -2921,6 +2935,7 @@ questionnaire:
     # B30 filter: only if B20=Yes (actually saved). Otherwise skip to B42.
     # =========================================================================
     - id: b_child3_savings_details
+      kind: Sequence
       title: "Child 3 - Savings for Post-Secondary Education"
       precondition:
         - predicate: q_d20_saved.outcome == 1
@@ -3148,6 +3163,7 @@ questionnaire:
     # Always shown regardless of previous savings answers.
     # =========================================================================
     - id: b_child3_outside_savings
+      kind: Sequence
       title: "Child 3 - Outside Household Savings"
       items:
         # B42: Outside household savings?
@@ -3190,6 +3206,7 @@ questionnaire:
     #   E9 (filter): E7a=Yes -> E10..E11b; otherwise -> END
     # =========================================================================
     - id: b_remaining_savings
+      kind: Sequence
       title: "Savings for Remaining Children"
       items:
         # E1: Have you saved for remaining children's PSE?
@@ -3445,6 +3462,7 @@ questionnaire:
     #   F10 (filter): F8a=Yes -> F11..F12b; otherwise -> END
     # =========================================================================
     - id: b_outside_savings
+      kind: Sequence
       title: "Savings for Children Outside Household"
       items:
         # F1: Are you saving for children outside household?
@@ -3724,6 +3742,7 @@ questionnaire:
     # Shown when children are in the household (not all 0-4 in original,
     # simplified to num_children >= 1)
     - id: b_household_resources
+      kind: Sequence
       title: "Household Resources"
       precondition:
         - predicate: num_children >= 1
@@ -3755,6 +3774,7 @@ questionnaire:
     # ----- Block 2: Ethnicity (G4-G5) -----
     # Shown when children are in the household
     - id: b_ethnicity
+      kind: Sequence
       title: "Ethnic and Cultural Background"
       precondition:
         - predicate: num_children >= 1
@@ -3812,6 +3832,7 @@ questionnaire:
     # ----- Block 3: Language, Finances, Income (G6-G10) -----
     # Always shown (G6 is reached by all paths through G1)
     - id: b_language_finances
+      kind: Sequence
       title: "Language and Financial Information"
       items:
         # G6: Language spoken most often in household
@@ -3917,6 +3938,7 @@ questionnaire:
     # ----- Block 4: Consent (G11, G13) -----
     # Always shown; G13 has item-level precondition for children in household
     - id: b_consent
+      kind: Sequence
       title: "Data Sharing Consent"
       items:
         # G11: Statistics Canada data sharing consent

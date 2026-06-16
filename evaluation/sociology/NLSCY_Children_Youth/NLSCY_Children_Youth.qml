@@ -52,6 +52,7 @@ questionnaire:
     # Introductory scripts and language preference.
     # =========================================================================
     - id: b_contact
+      kind: Sequence
       title: "Contact Introduction"
       items:
         # CONT-Q1A: Interviewer introduction
@@ -101,6 +102,7 @@ questionnaire:
     #   DEMO-Q6: Marital status
     # =========================================================================
     - id: b_demographics
+      kind: Sequence
       title: "Demographics"
       items:
         # Roster omission notice
@@ -177,6 +179,7 @@ questionnaire:
     # HHLD-Q8: Language of interview - omitted (procedural, duplicates CONT-Q2)
     # =========================================================================
     - id: b_dwelling
+      kind: Sequence
       title: "Household Dwelling"
       items:
         # HHLD-Q1: Dwelling owned?
@@ -248,6 +251,7 @@ questionnaire:
     # Modeled as Comment + Dropdown for respondent type.
     # =========================================================================
     - id: b_child_selection
+      kind: Sequence
       title: "Child Selection and Respondent Identification"
       items:
         # CAID-INT-1: PMK identification intro
@@ -273,6 +277,7 @@ questionnaire:
     # H05-P2: Language of interview
     # =========================================================================
     - id: b_administration
+      kind: Sequence
       title: "Administration"
       items:
         # H05-P1: Interview mode
@@ -324,6 +329,7 @@ questionnaire:
     # Modeled as block-level precondition: respondent_age >= 12
     # =========================================================================
     - id: b_restriction
+      kind: Sequence
       title: "Restriction of Activities"
       precondition:
         - predicate: respondent_age >= 12
@@ -361,6 +367,7 @@ questionnaire:
     # Modeled as block-level precondition: respondent_age >= 12 AND is_parent == 1
     # =========================================================================
     - id: b_chronic
+      kind: Sequence
       title: "Chronic Conditions"
       precondition:
         - predicate: respondent_age >= 12
@@ -454,6 +461,7 @@ questionnaire:
     # INTRODUCTION
     # =========================================================================
     - id: b_socio_intro
+      kind: Sequence
       title: "Socio-demographic Characteristics"
       items:
         # SOCIO-INT: Section introduction
@@ -467,6 +475,7 @@ questionnaire:
     # Q1 -> (if not Canada) Q2a -> (if not citizen by birth) Q2b -> (if Yes) Q3
     # =========================================================================
     - id: b_socio_birth
+      kind: Sequence
       title: "Country of Birth and Immigration"
       items:
         # SOCIO-Q1: Country of birth
@@ -558,6 +567,7 @@ questionnaire:
     # No skip logic — always asked regardless of Q1
     # =========================================================================
     - id: b_socio_ethnicity
+      kind: Sequence
       title: "Ethnicity"
       items:
         # SOCIO-Q4: Ethnic/cultural groups
@@ -606,6 +616,7 @@ questionnaire:
     # Q6: Mother tongue (mark all)
     # =========================================================================
     - id: b_socio_languages
+      kind: Sequence
       title: "Languages"
       items:
         # SOCIO-Q5: Languages for conversation
@@ -693,6 +704,7 @@ questionnaire:
     # Q9: Religious attendance — only if has a religion
     # =========================================================================
     - id: b_socio_religion
+      kind: Sequence
       title: "Religion"
       items:
         # SOCIO-Q8: Religion
@@ -760,6 +772,7 @@ questionnaire:
     # Q6: Full-time or part-time (only if currently attending).
     # =========================================================================
     - id: b_education_adult
+      kind: Sequence
       title: "Education"
       precondition:
         - predicate: respondent_age >= 12
@@ -882,6 +895,7 @@ questionnaire:
     # LFS-C2A: IF Q1=RETIRED -> exit section; ELSE -> Q17B
     # =========================================================================
     - id: b_main_activity
+      kind: Sequence
       title: "Main Activity"
       precondition:
         - predicate: is_parent == 1
@@ -943,6 +957,7 @@ questionnaire:
     # LFS-Q16: Class of worker
     # =========================================================================
     - id: b_employment_details
+      kind: Sequence
       title: "Employment Details"
       precondition:
         - predicate: is_parent == 1
@@ -1119,6 +1134,7 @@ questionnaire:
     # gates Q16E) is fully modeled.
     # =========================================================================
     - id: b_wage_details
+      kind: Sequence
       title: "Wage Details"
       precondition:
         - predicate: is_parent == 1
@@ -1221,6 +1237,7 @@ questionnaire:
     # Q17B is also reached from C2A when Q2=NO and Q1 != 7 (not retired).
     # =========================================================================
     - id: b_employment_gaps
+      kind: Sequence
       title: "Employment Gaps"
       precondition:
         - predicate: is_parent == 1
@@ -1305,6 +1322,7 @@ questionnaire:
     # INCOM-Q2: Main source of income (only when multiple sources)
     # =========================================================================
     - id: b_income_sources
+      kind: Sequence
       title: "Household Income Sources"
       items:
         # INCOM-Q1 gate: option 14=None (GO TO NEXT SECTION)
@@ -1398,6 +1416,7 @@ questionnaire:
     # INCOM-Q3B: Household income bracket (fallback when exact unknown)
     # =========================================================================
     - id: b_household_income
+      kind: Sequence
       title: "Household Income"
       precondition:
         - predicate: has_income == 1
@@ -1455,6 +1474,7 @@ questionnaire:
     # INCOM-Q4B: Personal income bracket (fallback when exact unknown)
     # =========================================================================
     - id: b_personal_income
+      kind: Sequence
       title: "Personal Income"
       precondition:
         - predicate: has_income == 1
@@ -1510,6 +1530,7 @@ questionnaire:
     # BLOCK 1: GENERAL HEALTH AND SMOKING (CHLT-Q1 to CHLT-Q3)
     # =========================================================================
     - id: b_general_health
+      kind: Sequence
       title: "General Health and Smoking"
       items:
         # CHLT-Q1: General health rating
@@ -1554,6 +1575,7 @@ questionnaire:
     # BLOCK 2: ALCOHOL CONSUMPTION (CHLT-I4 to CHLT-Q7)
     # =========================================================================
     - id: b_alcohol
+      kind: Sequence
       title: "Alcohol Consumption"
       items:
         # CHLT-I4: Introduction to alcohol questions
@@ -1625,6 +1647,7 @@ questionnaire:
     # Modeled as block precondition: is_bio_mother_young_child == 1
     # =========================================================================
     - id: b_maternal
+      kind: Sequence
       title: "Maternal History"
       precondition:
         - predicate: is_bio_mother_young_child == 1
@@ -1669,6 +1692,7 @@ questionnaire:
     # Modeled as block precondition: is_pmk == 1
     # =========================================================================
     - id: b_cesd
+      kind: Sequence
       title: "CES-D Depression Scale"
       precondition:
         - predicate: is_pmk == 1
@@ -1727,6 +1751,7 @@ questionnaire:
     #          expressed in QML; modeled as always shown.
     # =========================================================================
     - id: b_family_functioning
+      kind: Sequence
       title: "Family Functioning"
       items:
         # FNC-I1: Intro text
@@ -1805,6 +1830,7 @@ questionnaire:
     # items have no precondition gating (straightforward sequential flow).
     # =========================================================================
     - id: b_neighbourhood
+      kind: Sequence
       title: "Neighbourhood Safety"
       items:
         # SAF-C1: System-level check — modeled as introductory comment
@@ -1907,6 +1933,7 @@ questionnaire:
     #          cannot be modeled declaratively. Always show this section.
     # =========================================================================
     - id: b_social_support
+      kind: Sequence
       title: "Social Support"
       items:
         # SUP-I1: Introduction
@@ -1961,6 +1988,7 @@ questionnaire:
     # relationship to the selected child and sibling relationship.
     # =========================================================================
     - id: b_dvs
+      kind: Sequence
       title: "Child Demographics"
       items:
         # DVS-INT: Introduction to children's questionnaire
@@ -2014,6 +2042,7 @@ questionnaire:
     # Q5: Physical activity (age 2+)
     # =========================================================================
     - id: b_child_health_general_health
+      kind: Sequence
       title: "General Health"
       items:
         # HLT-Q1: General health rating
@@ -2093,6 +2122,7 @@ questionnaire:
     # Chain dependencies with various skip patterns based on answers.
     # =========================================================================
     - id: b_vision
+      kind: Sequence
       title: "Vision"
       precondition:
         - predicate: child_age >= 4
@@ -2225,6 +2255,7 @@ questionnaire:
     # Chain: Q11->Q12->Q13, Q12->Q14->Q15
     # =========================================================================
     - id: b_hearing
+      kind: Sequence
       title: "Hearing"
       precondition:
         - predicate: child_age >= 4
@@ -2313,6 +2344,7 @@ questionnaire:
     # Chain: Q16->Q17->Q18->Q19
     # =========================================================================
     - id: b_speech
+      kind: Sequence
       title: "Speech"
       precondition:
         - predicate: child_age >= 4
@@ -2386,6 +2418,7 @@ questionnaire:
     # Complex chain with wheelchair sub-path.
     # =========================================================================
     - id: b_mobility
+      kind: Sequence
       title: "Getting Around"
       precondition:
         - predicate: child_age >= 4
@@ -2543,6 +2576,7 @@ questionnaire:
     # Chain: Q27->Q28->Q29, Q28->Q30
     # =========================================================================
     - id: b_dexterity
+      kind: Sequence
       title: "Hands and Fingers"
       precondition:
         - predicate: child_age >= 4
@@ -2614,6 +2648,7 @@ questionnaire:
     # Age 4+ only. Sequential, no skip patterns.
     # =========================================================================
     - id: b_cognition
+      kind: Sequence
       title: "Cognition and Feelings"
       precondition:
         - predicate: child_age >= 4
@@ -2669,6 +2704,7 @@ questionnaire:
     # Q34: Free of pain? YES->I37, NO->Q35->Q36
     # =========================================================================
     - id: b_pain
+      kind: Sequence
       title: "Pain and Discomfort"
       precondition:
         - predicate: child_age >= 4
@@ -2728,6 +2764,7 @@ questionnaire:
     # Q41: cause of injury, Q42: location of injury.
     # =========================================================================
     - id: b_injuries
+      kind: Sequence
       title: "Injuries"
       items:
         # HLT-I37: Intro about injuries
@@ -2868,6 +2905,7 @@ questionnaire:
     # Q44: wheezing (asked if Q43A=NO or after Q43C)
     # =========================================================================
     - id: b_asthma
+      kind: Sequence
       title: "Asthma"
       items:
         # HLT-Q43A: Ever had asthma diagnosed?
@@ -2938,6 +2976,7 @@ questionnaire:
     # Q45B: conditions limiting participation (all ages)
     # =========================================================================
     - id: b_longterm
+      kind: Sequence
       title: "Long-term Conditions"
       items:
         # HLT-Q45: Long-term conditions (age 0-5)
@@ -3000,6 +3039,7 @@ questionnaire:
     # Q47A: Ear infection -> Q47B (if YES)
     # =========================================================================
     - id: b_infections
+      kind: Sequence
       title: "Infections"
       precondition:
         - predicate: child_age <= 3
@@ -3057,6 +3097,7 @@ questionnaire:
     # QuestionGroup with Editbox for visit counts.
     # =========================================================================
     - id: b_health_professionals
+      kind: Sequence
       title: "Health Professionals"
       items:
         # HLT-I48: Intro
@@ -3092,6 +3133,7 @@ questionnaire:
     # All ages. Q49 gates Q50.
     # =========================================================================
     - id: b_hospitalization
+      kind: Sequence
       title: "Hospitalization"
       items:
         # HLT-Q49: Overnight hospital patient?
@@ -3129,6 +3171,7 @@ questionnaire:
     # All ages. QuestionGroup with Switch for prescribed medications.
     # =========================================================================
     - id: b_medication
+      kind: Sequence
       title: "Medication"
       items:
         # HLT-Q51A through Q51E: Prescribed medications
@@ -3153,6 +3196,7 @@ questionnaire:
     # Q52A gates Q52B.
     # =========================================================================
     - id: b_stressful_events
+      kind: Sequence
       title: "Stressful Events"
       precondition:
         - predicate: child_age >= 4
@@ -3207,6 +3251,7 @@ questionnaire:
     # Q1A-Q10B: Pregnancy complications, prenatal care, smoking, alcohol, meds
     # =========================================================================
     - id: b_prenatal
+      kind: Sequence
       title: "Prenatal Conditions and Care"
       precondition:
         - predicate: child_age <= 3
@@ -3369,6 +3414,7 @@ questionnaire:
     # All respondents (bio mother or bio father) with child age 0-3
     # =========================================================================
     - id: b_birth
+      kind: Sequence
       title: "Birth Details"
       precondition:
         - predicate: child_age <= 3
@@ -3437,6 +3483,7 @@ questionnaire:
     # Only for children age 0-11 months
     # =========================================================================
     - id: b_delivery
+      kind: Sequence
       title: "Delivery Details"
       precondition:
         - predicate: child_age <= 3
@@ -3484,6 +3531,7 @@ questionnaire:
     # Asked for ages 0-23 months (bio mother or bio father)
     # =========================================================================
     - id: b_neonatal
+      kind: Sequence
       title: "Neonatal Care"
       precondition:
         - predicate: child_age <= 3
@@ -3546,6 +3594,7 @@ questionnaire:
     # Only for children age 0-11 months, bio mother respondent
     # =========================================================================
     - id: b_postnatal
+      kind: Sequence
       title: "Postnatal Complications"
       precondition:
         - predicate: child_age <= 3
@@ -3628,6 +3677,7 @@ questionnaire:
     # Asked for ages 0-23 months (bio mother or bio father)
     # =========================================================================
     - id: b_breastfeeding
+      kind: Sequence
       title: "Breastfeeding"
       precondition:
         - predicate: child_age <= 3
@@ -3708,6 +3758,7 @@ questionnaire:
     # TMP-I1 introduction text, TMP-Q1 general soothing difficulty
     # =========================================================================
     - id: b_tmp_intro
+      kind: Sequence
       title: "Temperament"
       precondition:
         - predicate: child_age_months >= 3
@@ -3735,6 +3786,7 @@ questionnaire:
     # Q2/Q2A (sleep), Q3/Q3A (eating) - age-variant pairs at 12 months
     # =========================================================================
     - id: b_tmp_predictability
+      kind: Sequence
       title: "Predictability and Routines"
       precondition:
         - predicate: child_age_months >= 3
@@ -3800,6 +3852,7 @@ questionnaire:
     # Age splits: Q4/Q5/Q6 at 36 months, Q8 three-way at 12/36 months
     # =========================================================================
     - id: b_tmp_fussiness
+      kind: Sequence
       title: "Fussiness and Crying"
       precondition:
         - predicate: child_age_months >= 3
@@ -3949,6 +4002,7 @@ questionnaire:
     # Age split at 12 months for Q9
     # =========================================================================
     - id: b_tmp_daily_care
+      kind: Sequence
       title: "Daily Care Reactions"
       precondition:
         - predicate: child_age_months >= 3
@@ -3998,6 +4052,7 @@ questionnaire:
     # Q14/Q14A (wanting to be held/cuddled), Q15 (routine disruptions)
     # =========================================================================
     - id: b_tmp_mood
+      kind: Sequence
       title: "Mood and Sociability"
       precondition:
         - predicate: child_age_months >= 3
@@ -4112,6 +4167,7 @@ questionnaire:
     # Q20 (playing alone)
     # =========================================================================
     - id: b_tmp_predict_mood
+      kind: Sequence
       title: "Predictability and Mood Changes"
       precondition:
         - predicate: child_age_months >= 3
@@ -4199,6 +4255,7 @@ questionnaire:
     # Age 3-11m skip Q21 entirely; Q21 12-23m, Q21A 24-35m, Q21B 36-47m
     # =========================================================================
     - id: b_tmp_confinement
+      kind: Sequence
       title: "Confinement and Cuddling"
       precondition:
         - predicate: child_age_months >= 3
@@ -4281,6 +4338,7 @@ questionnaire:
     # here we handle via preconditions on Q24 (requires 6-11m).
     # =========================================================================
     - id: b_tmp_novelty
+      kind: Sequence
       title: "Novelty Responses"
       precondition:
         - predicate: child_age_months >= 3
@@ -4395,6 +4453,7 @@ questionnaire:
     # Q32 (attention persistence, age >= 12m)
     # =========================================================================
     - id: b_tmp_persistence
+      kind: Sequence
       title: "Persistence and Compliance"
       precondition:
         - predicate: child_age_months >= 12
@@ -4476,6 +4535,7 @@ questionnaire:
     # Q33: Overall difficulty rating (all ages 3-47 months)
     # =========================================================================
     - id: b_tmp_overall
+      kind: Sequence
       title: "Overall Difficulty"
       precondition:
         - predicate: child_age_months >= 3
@@ -4505,6 +4565,7 @@ questionnaire:
     # EDU-Q3: Kindergarten attendance (if not currently in kindergarten)
     # =========================================================================
     - id: b_edu_grade
+      kind: Sequence
       title: "School Grade and Attendance"
       precondition:
         - predicate: child_age >= 4
@@ -4587,6 +4648,7 @@ questionnaire:
     # Q5 and Q7 use unified grade Dropdowns (consolidating province variants).
     # =========================================================================
     - id: b_edu_skip_repeat
+      kind: Sequence
       title: "Grade Skipping and Repeating"
       precondition:
         - predicate: child_age >= 4
@@ -4671,6 +4733,7 @@ questionnaire:
     # EDU-Q11: Number of residential moves
     # =========================================================================
     - id: b_edu_school_type
+      kind: Sequence
       title: "School Type and Changes"
       precondition:
         - predicate: child_age >= 4
@@ -4748,6 +4811,7 @@ questionnaire:
     # EDU-Q13: Days absent since school started
     # =========================================================================
     - id: b_edu_language
+      kind: Sequence
       title: "Language and Absences"
       precondition:
         - predicate: child_age >= 4
@@ -4798,6 +4862,7 @@ questionnaire:
     # EDU-Q14A-D: Performance in reading, math, writing, overall
     # =========================================================================
     - id: b_edu_performance
+      kind: Sequence
       title: "Academic Performance"
       precondition:
         - predicate: child_age >= 4
@@ -4830,6 +4895,7 @@ questionnaire:
     # EDU-Q15B: How often? (only if YES)
     # =========================================================================
     - id: b_edu_tutoring
+      kind: Sequence
       title: "Tutoring"
       precondition:
         - predicate: child_age >= 4
@@ -4867,6 +4933,7 @@ questionnaire:
     # EDU-Q18B: Educational hopes (all ages)
     # =========================================================================
     - id: b_edu_attitudes
+      kind: Sequence
       title: "School Attitudes and Expectations"
       precondition:
         - predicate: child_age >= 4
@@ -4934,6 +5001,7 @@ questionnaire:
     # EDU-Q19A-D: School descriptor ratings
     # =========================================================================
     - id: b_edu_descriptors
+      kind: Sequence
       title: "School Descriptors"
       precondition:
         - predicate: child_age >= 4
@@ -4969,6 +5037,7 @@ questionnaire:
     # EDU-Q20: Special education
     # =========================================================================
     - id: b_edu_special
+      kind: Sequence
       title: "Special Education"
       precondition:
         - predicate: child_age >= 4
@@ -4990,6 +5059,7 @@ questionnaire:
     # BLOCK 1: LITERACY INTRODUCTION
     # =========================================================================
     - id: b_lit_intro
+      kind: Sequence
       title: "Literacy"
       items:
         # LIT-I1: Introduction
@@ -5004,6 +5074,7 @@ questionnaire:
     # Q1-Q3 only for infants aged 0-23 months
     # =========================================================================
     - id: b_lit_infant
+      kind: Sequence
       title: "Infant Reading"
       precondition:
         - predicate: child_age_months <= 23
@@ -5057,6 +5128,7 @@ questionnaire:
     # Q4 and Q5 are for children aged 2-4 only
     # =========================================================================
     - id: b_lit_early_childhood
+      kind: Sequence
       title: "Early Childhood Reading Habits"
       precondition:
         - predicate: child_age >= 2
@@ -5101,6 +5173,7 @@ questionnaire:
     # Q6B1 follows if Q6A = YES.
     # =========================================================================
     - id: b_lit_read_aloud
+      kind: Sequence
       title: "Reading Aloud History"
       precondition:
         - predicate: child_age >= 2
@@ -5140,6 +5213,7 @@ questionnaire:
     # construct (current adult-child reading frequency).
     # =========================================================================
     - id: b_lit_reading_freq
+      kind: Sequence
       title: "Current Reading Frequency"
       precondition:
         - predicate: child_age >= 2
@@ -5212,6 +5286,7 @@ questionnaire:
     # Q8 requires age 2-5; Q6A=NO skips Q6B1/Q7 but still reaches Q8.
     # =========================================================================
     - id: b_lit_writing_help
+      kind: Sequence
       title: "Writing Help"
       precondition:
         - predicate: child_age >= 2
@@ -5241,6 +5316,7 @@ questionnaire:
     # So Q9-Q11 are only for ages 6-11.
     # =========================================================================
     - id: b_lit_homework
+      kind: Sequence
       title: "Homework"
       precondition:
         - predicate: child_age >= 6
@@ -5303,6 +5379,7 @@ questionnaire:
     # Q13-Q14: age 5-11 (all who reach this block)
     # =========================================================================
     - id: b_lit_independent_reading
+      kind: Sequence
       title: "Independent Reading and Library Use"
       precondition:
         - predicate: child_age >= 5
@@ -5390,6 +5467,7 @@ questionnaire:
     # ACT-Q2A/Q2B: Program details (only if Q1 = YES)
     # =========================================================================
     - id: b_act_early
+      kind: Sequence
       title: "Activities - Early Childhood Programs"
       items:
         # ACT-I1: Introduction
@@ -5450,6 +5528,7 @@ questionnaire:
     # ACT-Q3E: Computer/video games (age 4+)
     # =========================================================================
     - id: b_act_frequency
+      kind: Sequence
       title: "Activities - Activity Frequency"
       precondition:
         - predicate: child_age >= 4
@@ -5561,6 +5640,7 @@ questionnaire:
     # ACT-Q5: Play alone frequency
     # =========================================================================
     - id: b_act_tv_play
+      kind: Sequence
       title: "Activities - TV and Play"
       precondition:
         - predicate: child_age >= 4
@@ -5606,6 +5686,7 @@ questionnaire:
     # Chores block is for age 10-11 only.
     # =========================================================================
     - id: b_act_chores
+      kind: Sequence
       title: "Activities - Chores"
       precondition:
         - predicate: child_age >= 10
@@ -5641,6 +5722,7 @@ questionnaire:
     # ACT-Q8B: Day camp days (only if Q8A = YES)
     # =========================================================================
     - id: b_act_camps
+      kind: Sequence
       title: "Activities - Camps"
       precondition:
         - predicate: child_age >= 6
@@ -5697,6 +5779,7 @@ questionnaire:
     # BEH-Q1 through BEH-Q4: Sleep pattern questions on 5-point frequency scale
     # =========================================================================
     - id: b_beh_sleep
+      kind: Sequence
       title: "Sleep Patterns"
       precondition:
         - predicate: child_age <= 3
@@ -5760,6 +5843,7 @@ questionnaire:
     # BEH-Q5: Reaction to new foods (age 1-3)
     # =========================================================================
     - id: b_beh_feeding
+      kind: Sequence
       title: "Infant Feeding Reactions"
       precondition:
         - predicate: child_age >= 1 and child_age <= 3
@@ -5781,6 +5865,7 @@ questionnaire:
     # BEH-Q5A: Feeding difficulty (age 0-11 months only)
     # =========================================================================
     - id: b_beh_feeding_infant
+      kind: Sequence
       title: "Infant Feeding Difficulty"
       precondition:
         - predicate: child_age == 0
@@ -5854,6 +5939,7 @@ questionnaire:
     #   [46] Q6UU - Praises the work of less able children
     # =========================================================================
     - id: b_beh_child_4_11
+      kind: Sequence
       title: "Child Behaviour Assessment (Age 4-11)"
       precondition:
         - predicate: child_age >= 4
@@ -5931,6 +6017,7 @@ questionnaire:
     # BEH-Q7F: Run away from home (Yes/No)
     # =========================================================================
     - id: b_beh_delinquent
+      kind: Sequence
       title: "Delinquent Behaviours (Age 10-11)"
       precondition:
         - predicate: child_age >= 10
@@ -6015,6 +6102,7 @@ questionnaire:
     #   [33] Q8UU  - Praises the work of less able children
     # =========================================================================
     - id: b_beh_toddler
+      kind: Sequence
       title: "Toddler Behaviour Assessment (Age 2-3)"
       precondition:
         - predicate: child_age >= 2 and child_age <= 3
@@ -6090,6 +6178,7 @@ questionnaire:
     #   22-47m: Q34-Q48
     # =========================================================================
     - id: b_msd
+      kind: Sequence
       title: "Motor and Social Development"
       precondition:
         - predicate: child_age <= 3
@@ -6721,6 +6810,7 @@ questionnaire:
     # REL-Q5: Friends in trouble
     # =========================================================================
     - id: b_rel_friendships
+      kind: Sequence
       title: "Relationships - Friendships"
       precondition:
         - predicate: child_age >= 4
@@ -6815,6 +6905,7 @@ questionnaire:
     # REL-Q9: Getting along with siblings (same scale, conditional)
     # =========================================================================
     - id: b_rel_getting_along
+      kind: Sequence
       title: "Relationships - Getting Along"
       precondition:
         - predicate: child_age >= 4
@@ -6868,6 +6959,7 @@ questionnaire:
     # PAR-C7: IF age < 3 → Q7A; ELSE → Q7. Mutually exclusive variants.
     # =========================================================================
     - id: b_par_positive
+      kind: Sequence
       title: "Parenting - Positive Interaction"
       precondition:
         - predicate: is_pmk_or_spouse == 1
@@ -6945,6 +7037,7 @@ questionnaire:
     # PAR-Q8-Q18: 11 discipline items (5-point proportion scale)
     # =========================================================================
     - id: b_par_discipline
+      kind: Sequence
       title: "Parenting - Discipline Effectiveness"
       precondition:
         - predicate: is_pmk_or_spouse == 1
@@ -7001,6 +7094,7 @@ questionnaire:
     # Same age >= 2 gate as block 2.
     # =========================================================================
     - id: b_par_reactions
+      kind: Sequence
       title: "Parenting - Reactions to Rule-Breaking"
       precondition:
         - predicate: is_pmk_or_spouse == 1
@@ -7053,6 +7147,7 @@ questionnaire:
     # Same age >= 2 gate as blocks 2-3.
     # =========================================================================
     - id: b_par_food_exposure
+      kind: Sequence
       title: "Parenting - Food Security and Exposure"
       precondition:
         - predicate: is_pmk_or_spouse == 1
@@ -7148,6 +7243,7 @@ questionnaire:
     # CUS-Q1G: Age of oldest sibling (if >1 sibling)
     # =========================================================================
     - id: b_living_arrangement
+      kind: Sequence
       title: "Living Arrangement at Birth"
       precondition:
         - predicate: relationship_to_child != 4
@@ -7281,6 +7377,7 @@ questionnaire:
     # CUS-Q3D: Since when living together?
     # =========================================================================
     - id: b_parents_union
+      kind: Sequence
       title: "Parents' Union at Birth"
       precondition:
         - predicate: relationship_to_child != 4
@@ -7375,6 +7472,7 @@ questionnaire:
     # CUS-Q5F: Steady relationship at birth?
     # =========================================================================
     - id: b_parents_not_together
+      kind: Sequence
       title: "Parents Not Living Together"
       precondition:
         - predicate: relationship_to_child != 4
@@ -7490,6 +7588,7 @@ questionnaire:
     # CUS-Q6I: Did those children live in household?
     # =========================================================================
     - id: b_mother_prior
+      kind: Sequence
       title: "Mother's Prior Relationships"
       precondition:
         - predicate: relationship_to_child != 4
@@ -7624,6 +7723,7 @@ questionnaire:
     # When parents never lived together (Q5A=2): skip entire block -> Q8A.
     # =========================================================================
     - id: b_father_prior
+      kind: Sequence
       title: "Father's Prior Relationships"
       precondition:
         - predicate: relationship_to_child != 4
@@ -7763,6 +7863,7 @@ questionnaire:
     # CUS-Q8E: Current contact type
     # =========================================================================
     - id: b_nonresident_contact
+      kind: Sequence
       title: "Non-Resident Parent Contact"
       precondition:
         - predicate: relationship_to_child != 4
@@ -7848,6 +7949,7 @@ questionnaire:
     # CUS-Q9D: With whom did child live?
     # =========================================================================
     - id: b_parent_death
+      kind: Sequence
       title: "Parent Death"
       precondition:
         - predicate: relationship_to_child != 4
@@ -7930,6 +8032,7 @@ questionnaire:
     # CUS-Q11A-Q11H: Separation/divorce details, custody orders, support
     # =========================================================================
     - id: b_separation
+      kind: Sequence
       title: "Separation Details"
       precondition:
         - predicate: relationship_to_child != 4
@@ -8104,6 +8207,7 @@ questionnaire:
     # CUS-Q18B: Current contact type (if visits only)
     # =========================================================================
     - id: b_post_separation_custody
+      kind: Sequence
       title: "Post-Separation Custody"
       precondition:
         - predicate: relationship_to_child != 4
@@ -8302,6 +8406,7 @@ questionnaire:
     # CUS-Q19C: Tension over living arrangements
     # =========================================================================
     - id: b_custody_modifications
+      kind: Sequence
       title: "Custody Modifications"
       precondition:
         - predicate: relationship_to_child != 4
@@ -8362,6 +8467,7 @@ questionnaire:
     # CUS-Q20I: How many?
     # =========================================================================
     - id: b_mother_new_union
+      kind: Sequence
       title: "Mother's New Relationship"
       precondition:
         - predicate: relationship_to_child != 4
@@ -8498,6 +8604,7 @@ questionnaire:
     #   - Otherwise -> Q21A
     # =========================================================================
     - id: b_father_new_union
+      kind: Sequence
       title: "Father's New Relationship"
       precondition:
         - predicate: relationship_to_child != 4
@@ -8628,6 +8735,7 @@ questionnaire:
     # Otherwise -> end of section
     # =========================================================================
     - id: b_subsequent_breakup
+      kind: Sequence
       title: "Subsequent Union Breakup"
       precondition:
         - predicate: relationship_to_child != 4
@@ -8693,6 +8801,7 @@ questionnaire:
     # Q1A=NO skips to the "ever used" block (Q6).
     # =========================================================================
     - id: b_car_usage
+      kind: Sequence
       title: "Child Care Usage"
       items:
         # CAR-I1: Introduction
@@ -8718,6 +8827,7 @@ questionnaire:
     # CAR-C1I: Self-care (Q1I) requires age >= 6.
     # =========================================================================
     - id: b_car_types
+      kind: Sequence
       title: "Types of Child Care"
       precondition:
         - predicate: q_car_q1a.outcome == 1
@@ -8952,6 +9062,7 @@ questionnaire:
     # Q4: Number of changes in past 12 months
     # =========================================================================
     - id: b_car_main
+      kind: Sequence
       title: "Main Child Care Arrangement"
       precondition:
         - predicate: q_car_q1a.outcome == 1
@@ -9008,6 +9119,7 @@ questionnaire:
     # Q5 only asked when there were changes (Q4 != NONE).
     # =========================================================================
     - id: b_car_changes
+      kind: Sequence
       title: "Reasons for Changing Care"
       precondition:
         - predicate: q_car_q1a.outcome == 1
@@ -9037,6 +9149,7 @@ questionnaire:
     # Q6=YES → continues to Q7.
     # =========================================================================
     - id: b_car_ever
+      kind: Sequence
       title: "Previous Child Care"
       precondition:
         - predicate: q_car_q1a.outcome == 0
@@ -9061,6 +9174,7 @@ questionnaire:
     # Q8: Summer care, only age 6+ (CAR-C8)
     # =========================================================================
     - id: b_car_total
+      kind: Sequence
       title: "Overall Child Care Changes"
       precondition:
         - predicate: (q_car_q1a.outcome == 1 and child_age >= 1) or (q_car_q1a.outcome == 0 and child_age >= 1 and q_car_q6.outcome == 1)

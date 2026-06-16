@@ -30,6 +30,7 @@ questionnaire:
     # in QML and is documented here as a known limitation.
     # ===================================================================
     - id: b_self_completion_intro
+      kind: Sequence
       title: "Self-Completion Introduction"
       items:
         - id: q_s1
@@ -87,6 +88,7 @@ questionnaire:
     # SECTION: local_area_climate
     # ===================================================================
     - id: b_local_area
+      kind: Sequence
       title: "Local Area"
       items:
         - id: q_a1
@@ -136,6 +138,7 @@ questionnaire:
               6: "I don't have any neighbours"
 
     - id: b_climate
+      kind: Sequence
       title: "Climate Change"
       items:
         - id: q_a5
@@ -181,6 +184,7 @@ questionnaire:
     # SECTION: media_internet
     # ===================================================================
     - id: b_media
+      kind: Sequence
       title: "Media Use"
       items:
         - id: q_a8_hours
@@ -205,6 +209,7 @@ questionnaire:
             right: "minutes"
 
     - id: b_internet
+      kind: Sequence
       title: "Internet Use"
       items:
         - id: q_a9
@@ -248,6 +253,7 @@ questionnaire:
     # SECTION: social_trust_politics
     # ===================================================================
     - id: b_social_trust
+      kind: Sequence
       title: "Social Trust"
       items:
         - id: q_a11
@@ -281,6 +287,7 @@ questionnaire:
             right: "People mostly try to be helpful"
 
     - id: b_politics
+      kind: Sequence
       title: "Political Interest and Efficacy"
       items:
         - id: q_a14
@@ -346,6 +353,7 @@ questionnaire:
     # SECTION: institutional_trust
     # ===================================================================
     - id: b_institutional_trust
+      kind: Sequence
       title: "Institutional Trust"
       items:
         # A19: Trust in parliament
@@ -371,6 +379,7 @@ questionnaire:
     # SECTION: voting_participation
     # ===================================================================
     - id: b_voting
+      kind: Sequence
       title: "Voting"
       items:
         # A26: Voted in last national election
@@ -416,6 +425,7 @@ questionnaire:
               21: "Other"
 
     - id: b_participation
+      kind: Sequence
       title: "Political Participation"
       items:
         # A28: Contacted politician
@@ -491,6 +501,7 @@ questionnaire:
             on: "Yes"
 
     - id: b_party_allegiance
+      kind: Sequence
       title: "Party Allegiance"
       items:
         # A36: Feel closer to a particular party
@@ -552,6 +563,7 @@ questionnaire:
     # SECTION: satisfaction_attitudes
     # ===================================================================
     - id: b_left_right
+      kind: Sequence
       title: "Left-Right Placement"
       items:
         # A39: Left-right self-placement
@@ -566,6 +578,7 @@ questionnaire:
             right: "Right"
 
     - id: b_satisfaction
+      kind: Sequence
       title: "Satisfaction"
       items:
         # A40: Life satisfaction
@@ -613,6 +626,7 @@ questionnaire:
             right: "Extremely satisfied"
 
     - id: b_state_services
+      kind: Sequence
       title: "State of Services"
       items:
         # A44: State of education
@@ -638,6 +652,7 @@ questionnaire:
             right: "Extremely good"
 
     - id: b_socio_political
+      kind: Sequence
       title: "Socio-Political Attitudes"
       items:
         # A46: Government should reduce income differences
@@ -730,6 +745,7 @@ questionnaire:
               5: "Disagree strongly"
 
     - id: b_immigration_attitudes
+      kind: Sequence
       title: "Immigration Attitudes"
       items:
         # A53: Allow same race/ethnic group
@@ -820,6 +836,7 @@ questionnaire:
     # BLOCK 1: SUBJECTIVE WELLBEING AND SOCIAL LIFE (A60-A63)
     # =========================================================================
     - id: b_wellbeing_social
+      kind: Sequence
       title: "Subjective Wellbeing and Social Life"
       items:
         # A60: Happiness (0–10 scale)
@@ -881,6 +898,7 @@ questionnaire:
     # BLOCK 2: CRIME AND SAFETY (A64-A65)
     # =========================================================================
     - id: b_crime_safety
+      kind: Sequence
       title: "Crime and Safety"
       items:
         # A64: Crime victimization (Yes/No)
@@ -908,6 +926,7 @@ questionnaire:
     # BLOCK 3: GENERAL HEALTH (A66-A67)
     # =========================================================================
     - id: b_health
+      kind: Sequence
       title: "General Health"
       items:
         # A66: Self-rated general health
@@ -938,6 +957,7 @@ questionnaire:
     # BLOCK 4: NATIONAL AND EUROPEAN ATTACHMENT (A68-A69)
     # =========================================================================
     - id: b_attachment
+      kind: Sequence
       title: "National and European Attachment"
       items:
         # A68: Emotional attachment to country (0–10 scale)
@@ -977,6 +997,7 @@ questionnaire:
     #   A74-A76: ASK ALL
     # =========================================================================
     - id: b_religion
+      kind: Sequence
       title: "Religion"
       items:
         # A70: Belong to a religion? (Yes/No)
@@ -1103,6 +1124,7 @@ questionnaire:
     # Routing: A77=1 (Yes) → A78; A77=0 (No) → skip A78
     # =========================================================================
     - id: b_discrimination
+      kind: Sequence
       title: "Discrimination"
       items:
         # A77: Member of discriminated group? (Yes/No)
@@ -1145,6 +1167,7 @@ questionnaire:
     #   A83, A84: ASK ALL
     # =========================================================================
     - id: b_citizenship
+      kind: Sequence
       title: "Citizenship and Immigration Background"
       items:
         # A79: Citizen of country? — ASK ALL
@@ -1218,6 +1241,7 @@ questionnaire:
     # only supports 0/1. Use Radio for A85 and A87 since they have 3 options.
     # =========================================================================
     - id: b_parents_birthplace
+      kind: Sequence
       title: "Parents' Birthplace"
       items:
         # A85: Father born in country?
@@ -1273,6 +1297,7 @@ questionnaire:
     # Only one of A89a or A89b is asked per country.
     # =========================================================================
     - id: b_eu_referendum
+      kind: Sequence
       title: "EU Referendum"
       items:
         # A89a: EU member country version
@@ -1316,6 +1341,7 @@ questionnaire:
     # BLOCK 1: HOUSEHOLD COMPOSITION (B1-B4)
     # =========================================================================
     - id: b_household_composition
+      kind: Sequence
       title: "Household Composition"
       items:
         # B1: Household size (including respondent)
@@ -1390,6 +1416,7 @@ questionnaire:
     # and would be set by the roster in a full implementation.
     # =========================================================================
     - id: b_household_roster
+      kind: Sequence
       title: "Household Members"
       precondition:
         - predicate: q_b1.outcome > 1
@@ -1412,6 +1439,7 @@ questionnaire:
     #   B12: ASK IF has_children_in_hh = 0 (no B7=2)
     # =========================================================================
     - id: b_marital_status
+      kind: Sequence
       title: "Marital Status"
       items:
         # B8: Relationship description with partner
@@ -1487,6 +1515,7 @@ questionnaire:
     # BLOCK 4: AREA TYPE (B13)
     # =========================================================================
     - id: b_area_type
+      kind: Sequence
       title: "Area Description"
       items:
         # B13: Type of area — ASK ALL
@@ -1513,6 +1542,7 @@ questionnaire:
     # B15: Years of full-time education. ASK ALL.
     # =========================================================================
     - id: b_education
+      kind: Sequence
       title: "Education"
       items:
         # B14a/B14b: Highest level of education
@@ -1564,6 +1594,7 @@ questionnaire:
     #   Precondition: q_b19.outcome == 1.
     # =========================================================================
     - id: b_activity
+      kind: Sequence
       title: "Activity Status"
       items:
         # B16: Activity in last 7 days — multi-select
@@ -1689,6 +1720,7 @@ questionnaire:
     # B36: Worked abroad. ASK ALL with work history.
     # =========================================================================
     - id: b_employment
+      kind: Sequence
       title: "Employment Details"
       precondition:
         - predicate: has_work_history == 1
@@ -1869,6 +1901,7 @@ questionnaire:
     # B39: Any period in past 5 years? Switch. Precondition: B37 = Yes.
     # =========================================================================
     - id: b_unemployment
+      kind: Sequence
       title: "Unemployment History"
       items:
         # B37: Ever unemployed 3+ months
@@ -1912,6 +1945,7 @@ questionnaire:
     # B43: Feeling about household income.
     # =========================================================================
     - id: b_income
+      kind: Sequence
       title: "Union Membership and Household Income"
       items:
         # B40: Trade union membership
@@ -1989,6 +2023,7 @@ questionnaire:
     #   Precondition: partner_has_work == 1.
     # =========================================================================
     - id: b_partner
+      kind: Sequence
       title: "Partner's Background"
       precondition:
         - predicate: has_partner == 1
@@ -2153,6 +2188,7 @@ questionnaire:
     # B58: Mother's occupation type. Precondition: B57 in [1, 2].
     # =========================================================================
     - id: b_parents
+      kind: Sequence
       title: "Parents' Background"
       items:
         # B53a/B53b: Father's highest education level
@@ -2264,6 +2300,7 @@ questionnaire:
     # B60: Ancestry — country-specific, simplified to Dropdown. ASK ALL.
     # =========================================================================
     - id: b_training_ancestry
+      kind: Sequence
       title: "Training and Ancestry"
       items:
         # B59: Training or courses in past 12 months
@@ -2290,6 +2327,7 @@ questionnaire:
     # OPTIMISM (C1)
     # =========================================================================
     - id: b_optimism
+      kind: Sequence
       title: "Optimism"
       items:
         # C1: Optimism about future
@@ -2312,6 +2350,7 @@ questionnaire:
     # Modelled as a QuestionGroup for compactness.
     # =========================================================================
     - id: b_past_week
+      kind: Sequence
       title: "Feelings in the Past Week"
       items:
         # C2-C11: Past-week feelings (4-point frequency)
@@ -2341,6 +2380,7 @@ questionnaire:
     # COMPETENCE AND WORTH (C12-C13)
     # =========================================================================
     - id: b_competence
+      kind: Sequence
       title: "Competence and Self-Worth"
       items:
         # C12: Chance to show capability
@@ -2373,6 +2413,7 @@ questionnaire:
     # SOCIAL HARMONY AND RESPECT (C14-C16)
     # =========================================================================
     - id: b_social_harmony
+      kind: Sequence
       title: "Social Harmony and Respect"
       items:
         # C14: Harmony among people in country
@@ -2412,6 +2453,7 @@ questionnaire:
     # PURPOSE AND SUPPORT (C17-C23)
     # =========================================================================
     - id: b_purpose_support
+      kind: Sequence
       title: "Awareness, Purpose, and Support"
       items:
         # C17: Notice and appreciate surroundings (0-10)
@@ -2495,6 +2537,7 @@ questionnaire:
     # CONNECTEDNESS (C24-C25)
     # =========================================================================
     - id: b_connectedness
+      kind: Sequence
       title: "Connectedness"
       items:
         # C24: Close and connected to other people (0-6)
@@ -2523,6 +2566,7 @@ questionnaire:
     # RESILIENCE AND COMPASSION (C26-C30)
     # =========================================================================
     - id: b_resilience
+      kind: Sequence
       title: "Resilience and Compassion"
       items:
         # C26: Find something good in difficult periods
@@ -2587,6 +2631,7 @@ questionnaire:
     # ===================================================================
     # ── Global Solidarity (D1-D4) ──
     - id: b_global_solidarity
+      kind: Sequence
       title: "Global Solidarity"
       items:
         # D1: Importance of helping poorer countries
@@ -2641,6 +2686,7 @@ questionnaire:
 
     # ── Immigration Criteria (D5-D8) ──
     - id: b_immigration_criteria
+      kind: Sequence
       title: "Immigration Criteria"
       items:
         # D5: Importance of good educational qualifications
@@ -2689,6 +2735,7 @@ questionnaire:
 
     # ── Immigration Impact (D9-D11) ──
     - id: b_immigration_impact
+      kind: Sequence
       title: "Immigration Impact"
       items:
         # D9: Immigrants take jobs or create jobs
@@ -2726,6 +2773,7 @@ questionnaire:
 
     # ── Social Distance (D12-D13) ──
     - id: b_social_distance
+      kind: Sequence
       title: "Social Distance"
       items:
         # D12: Mind immigrant as boss
@@ -2752,6 +2800,7 @@ questionnaire:
 
     # ── Refugees (D14-D18) ──
     - id: b_refugees
+      kind: Sequence
       title: "Refugees"
       items:
         # D14: Country has more than fair share of refugees
@@ -2818,6 +2867,7 @@ questionnaire:
 
     # ── Treatment and Contact (D19-D23) ──
     - id: b_treatment_contact
+      kind: Sequence
       title: "Treatment and Contact"
       items:
         # D19: Government treatment of immigrants vs natives (born in country only)
@@ -2888,6 +2938,7 @@ questionnaire:
 
     # ── Race, Ethnicity, Culture (D24-D27) ──
     - id: b_race_culture
+      kind: Sequence
       title: "Race, Ethnicity, and Culture"
       items:
         # D24: Some races born less intelligent
@@ -2940,6 +2991,7 @@ questionnaire:
 
     # ── Group-Specific Attitudes and Split-Sample Experiment (D28-D30d) ──
     - id: b_group_specific
+      kind: Sequence
       title: "Group-Specific Attitudes"
       items:
         # D28: Allow Jewish people
@@ -3029,6 +3081,7 @@ questionnaire:
     # Schwartz Portrait Values Questionnaire (PVQ-20)
     # All 20 items share the same 6-point scale, no routing, ASK ALL.
     - id: b_human_values
+      kind: Sequence
       title: "Human Values"
       items:
         - id: qg_human_values
@@ -3071,6 +3124,7 @@ questionnaire:
     # ── Survey Experience (F1-F6) ──
     # SC WEB and PAPER only
     - id: b_survey_experience
+      kind: Sequence
       title: "Survey Experience"
       items:
         # F1: Understanding of questions
@@ -3153,6 +3207,7 @@ questionnaire:
     # ===================================================================
     # ── Recontact (G1-G6) ──
     - id: b_recontact
+      kind: Sequence
       title: "Recontact"
       items:
         # G1: Agree to recontact — 1 (Yes) → G2-G5; 0 (No) → H1
@@ -3219,6 +3274,7 @@ questionnaire:
 
     # ── Closing (H1-H3) ──
     - id: b_closing
+      kind: Sequence
       title: "Closing"
       items:
         # H1: Contact details for incentive
@@ -3256,6 +3312,7 @@ questionnaire:
     # ===================================================================
     # ── Interview Mode and Respondent Behaviour (J1-J5) ──
     - id: b_interview_mode
+      kind: Sequence
       title: "Interview Mode and Respondent Behaviour"
       items:
         # J1: Interview mode
@@ -3323,6 +3380,7 @@ questionnaire:
 
     # ── Interference (J6-J7) ──
     - id: b_interference
+      kind: Sequence
       title: "Interference"
       items:
         # J6: Interference during interview — 1 (Yes) → J7; 0 (No) → J8
@@ -3351,6 +3409,7 @@ questionnaire:
 
     # ── Interview Details (J8-J10) ──
     - id: b_interview_details
+      kind: Sequence
       title: "Interview Details"
       items:
         # J8: Interview language (country-specific; placeholder options)
