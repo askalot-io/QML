@@ -39,6 +39,12 @@ dev = [
     "types-jsonschema",
 ]
 
+[dependency-groups]
+dev = [
+    "pytest>=8.4.2",
+    "pytest-flask>=1.3.0",
+]
+
 [project.urls]
 Homepage = "https://github.com/askalot-io/QML"
 Repository = "https://github.com/askalot-io/QML"
