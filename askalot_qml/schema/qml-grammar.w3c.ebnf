@@ -1,0 +1,128 @@
+/* QML (Questionnaire Markup Language) — W3C-EBNF for railroad-diagram tools
+   (e.g. https://www.bottlecaps.de/rr/ui). Derived from qml-schema.json,
+   schema version 1.1.1. Start symbol: QMLDocument.
+   How to read this, the visualize/validate tools, the schema-vs-grammar
+   gaps, and the value constraints are documented in README.md (this folder). */
+
+QMLDocument   ::= "qmlVersion" VersionString
+                  "questionnaire" Questionnaire
+
+Questionnaire ::= ( "title" String )?
+                  ( "codeInit" CodeBlock )?
+                  ( "precondition" Condition* )?
+                  ( "postcondition" Condition* )?
+                  "blocks" Block+
+
+/* Block */
+
+Block         ::= SequenceBlock | RosterBlock | SampleBlock
+
+SequenceBlock ::= "id" String "kind" "Sequence"
+                  BlockMeta
+                  "items" Item+
+
+RosterBlock   ::= "id" String "kind" "Roster"
+                  BlockMeta
+                  "iterateOver" PythonExpr
+                  "labels" Labels
+                  "items" Item+
+
+SampleBlock   ::= "id" String "kind" "Sample"
+                  BlockMeta
+                  "count" PositiveInteger
+                  ( "is_random" Boolean )?
+                  "items" Item+
+
+BlockMeta     ::= ( "title" String )?
+                  ( "precondition" Condition* )?
+                  ( "postcondition" Condition* )?
+
+/* Item */
+
+Item               ::= CommentItem | QuestionItem | QuestionGroupItem | MatrixQuestionItem
+
+CommentItem        ::= "id" String "kind" "Comment" ItemMeta
+
+QuestionItem       ::= "id" String "kind" "Question" ItemMeta
+                       "input" Input
+
+QuestionGroupItem  ::= "id" String "kind" "QuestionGroup" ItemMeta
+                       "questions" String*
+                       "input" Input
+
+MatrixQuestionItem ::= "id" String "kind" "MatrixQuestion" ItemMeta
+                       "rows" String*
+                       "columns" String*
+                       "input" Input
+
+ItemMeta           ::= ( "title" String )?
+                       ( "precondition" Condition* )?
+                       ( "postcondition" Condition* )?
+                       ( "codeBlock" CodeBlock )?
+
+/* Input */
+
+Input         ::= SwitchInput | RadioInput | DropdownInput | CheckboxInput
+                | EditboxInput | TextareaInput | SliderInput | RangeInput
+
+SwitchInput   ::= "control" "Switch"
+                  ( "off" String )?
+                  ( "on" String )?
+                  ( "default" SwitchDefault )?
+
+RadioInput    ::= "control" "Radio"
+                  "labels" Labels
+                  ( "default" Integer )?
+
+CheckboxInput ::= "control" "Checkbox"
+                  "labels" Labels
+                  ( "default" Integer )?
+
+DropdownInput ::= "control" "Dropdown"
+                  "labels" Labels
+                  ( "left" String )?
+                  ( "right" String )?
+                  ( "default" Integer )?
+
+EditboxInput  ::= "control" "Editbox"
+                  "min" Integer
+                  "max" Integer
+                  ( "left" String )?
+                  ( "right" String )?
+                  ( "default" Integer )?
+
+TextareaInput ::= "control" "Textarea"
+                  ( "placeholder" String )?
+                  ( "maxLength" Integer )?
+
+SliderInput   ::= "control" "Slider" SliderBody
+
+RangeInput    ::= "control" "Range" SliderBody
+
+SliderBody    ::= "min" Integer
+                  "max" Integer
+                  ( "step" Integer )?
+                  ( "default" Integer )?
+                  ( "left" String )?
+                  ( "right" String )?
+                  ( "labels" Labels )?
+
+SwitchDefault ::= "0" | "1"
+
+/* Leaf / shared */
+
+Condition     ::= "predicate" ( String | Boolean | Number )
+                  ( "hint" String )?
+
+Labels        ::= ( IntegerKey String )*
+
+CodeBlock     ::= PythonCode
+
+Boolean       ::= "true" | "false"
+
+VersionString ::= Integer "." Integer "." Integer
+
+PositiveInteger ::= Integer
+IntegerKey      ::= Integer
+PythonExpr      ::= String
+PythonCode      ::= String

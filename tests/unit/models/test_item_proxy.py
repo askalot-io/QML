@@ -389,7 +389,7 @@ class TestPropertyExtraction(unittest.TestCase):
             "kind": "Question",
             "outcome": None,
             "input": {
-                "control": "RadioButton",
+                "control": "Radio",
                 "labels": {"1": "Strongly Disagree", "5": "Strongly Agree"},
             },
         }

@@ -726,9 +726,9 @@ class TestExistingFixturesUnchanged:
     All shipped fixtures must continue to flow through the loader unchanged.
 
     Two notes on fixture state (audited 2026-05-05):
-      * Most fixtures predate the schema's `qmlVersion` requirement and the
-        `RadioButton`-vs-`Radio` enum tightening. They are intentionally loaded
-        with `schema_path=None` by the existing test suites that use them.
+      * Most fixtures predate the schema's `qmlVersion` requirement, so they
+        are intentionally loaded with `schema_path=None` by the existing test
+        suites that use them.
       * This test mirrors that reality — we verify the fixtures still parse +
         flatten correctly with the new loader (Roster additions are purely
         additive on legacy blocks: kind absent → no _roster_* tags emitted).

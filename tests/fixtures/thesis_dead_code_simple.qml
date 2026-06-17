@@ -38,11 +38,9 @@ questionnaire:
           kind: Question
           title: "Would you like to provide feedback?"
           input:
-            control: RadioButton
-            options:
-              - value: 0
-                label: "No"
-              - value: 1
-                label: "Yes"
+            control: Radio
+            labels:
+              0: "No"
+              1: "Yes"
           precondition:
             - predicate: q_rating.outcome < 50

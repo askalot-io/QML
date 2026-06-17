@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "askalot_qml"
-version = "1.29.0"
+version = "1.29.1"
 description = "QML processing and analysis engine for Askalot platform"
 authors = [
     {name = "Askalot IO", email = "info@askalot.io"}
@@ -37,12 +37,6 @@ dev = [
     "mypy>=1.0.0",
     "types-PyYAML",
     "types-jsonschema",
-]
-
-[dependency-groups]
-dev = [
-    "pytest>=8.4.2",
-    "pytest-flask>=1.3.0",
 ]
 
 [project.urls]

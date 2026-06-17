@@ -36,12 +36,10 @@ questionnaire:
           kind: Question
           title: "Confirm your rating"
           input:
-            control: RadioButton
-            options:
-              - value: 0
-                label: "No"
-              - value: 1
-                label: "Yes"
+            control: Radio
+            labels:
+              0: "No"
+              1: "Yes"
           postcondition:
             - predicate: q_rating.outcome < 30
               hint: "Rating must be below 30 to confirm"

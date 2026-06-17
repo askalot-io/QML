@@ -196,7 +196,7 @@ class StaticBuilder:
 
         Domain constraints define the valid value space for each item:
         - For Editbox/Slider: min <= S_i <= max
-        - For RadioButton/Dropdown: S_i ∈ {v1, v2, ...}
+        - For Radio/Dropdown: S_i ∈ {v1, v2, ...}
 
         These constraints form B (base constraint) as defined in the thesis:
         B := ∧_i D_i(S_i)
@@ -231,7 +231,7 @@ class StaticBuilder:
                     f"Unsupported max value type for {item_id}: {type(max_val).__name__}"
                 )
 
-        elif control in ("Radio", "RadioButton", "Dropdown", "Checkbox", "Switch"):
+        elif control in ("Radio", "Dropdown", "Checkbox", "Switch"):
             # Enumeration constraint for choice controls
             # labels = {1: "Yes", 2: "No"} → valid values are integer keys
             valid_values: list[int] = []
@@ -2092,7 +2092,7 @@ class StaticBuilder:
 
         B := ∧_i D_i(S_i) where D_i(S_i) are domain constraints:
         - min/max for Editbox/Slider controls
-        - enumeration for RadioButton/Dropdown controls
+        - enumeration for Radio/Dropdown controls
 
         This is the correct B for use in:
         - Per-item validation: W_i = B ∧ P_i ∧ ¬Q_i

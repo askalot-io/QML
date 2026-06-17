@@ -42,24 +42,19 @@ questionnaire:
           kind: Question
           title: "Select your tax bracket"
           input:
-            control: RadioButton
-            options:
-              - value: 1
-                label: "Low"
-              - value: 2
-                label: "Medium"
-              - value: 3
-                label: "High"
+            control: Radio
+            labels:
+              1: "Low"
+              2: "Medium"
+              3: "High"
 
         - id: q_low_income_assist
           kind: Question
           title: "Would you like information about low-income assistance programs?"
           input:
-            control: RadioButton
-            options:
-              - value: 0
-                label: "No"
-              - value: 1
-                label: "Yes"
+            control: Radio
+            labels:
+              0: "No"
+              1: "Yes"
           precondition:
             - predicate: q_income.outcome < 30000
