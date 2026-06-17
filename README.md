@@ -5,7 +5,27 @@
 > non-commercial license. You may read, run, modify, and cite the code
 > for any non-commercial purpose (research, teaching, evaluation, personal
 > use). Commercial use requires a separate license from Askalot. This
-> replaces the prior CC BY-NC 4.0 statement. See LICENSE](./LICENSE).
+> replaces the prior CC BY-NC 4.0 statement. See [LICENSE](./LICENSE).
+
+## Authorship & Intellectual Property
+
+The **QML language specification** — and the underlying concept of a
+**declarative questionnaire with formal validation by an SMT solver** — are the
+intellectual property of **Peter Saghelyi**, the author and originator of this
+work.
+
+A peer-reviewed scientific paper describing the language and its
+formal-validation model is currently **under review** and will be published
+soon; full citation details will be added here on publication. Until then,
+please attribute the QML language and its SMT-based validation model to the
+author and link back to this repository.
+
+This authorship/IP notice is distinct from the code license above: the PolyForm
+Noncommercial 1.0.0 license governs use of the source code, while the design of
+the QML language and its formal-validation method remain the author's
+intellectual property.
+
+**Author:** Peter Saghelyi · [psaghelyi@askalot.io](mailto:psaghelyi@askalot.io) · [LinkedIn](https://www.linkedin.com/in/psaghelyi/)
 
 ## Overview
 
@@ -15,6 +35,30 @@ The **askalot_qml** module provides Z3-driven questionnaire validation capabilit
 - **ValidationProcessor**: Offline static validation for questionnaire design
 
 Both processors share a common pipeline through QMLEngine that handles dependency graph construction and topological sorting.
+
+## Examples & Evaluation
+
+### Worked examples — `tests/fixtures/`
+
+[`tests/fixtures/`](tests/fixtures/) holds 38 runnable `.qml` files that
+showcase the language's capabilities (and double as the test suite). Highlights:
+
+- **Core flow** — `basic.qml`, `branching_flow.qml`, `dependencies.qml`, `scoring.qml`, `question_group.qml`
+- **Matrix questions** — `matrix_ranking.qml`, `matrix_symmetry.qml`, `matrix_fixed_sum.qml`, `matrix_infeasible_sum.qml`
+- **Roster blocks** (repeat-over-entities) — `roster_numeric.qml`, `roster_multiselect.qml`, `roster_inner_precondition.qml`
+- **Sample blocks** (randomized sub-selection) — `sample_random.qml`, `sample_traversal_*.qml`, `sample_over_cap.qml`, `sample_cyclic.qml`
+- **Formal-validation cases** — `cycles.qml`, `classification.qml`, and the `thesis_*.qml` set (dead-code and conflicting-postcondition detection drawn from the paper).
+
+### Evaluation corpus — `evaluation/`
+
+[`evaluation/`](evaluation/) evaluates QML against **real-world, publicly
+available questionnaires** rather than toy inputs — established instruments such
+as **AUDIT, BRFSS, CCHS, DHS, NHIS** and Malaria Surveillance, alongside
+national censuses and sociology/education surveys, each converted to QML and
+organized by domain. The curated source catalog — provenance and download links
+across 13 domains (health, demographics, sociology, market research, compliance,
+education, safety-critical, legal, infrastructure, and more) — is in
+[`evaluation/questionnaire_sources.md`](evaluation/questionnaire_sources.md).
 
 ## Module Structure
 
@@ -27,17 +71,17 @@ askalot_qml/
 │   ├── validation_processor.py    # Static validation with Z3 classification
 │   ├── flow_processor.py         # Runtime navigation
 │   ├── python_runner.py          # Safe Python code execution
-│   ├── qml_diagram.py            # Graph IR generation for visualization
+│   ├── qml_diagram_ir.py         # Positions-free graph IR for the QML Explorer webview
 │   ├── qml_engine.py             # Common pipeline orchestrator
-│   ├── qml_layout.py             # Server-side Graphviz layout
-│   ├── qml_loader.py             # QML file loading
-│   └── qml_topology.py           # Dependency graph and topological sort
+│   ├── qml_loader.py             # QML file loading + block flattening
+│   ├── qml_topology.py           # Dependency graph and topological sort
+│   └── item_count.py             # Canonical top-level item-count helper
 ├── models/                        # Data models
-│   ├── item_proxy.py             # Runtime item wrapper for code blocks
-│   ├── qml_state.py              # Survey state management
-│   └── table.py                  # Matrix question support
-├── schema/                        # QML schema definitions
-│   └── qml-schema.json           # JSON Schema for QML validation
+│   ├── item_proxy.py             # Runtime item wrapper (incl. MatrixQuestion outcomes)
+│   └── qml_state.py              # Survey state management
+├── schema/                        # QML schema + grammar contract (see "QML Schema & Grammar")
+│   ├── qml-schema.json           # Authoritative JSON Schema (dialect 2020-12)
+│   └── qml-grammar.w3c.ebnf      # W3C-EBNF rendering for railroad-diagram tools
 └── z3/                           # Z3 constraint solving
     ├── global_formula.py         # Global satisfiability check (Level 2)
     ├── item_classifier.py        # Per-item Z3 classification (Level 1)
@@ -48,20 +92,22 @@ askalot_qml/
 
 ## Formal Foundation
 
-The module implements formal verification concepts from the thesis [docs/thesis/chapters/comprehensive_validation.tex](docs/thesis/chapters/comprehensive_validation.tex):
+The module implements the formal-verification model described in the forthcoming peer-reviewed paper (see [Authorship & Intellectual Property](#authorship--intellectual-property)):
 
 ### Questionnaire Definition
 
-A questionnaire is a tuple G = (I, S, D, P, Q, I_start) where:
-- **I**: Finite set of items
-- **S**: Vector of outcome variables
-- **D**: Domain constraints for each outcome
-- **P**: Preconditions (Boolean formulas determining item visibility)
-- **Q**: Postconditions (Boolean formulas constraining valid responses)
+A questionnaire is a tuple $G = (I, S, D, P, Q, I_{start})$ where:
+- $I$ — finite set of items
+- $S$ — vector of outcome variables
+- $D$ — domain constraints for each outcome
+- $P$ — preconditions (Boolean formulas determining item visibility)
+- $Q$ — postconditions (Boolean formulas constraining valid responses)
 
 ### Base Constraint
 
-B := conjunction of all domain constraints D_i(S_i)
+$$B := \bigwedge_i D_i(S_i)$$
+
+the conjunction of all per-outcome domain constraints.
 
 ### Validation Hierarchy
 
@@ -69,14 +115,14 @@ Three levels of increasing thoroughness, implemented in the `z3/` module:
 
 | Level | Formula | Implementation | Purpose |
 |-------|---------|----------------|---------|
-| **Per-item** | W_i = B ∧ P_i ∧ ¬Q_i | [item_classifier.py](askalot_qml/z3/item_classifier.py) | Detect NEVER reachable and INFEASIBLE items |
-| **Global** | F = B ∧ ∧(P_i ⇒ Q_i) | [global_formula.py](askalot_qml/z3/global_formula.py) | Detect conflicting postconditions |
-| **Path-based** | A_i = B ∧ ∧{j∈Pred(i)}(P_j ⇒ Q_j) | [path_based_validation.py](askalot_qml/z3/path_based_validation.py) | Detect dead code (unreachable items) |
+| **Per-item** | $W_i = B \wedge P_i \wedge \neg Q_i$ | [item_classifier.py](askalot_qml/z3/item_classifier.py) | Detect NEVER reachable and INFEASIBLE items |
+| **Global** | $F = B \wedge \bigwedge_i (P_i \Rightarrow Q_i)$ | [global_formula.py](askalot_qml/z3/global_formula.py) | Detect conflicting postconditions |
+| **Path-based** | $A_i = B \wedge \bigwedge_{j \in \mathrm{Pred}(i)} (P_j \Rightarrow Q_j)$ | [path_based_validation.py](askalot_qml/z3/path_based_validation.py) | Detect dead code (unreachable items) |
 
 **Relationships between levels:**
-- **Per-item passes → Global passes**: If all W_i are UNSAT, then SAT(F) is guaranteed (Theorem: Soundness)
-- **Global fails → Path-based fails**: If UNSAT(F), no execution path is valid (Theorem: Global Necessary)
-- **Global passes ↛ All paths valid**: SAT(F) doesn't guarantee all items reachable (Theorem: Global Not Sufficient)
+- **Per-item passes → Global passes**: if all $W_i$ are UNSAT, then $\mathrm{SAT}(F)$ is guaranteed (Theorem: Soundness)
+- **Global fails → Path-based fails**: if $\mathrm{UNSAT}(F)$, no execution path is valid (Theorem: Global Necessary)
+- **Global passes ↛ All paths valid**: $\mathrm{SAT}(F)$ doesn't guarantee all items reachable (Theorem: Global Not Sufficient)
 
 **When each level suffices:**
 - **Per-item** suffices when all postconditions are TAUTOLOGICAL
@@ -188,27 +234,27 @@ The ItemClassifier ([z3/item_classifier.py](askalot_qml/z3/item_classifier.py)) 
 **Precondition Reachability**:
 | Status | Condition | Meaning |
 |--------|-----------|---------|
-| ALWAYS | UNSAT(B ∧ ¬P) | Item always shown |
-| CONDITIONAL | SAT(B ∧ P) and SAT(B ∧ ¬P) | Item sometimes shown |
-| NEVER | UNSAT(B ∧ P) | Item never reachable (dead code) |
+| ALWAYS | $\mathrm{UNSAT}(B \wedge \neg P)$ | Item always shown |
+| CONDITIONAL | $\mathrm{SAT}(B \wedge P)$ and $\mathrm{SAT}(B \wedge \neg P)$ | Item sometimes shown |
+| NEVER | $\mathrm{UNSAT}(B \wedge P)$ | Item never reachable (dead code) |
 
-**Postcondition Invariant** (relative to precondition P):
+**Postcondition Invariant** (relative to precondition $P$):
 | Status | Condition | Meaning |
 |--------|-----------|---------|
-| TAUTOLOGICAL | UNSAT(B ∧ P ∧ ¬Q) | Postcondition always holds when reached |
-| CONSTRAINING | Both SAT for (B ∧ P ∧ Q) and (B ∧ P ∧ ¬Q) | Postcondition filters some responses |
-| INFEASIBLE | UNSAT(B ∧ P ∧ Q) | Postcondition can never be satisfied (design error) |
-| NONE | No postcondition defined | No validation constraints |
+| TAUTOLOGICAL | $\mathrm{UNSAT}(B \wedge P \wedge \neg Q)$ | Postcondition always holds when reached |
+| CONSTRAINING | both $\mathrm{SAT}(B \wedge P \wedge Q)$ and $\mathrm{SAT}(B \wedge P \wedge \neg Q)$ | Postcondition filters some responses |
+| INFEASIBLE | $\mathrm{UNSAT}(B \wedge P \wedge Q)$ | Postcondition can never be satisfied (design error) |
+| NONE | no postcondition defined | No validation constraints |
 
 ### Validation Diagram Coloring
 
 | Color | Class | Meaning |
 |-------|-------|---------|
-| Green | always | ALWAYS reachable |
-| Yellow | conditional | CONDITIONAL reachability |
-| Red | never | NEVER reachable |
-| Purple | infeasible | INFEASIBLE postcondition |
-| Blue | tautological | TAUTOLOGICAL postcondition |
+| 🟢 Green | always | ALWAYS reachable |
+| 🟡 Yellow | conditional | CONDITIONAL reachability |
+| 🔴 Red | never | NEVER reachable |
+| 🟣 Purple | infeasible | INFEASIBLE postcondition |
+| 🔵 Blue | tautological | TAUTOLOGICAL postcondition |
 
 ## Common Pipeline
 
@@ -221,7 +267,7 @@ Both processors share the QMLEngine ([core/qml_engine.py](askalot_qml/core/qml_e
 - Parses preconditions, postconditions, and code blocks
 - Generates Z3 constraints using SSA (Static Single Assignment) versioning
 - Discovers item dependencies through constraint analysis
-- Creates frozen base constraint (B) for classification
+- Creates frozen base constraint $B$ for classification
 
 ### QMLTopology
 
@@ -242,24 +288,18 @@ Both processors share the QMLEngine ([core/qml_engine.py](askalot_qml/core/qml_e
 
 Cycle members are linearized in QML file order at their natural position. The original dependency graph (`self.dependencies`) is preserved; only working copies are mutated during cycle breaking. `get_topological_order()` always returns a list (never `None`); check `has_cycles` to know if the ordering is exact or approximate.
 
-### QMLDiagram
+### QMLDiagramIR
 
-**File**: [core/qml_diagram.py](askalot_qml/core/qml_diagram.py)
+**File**: [core/qml_diagram_ir.py](askalot_qml/core/qml_diagram_ir.py)
 
-Generates a JSON graph intermediate representation (IR) consumed by QMLLayout for server-side Graphviz positioning and rendered as SVG DOM elements in the browser (Armiger QML Explorer).
+Emits a **positions-free** structural intermediate representation (IR) — top-level `blocks`, `items`, and `conditions` arrays — consumed by the React + React Flow webview in the QML Explorer. Layout is computed **client-side by ELK.js**; this module never computes node positions.
 
-1. **Base graph** (cacheable): Structure only - items, variables, preconditions, postconditions, dependency and topological edges, cycle highlighting
-2. **Dynamic coloring**: Applied at runtime based on mode (flow or validation)
-
-### QMLLayout
-
-**File**: [core/qml_layout.py](askalot_qml/core/qml_layout.py)
-
-Computes node positions and edge routes for the graph IR using pygraphviz. Supports multiple Graphviz layout engines (dot, neato, fdp, sfdp, twopi, circo). The browser receives pre-positioned data — rendering is instant with no client-side layout library needed.
+1. **Structure**: blocks (incl. Roster `iterate_over`/`labels` and Sample `count`/`is_random`), items (kind, control, classification), and conditions (pre/post predicates with item-outcome and variable references)
+2. **Classification**: per-item flow/validation classification is attached to the IR for the viewer to color
 
 ## QML Language
 
-QML files are YAML-based questionnaire specifications. See [docs/thesis/presentation/slides.md](docs/thesis/presentation/slides.md) for examples.
+QML files are YAML-based questionnaire specifications. See [Examples & Evaluation](#examples--evaluation) and [`tests/fixtures/`](tests/fixtures/) for examples.
 
 Key elements:
 - **codeInit**: Global initialization code block
@@ -269,15 +309,147 @@ Key elements:
   - **postcondition**: List of predicates with hints for validation
   - **codeBlock**: Python code executed after response
 
-### Block-Level Precondition Inheritance
+### Block-Level Preconditions
 
-Blocks can define preconditions that apply to all items within them. During QMLLoader flattening (`_flatten_blocks`), block-level preconditions are prepended to each item's own preconditions with `_source: 'block'` and `_block_id` tags for tracking. Items also get `_block_precondition_count` to indicate how many inherited preconditions they carry. This eliminates repetitive per-item preconditions when an entire section is conditional.
+Blocks can define preconditions (and postconditions) that apply to all items within them. The block's `precondition`/`postcondition` lists stay **on the block** — they are not copied onto items. Consumers compose them at evaluation time: `FlowProcessor` (and `StaticBuilder`, when emitting Z3 constraints) gate each item on `(block.precondition or []) + (item.precondition or [])`. During flattening, `QMLLoader` propagates only block-*kind* metadata onto inner items — `_roster_block_id` / `_roster_iterate_over` / `_roster_labels` for Roster blocks, and `_sample_block_id` / `_sample_n` / `_sample_is_random` for Sample blocks — so downstream code can detect roster/sample membership without re-walking the block tree.
 
 ### Domain Constraints for Z3
 
-StaticBuilder extracts domain constraints D_i(S_i) from item input specs for base constraint B. Supports:
+StaticBuilder extracts domain constraints $D_i(S_i)$ from item input specs for base constraint $B$. Supports:
 - **Numeric controls** (Editbox, Slider, Range): `min`/`max` bounds
-- **Choice controls** (Radio, RadioButton, Dropdown, Checkbox, Switch): Enumeration via `labels` (schema format: `{1: "Yes", 2: "No"}`) or `options` (legacy: `[{value: 1, label: "Yes"}, ...]`)
+- **Choice controls** (Radio, Dropdown, Checkbox, Switch): Enumeration via `labels` (e.g. `{1: "Yes", 2: "No"}`)
+
+## QML Schema & Grammar
+
+The `askalot_qml/schema/` folder holds the canonical contract for **QML** — the
+YAML/JSON document format that authors, the AI generator, the loader, and the
+qml-explorer frontend all agree on.
+
+| File | Role |
+|------|------|
+| `askalot_qml/schema/qml-schema.json` | **Authoritative** JSON Schema (dialect `2020-12`), schema version **1.1.1**. Single source of truth. |
+| `askalot_qml/schema/qml-grammar.w3c.ebnf` | A **W3C-EBNF rendering** of the same contract, for railroad-diagram tools. Derived from the schema; not authoritative. |
+| `askalot_qml/schema/__init__.py` | Exposes `QML_SCHEMA_VERSION`, read from `qml-schema.json` at import (no hardcoded copy). |
+
+The schema is the source of truth. The EBNF is a human-readable, diagrammable
+view of it — when the two disagree, the schema wins, and the EBNF should be
+regenerated.
+
+### What QML describes
+
+A QML document is `{ qmlVersion, questionnaire }`. A `questionnaire` has an
+ordered list of `blocks`; each block has `items`; questions carry an `input`
+control. Items and blocks may carry `precondition` / `postcondition` lists
+(predicates over prior answers) and Python `codeBlock` / `codeInit` snippets.
+Three discriminators shape almost everything:
+
+- **`Block.kind`** — `Sequence` | `Roster` | `Sample`
+- **`Item.kind`** — `Comment` | `Question` | `QuestionGroup` | `MatrixQuestion`
+- **`Input.control`** — `Switch` | `Radio` | `Dropdown` | `Checkbox` | `Editbox` | `Textarea` | `Slider` | `Range`
+
+In the schema these are encoded as `allOf` / `if`-`then` conditional
+requirements (each discriminator value pulls in its own required and forbidden
+fields). **Those conditionals are the heart of the language**, and they are
+exactly what the grammar turns into alternation forks.
+
+### How to read `qml-grammar.w3c.ebnf`
+
+It is an **abstract field-structure grammar**, not a byte-level JSON/YAML
+grammar. Read it with these conventions in mind:
+
+- **Punctuation is elided.** Object braces, colons, commas, and string quoting
+  do not appear — only field structure does.
+- **A field is `"key" ValueType`.** For example `"id" String`, or the optional
+  `( "title" String )?`. Repeated array values use `*` / `+`
+  (e.g. `Condition*`, `Block+`).
+- **Field order is canonical-only.** QML objects are *unordered* mappings, so a
+  railroad's left-to-right sequence overstates ordering. Treat the order as a
+  reading convenience, not a rule.
+- **Discriminators are alternation forks.** `Block`, `Item`, and `Input` each
+  branch one way per `kind` / `control`, with that branch's required fields
+  inline. This is the payoff of deriving from the conditional requirements.
+- **Start symbol:** `QMLDocument`.
+- **`String` / `Integer` / `Number` are intentionally undefined** — they are
+  opaque lexical scalars. Expanding them into character-class railroads would
+  only add noise, so diagram tools list them as undefined non-terminals (and
+  still render every diagram). This is expected, not an error.
+
+The grammar uses the **W3C EBNF dialect**: `::=` for productions, `|`
+alternation, `?` `*` `+` quantifiers, `( )` grouping, `"lit"` terminals, and
+`/* … */` comments.
+
+### Visualize the grammar (railroad / syntax diagrams)
+
+Paste the **whole** `qml-grammar.w3c.ebnf` file in, start symbol `QMLDocument`:
+
+- **[bottlecaps.de/rr/ui](https://www.bottlecaps.de/rr/ui)** — the de-facto
+  standard. *Edit Grammar* tab → paste → *View Diagram*. IPv4 mirror:
+  **[rr.red-dove.com/ui](https://rr.red-dove.com/ui)**.
+- **[ebnf2railroad](https://matthijsgroen.github.io/ebnf2railroad/)** — EBNF +
+  `(* *)` comments → an HTML page of diagrams.
+- **[DrawGrammar](https://jacquev6.github.io/DrawGrammar/)** — quick paste-and-draw.
+- **[EBNF-Visualizer (JKU)](http://dotnet.jku.at/applications/visualizer/)** —
+  exports `.gif`.
+
+### Validate / test the grammar (accept-reject)
+
+These tools check formal validity and let you test whether sample strings
+conform — useful when sanity-checking that the grammar accepts and rejects what
+you intend:
+
+- **[BNF Playground](https://bnfplayground.pauliankline.com/)** — define the
+  grammar, generate valid strings, and validate input (green = matches).
+- **[EBNF Lab](https://thomasgassmann.com/blog/ebnf-lab)** — verifier + word producer.
+- **[icosaedro.it/bnf_chk](https://www.icosaedro.it/bnf_chk/)** — pure formal-validity checker.
+
+> Dialects differ between tools (BNF vs ISO-EBNF vs W3C-EBNF), so the file may
+> need small syntactic tweaks to load outside the bottlecaps family.
+
+### Schema-vs-grammar gaps
+
+A context-free grammar cannot express everything the schema and loader enforce,
+and in a few places the grammar is deliberately *stricter* than the live schema.
+Know these before trusting the diagram as the full contract:
+
+1. **Open vs closed.** `qml-schema.json` sets neither `additionalProperties:
+   false` nor `unevaluatedProperties: false`, so it **silently accepts unknown,
+   misspelled, or misplaced keys** today (`iterateOvr`, a `count` on a
+   `Sequence`, `precondtion`). The grammar models the *intended, closed*
+   language — it lists only declared members. Adopting
+   `unevaluatedProperties: false` is a planned schema **MINOR** bump.
+2. **Vestigial Roster guard.** The schema's Roster branch forbids `as` and
+   `maxEntries` via `not`/`anyOf`, but those properties are declared nowhere, so
+   the guard is dead weight. The grammar simply omits them.
+3. **Value constraints** (below) are enforced by the loader / Z3 validator, not
+   by structure, so they cannot appear in the grammar.
+
+#### Value constraints not expressible in the grammar
+
+| Construct / field | Constraint | Enforced by |
+|---|---|---|
+| `Sample.count` | integer ≥ 1 (no silent default) | schema (`minimum: 1`) + loader |
+| `Sample.is_random` | defaults to `false` when omitted | schema default |
+| `Roster.labels` keys | must be powers of two (1, 2, 4, …) | loader / code |
+| `Checkbox.labels` keys | must be powers of two | loader / code |
+| `Switch.default` | `0` or `1` | schema (`enum`) |
+| `Radio.default`, `Dropdown.default` | must be an existing key of `labels` | code / UI |
+| `Editbox.default`, `Slider.default`, `Range.default` | `min ≤ default ≤ max` | code / UI |
+| `qmlVersion` | advisory — the loader does **not** yet gate on it | (planned loader gate) |
+
+### Why the grammar is hand-derived
+
+Off-the-shelf JSON-Schema → grammar converters
+([llama.cpp json-schema-to-grammar](https://github.com/ggml-org/llama.cpp),
+[json-schema-to-gbnf](https://github.com/adrienbrault/json-schema-to-gbnf),
+[XGrammar](https://deepwiki.com/mlc-ai/xgrammar/5.2-regular-expression-to-ebnf-conversion))
+exist, but they target **GBNF over the JSON wire syntax** to constrain LLM
+decoding. They are verbose and — critically — they flatten or drop the
+`if`/`then`/`allOf`/`oneOf` conditional requirements, which is exactly the
+`kind`→fields and `control`→fields structure that makes QML QML. So the
+EBNF here was derived by hand to keep those discriminators as first-class
+alternation forks. (See also the open
+[transformers-CFG feature request](https://github.com/epfl-dlab/transformers-CFG/issues/2)
+and the [json-schema.org grammar discussion](https://github.com/orgs/json-schema-org/discussions/201).)
 
 ## API Endpoints
 
