@@ -7,14 +7,14 @@
 # Static Z3 validation silently drops this constraint — covered by xfail test
 # in test_matrix_static_gap.py.
 
-qmlVersion: "1.0"
+qmlVersion: "2.0"
 
 questionnaire:
   title: "Product Attribute Ranking"
 
   blocks:
     - id: block1
-      kind: Sequence
+      kind: Group
       title: "Ranking attributes per product"
       items:
         - id: product_attribute_ranks

@@ -1,6 +1,6 @@
 /* QML (Questionnaire Markup Language) — W3C-EBNF for railroad-diagram tools
    (e.g. https://www.bottlecaps.de/rr/ui). Derived from qml-schema.json,
-   schema version 1.1.1. Start symbol: QMLDocument.
+   schema version 2.0.0. Start symbol: QMLDocument.
    How to read this, the visualize/validate tools, the schema-vs-grammar
    gaps, and the value constraints are documented in README.md (this folder). */
 
@@ -15,22 +15,17 @@ Questionnaire ::= ( "title" String )?
 
 /* Block */
 
-Block         ::= SequenceBlock | RosterBlock | SampleBlock
+Block         ::= GroupBlock | RosterBlock
 
-SequenceBlock ::= "id" String "kind" "Sequence"
+GroupBlock    ::= "id" String ( "kind" "Group" )?
                   BlockMeta
+                  ( "count" PositiveInteger )?
                   "items" Item+
 
 RosterBlock   ::= "id" String "kind" "Roster"
                   BlockMeta
                   "iterateOver" PythonExpr
                   "labels" Labels
-                  "items" Item+
-
-SampleBlock   ::= "id" String "kind" "Sample"
-                  BlockMeta
-                  "count" PositiveInteger
-                  ( "is_random" Boolean )?
                   "items" Item+
 
 BlockMeta     ::= ( "title" String )?

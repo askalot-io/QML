@@ -2,7 +2,7 @@ questionnaire:
   title: "Classification Test"
   blocks:
     - id: main
-      kind: Sequence
+      kind: Group
       title: "Classification Scenarios"
       items:
         - id: q_always

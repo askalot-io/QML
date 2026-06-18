@@ -1,9 +1,9 @@
-qmlVersion: "1.0"
+qmlVersion: "2.0"
 questionnaire:
   title: "Family Roster"
   blocks:
     - id: count_block
-      kind: Sequence
+      kind: Group
       title: "Family"
       items:
         - id: q_family_count

@@ -90,9 +90,9 @@ class ItemClassifier:
                 s_never.add(domain_base, P_form)
                 precondition_never = s_never.check() == unsat
 
-            # U2 classification-safety (R5/R7): an item registered as
-            # conditionally-present (Sample draw / Roster bit) is
-            # *sampling-absent*, not dead code. Its precondition being
+            # Classification-safety: an item registered as
+            # conditionally-present (capped-Group draw / Roster bit) is
+            # *selection-absent*, not dead code. Its precondition being
             # unsatisfiable in isolation only means "this item is not drawn",
             # which is legitimate — the validation question for such items is
             # "IF drawn, is it well-typed and are its conditions SAT", never
@@ -169,17 +169,6 @@ class ItemClassifier:
             # fell back to runtime enforcement.
             coverage_gaps = list(self.builder.coverage_gaps.get(item_id, []))
 
-            # U4: propagate block-level sample_cap gaps to per-item results so
-            # a consumer that classifies item-by-item (rather than via
-            # classify_all_items) sees the cap rejection on every inner item,
-            # not only on the synthetic block-keyed entry.
-            raw_item = self.builder.state.get_item(item_id)
-            sample_block_id = raw_item.get("_sample_block_id") if raw_item else None
-            if sample_block_id is not None:
-                for gap in self.builder.coverage_gaps.get(sample_block_id, []):
-                    if gap not in coverage_gaps:
-                        coverage_gaps.append(gap)
-
             return {
                 "precondition": {"status": pre_status},
                 "postcondition": {
@@ -196,14 +185,12 @@ class ItemClassifier:
     def classify_all_items(self) -> dict[str, Any]:
         """Classify all items using Z3 SMT solver.
 
-        Block-level coverage gaps (U4: the R9 ``sample_cap`` reject — keyed by
-        a Sample block_id, not an item_id) are surfaced ONCE here as a
-        synthetic result entry keyed by the block_id. A block over the
-        randomization cap is never solved, so it has no per-item
-        classification; the synthetic entry carries only its ``coverage_gaps``
-        list so authors (diagram / validation report) see exactly which block
-        was rejected and why. The loud WARNING was already emitted once at
-        record time by ``StaticBuilder._record_sample_cap_gap``.
+        Block-level coverage gaps (keyed by a block_id, not an item_id) are
+        surfaced ONCE here as a synthetic result entry keyed by the block_id.
+        Such a block has no per-item classification of its own; the synthetic
+        entry carries only its ``coverage_gaps`` list so authors (diagram /
+        validation report) see exactly which block was flagged and why. The
+        loud WARNING is emitted once at record time by the gap recorder.
         """
         with profile_block("z3_classify_all_items", {"item_count": len(self.builder.item_order)}):
             results: dict[str, Any] = {}
@@ -211,12 +198,15 @@ class ItemClassifier:
                 results[item_id] = self.classify_item(item_id)
 
             # Surface block-level gaps (keys in builder.coverage_gaps that are
-            # NOT real items — currently only the U4 sample_cap reject). Emit
-            # once per block; never overwrites a real item classification
-            # because block_id is disjoint from item_order.
+            # NOT real items — block_id-keyed entries). Emit once per block;
+            # never overwrites a real item classification because block_id is
+            # disjoint from item_order.
+            # `results` is keyed exactly by `item_order` at this point, so
+            # `key in results` is a subset of `key in item_keys` — the latter
+            # alone is sufficient to skip real-item keys.
             item_keys = set(self.builder.item_order)
             for key, gaps in self.builder.coverage_gaps.items():
-                if key in item_keys or key in results:
+                if key in item_keys:
                     continue
                 results[key] = {
                     "precondition": {"status": "UNKNOWN"},

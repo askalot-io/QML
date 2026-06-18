@@ -1,9 +1,9 @@
-qmlVersion: "1.0"
+qmlVersion: "2.0"
 questionnaire:
-  title: "Sample Traversal — N=3, five eligible, two precondition-gated"
+  title: "Capped Group Traversal — N=3, five eligible, two precondition-gated"
   blocks:
     - id: screen_block
-      kind: Sequence
+      kind: Group
       title: "Screening"
       items:
         - id: q_age
@@ -14,17 +14,16 @@ questionnaire:
             min: 0
             max: 120
 
-    # count=3, is_random false (declared topological order). Two inner items
-    # carry preconditions referencing the OUTER q_age. Precondition-skipped
-    # items do NOT consume an N slot (R2 / AE1): with q_age >= 18 all five are
-    # eligible → exactly 3 asked (declared order). With q_age < 18 only three
-    # are eligible (two skipped) → still 3 asked. With q_age < 13 only one is
-    # eligible → exactly 1 asked, not an error.
+    # count=3 capped Group (canonical stable-Kahn order). Two inner items carry
+    # preconditions referencing the OUTER q_age. Precondition-skipped items do
+    # NOT consume an N slot (AE3): with q_age >= 18 all five are eligible →
+    # exactly 3 asked (canonical order). With q_age < 18 only three are eligible
+    # (two skipped) → still 3 asked. With q_age < 13 only one is eligible →
+    # exactly 1 asked, not an error.
     - id: lifestyle_sample
-      kind: Sample
+      kind: Group
       title: "Lifestyle questions"
       count: 3
-      is_random: false
       items:
         - id: q_s1
           kind: Question
@@ -69,7 +68,7 @@ questionnaire:
             max: 30
 
     - id: outro_block
-      kind: Sequence
+      kind: Group
       title: "Outro"
       items:
         - id: q_thanks

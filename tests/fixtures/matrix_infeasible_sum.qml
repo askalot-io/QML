@@ -10,14 +10,14 @@
 # Lives only in tests/fixtures/ — never as a Designer pattern, since
 # "deliberately infeasible" is not something Designer should ever emit.
 
-qmlVersion: "1.0"
+qmlVersion: "2.0"
 
 questionnaire:
   title: "Infeasible Sum (Negative Test)"
 
   blocks:
     - id: block1
-      kind: Sequence
+      kind: Group
       title: "Impossible budget"
       items:
         - id: impossible_budget

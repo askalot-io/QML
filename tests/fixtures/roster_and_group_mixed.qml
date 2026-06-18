@@ -1,18 +1,17 @@
-qmlVersion: "1.0"
+qmlVersion: "2.0"
 questionnaire:
-  title: "Mixed Roster + Sample — state-key collision regression"
-  # U6 cross-consumer regression fixture. One survey carries BOTH a Roster
-  # block (writes the sibling state['roster_outcomes'] map + paired
-  # state['history_iter_key']) and a Sample block (writes the FROZEN
-  # state['sample_order'] + transient state['sample_asked'], with Sample
-  # history entries carrying iter_key=None). The two state shapes must
-  # round-trip through QMLState serialization without colliding, and the
-  # Bronze extractor must produce a well-formed row where Roster cells are
-  # bit-keyed columns and Sample drawn items are plain scalar columns while
-  # non-drawn Sample items are ABSENT (no spurious blank cell).
+  title: "Mixed Roster + capped Group — state-key collision regression"
+  # Cross-consumer regression fixture. One survey carries BOTH a Roster block
+  # (writes the sibling state['roster_outcomes'] map + paired
+  # state['history_iter_key']) and a capped Group block (writes transient
+  # state['group_asked'], with Group history entries carrying iter_key=None).
+  # The two state shapes must round-trip through QMLState serialization without
+  # colliding, and the Bronze extractor must produce a well-formed row where
+  # Roster cells are bit-keyed columns and drawn Group items are plain scalar
+  # columns while non-drawn Group items are ABSENT (no spurious blank cell).
   blocks:
     - id: count_block
-      kind: Sequence
+      kind: Group
       title: "Household"
       items:
         - id: q_family_count
@@ -51,14 +50,13 @@ questionnaire:
             min: 0
             max: 120
 
-    # count=2, is_random false → exactly the first two declared inner items
+    # count=2 capped Group → exactly the first two items in canonical order
     # are drawn (q_pref_a, q_pref_b); q_pref_c is NEVER drawn → it must be
     # absent from the Bronze row, not a blank-answered cell.
     - id: pref_sample
-      kind: Sample
+      kind: Group
       title: "Preference questions"
       count: 2
-      is_random: false
       items:
         - id: q_pref_a
           kind: Question
@@ -86,7 +84,7 @@ questionnaire:
               2: "HU"
 
     - id: outro_block
-      kind: Sequence
+      kind: Group
       title: "Outro"
       items:
         - id: q_thanks

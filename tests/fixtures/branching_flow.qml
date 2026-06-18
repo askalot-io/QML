@@ -4,7 +4,7 @@ questionnaire:
     score = 0
   blocks:
     - id: intro
-      kind: Sequence
+      kind: Group
       title: "Introduction"
       items:
         - id: q_start
@@ -16,7 +16,7 @@ questionnaire:
               1: Yes
               2: No
     - id: path_selection
-      kind: Sequence
+      kind: Group
       title: "Path Selection"
       items:
         - id: q_path
@@ -31,7 +31,7 @@ questionnaire:
               1: Technology
               2: Nature
     - id: tech_path
-      kind: Sequence
+      kind: Group
       title: "Technology Questions"
       items:
         - id: q_tech_interest
@@ -63,7 +63,7 @@ questionnaire:
             if q_tech_experience.outcome >= 5:
               score = score + 10
     - id: nature_path
-      kind: Sequence
+      kind: Group
       title: "Nature Questions"
       items:
         - id: q_nature_interest
@@ -97,7 +97,7 @@ questionnaire:
             if q_nature_frequency.outcome <= 2:
               score = score + 5
     - id: conclusion
-      kind: Sequence
+      kind: Group
       title: "Conclusion"
       items:
         - id: q_final

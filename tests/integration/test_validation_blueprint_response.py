@@ -27,14 +27,6 @@ from flask import Flask
 DATA_QML_DIR = Path("/Project/askalot/data/qml")
 
 
-@pytest.fixture
-def client():
-    app = Flask(__name__)
-    app.register_blueprint(create_validation_blueprint(qml_dir=DATA_QML_DIR))
-    with app.test_client() as c:
-        yield c
-
-
 def _get_validation(client, qml_name: str):
     resp = client.get("/api/qml/validation", query_string={"qml_name": qml_name})
     assert resp.status_code == 200, f"{qml_name}: {resp.status_code} {resp.get_data(as_text=True)}"
@@ -128,12 +120,12 @@ class TestFallbackTitle:
         """A QML without a top-level title must fall back to the filename."""
         qml = tmp_path / "untitled.qml"
         qml.write_text(
-            'qmlVersion: "1.0"\n'
+            'qmlVersion: "2.0"\n'
             "questionnaire:\n"
             "  blocks:\n"
             "    - id: b1\n"
             "      title: Block\n"
-            "      kind: Sequence\n"
+            "      kind: Group\n"
             "      items:\n"
             "        - id: q1\n"
             "          title: Question 1\n"

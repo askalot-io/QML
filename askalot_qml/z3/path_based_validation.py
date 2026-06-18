@@ -24,7 +24,7 @@ import logging
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
-from z3 import Implies, Solver, sat, unsat
+from z3 import BoolRef, Implies, Not, Solver, sat, unsat
 
 from askalot_qml.z3.static_builder import StaticBuilder
 
@@ -107,8 +107,25 @@ class PathBasedValidator:
         # Build predecessor map from topological order
         predecessors_map = self._build_predecessors_map(topological_order)
 
+        # Pre-compile each item's (P_i, Q_i) once and the domain base once, then
+        # reuse across every per-item check. An item that is a predecessor of M
+        # others would otherwise have its P/Q recompiled M times, and the domain
+        # base rebuilt once per item — O(items^2) of redundant Z3 expression
+        # construction. compile_conditions reads the now-frozen SSA versions, so
+        # a single build yields expressions identical to the per-call ones.
+        base = self.builder.get_domain_base()
+        compiled_conditions: dict[str, tuple[BoolRef, BoolRef]] = {
+            iid: (
+                self.builder.compile_conditions(iid, details["preconditions"]),
+                self.builder.compile_conditions(iid, details["postconditions"]),
+            )
+            for iid, details in self.builder.item_details.items()
+        }
+
         for item_id in topological_order:
-            result = self._check_item_reachability(item_id, predecessors_map)
+            result = self._check_item_reachability(
+                item_id, predecessors_map, base, compiled_conditions
+            )
             item_results[item_id] = result
 
             if result.is_dead_code:
@@ -177,7 +194,11 @@ class PathBasedValidator:
         return visited
 
     def _check_item_reachability(
-        self, item_id: str, predecessors_map: dict[str, list[str]]
+        self,
+        item_id: str,
+        predecessors_map: dict[str, list[str]],
+        base: BoolRef,
+        compiled_conditions: dict[str, tuple[BoolRef, BoolRef]],
     ) -> ItemReachabilityResult:
         """
         Check accumulated reachability for a single item.
@@ -201,10 +222,8 @@ class PathBasedValidator:
 
         predecessors = predecessors_map.get(item_id, [])
 
-        # First, get per-item precondition status
-        P_i = self.builder.compile_conditions(item_id, details["preconditions"])
-        # Use domain-only base constraint B as defined in thesis
-        base = self.builder.get_domain_base()
+        # First, get per-item precondition status (pre-compiled in validate()).
+        P_i, _ = compiled_conditions[item_id]
 
         # Check per-item reachability: SAT(B ∧ P_i)?
         s_per_item = Solver(ctx=self.ctx)
@@ -216,8 +235,6 @@ class PathBasedValidator:
             per_item_status = "NEVER"
         else:
             # Check if always reachable: UNSAT(B ∧ ¬P_i)?
-            from z3 import Not
-
             s_always = Solver(ctx=self.ctx)
             s_always.add(base, Not(P_i))
             always_reachable = s_always.check() == unsat
@@ -251,12 +268,11 @@ class PathBasedValidator:
         solver = Solver(ctx=self.ctx)
         solver.add(base)  # base is already domain-only from above
 
-        # Add implications from all predecessors
+        # Add implications from all predecessors (P/Q pre-compiled in validate()).
         for pred_id in predecessors:
-            pred_details = self.builder.item_details.get(pred_id)
-            if pred_details:
-                P_j = self.builder.compile_conditions(pred_id, pred_details["preconditions"])
-                Q_j = self.builder.compile_conditions(pred_id, pred_details["postconditions"])
+            pred_compiled = compiled_conditions.get(pred_id)
+            if pred_compiled is not None:
+                P_j, Q_j = pred_compiled
                 solver.add(Implies(P_j, Q_j))
 
         # Check SAT(A_i ∧ P_i)
@@ -265,9 +281,9 @@ class PathBasedValidator:
 
         # Dead code: CONDITIONAL per-item but not accumulated-reachable.
         #
-        # U2 classification-safety (R5/R7): an item registered as
-        # conditionally-present (Sample draw / Roster bit) is sampling-absent
-        # by design, not dead code. Accumulated predecessor postconditions
+        # Classification-safety: an item registered as conditionally-present
+        # (capped-Group draw / Roster bit) is selection-absent by design, not
+        # dead code. Accumulated predecessor postconditions
         # making its precondition unsatisfiable just means it is not drawn on
         # those paths — legitimate, never a design error. Exclude it from
         # dead-code regardless of accumulated reachability (the core C4

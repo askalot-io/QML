@@ -4,14 +4,14 @@
 #   3 Questions -> 3 items
 #   1 Comment   -> 1 item
 # Total expected top-level items: 4.
-qmlVersion: "1.0"
+qmlVersion: "2.0"
 
 questionnaire:
   title: "Flat Item Count"
 
   blocks:
     - id: block1
-      kind: Sequence
+      kind: Group
       title: "Three simple questions"
       items:
         - id: q_age

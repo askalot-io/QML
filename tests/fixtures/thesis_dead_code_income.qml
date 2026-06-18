@@ -17,14 +17,14 @@
 # - I_3 is DEAD CODE: Designer intended low-income assistance for S_1 < 30000,
 #   but Q_1 requires S_1 >= 50000 to proceed
 
-qmlVersion: "1.0"
+qmlVersion: "2.0"
 
 questionnaire:
   title: "Income Survey with Dead Code"
 
   blocks:
     - id: block1
-      kind: Sequence
+      kind: Group
       title: "Financial Information"
       items:
         - id: q_income

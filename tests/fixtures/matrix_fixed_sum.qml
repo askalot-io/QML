@@ -6,14 +6,14 @@
 # Static Z3 validation silently drops this constraint — covered by xfail test
 # in test_matrix_static_gap.py.
 
-qmlVersion: "1.0"
+qmlVersion: "2.0"
 
 questionnaire:
   title: "Quarterly Budget Allocation"
 
   blocks:
     - id: block1
-      kind: Sequence
+      kind: Group
       title: "Budget by quarter"
       items:
         - id: quarterly_budget

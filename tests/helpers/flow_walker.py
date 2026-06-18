@@ -2,14 +2,13 @@
 Shared FlowProcessor drive-and-answer helper for integration tests.
 
 Extracted from the duplicated per-file walk drivers that existed in
-test_sample_traversal.py and test_sample_e2e_chain.py (finding #14).
+test_group_traversal.py and test_group_e2e_chain.py.
 
-The e2e walker in e2e-tests/tests/test_sample_questionnaire_e2e.py is an
-instance method on TestInProcessSampleChain for graceful-skip compatibility
-(the class is conditionally skipped when askalot_qml is not importable).
-That hard dependency on `self` makes it structurally divergent from this
-module-level function, so the e2e copy is intentionally not merged here.
-Both helpers are functionally equivalent; the e2e docstring documents this.
+The e2e walker in e2e-tests/ is an instance method on its chain class for
+graceful-skip compatibility (the class is conditionally skipped when
+askalot_qml is not importable). That hard dependency on `self` makes it
+structurally divergent from this module-level function, so the e2e copy is
+intentionally not merged here. Both helpers are functionally equivalent.
 """
 
 from askalot_qml.core.flow_processor import FlowProcessor

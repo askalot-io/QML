@@ -1,4 +1,4 @@
-qmlVersion: "1.0"
+qmlVersion: "2.0"
 # U3 fixture: a Roster inner item carries a postcondition that is INFEASIBLE
 # against its own declared domain (outcome ∈ [0, 5] but the postcondition
 # demands outcome > 100). The single-canonical-iteration model would catch
@@ -12,7 +12,7 @@ questionnaire:
   title: "Roster With Per-Iteration Typing Error"
   blocks:
     - id: count_block
-      kind: Sequence
+      kind: Group
       title: "Count"
       items:
         - id: q_count

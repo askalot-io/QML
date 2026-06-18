@@ -9,14 +9,14 @@
 # - Global: SAT(F) - valid completion exists (e.g., S_1=30, S_2=5)
 # - Path-based: No dead code
 
-qmlVersion: "1.0"
+qmlVersion: "2.0"
 
 questionnaire:
   title: "Driving Experience Survey"
 
   blocks:
     - id: block1
-      kind: Sequence
+      kind: Group
       title: "Demographics"
       items:
         - id: q_age

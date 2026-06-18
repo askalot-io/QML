@@ -6,14 +6,14 @@
 # Static Z3 validation silently drops this constraint — covered by xfail test
 # in test_matrix_static_gap.py.
 
-qmlVersion: "1.0"
+qmlVersion: "2.0"
 
 questionnaire:
   title: "Factor Relationship Survey"
 
   blocks:
     - id: block1
-      kind: Sequence
+      kind: Group
       title: "Pairwise factor relationships"
       items:
         - id: factor_relationships

@@ -21,7 +21,7 @@
 # Bug scenario: If Z3 doesn't track var1's relationship to q1+q2 outcomes,
 # it treats var1 as unconstrained and reports CONSTRAINING instead.
 
-qmlVersion: "1.0"
+qmlVersion: "2.0"
 
 questionnaire:
   title: "CodeBlock Postcondition Test"
@@ -31,7 +31,7 @@ questionnaire:
 
   blocks:
     - id: block1
-      kind: Sequence
+      kind: Group
       title: "Test Block"
       items:
         - id: q1

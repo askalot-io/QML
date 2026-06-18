@@ -5,14 +5,14 @@
 #   1 Question                        -> 1 item
 #   1 Comment                         -> 1 item
 # Total expected top-level items: 3.
-qmlVersion: "1.0"
+qmlVersion: "2.0"
 
 questionnaire:
   title: "Question Group Item Count"
 
   blocks:
     - id: block1
-      kind: Sequence
+      kind: Group
       title: "Satisfaction battery"
       items:
         - id: satisfaction

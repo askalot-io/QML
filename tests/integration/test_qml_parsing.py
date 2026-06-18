@@ -105,7 +105,7 @@ questionnaire:
   title: Scalar Predicate Test
   blocks:
     - id: main
-      kind: Sequence
+      kind: Group
       items:
         - id: q1
           kind: Question
@@ -170,7 +170,7 @@ questionnaire:
   title: Invalid Predicate Test
   blocks:
     - id: main
-      kind: Sequence
+      kind: Group
       items:
         - id: q1
           kind: Question
@@ -512,7 +512,7 @@ questionnaire:
   title: Block Inheritance Test
   blocks:
     - id: conditional_block
-      kind: Sequence
+      kind: Group
       precondition:
         - predicate: "q_gate.outcome == 1"
       items:
@@ -543,7 +543,7 @@ questionnaire:
   title: Separation Test
   blocks:
     - id: filtered_block
-      kind: Sequence
+      kind: Group
       precondition:
         - predicate: "q_gate.outcome == 1"
           hint: Block-level gate
@@ -581,7 +581,7 @@ questionnaire:
   title: No Block Precondition Test
   blocks:
     - id: plain_block
-      kind: Sequence
+      kind: Group
       items:
         - id: q_plain
           kind: Question
@@ -609,13 +609,13 @@ questionnaire:
   title: Mixed Blocks Test
   blocks:
     - id: open_block
-      kind: Sequence
+      kind: Group
       items:
         - id: q_open
           kind: Question
           title: Open question
     - id: gated_block
-      kind: Sequence
+      kind: Group
       precondition:
         - predicate: "q_open.outcome == 1"
       items:
@@ -643,7 +643,7 @@ questionnaire:
   title: Multi Precondition Test
   blocks:
     - id: multi_gate
-      kind: Sequence
+      kind: Group
       precondition:
         - predicate: "q_gate1.outcome == 1"
         - predicate: "q_gate2.outcome == 1"
@@ -669,7 +669,7 @@ questionnaire:
   title: Block Normalization Test
   blocks:
     - id: always_block
-      kind: Sequence
+      kind: Group
       precondition:
         - predicate: true
       items:
@@ -689,7 +689,7 @@ questionnaire:
   title: Block Metadata Test
   blocks:
     - id: gated
-      kind: Sequence
+      kind: Group
       title: Gated Block
       precondition:
         - predicate: "x == 1"

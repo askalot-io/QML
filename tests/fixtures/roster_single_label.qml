@@ -1,4 +1,4 @@
-qmlVersion: "1.0"
+qmlVersion: "2.0"
 # U3 edge case: a Roster with exactly ONE label key → exactly one
 # bit-guarded copy must be emitted (len(labels) == 1 lower bound of the
 # linear-in-len(labels) unroll). iterateOver references an outer Checkbox
@@ -7,7 +7,7 @@ questionnaire:
   title: "Single-Label Roster"
   blocks:
     - id: pick_block
-      kind: Sequence
+      kind: Group
       title: "Pick"
       items:
         - id: q_pick

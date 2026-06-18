@@ -11,14 +11,14 @@
 # - Global: UNSAT(F) - no value of S_1 satisfies both S_1 > 50 AND S_1 < 30
 # - This demonstrates accumulated constraints conflict
 
-qmlVersion: "1.0"
+qmlVersion: "2.0"
 
 questionnaire:
   title: "Rating Survey with Conflicting Postconditions"
 
   blocks:
     - id: block1
-      kind: Sequence
+      kind: Group
       title: "Rating"
       items:
         - id: q_rating

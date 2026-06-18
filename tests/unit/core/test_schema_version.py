@@ -6,10 +6,9 @@ Tests the decoupled Major.Minor.Patch schema-version signal:
 - `version` is valid three-part semver
 - `QML_SCHEMA_VERSION` is read from (never hardcoded apart from) the schema
   file — the single-source-of-truth / no-drift guarantee
-- the current contract version is 1.1.1 (1.0.0 pre-Sample baseline; 1.1.0
-  added the additive Sample block kind as a backward-compatible MINOR; 1.1.1
-  modernised the JSON Schema dialect from draft-07 to 2020-12 — no contract
-  change for QML documents)
+- the current contract version is 2.0.0 (the breaking collapse of block kinds
+  to Group + Roster: Sequence and Sample removed, is_random dropped, kind made
+  optional — existing Sequence/Sample documents no longer load)
 - the schema version is independent of the askalot_qml package version
 
 These unit tests pin the contract so a schema change cannot silently ship
@@ -48,14 +47,13 @@ class TestSchemaVersionContract:
         # sourced from the schema and cannot drift from a hardcoded copy.
         assert QML_SCHEMA_VERSION == self._schema()["version"]
 
-    def test_current_contract_version_is_1_1_1(self):
-        # Version trail: 1.0.0 = pre-Sample baseline (what every legacy
-        # document declares as "1.0"); 1.1.0 = additive Sample block kind
-        # (backward-compatible MINOR — no existing document invalidated);
-        # 1.1.1 = JSON Schema dialect modernised draft-07 -> 2020-12 (PATCH —
-        # constructs unchanged, identical validation outcomes for every
-        # document, no contract change).
-        assert QML_SCHEMA_VERSION == "1.1.1"
+    def test_current_contract_version_is_2_0_0(self):
+        # 2.0.0 is the first breaking (MAJOR) schema change: block kinds
+        # collapse to Group + Roster. Sequence and Sample are removed, the
+        # Sample is_random flag is dropped, and kind becomes optional
+        # (defaulting to Group). Existing Sequence/Sample documents no longer
+        # load — authors and the AI generator must migrate.
+        assert QML_SCHEMA_VERSION == "2.0.0"
 
     def test_schema_version_decoupled_from_package_version(self):
         # Decoupled by policy: a code-only release moves the package version

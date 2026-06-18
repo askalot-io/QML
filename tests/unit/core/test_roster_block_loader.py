@@ -1,70 +1,81 @@
 #!/usr/bin/env python3
-"""Unit tests for Roster + Sample schema validation and loader propagation.
+"""Unit tests for Group + Roster schema validation and loader propagation.
 
-This file covers two plans' loader-side U1 deliverables:
+This file covers the loader-side contract of the two-kind block model
+(docs/plans/2026-06-17-001-refactor-qml-block-kinds-group-collapse-plan.md, U2),
+which collapsed the three legacy kinds (`Sequence`, `Roster`, `Sample`) into two:
 
-* Roster — docs/plans/2026-05-04-001-feat-roster-block-plan.md (original scope).
-* Sample — docs/plans/2026-05-17-001-feat-sample-block-kind-aware-z3-plan.md,
-  U1. Sample is now a first-class loadable kind (no longer reserved). The
-  Sample cases live here (not a sibling file) per the repo CLAUDE.md
-  "Test Placement — Existing Files First" rule: the loader acceptance +
-  `_propagate_block_inheritance` surface is the same component the Roster
-  cases already exercise.
+* `Group` — the renamed `Sequence`: visit each in-scope inner item once in
+  canonical (stable-Kahn) order. An optional `count` caps the block to the first
+  N eligible items — `Sample` (`is_random:false`) folded into this attribute.
+  `is_random` and the random-draw subsystem are deleted.
+* `Roster` — unchanged: repeat inner items per set bit in an `iterateOver`
+  bitmask.
 
-  **Schema-spelling decision (settled in U1):** the Sample count attribute is
-  spelled ``count`` (not ``n``) — consistent with the schema's existing
-  descriptive lowercase names (``iterateOver``, ``labels``, ``maxEntries``)
-  rather than a single letter. ``count`` is **mandatory** for Sample blocks
-  (schema ``allOf if/then`` ``required`` + a loud loader re-check; no silent
-  default — monorepo "No Silent Fallbacks" rule). ``is_random`` is
-  **optional**, schema-defaulted to ``false`` when omitted. Inner items carry
-  ``_sample_block_id`` / ``_sample_n`` / ``_sample_is_random``, mirroring the
-  Roster ``_roster_*`` tag family.
+The Group cases live here (not a sibling file) per the repo CLAUDE.md
+"Test Placement — Existing Files First" rule: the loader acceptance +
+`_propagate_block_inheritance` surface is the same component the Roster cases
+already exercise.
 
-This test suite verifies the U1 deliverable from the Roster plan
-(docs/plans/2026-05-04-001-feat-roster-block-plan.md):
+**Two-kind loader contract (U2):**
+  * `kind` is **optional** and defaults to `Group` in both schema and loader.
+    A block with `kind` omitted loads as a Group (AE16).
+  * The legacy `Sequence` / `Sample` kinds (and any other unrecognized literal)
+    are rejected **loudly** at both the schema layer and the loader layer —
+    including when `schema_path=None`, so a schema-less caller still fails (AE7b).
+  * `count` is **optional** on a Group (omitted ⇒ ask all in-scope items). When
+    present it must be a positive integer literal; 0 / negative / non-int / bool
+    fail loud (no silent fallback). A Roster must NOT carry `count`.
+  * Inner items of a `count`-capped Group carry `_group_block_id` / `_group_count`,
+    mirroring the Roster `_roster_*` tag family. An **uncapped** Group adds no
+    tags (its items are asked unconditionally).
 
-  1. Schema accepts `kind: Roster` blocks with the required `iterateOver`
-     (string expression) and `labels` (power-of-2 keyed map).
+This suite verifies:
+
+  1. Schema accepts `kind: Roster` blocks with required `iterateOver` (string
+     expression) and `labels` (power-of-2 keyed map).
   2. Schema rejects Roster missing `iterateOver` / `labels` and rejects
      forbidden v1 fields (`as`, `maxEntries`).
-  3. Loader rejects non-power-of-2 keys on Roster `labels` and on
-     Checkbox `input.labels` (forward-tightening — see Key Technical
-     Decisions; Checkbox outcome is the bitmask sum of selected keys, so
-     each key must occupy a unique bit position so the outcome can flow
-     directly into a sibling Roster's `iterateOver`).
-  4. Loader rejects `iterateOver` expressions referencing items that live
-     inside the same Roster (self-cycle prevention).
-  5. Loader propagates `_roster_block_id`, `_roster_iterate_over`, and
-     `_roster_labels` onto every child item of a Roster so downstream
-     consumers (FlowProcessor, Z3 dependency wiring, Bronze schema build)
-     can detect roster items without re-walking the block tree.
-  6. Block-level `precondition` and `postcondition` are allowed on both
-     Block and Roster. They live ONLY on the block object — the loader
-     does NOT copy them onto items (R25, 2026-05-14). Downstream
-     consumers (FlowProcessor for runtime, StaticBuilder for Z3) compose
-     block + item conditions at evaluation time; the diagram emitter
-     renders block chiclets on the block and item chiclets on the item.
-     Items never gain `_source`, `_block_id`, `_block_precondition_count`
-     or `_block_postcondition_count` markers.
-  7. Backward compatibility: existing fixtures without `kind` on Block
-     continue to validate unchanged (no-op for the existing fixture suite).
+  3. Loader rejects non-power-of-2 keys on Roster `labels` and on Checkbox
+     `input.labels` (forward-tightening — Checkbox outcome is the bitmask sum of
+     selected keys, so each key must occupy a unique bit position so the outcome
+     can flow directly into a sibling Roster's `iterateOver`).
+  4. Loader rejects `iterateOver` expressions referencing items that live inside
+     the same Roster (self-cycle prevention).
+  5. Loader propagates `_roster_block_id` / `_roster_iterate_over` /
+     `_roster_labels` onto Roster inner items, and `_group_block_id` /
+     `_group_count` onto capped-Group inner items, so downstream consumers
+     (FlowProcessor, Z3 dependency wiring, Bronze schema build) can detect them
+     without re-walking the block tree.
+  6. Block-level `precondition` and `postcondition` are allowed on both Block and
+     Roster. They live ONLY on the block object — the loader does NOT copy them
+     onto items (R25, 2026-05-14). Downstream consumers (FlowProcessor for
+     runtime, StaticBuilder for Z3) compose block + item conditions at
+     evaluation time; items never gain `_source`, `_block_id`,
+     `_block_precondition_count` or `_block_postcondition_count` markers.
+  7. `kind` defaults to `Group` when omitted (AE16); legacy `Sequence` / `Sample`
+     rejected at both layers, including schema-less (AE7b).
 
 ## Coverage areas
 
-- Happy-path schema acceptance (Roster + plain Block + explicit kind=Block)
-- Required-field rejection (iterateOver, labels)
-- Forbidden-field rejection (as, maxEntries)
-- Power-of-2 enforcement on Roster labels (and edge cases: 0, negative, 3)
-- Power-of-2 enforcement on Checkbox labels (forward-tightening rule)
+- Happy-path schema acceptance (Group with/without count, explicit + omitted
+  kind, Roster)
+- Legacy-kind rejection (`Sequence`, `Sample`) at both layers, incl. schema-less
+- `kind` omitted defaults to Group
+- Required-field rejection on Roster (iterateOver, labels)
+- Forbidden-field rejection on Roster (as, maxEntries, count)
+- Power-of-2 enforcement on Roster + Checkbox labels (and edge cases: 0, neg, 3)
 - Self-cycle rejection on iterateOver
-- Roster metadata propagation onto inner items
+- Group `count` propagation onto inner items; uncapped Group adds no tags
+- Roster metadata propagation onto inner items (unchanged)
+- Group `count` loud validation (missing-is-fine, zero/negative/non-int/bool
+  rejected)
 - Block postcondition propagation (symmetric to precondition)
-- Existing fixtures continue to load unchanged
+- Existing legacy fixtures continue to load unchanged (schema bypassed)
 
-The fixtures live under tests/fixtures/ for reuse by U3/U6/U7/U9 integration
-tests; U1 tests reference them by short YAML strings (load_from_string)
-because the canonical fixture files are introduced wholesale in U9.
+These are integration-style loader tests built from inline QML strings and
+in-memory dicts. Where a test must touch a shipped `.qml` fixture, that
+dependency is called out explicitly.
 """
 
 import pytest
@@ -72,16 +83,16 @@ from askalot_qml.core.qml_loader import QMLLoader
 from jsonschema import ValidationError
 
 # ---------------------------------------------------------------------------
-# YAML test fixtures (inline — canonical .qml files arrive in U9)
+# YAML test fixtures (inline)
 # ---------------------------------------------------------------------------
 
 VALID_ROSTER_NUMERIC = """
-qmlVersion: "1.0"
+qmlVersion: "2.0"
 questionnaire:
   title: "Family Roster"
   blocks:
     - id: count_block
-      kind: Sequence
+      kind: Group
       items:
         - id: q_family_count
           kind: Question
@@ -120,12 +131,12 @@ questionnaire:
 
 
 VALID_ROSTER_MULTISELECT = """
-qmlVersion: "1.0"
+qmlVersion: "2.0"
 questionnaire:
   title: "Daily Meal Tracker"
   blocks:
     - id: meal_selection
-      kind: Sequence
+      kind: Group
       items:
         - id: q_meals_eaten
           kind: Question
@@ -156,13 +167,32 @@ questionnaire:
 """
 
 
-PLAIN_SEQUENCE_BLOCK = """
-qmlVersion: "1.0"
+PLAIN_GROUP_BLOCK = """
+qmlVersion: "2.0"
 questionnaire:
   title: "Plain"
   blocks:
     - id: b1
-      kind: Sequence
+      kind: Group
+      items:
+        - id: q1
+          kind: Question
+          title: "Anything?"
+          input:
+            control: Editbox
+            min: 0
+            max: 10
+"""
+
+
+# Same questionnaire as PLAIN_GROUP_BLOCK but with `kind` omitted, exercising
+# the loader's absent-kind → Group default (AE16).
+GROUP_KIND_OMITTED = """
+qmlVersion: "2.0"
+questionnaire:
+  title: "Kind omitted"
+  blocks:
+    - id: b1
       items:
         - id: q1
           kind: Question
@@ -177,12 +207,11 @@ questionnaire:
 def _make_qml(roster_block_yaml: str) -> str:
     """Wrap one or more block YAML fragments into a complete questionnaire.
 
-    Each block fragment in `roster_block_yaml` must declare its own `kind`
-    (Sequence or Roster) — `kind` is mandatory after the 2026-05-05 schema
-    change.
+    Block fragments may declare their own `kind` (Group or Roster) or omit it
+    (defaults to Group) — `kind` is optional in the two-kind model.
     """
     return f"""
-qmlVersion: "1.0"
+qmlVersion: "2.0"
 questionnaire:
   title: "Test"
   blocks:
@@ -196,7 +225,8 @@ questionnaire:
 
 
 class TestSchemaAcceptance:
-    """Schema accepts the canonical Roster shape and stays backward-compatible."""
+    """Schema + loader accept the two-kind model (Group, Roster) and the
+    omitted-kind → Group default; legacy kinds are rejected."""
 
     def test_valid_roster_numeric_loads(self):
         loader = QMLLoader()
@@ -218,21 +248,29 @@ class TestSchemaAcceptance:
         q_meals = next(i for i in result["items"] if i["id"] == "q_meals_eaten")
         assert q_meals["input"]["labels"] == {1: "Breakfast", 2: "Lunch", 4: "Dinner", 8: "Snack"}
 
-    def test_explicit_sequence_kind_loads(self):
-        """`kind: Sequence` is the explicit form of the default block kind."""
+    def test_explicit_group_kind_loads(self):
+        """`kind: Group` is the explicit form of the default block kind."""
         loader = QMLLoader()
-        result = loader.load_from_string(PLAIN_SEQUENCE_BLOCK)
-        assert result["blocks"][0]["kind"] == "Sequence"
+        result = loader.load_from_string(PLAIN_GROUP_BLOCK)
+        assert result["blocks"][0]["kind"] == "Group"
 
-    def test_block_without_kind_is_rejected(self):
-        """`kind` is mandatory after the 2026-05-05 schema change."""
-        # NOTE: this YAML deliberately omits `kind` on b1 — that's the SUT.
-        yaml_str = """
-qmlVersion: "1.0"
-questionnaire:
-  title: "Legacy"
-  blocks:
+    def test_block_without_kind_defaults_to_group(self):
+        """AE16 — `kind` omitted ⇒ the loader defaults it to Group and the
+        block loads (the inverse of the old mandatory-kind rejection)."""
+        result = QMLLoader().load_from_string(GROUP_KIND_OMITTED)
+        b1 = result["blocks"][0]
+        assert b1["kind"] == "Group"
+        # An uncapped Group adds no draw-cap tags to its inner items.
+        q1 = next(i for i in result["items"] if i["id"] == "q1")
+        assert "_group_block_id" not in q1
+        assert "_group_count" not in q1
+
+    def test_legacy_sequence_kind_is_rejected(self):
+        """`Sequence` collapsed into `Group` — it must be rejected at both the
+        schema and loader layers (AE7b is the schema-less variant below)."""
+        yaml_str = _make_qml("""
     - id: b1
+      kind: Sequence
       items:
         - id: q1
           kind: Question
@@ -241,22 +279,18 @@ questionnaire:
             control: Editbox
             min: 0
             max: 10
-"""
-        # Schema-level rejection (kind in Block.required) OR loader-level rejection
-        # (defense in depth in _validate_block_kinds). Either is acceptable.
+""")
         with pytest.raises((ValidationError, ValueError)):
             QMLLoader().load_from_string(yaml_str)
 
-    def test_sample_kind_is_now_supported(self):
-        """`Sample` is a first-class loadable kind as of plan 2026-05-17-001
-        U1 — it must NOT raise NotImplementedError anymore (regression guard
-        against the old reserved-kind rejection)."""
-        for is_random_clause in ("", "      is_random: false\n", "      is_random: true\n"):
-            yaml_str = _make_qml(f"""
+    def test_legacy_sample_kind_is_rejected(self):
+        """`Sample` became the optional `count` attribute on `Group` — the kind
+        literal itself is rejected at both layers."""
+        yaml_str = _make_qml("""
     - id: b1
       kind: Sample
       count: 1
-{is_random_clause}      items:
+      items:
         - id: q1
           kind: Question
           title: "Q"
@@ -265,15 +299,14 @@ questionnaire:
             min: 0
             max: 10
 """)
-            # Must not raise — Sample loads cleanly.
-            result = QMLLoader().load_from_string(yaml_str)
-            assert result["blocks"][0]["kind"] == "Sample"
+        with pytest.raises((ValidationError, ValueError)):
+            QMLLoader().load_from_string(yaml_str)
 
     def test_single_label_roster_loads(self):
         """Degenerate-but-valid Roster with a single label key."""
         yaml_str = _make_qml("""
     - id: outer
-      kind: Sequence
+      kind: Group
       items:
         - id: q_count
           kind: Question
@@ -425,7 +458,7 @@ class TestLoaderRosterValidation:
         labels_yaml = "\n".join(f"        {k}: {v!r}" for k, v in bad_keys.items())
         yaml_str = _make_qml(f"""
     - id: outer
-      kind: Sequence
+      kind: Group
       items:
         - id: q_outer
           kind: Question
@@ -494,7 +527,7 @@ class TestCheckboxPowerOfTwoTightening:
     def test_checkbox_with_power_of_two_keys_loads(self):
         yaml_str = _make_qml("""
     - id: b1
-      kind: Sequence
+      kind: Group
       items:
         - id: q_meals
           kind: Question
@@ -522,7 +555,7 @@ class TestCheckboxPowerOfTwoTightening:
         labels_yaml = "\n".join(f"              {k}: {v!r}" for k, v in bad_keys.items())
         yaml_str = _make_qml(f"""
     - id: b1
-      kind: Sequence
+      kind: Group
       items:
         - id: q_bad_checkbox
           kind: Question
@@ -541,7 +574,7 @@ class TestCheckboxPowerOfTwoTightening:
         """The tightening is Checkbox-only; Radio keeps sequential-key freedom."""
         yaml_str = _make_qml("""
     - id: b1
-      kind: Sequence
+      kind: Group
       items:
         - id: q_radio
           kind: Question
@@ -611,12 +644,12 @@ class TestBlockPostconditionPropagation:
         conditions. Downstream consumers (FlowProcessor, StaticBuilder)
         compose them at use time."""
         yaml_str = """
-qmlVersion: "1.0"
+qmlVersion: "2.0"
 questionnaire:
   title: "Block postcondition"
   blocks:
     - id: b1
-      kind: Sequence
+      kind: Group
       postcondition:
         - predicate: "q1.outcome > 0"
           hint: "Block-level rule"
@@ -665,7 +698,7 @@ questionnaire:
         roster markers (_roster_block_id etc.) propagate onto items."""
         yaml_str = _make_qml("""
     - id: outer
-      kind: Sequence
+      kind: Group
       items:
         - id: q_count
           kind: Question
@@ -723,19 +756,11 @@ questionnaire:
 
 class TestExistingFixturesUnchanged:
     """
-    All shipped fixtures must continue to flow through the loader unchanged.
+    Shipped fixtures must continue to flow through the loader unchanged.
 
-    Two notes on fixture state (audited 2026-05-05):
-      * Most fixtures predate the schema's `qmlVersion` requirement, so they
-        are intentionally loaded with `schema_path=None` by the existing test
-        suites that use them.
-      * This test mirrors that reality — we verify the fixtures still parse +
-        flatten correctly with the new loader (Roster additions are purely
-        additive on legacy blocks: kind absent → no _roster_* tags emitted).
-
-    The two fixtures that DO carry `qmlVersion` (codeblock_postcondition.qml,
-    thesis_driving_experience.qml) are also exercised through the schema path
-    to confirm the schema additions don't reject them.
+    These fixtures use the two-kind model (`kind: Group`, or `kind` omitted).
+    The assertions prove non-Roster QML flattens with no `_roster_*` tags, and
+    that the two `qmlVersion`-carrying fixtures pass the schema path.
     """
 
     LEGACY_FIXTURES = [
@@ -755,7 +780,7 @@ class TestExistingFixturesUnchanged:
 
     @pytest.mark.parametrize("fixture_name", LEGACY_FIXTURES + SCHEMA_VALID_FIXTURES)
     def test_legacy_fixture_flattens_unchanged(self, fixture_name):
-        """Schema bypassed — proves the flatten path is unchanged for legacy QML."""
+        """Schema bypassed — proves the flatten path is unchanged for non-Roster QML."""
         from pathlib import Path
 
         fixtures_dir = Path(__file__).parent.parent.parent / "fixtures"
@@ -770,7 +795,8 @@ class TestExistingFixturesUnchanged:
 
     @pytest.mark.parametrize("fixture_name", SCHEMA_VALID_FIXTURES)
     def test_schema_valid_fixture_passes_schema(self, fixture_name):
-        """Schema-valid fixtures still pass — the new Roster allOf branch is gated on `kind: Roster`."""
+        """Schema-valid fixtures still pass — the Roster allOf branch is gated on
+        `kind: Roster`, so `kind: Group` fixtures validate cleanly."""
         from pathlib import Path
 
         fixtures_dir = Path(__file__).parent.parent.parent / "fixtures"
@@ -779,24 +805,24 @@ class TestExistingFixturesUnchanged:
 
 
 # ---------------------------------------------------------------------------
-# Sample block — plan 2026-05-17-001 U1
+# Group block — plan 2026-06-17-001 U2
 #
-# Schema-spelling decision (settled here): the count attribute is `count`
-# (mandatory, no default) and `is_random` is optional → defaults false.
-# Inner items carry _sample_block_id / _sample_n / _sample_is_random.
+# `kind: Group` is the renamed `Sequence`. An optional `count` caps the block to
+# the first N eligible items (the folded-in `Sample` attribute). `count` is
+# OPTIONAL — omitted ⇒ ask all in-scope items. A capped Group tags inner items
+# `_group_block_id` / `_group_count`; an uncapped Group adds no tags.
 # ---------------------------------------------------------------------------
 
 
-SAMPLE_BASIC = """
-qmlVersion: "1.0"
+GROUP_CAPPED = """
+qmlVersion: "2.0"
 questionnaire:
-  title: "Sample Basic"
+  title: "Capped Group"
   blocks:
-    - id: brand_sample
-      kind: Sample
+    - id: brand_group
+      kind: Group
       title: "Brand impressions"
       count: 2
-      is_random: true
       items:
         - id: q_brand_a
           kind: Question
@@ -822,31 +848,60 @@ questionnaire:
 """
 
 
-class TestSampleSchemaAndLoaderAcceptance:
-    """Sample loads with `count` + `is_random`; inner items carry _sample_* tags."""
+class TestGroupSchemaAndLoaderAcceptance:
+    """A capped Group loads with `count`; inner items carry _group_* tags. An
+    uncapped Group (and an omitted-kind Group) carry no draw-cap tags."""
 
-    def test_sample_block_with_count_and_is_random_loads(self):
-        """Happy path — Sample with count + is_random loads; inner items
-        carry _sample_block_id / _sample_n / _sample_is_random."""
-        result = QMLLoader().load_from_string(SAMPLE_BASIC)
-        block = next(b for b in result["blocks"] if b["id"] == "brand_sample")
-        assert block["kind"] == "Sample"
+    def test_capped_group_propagates_group_tags(self):
+        """Happy path — a Group with `count` loads and tags every inner item
+        with `_group_block_id` / `_group_count`."""
+        result = QMLLoader().load_from_string(GROUP_CAPPED)
+        block = next(b for b in result["blocks"] if b["id"] == "brand_group")
+        assert block["kind"] == "Group"
         assert block["count"] == 2
-        assert block["is_random"] is True
 
-        inner = [i for i in result["items"] if i.get("blockId") == "brand_sample"]
+        inner = [i for i in result["items"] if i.get("blockId") == "brand_group"]
         assert len(inner) == 3
         for item in inner:
-            assert item["_sample_block_id"] == "brand_sample"
-            assert item["_sample_n"] == 2
-            assert item["_sample_is_random"] is True
+            assert item["_group_block_id"] == "brand_group"
+            assert item["_group_count"] == 2
 
-    def test_is_random_omitted_defaults_false(self):
-        """Edge case — `is_random` omitted ⇒ propagated tag is False
-        (the U1-chosen rule: is_random is optional, default false)."""
+    def test_uncapped_group_adds_no_tags(self):
+        """An uncapped Group (no `count`) asks all items, so it must NOT tag its
+        inner items — the absence of `_group_*` is the "ask all" signal."""
         yaml_str = _make_qml("""
-    - id: s1
-      kind: Sample
+    - id: g1
+      kind: Group
+      items:
+        - id: q1
+          kind: Question
+          title: "Q1"
+          input:
+            control: Editbox
+            min: 0
+            max: 10
+        - id: q2
+          kind: Question
+          title: "Q2"
+          input:
+            control: Editbox
+            min: 0
+            max: 10
+""")
+        result = QMLLoader().load_from_string(yaml_str)
+        for item in result["items"]:
+            assert "_group_block_id" not in item
+            assert "_group_count" not in item
+
+    def test_omitted_kind_group_with_count_propagates_tags(self):
+        """`kind` omitted + `count` set ⇒ defaults to Group and still propagates
+        the capped-Group tags (the default-then-propagate ordering holds)."""
+        yaml_str = """
+qmlVersion: "2.0"
+questionnaire:
+  title: "Omitted kind, capped"
+  blocks:
+    - id: g1
       count: 1
       items:
         - id: q1
@@ -856,18 +911,20 @@ class TestSampleSchemaAndLoaderAcceptance:
             control: Editbox
             min: 0
             max: 10
-""")
+"""
         result = QMLLoader().load_from_string(yaml_str)
+        block = next(b for b in result["blocks"] if b["id"] == "g1")
+        assert block["kind"] == "Group"
         q1 = next(i for i in result["items"] if i["id"] == "q1")
-        assert q1["_sample_is_random"] is False
-        assert q1["_sample_n"] == 1
+        assert q1["_group_block_id"] == "g1"
+        assert q1["_group_count"] == 1
 
-    def test_n_larger_than_item_count_loads(self):
-        """AE1 (loader side) — count greater than the number of inner items
+    def test_count_larger_than_item_count_loads(self):
+        """AE8 (loader side) — count greater than the number of inner items
         loads fine; the runtime "ask up to N" clamp is a U5 concern."""
         yaml_str = _make_qml("""
-    - id: s1
-      kind: Sample
+    - id: g1
+      kind: Group
       count: 9
       items:
         - id: q1
@@ -886,97 +943,31 @@ class TestSampleSchemaAndLoaderAcceptance:
             max: 10
 """)
         result = QMLLoader().load_from_string(yaml_str)
-        block = next(b for b in result["blocks"] if b["id"] == "s1")
+        block = next(b for b in result["blocks"] if b["id"] == "g1")
         assert block["count"] == 9
-        assert len([i for i in result["items"] if i.get("blockId") == "s1"]) == 2
+        assert len([i for i in result["items"] if i.get("blockId") == "g1"]) == 2
 
-    def test_sample_fixtures_load(self):
-        """The three canonical fixtures load and flatten with _sample_* tags."""
-        from pathlib import Path
-
-        fixtures_dir = Path(__file__).parent.parent.parent / "fixtures"
-        loader = QMLLoader(qml_dir=fixtures_dir)  # default schema
-
-        for fixture_name, block_id, expected_n, expected_random in (
-            ("sample_basic.qml", "brand_sample", 2, False),
-            ("sample_random.qml", "topic_sample", 5, True),
-            ("sample_precondition.qml", "lifestyle_sample", 2, False),
-        ):
-            result = loader.load_from_file(fixture_name)
-            block = next(b for b in result["blocks"] if b["id"] == block_id)
-            assert block["kind"] == "Sample"
-            assert block["count"] == expected_n
-            inner = [i for i in result["items"] if i.get("blockId") == block_id]
-            assert inner, f"{fixture_name}: no inner items flattened"
-            for item in inner:
-                assert item["_sample_block_id"] == block_id
-                assert item["_sample_n"] == expected_n
-                assert item["_sample_is_random"] is expected_random
-
-    def test_sample_inner_items_have_no_roster_tags(self):
-        """Sample and Roster tag families are mutually exclusive — a Sample
-        inner item must not carry _roster_* tags."""
-        result = QMLLoader().load_from_string(SAMPLE_BASIC)
+    def test_group_inner_items_have_no_roster_tags(self):
+        """Group and Roster tag families are mutually exclusive — a Group inner
+        item must not carry _roster_* tags."""
+        result = QMLLoader().load_from_string(GROUP_CAPPED)
         for item in result["items"]:
             assert "_roster_block_id" not in item
             assert "_roster_iterate_over" not in item
             assert "_roster_labels" not in item
 
 
-class TestSampleEmptyAndDegenerate:
-    """Degenerate-but-valid Sample blocks load without error."""
+class TestLegacyKindRejectedSchemaless:
+    """AE7b — the retired `Sequence` / `Sample` kinds are rejected loudly by the
+    loader even when `schema_path=None` (the schema enum never runs)."""
 
-    def test_empty_sample_block_loads(self):
-        """Edge case — a Sample block with zero inner items.
-
-        The JSON schema enforces `items` minItems: 1, so the schema path
-        rejects a truly empty block; the loader's own metadata-propagation
-        path must still be a no-op for it (zero inner items ⇒ nothing to
-        tag, no crash). We exercise the loader path with schema disabled to
-        prove the propagation/validation code itself does not choke on an
-        empty Sample."""
+    def test_sequence_rejected_without_schema(self):
+        """AE7b — `kind: Sequence` with schema disabled is rejected by the
+        loader's defence-in-depth `_validate_block_kinds`, with an
+        author-actionable migration hint."""
         yaml_str = _make_qml("""
-    - id: s_empty
-      kind: Sample
-      count: 3
-      items: []
-""")
-        loader = QMLLoader(schema_path=None)
-        result = loader.load_from_string(yaml_str)
-        block = next(b for b in result["blocks"] if b["id"] == "s_empty")
-        assert block["kind"] == "Sample"
-        assert block["count"] == 3
-        assert [i for i in result["items"] if i.get("blockId") == "s_empty"] == []
-
-
-class TestSampleCountLoudValidation:
-    """Missing / invalid `count` fails loud — no silent default."""
-
-    def test_missing_count_rejected(self):
-        """Error path — Sample without `count`. Schema (count in the Sample
-        allOf `required`) OR loader (defence-in-depth) rejects; either is
-        acceptable, but it must NOT silently default."""
-        yaml_str = _make_qml("""
-    - id: s1
-      kind: Sample
-      items:
-        - id: q1
-          kind: Question
-          title: "Q"
-          input:
-            control: Editbox
-            min: 0
-            max: 10
-""")
-        with pytest.raises((ValidationError, ValueError)):
-            QMLLoader().load_from_string(yaml_str)
-
-    def test_missing_count_loud_even_without_schema(self):
-        """With schema disabled the loud loader re-check still fires —
-        proving there is no silent fallback when callers bypass the schema."""
-        yaml_str = _make_qml("""
-    - id: s1
-      kind: Sample
+    - id: b1
+      kind: Sequence
       items:
         - id: q1
           kind: Question
@@ -988,13 +979,86 @@ class TestSampleCountLoudValidation:
 """)
         with pytest.raises(ValueError) as exc:
             QMLLoader(schema_path=None).load_from_string(yaml_str)
-        assert "Sample block 's1'" in str(exc.value)
-        assert "count" in str(exc.value).lower()
+        msg = str(exc.value)
+        assert "Sequence" in msg
+        assert "Group" in msg  # names the replacement kind
+
+    def test_sample_rejected_without_schema(self):
+        """`kind: Sample` with schema disabled is rejected by the loader, with a
+        hint pointing at `Group` + `count`."""
+        yaml_str = _make_qml("""
+    - id: b1
+      kind: Sample
+      count: 2
+      items:
+        - id: q1
+          kind: Question
+          title: "Q"
+          input:
+            control: Editbox
+            min: 0
+            max: 10
+""")
+        with pytest.raises(ValueError) as exc:
+            QMLLoader(schema_path=None).load_from_string(yaml_str)
+        msg = str(exc.value)
+        assert "Sample" in msg
+        assert "Group" in msg
+        assert "count" in msg.lower()
+
+
+class TestGroupEmptyAndDegenerate:
+    """Degenerate-but-valid Group blocks load without error."""
+
+    def test_empty_capped_group_loads(self):
+        """Edge case — a capped Group with zero inner items.
+
+        The JSON schema enforces `items` minItems: 1, so the schema path rejects
+        a truly empty block; the loader's own metadata-propagation path must
+        still be a no-op for it (zero inner items ⇒ nothing to tag, no crash).
+        Schema disabled to exercise the propagation/validation code directly."""
+        yaml_str = _make_qml("""
+    - id: g_empty
+      kind: Group
+      count: 3
+      items: []
+""")
+        loader = QMLLoader(schema_path=None)
+        result = loader.load_from_string(yaml_str)
+        block = next(b for b in result["blocks"] if b["id"] == "g_empty")
+        assert block["kind"] == "Group"
+        assert block["count"] == 3
+        assert [i for i in result["items"] if i.get("blockId") == "g_empty"] == []
+
+
+class TestGroupCountLoudValidation:
+    """`count` is optional, but when present must be a positive int — invalid
+    values fail loud at both layers; a missing `count` is NOT an error."""
+
+    def test_missing_count_is_allowed(self):
+        """Omitting `count` means "ask all in-scope items" — it must load
+        cleanly (the inverse of the old mandatory-count Sample rule)."""
+        yaml_str = _make_qml("""
+    - id: g1
+      kind: Group
+      items:
+        - id: q1
+          kind: Question
+          title: "Q"
+          input:
+            control: Editbox
+            min: 0
+            max: 10
+""")
+        # Must not raise, on either path.
+        result = QMLLoader().load_from_string(yaml_str)
+        assert next(b for b in result["blocks"] if b["id"] == "g1")["kind"] == "Group"
+        QMLLoader(schema_path=None).load_from_string(yaml_str)
 
     @pytest.mark.parametrize(
         "count_literal",
         [
-            "0",        # zero — not a positive draw count
+            "0",        # zero — not a positive cap
             "-2",       # negative
             "1.5",      # non-integer-resolvable literal
             '"three"',  # string, not an int
@@ -1002,12 +1066,13 @@ class TestSampleCountLoudValidation:
         ],
     )
     def test_non_positive_or_non_integer_count_rejected(self, count_literal):
-        """Error path — count that is not a positive integer is rejected
-        loudly (schema or loader). Bypass schema for the float/string/bool
-        cases the loader must independently catch."""
+        """Error path — a present `count` that is not a positive integer is
+        rejected loudly (schema or loader). The loader-only path (schema
+        disabled) must also reject these — the no-silent-fallback guarantee
+        cannot rely on the schema."""
         yaml_str = _make_qml(f"""
-    - id: s1
-      kind: Sample
+    - id: g1
+      kind: Group
       count: {count_literal}
       items:
         - id: q1
@@ -1020,20 +1085,18 @@ class TestSampleCountLoudValidation:
 """)
         with pytest.raises((ValidationError, ValueError)):
             QMLLoader().load_from_string(yaml_str)
-        # The loader-only path (schema disabled) must also reject these —
-        # the no-silent-fallback guarantee cannot rely on the schema.
         with pytest.raises(ValueError) as exc:
             QMLLoader(schema_path=None).load_from_string(yaml_str)
-        assert "Sample block 's1'" in str(exc.value)
+        assert "Group block 'g1'" in str(exc.value)
 
-    def test_sample_rejects_roster_only_fields(self):
-        """Schema — a Sample block must not carry Roster-only `iterateOver`
-        / `labels` (the new Sample allOf `not/anyOf` branch)."""
+    def test_roster_rejects_count(self):
+        """A Roster must NOT carry `count` — the schema rejects it, and the
+        loader mirrors that on the schema-less path."""
         yaml_str = _make_qml("""
-    - id: s1
-      kind: Sample
-      count: 1
+    - id: bad_roster
+      kind: Roster
       iterateOver: "1"
+      count: 2
       labels:
         1: "A"
       items:
@@ -1045,5 +1108,60 @@ class TestSampleCountLoudValidation:
             min: 0
             max: 10
 """)
-        with pytest.raises(ValidationError):
+        # Schema path rejects.
+        with pytest.raises((ValidationError, ValueError)):
             QMLLoader().load_from_string(yaml_str)
+        # Loader-only path also rejects, naming the offending block.
+        with pytest.raises(ValueError) as exc:
+            QMLLoader(schema_path=None).load_from_string(yaml_str)
+        assert "Roster block 'bad_roster'" in str(exc.value)
+        assert "count" in str(exc.value).lower()
+
+
+class TestQmlVersionGate:
+    """U3: the loader rejects a document whose declared qmlVersion MAJOR is
+    incompatible with the current schema major (2.x), and rejects a malformed
+    (non-dotted-numeric) qmlVersion outright. An absent qmlVersion is advisory
+    (the schema's own required-list catches it on the validated path); the gate
+    fires before schema validation so a legacy document gets a clear version
+    error rather than a cryptic enum failure on the removed kinds."""
+
+    _GROUP_DOC = """
+qmlVersion: "{ver}"
+questionnaire:
+  title: "Version gate"
+  blocks:
+    - id: b1
+      kind: Group
+      items:
+        - id: q1
+          kind: Question
+          title: "Q1?"
+          input:
+            control: Editbox
+            min: 0
+            max: 10
+"""
+
+    def test_ae17_legacy_major_rejected(self):
+        # AE17: a document declaring a legacy qmlVersion 1.x no longer loads.
+        with pytest.raises(ValueError, match="qmlVersion"):
+            QMLLoader().load_from_string(self._GROUP_DOC.format(ver="1.0"))
+
+    def test_current_major_loads(self):
+        result = QMLLoader().load_from_string(self._GROUP_DOC.format(ver="2.0"))
+        assert result is not None
+
+    def test_malformed_version_rejected(self):
+        # A non-numeric / malformed qmlVersion (e.g. "2.x") must be rejected
+        # loudly rather than silently truncated to major "2" by split(".")[0].
+        # The two-part "2.0" the gate compares against must still load.
+        with pytest.raises(ValueError, match="[Mm]alformed qmlVersion"):
+            QMLLoader().load_from_string(self._GROUP_DOC.format(ver="2.x"))
+        assert QMLLoader().load_from_string(self._GROUP_DOC.format(ver="2.0")) is not None
+
+    def test_legacy_major_rejected_even_schemaless(self):
+        # Defense-in-depth: the gate runs before schema validation, so a
+        # schema-less load still rejects an incompatible declared version.
+        with pytest.raises(ValueError, match="qmlVersion"):
+            QMLLoader(schema_path=None).load_from_string(self._GROUP_DOC.format(ver="1.5"))

@@ -45,10 +45,10 @@ class TestRosterBlockEmission(unittest.TestCase):
         self.assertEqual(per_meal["iterate_over"], "q_meals_eaten.outcome")
         self.assertEqual(per_meal["label_count"], 4)
 
-    def test_non_roster_block_keeps_sequence_kind(self):
+    def test_non_roster_block_keeps_group_kind(self):
         graph = _build_graph("roster_numeric.qml")
         count_block = next(b for b in graph["blocks"] if b["id"] == "count_block")
-        self.assertEqual(count_block["kind"], "Sequence")
+        self.assertEqual(count_block["kind"], "Group")
         self.assertNotIn("iterate_over", count_block)
         self.assertNotIn("label_count", count_block)
 

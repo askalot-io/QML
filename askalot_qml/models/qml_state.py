@@ -55,33 +55,35 @@ class QuestionnaireBlock(TypedDict):
     Type structure for a questionnaire block.
     Blocks are logical groupings of items for organization.
 
-    Block-level preconditions are propagated to items during QMLLoader flattening,
-    so they do not need to be checked separately at runtime.
+    Block-level pre/postconditions stay on the block (R25, 2026-05-14) — the
+    QMLLoader no longer copies them onto items during flattening. Consumers
+    compose block + item conditions at evaluation time: FlowProcessor and
+    StaticBuilder gate each item on (block conditions BEFORE item conditions),
+    and qml_diagram_ir renders them at their natural scope.
 
     Roster kind extends Block with an integer bitmask `iterateOver` expression
     and a `labels` map (power-of-2 keys → display strings). The engine walks set
     bits in iterateOver from low to high, running inner items once per active bit
     whose key appears in labels. See docs/plans/2026-05-04-001-feat-roster-block-plan.md.
 
-    Sample kind extends Block with a mandatory `count` (positive integer N — the
-    loader rejects missing or non-positive values loudly) and an optional
-    `is_random` flag (default false). The engine asks up to N inner items from
-    the eligible pool, drawn in canonical topological order when is_random=false
-    or in a per-execution-frozen randomised component-permutation order when
-    is_random=true. See docs/plans/2026-05-17-001-feat-sample-block-kind-aware-z3-plan.md.
+    Group kind (the default) asks each in-scope inner item once in canonical
+    stable-Kahn order. An optional `count` (positive integer N — the loader
+    rejects a non-positive value loudly) caps the block to the first N eligible
+    items: a deterministic, precondition-gated first-N draw, not random
+    selection. The draw order derives from the global navigation_path filtered to
+    the block's members, so no per-block order is stored on the state.
     """
 
     id: str
-    kind: str  # 'Sequence', 'Roster', or 'Sample' (mandatory)
+    kind: NotRequired[str]  # 'Group' (default) or 'Roster'
     title: NotRequired[str]
     precondition: NotRequired[list[Condition]]
     postcondition: NotRequired[list[Condition]]
     # Roster-only fields:
     iterateOver: NotRequired[str]  # Python expression resolving to an int bitmask
     labels: NotRequired[dict[int, str]]  # power-of-2 keys → display strings
-    # Sample-only fields:
-    count: NotRequired[int]  # Sample-only: positive integer N; mandatory for Sample blocks
-    is_random: NotRequired[bool]  # Sample-only: optional, defaults to false
+    # Group-only field:
+    count: NotRequired[int]  # Group-only: optional positive integer N (first-N cap)
 
 
 class QMLState(dict):
@@ -117,7 +119,7 @@ class QMLState(dict):
         # construction (consumers mutate fields, not the lists). Each get_item
         # / get_block / get_items_by_block call previously did a full O(N)
         # scan; with N items called inside per-item loops (classify_all_items,
-        # is_item_done's all_done check, _enter_sample_pass's drawn-set walk,
+        # is_item_done's all_done check, the Group drawn-set walk,
         # process_item's all_drawn_visited check) the cost compounded to
         # O(N^2). The indices are rebuilt by reset() and any callsite that
         # replaces the items/blocks lists wholesale must also call
@@ -166,45 +168,27 @@ class QMLState(dict):
         self.setdefault("roster_active_keys", {})
         self.setdefault("history_iter_key", [None] * len(self.get("history", [])))
 
-        # Sample support (plan 2026-05-17-001 / U5).
+        # Group `count`-cap pass state.
         #
-        #  * `sample_order`   The FROZEN traversal order for a Sample block:
-        #                     an ordered list of inner item_ids. For
-        #                     `is_random=false` this is the single canonical
-        #                     contiguous-tree-block order (components ordered
-        #                     by their earliest member's topo index, each
-        #                     component contiguous in its Kahn linearization).
-        #                     For `is_random=true` it is one per-execution
-        #                     permutation of the components (intra-component
-        #                     order still fixed). Frozen at FIRST entry and
-        #                     persisted across backward-nav AND block re-entry
-        #                     — a DELIBERATE divergence from Roster's
-        #                     re-evaluate-on-re-entry rule (plan: "randomized
-        #                     per execution"). It is always one of U4's
-        #                     validated orderings because it is built from the
-        #                     same block-scoped component extraction +
-        #                     questionnaire-wide topo linearization, then a
-        #                     permutation of the components.
-        #                     Shape: {block_id: [item_id, ...]}.
-        #
-        #  * `sample_asked`   The inner item_ids that have CONSUMED an N slot
+        #  * `group_asked`    The inner item_ids that have CONSUMED an N slot
         #                     this pass (i.e. were actually presented because
         #                     their precondition held), in draw order.
         #                     Precondition-skipped items are passed over for
-        #                     free and never appear here (R2 / AE1). The pass
-        #                     ends when len(sample_asked) == N or the eligible
-        #                     pool (frozen order ∩ precondition-true) is
-        #                     exhausted. Unlike `sample_order` this is
-        #                     re-derivable each pass — eligibility is
-        #                     recomputed against current answers even though
-        #                     the order slot is frozen.
+        #                     free and never appear here. The pass ends when
+        #                     len(group_asked) == N or the eligible pool is
+        #                     exhausted. Re-derived every pass — eligibility is
+        #                     recomputed against current answers. There is NO
+        #                     frozen per-block order: draw order comes from the
+        #                     block's projection of the global navigation_path
+        #                     (filter-to-block-members, preserving global
+        #                     stable-Kahn order), so nothing here needs to
+        #                     persist across passes.
         #                     Shape: {block_id: [item_id, ...]}.
         #
-        # Sample has no per-iteration identity (unlike Roster's label-key),
-        # so Sample history entries use iter_key=None — `history_iter_key`
+        # A Group has no per-iteration identity (unlike Roster's label-key),
+        # so Group history entries use iter_key=None — `history_iter_key`
         # stays Roster-only and the parallel-list contract is unchanged.
-        self.setdefault("sample_order", {})
-        self.setdefault("sample_asked", {})
+        self.setdefault("group_asked", {})
 
         # Restore int keys for roster_outcomes after a JSON roundtrip. JSON
         # object keys are always strings, so a state that was persisted with
@@ -253,7 +237,7 @@ class QMLState(dict):
             if block_id is not None:
                 self._items_by_block.setdefault(block_id, []).append(item)
         # Cache by kind so process_item's pass-state-clearing loop can skip
-        # whole branches when no Roster/Sample blocks exist.
+        # whole branches when no Roster/Group blocks exist.
         self._blocks_by_kind: dict[str, list[QuestionnaireBlock]] = {}
         for block in self.get_blocks():
             kind = block.get("kind")
@@ -298,8 +282,7 @@ class QMLState(dict):
 
     def get_all_items(self) -> list[QuestionnaireItem]:
         """
-        Compatibility method - redirects to get_items().
-        Will be removed in future versions.
+        Alias for get_items() — returns the flat list of all items.
 
         Returns:
             List of all items
@@ -429,11 +412,9 @@ class QMLState(dict):
         self["roster_iter"] = {}
         self["roster_active_keys"] = {}
 
-        # Clear Sample runtime state. `sample_order` is the frozen per-block
-        # traversal order; `sample_asked` is the per-pass drawn-slot list.
-        # Both are wholly transient — a reset re-randomises is_random blocks.
-        self["sample_order"] = {}
-        self["sample_asked"] = {}
+        # Clear Group `count`-cap runtime state. `group_asked` is the per-pass
+        # drawn-slot list — wholly transient.
+        self["group_asked"] = {}
 
         # Clear navigation_path to trigger re-initialization in FlowProcessor
         # This ensures initCode is re-run with empty outcomes and fresh context
@@ -472,6 +453,26 @@ class QMLState(dict):
     def get_navigation_path(self) -> list[str]:
         """Get the pre-computed navigation path."""
         return self.get("navigation_path", [])
+
+    def get_navigation_index(self) -> dict[str, int]:
+        """Return an ``{item_id: position}`` map for the navigation path.
+
+        Cached and invalidated by the navigation_path list identity, so a
+        wholesale path replacement (set_navigation_path / re-init) rebuilds it
+        but field mutations on items do not. Callers that previously did
+        ``nav_path.index(item_id)`` (O(N), making a full survey O(N^2)) use
+        this for an O(1) position lookup with identical semantics — the index
+        of the FIRST occurrence (``dict`` keeps the first write per key, and
+        navigation_path entries are unique).
+        """
+        path = self.get_navigation_path()
+        cached = getattr(self, "_nav_index", None)
+        if cached is not None and self.__dict__.get("_nav_index_path_id") == id(path):
+            return cached
+        index = {item_id: pos for pos, item_id in enumerate(path)}
+        self._nav_index = index
+        self._nav_index_path_id = id(path)
+        return index
 
     # ------------------------------------------------------------------
     # Roster outcome storage
@@ -533,60 +534,37 @@ class QMLState(dict):
         self.setdefault("roster_active_keys", {})[block_id] = list(keys)
 
     # ------------------------------------------------------------------
-    # Sample pass state (plan 2026-05-17-001 / U5)
+    # Group `count`-cap pass state
     # ------------------------------------------------------------------
     #
-    # `sample_order` is the frozen contiguous-tree-block traversal order for a
-    # Sample block (one of U4's validated orderings — see __init__ docstring).
-    # `sample_asked` is the per-pass list of inner items that consumed an N
-    # slot (precondition-true at draw time). These accessors are the ONLY
-    # supported way FlowProcessor / cross-consumers touch the maps.
+    # `group_asked` is the per-pass list of inner items that consumed an N slot
+    # (precondition-true at draw time). There is NO frozen per-block order:
+    # draw order derives from the block's projection of the global
+    # navigation_path. These accessors are the ONLY supported way FlowProcessor
+    # / cross-consumers touch the map.
 
-    def get_sample_order(self, block_id: str) -> list[str] | None:
-        """Frozen traversal order for a Sample block, or None if not yet entered.
-
-        ``None`` is the "pass not yet entered" sentinel (mirrors
-        ``get_roster_active_keys``); an empty list means an entered pass over
-        an empty block.
-        """
-        return self.get("sample_order", {}).get(block_id)
-
-    def set_sample_order(self, block_id: str, order: list[str]) -> None:
-        """Freeze the traversal order at FIRST entry. Persists across backward-nav
-        and block re-entry — deliberately NOT re-evaluated (diverges from Roster).
-        """
-        self.setdefault("sample_order", {})[block_id] = list(order)
-
-    def get_sample_asked(self, block_id: str) -> list[str]:
+    def get_group_asked(self, block_id: str) -> list[str]:
         """Inner item_ids that consumed an N slot this pass (draw order). Empty if none."""
-        return self.get("sample_asked", {}).get(block_id, [])
+        return self.get("group_asked", {}).get(block_id, [])
 
-    def has_sample_pass(self, block_id: str) -> bool:
-        """True if a Sample pass is currently ACTIVE for this block.
+    def has_group_pass(self, block_id: str) -> bool:
+        """True if a Group `count`-cap pass is currently ACTIVE for this block.
 
         Distinguishes "pass entered, drawn set computed (possibly empty —
         degenerate pass)" from "pass not entered / cleared on exit". This is
         the per-pass sentinel — the analogue of Roster's
-        ``get_roster_active_keys(...) is not None``. ``sample_order`` is NOT
-        this sentinel: it is the frozen order that persists across passes
-        (cleared only by ``reset()``), so an exited-then-re-entered block
-        keeps its order but gets a fresh drawn set.
+        ``get_roster_active_keys(...) is not None``.
         """
-        return block_id in self.get("sample_asked", {})
+        return block_id in self.get("group_asked", {})
 
-    def set_sample_asked(self, block_id: str, item_ids: list[str]) -> None:
-        """Record the per-pass drawn-slot list (re-derived each pass; order frozen)."""
-        self.setdefault("sample_asked", {})[block_id] = list(item_ids)
+    def set_group_asked(self, block_id: str, item_ids: list[str]) -> None:
+        """Record the per-pass drawn-slot list (re-derived each pass from the
+        navigation_path projection)."""
+        self.setdefault("group_asked", {})[block_id] = list(item_ids)
 
-    def clear_sample_pass_state(self, block_id: str) -> None:
-        """Clear the per-pass drawn-slot list on Sample exit.
-
-        Deliberately does NOT clear ``sample_order``: the frozen order survives
-        backward-nav and re-entry for the whole survey execution (plan Key
-        Technical Decisions — "randomized per execution"). Only ``reset()``
-        wipes ``sample_order``.
-        """
-        self.get("sample_asked", {}).pop(block_id, None)
+    def clear_group_pass_state(self, block_id: str) -> None:
+        """Clear the per-pass drawn-slot list on Group exit."""
+        self.get("group_asked", {}).pop(block_id, None)
 
     # Warning collection methods (for data analysis)
     def add_warning(self, item_id: str, warning_type: str, message: str) -> None:

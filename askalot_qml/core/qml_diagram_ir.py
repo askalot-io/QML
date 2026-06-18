@@ -9,11 +9,12 @@ IR shape (top-level arrays, no flat `nodes[]` with a `type` discriminator):
 
     {
       "blocks":     [{id, title, kind, iterate_over?, labels?, label_count?,
-                      sample_count?, is_random?,
+                      count?,
                       classification?, precondition_count, postcondition_count}, ...],
                       # Roster: iterate_over/labels/label_count.
-                      # Sample: sample_count (the N) + is_random — drive the
-                      #         amber block header in the diagram-viewer.
+                      # Group (capped): count (the N draw cap) — drives the
+                      #         count badge in the diagram-viewer. An uncapped
+                      #         Group omits count entirely.
       "items":      [{id, block_id, title, kind, control_type, classification}, ...],
       "conditions": [{id, owner_id, owner_kind, kind, predicate_label,
                       predicate, source_index,
@@ -139,28 +140,27 @@ class QMLDiagramIR:
             if not any(item.get("id") in topology_items for item in block_items):
                 continue
 
+            kind = block.get("kind", "Group")
             entry: dict[str, Any] = {
                 "id": block_id,
                 "title": block.get("title", block_id),
-                "kind": block.get("kind", "Sequence"),
+                "kind": kind,
                 "precondition_count": len(block.get("precondition", []) or []),
                 "postcondition_count": len(block.get("postcondition", []) or []),
             }
-            if block.get("kind") == "Roster":
+            if kind == "Roster":
                 labels = block.get("labels", {}) or {}
                 entry["iterate_over"] = block.get("iterateOver", "")
                 entry["labels"] = labels
                 entry["label_count"] = len(labels)
-            elif block.get("kind") == "Sample":
-                # Sample carries the draw count N (`count`, loader-validated as
-                # a positive int — see qml_loader Rule 4) and `is_random`
-                # (schema-optional, default False). Both surface in the amber
-                # Sample block header in the diagram-viewer (R12). `count` is
-                # always present for a loaded Sample block; the `.get` fallback
-                # only matters for synthesized-structure tests (e.g. an N=0 /
-                # empty Sample block that the QML path cannot express).
-                entry["sample_count"] = block.get("count")
-                entry["is_random"] = bool(block.get("is_random", False))
+            elif kind == "Group" and "count" in block:
+                # A `count`-capped Group asks at most N of its inner items in
+                # canonical order (the loader validates `count` as a positive
+                # int — see qml_loader). `count` surfaces in the Group block
+                # header in the diagram-viewer so authors see the draw cap.
+                # An uncapped Group omits `count` entirely, so the badge only
+                # renders when the block actually caps its draw.
+                entry["count"] = block.get("count")
             out.append(entry)
         return out
 
@@ -230,25 +230,15 @@ class QMLDiagramIR:
             block_items = self.items_by_block.get(block_id, [])
             if not any(item.get("id") in topology_items for item in block_items):
                 continue
-            for field, kind in (("precondition", "pre"), ("postcondition", "post")):
-                for idx, cond in enumerate(block.get(field, []) or []):
-                    predicate = cond.get("predicate", "") or ""
-                    out.append(
-                        {
-                            "id": f"block_{block_id}_{kind}_{idx}",
-                            "owner_id": block_id,
-                            "owner_kind": "block",
-                            "kind": kind,
-                            "predicate": predicate,
-                            "predicate_label": predicate,
-                            "source_index": idx,
-                            "references": _extract_predicate_references(
-                                predicate,
-                                item_ids,
-                                latest_variable_ids,
-                            ),
-                        }
-                    )
+            self._emit_condition_list(
+                owner=block,
+                owner_id=block_id,
+                owner_kind="block",
+                id_prefix=f"block_{block_id}",
+                item_ids=item_ids,
+                latest_variable_ids=latest_variable_ids,
+                out=out,
+            )
 
         # Item-level conditions — these are ONLY the item's own conds (the
         # loader no longer prepends block conds into the item lists, so no
@@ -257,27 +247,55 @@ class QMLDiagramIR:
             item = self.items_by_id.get(item_id)
             if not item:
                 continue
-            for field, kind in (("precondition", "pre"), ("postcondition", "post")):
-                for idx, cond in enumerate(item.get(field, []) or []):
-                    predicate = cond.get("predicate", "") or ""
-                    out.append(
-                        {
-                            "id": f"{item_id}_{kind}_{idx}",
-                            "owner_id": item_id,
-                            "owner_kind": "item",
-                            "kind": kind,
-                            "predicate": predicate,
-                            "predicate_label": predicate,
-                            "source_index": idx,
-                            "references": _extract_predicate_references(
-                                predicate,
-                                item_ids,
-                                latest_variable_ids,
-                            ),
-                        }
-                    )
+            self._emit_condition_list(
+                owner=item,
+                owner_id=item_id,
+                owner_kind="item",
+                id_prefix=item_id,
+                item_ids=item_ids,
+                latest_variable_ids=latest_variable_ids,
+                out=out,
+            )
 
         return out
+
+    @staticmethod
+    def _emit_condition_list(
+        owner: dict,
+        owner_id: str,
+        owner_kind: str,
+        id_prefix: str,
+        item_ids: set,
+        latest_variable_ids: dict[str, str],
+        out: list[dict],
+    ) -> None:
+        """Append one chiclet entry per pre/postcondition declared on ``owner``.
+
+        Shared by the block-level and item-level passes of ``_emit_conditions``
+        — the two differ only in ``owner_kind`` and the chiclet ``id`` prefix
+        (``block_<id>`` vs the bare item id). Chiclet id is
+        ``f"{id_prefix}_{kind}_{idx}"`` (pre/post + source index), matching the
+        pre-extraction format exactly.
+        """
+        for field, kind in (("precondition", "pre"), ("postcondition", "post")):
+            for idx, cond in enumerate(owner.get(field, []) or []):
+                predicate = cond.get("predicate", "") or ""
+                out.append(
+                    {
+                        "id": f"{id_prefix}_{kind}_{idx}",
+                        "owner_id": owner_id,
+                        "owner_kind": owner_kind,
+                        "kind": kind,
+                        "predicate": predicate,
+                        "predicate_label": predicate,
+                        "source_index": idx,
+                        "references": _extract_predicate_references(
+                            predicate,
+                            item_ids,
+                            latest_variable_ids,
+                        ),
+                    }
+                )
 
     def _emit_variables(self) -> list[dict]:
         """Emit one entry per (variable_name, version) from SSA history.

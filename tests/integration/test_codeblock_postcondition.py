@@ -138,9 +138,6 @@ class TestPerItemValidationWithComputedVariables(unittest.TestCase):
         postcond = q4_classification.get("postcondition", {})
         invariant = postcond.get("invariant", "UNKNOWN")
 
-        print(f"\nq4 postcondition invariant: {invariant}")
-        print("Expected: INFEASIBLE (var1 bounded by codeBlock constraints)")
-
         self.assertEqual(
             invariant,
             "INFEASIBLE",
@@ -159,7 +156,6 @@ class TestPerItemValidationWithComputedVariables(unittest.TestCase):
         global_flags = postcond.get("global", {})
 
         q_globally_false = global_flags.get("q_globally_false", None)
-        print(f"\nq4 q_globally_false: {q_globally_false}")
 
         self.assertTrue(
             q_globally_false,
@@ -188,9 +184,6 @@ class TestGlobalValidationWithComputedVariables(unittest.TestCase):
         """
         global_formula = GlobalFormula(self.builder)
         result = global_formula.check()
-
-        print(f"\nGlobal formula status: {result.status}")
-        print(f"Global formula satisfiable: {result.satisfiable}")
 
         # Current behavior: SAT (var1 unconstrained)
         # If behavioral constraints were included: would depend on the formula
@@ -253,75 +246,6 @@ class TestCodeBlockConstraintsSeparation(unittest.TestCase):
 
         # Should include SSA assignment var1_2 == var1_1 + item_q2
         self.assertIn("var1_2", full_base_str, "full_base should reference var1_2")
-
-
-@pytest.mark.integration
-class TestDebugOutput(unittest.TestCase):
-    """Debug tests to inspect what's being built."""
-
-    def setUp(self):
-        self.engine = create_engine("codeblock_postcondition.qml")
-        self.builder = self.engine.static_builder
-
-    def test_print_debug_dump(self):
-        """Print debug info for manual inspection."""
-        debug_output = self.builder.debug_dump()
-        print("\n" + "=" * 60)
-        print("STATIC BUILDER DEBUG DUMP")
-        print("=" * 60)
-        print(debug_output)
-        print("=" * 60)
-
-        self.assertIn("var1", debug_output, "Debug dump should mention var1")
-
-    def test_print_all_constraints(self):
-        """Print all constraints for manual inspection."""
-        print("\n" + "=" * 60)
-        print("Z3 CONSTRAINTS ANALYSIS")
-        print("=" * 60)
-
-        print(f"\nDomain constraints ({len(self.builder.domain_constraints)}):")
-        print("  (These define valid value ranges for item outcomes)")
-        for i, c in enumerate(self.builder.domain_constraints):
-            print(f"  {i}: {c}")
-
-        print(f"\nCodeBlock constraints ({len(self.builder.codeblock_constraints)}):")
-        print("  (These define SSA relationships from codeBlock assignments)")
-        for i, c in enumerate(self.builder.codeblock_constraints):
-            print(f"  {i}: {c}")
-
-        print(f"\nPre/Post constraints ({len(self.builder.constraints)}):")
-        print("  (These are precondition/postcondition implications)")
-        for i, c in enumerate(self.builder.constraints):
-            print(f"  {i}: {c}")
-
-        print("\nZ3 variables for SSA versions:")
-        for name, var in sorted(self.builder.z3_vars.items()):
-            print(f"  {name}: {var}")
-
-        print("=" * 60)
-
-    def test_print_classification_results(self):
-        """Print classification results for all items."""
-        classifier = ItemClassifier(self.builder)
-        classifications = classifier.classify_all_items()
-
-        print("\n" + "=" * 60)
-        print("ITEM CLASSIFICATION RESULTS")
-        print("=" * 60)
-
-        for item_id, classification in classifications.items():
-            precond = classification.get("precondition", {})
-            postcond = classification.get("postcondition", {})
-            global_flags = postcond.get("global", {})
-
-            print(f"\n{item_id}:")
-            print(f"  Precondition: {precond.get('status', 'N/A')}")
-            print(f"  Postcondition: {postcond.get('invariant', 'N/A')}")
-            print(f"  q_globally_false: {global_flags.get('q_globally_false', 'N/A')}")
-            print(f"  q_globally_true: {global_flags.get('q_globally_true', 'N/A')}")
-
-        print("=" * 60)
 
 
 if __name__ == "__main__":

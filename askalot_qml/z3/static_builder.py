@@ -499,6 +499,27 @@ class StaticBuilder:
                     dependencies.add(f"var:{name}")
         return dependencies
 
+    @staticmethod
+    def _compose_effective_conditions(
+        block: dict[str, Any] | None, item: dict[str, Any]
+    ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+        """Compose block + item pre/postconditions into ``(effective_pre, effective_post)``.
+
+        R25: the loader no longer prepends block conditions onto items, so each
+        constraint-emitting pass composes them here at build time — block
+        conditions take effect BEFORE item conditions, mirroring the historical
+        merge order. Shared by Pass-2, the Roster bit-guarded unroll, and the
+        capped-Group conditional-presence pass (all three resolve their block
+        differently, then hand it here). ``block`` may be ``None`` (no enclosing
+        block / block lookup miss), in which case only the item's own conditions
+        are returned.
+        """
+        block_pre = list((block.get("precondition") if block else None) or [])
+        block_post = list((block.get("postcondition") if block else None) or [])
+        effective_pre = block_pre + list(item.get("precondition", []) or [])
+        effective_post = block_post + list(item.get("postcondition", []) or [])
+        return effective_pre, effective_post
+
     def _build(self):
         """Build SSA versioning and Z3 constraints from questionnaire state."""
         with profile_block("z3_static_builder_build"):
@@ -612,10 +633,7 @@ class StaticBuilder:
             # constraint identifiers downstream.
             block_id = item.get("blockId")
             block = self.state.get_block(block_id) if block_id else None
-            block_pre = list((block.get("precondition") if block else None) or [])
-            block_post = list((block.get("postcondition") if block else None) or [])
-            effective_pre = block_pre + list(item.get("precondition", []) or [])
-            effective_post = block_post + list(item.get("postcondition", []) or [])
+            effective_pre, effective_post = self._compose_effective_conditions(block, item)
 
             # Process preconditions (path constraints)
             for idx, cond in enumerate(effective_pre):
@@ -716,20 +734,39 @@ class StaticBuilder:
         self._emit_roster_bit_guarded_unroll()
 
         # ------------------------------------------------------------------
-        # Pass 3.6 (U4): Sample conditional-presence + ordering enumeration.
+        # Pass 3.6: capped-Group conditional-presence.
         #
         # SIBLING of Pass 3.5 — runs immediately after it, over the same
         # fully-built dependency graph / item_vars. Pass 3.5 keys solely on
-        # ``_roster_*`` tags and skips ``_sample_*`` items; this pass keys
-        # solely on ``_sample_*`` tags (the two tag families are mutually
-        # exclusive per U1, so no item is processed by both). Purely additive:
-        # appends conditional-presence-gated domain/pre/post copies and the
-        # per-ordering present-definition constraints, leaving the canonical
-        # single-pass emission, item_order, item_details, item_vars and the
-        # dependency graph byte-identical. With no Sample blocks present
-        # nothing fires (the U2 no-op invariant holds).
+        # ``_roster_*`` tags; this pass keys solely on ``_group_*`` tags (a
+        # ``count``-capped Group; an uncapped Group carries no tag and is
+        # modeled unconditionally by the canonical single-pass emission). The
+        # two tag families are mutually exclusive (a block has exactly one
+        # kind), so no item is processed by both. Purely additive: appends
+        # one conditional-presence-gated domain/pre/post copy per inner item,
+        # leaving the canonical single-pass emission, item_order, item_details,
+        # item_vars and the dependency graph byte-identical. With no capped
+        # Group present nothing fires (the U2 no-op invariant holds).
         # ------------------------------------------------------------------
-        self._emit_sample_conditional_presence()
+        self._emit_capped_group_conditional_presence()
+
+        # ------------------------------------------------------------------
+        # Pass 4 (U8): capped-Group inner-item independence check.
+        #
+        # Runs LAST, after every dependency edge is wired (Pass 2 pre/post
+        # references + Pass 3 roster iterateOver + codeBlock variable
+        # assignments), so the resolved item-to-item graph it reads is
+        # complete. It is the validation-time half of the two-layer R10
+        # enforcement: the loader catches DIRECT sibling references
+        # (``_validate_group_independence``); this pass catches the transitive /
+        # variable-mediated edges the loader's AST name-match cannot see (item
+        # A writes a var in its codeBlock, item B's precondition reads it).
+        # Records a structured ``group_dependency`` coverage gap per offending
+        # edge — surfaced loudly through the same block-id-keyed
+        # ``coverage_gaps`` channel ``ItemClassifier.classify_all_items``
+        # already reads. With no capped Group present nothing fires.
+        # ------------------------------------------------------------------
+        self._emit_capped_group_independence_gaps()
 
     def _roster_label_keys(self, raw_labels: Any) -> list[int]:
         """Return the sorted power-of-2 label-key universe for a Roster item.
@@ -844,10 +881,7 @@ class StaticBuilder:
             # conditions). Recomputed here rather than threaded from Pass-2
             # because Pass-2's loop scope does not persist.
             block = self.state.get_block(block_id) if block_id else None
-            block_pre = list((block.get("precondition") if block else None) or [])
-            block_post = list((block.get("postcondition") if block else None) or [])
-            effective_pre = block_pre + list(item.get("precondition", []) or [])
-            effective_post = block_post + list(item.get("postcondition", []) or [])
+            effective_pre, effective_post = self._compose_effective_conditions(block, item)
 
             domain_builders = self._pending_domain_constraints.get(item_id, [])
             canonical_var = self.item_vars.get(item_id)
@@ -890,255 +924,210 @@ class StaticBuilder:
                     item_id, k, effective_pre, effective_post, iter_var, canonical_var
                 )
 
-    # R9: a single Sample block with > SAMPLE_COMPONENT_CAP independent
-    # components in its block-scoped dependency forest would require
-    # (cap+1)! ≥ 40320 distinct orderings to validate exhaustively. Capping
-    # at 7 bounds the enumeration at 7! = 5040 orderings — the value
-    # user-confirmed in planning (plan Key Technical Decisions / Open
-    # Questions: "Cap value: ≤ 7 independent trees").
-    SAMPLE_COMPONENT_CAP = 7
+    def _capped_group_blocks(self) -> dict[str, list[dict[str, Any]]]:
+        """Group ``count``-capped Group inner items by their block, in stable
+        file order.
 
-    def _record_sample_cap_gap(
-        self, block_id: str, component_count: int
-    ) -> None:
-        """Record the R9 validation-time cap reject as a structured coverage
-        gap (loud, once per block, no solve).
-
-        Mirrors ``_record_coverage_gap`` but keyed by ``block_id`` rather than
-        an item_id, with a distinct ``kind: "sample_cap"`` shape so authors
-        (and the diagram / validation report, via
-        ``ItemClassifier.classify_all_items``) see exactly which Sample block
-        exceeded the randomization cap and by how much. Deduplicated by
-        block_id — re-recording for the same block is a no-op. The WARNING is
-        emitted exactly once per block.
-
-        Shape::
-
-            {
-              "kind": "sample_cap",
-              "block_id": <str>,
-              "component_count": <int>,   # T, the independent-component count
-              "cap": <int>,               # SAMPLE_COMPONENT_CAP (7)
-            }
-
-        This is the structured loud-surface the no-silent-fallbacks rule
-        mandates: the block is NOT validated for any ordering (no solve), and
-        the gap is the only thing the pipeline emits for it.
+        Returns ``{block_id: [item, ...]}``. Items are collected in
+        ``get_all_items()`` order for determinism. A capped-Group item carries
+        the ``_group_block_id`` tag (set by the loader only when the Group
+        declares ``count``); an uncapped Group adds no tag, so its items never
+        appear here and stay on the canonical unconditional path. Group tags
+        are mutually exclusive with Roster tags (a block has exactly one
+        kind), so a Roster item never appears here.
         """
-        gaps = self.coverage_gaps.setdefault(block_id, [])
-        for existing in gaps:
-            if existing.get("kind") == "sample_cap":
-                return
-        gaps.append(
-            {
-                "kind": "sample_cap",
-                "block_id": block_id,
-                "component_count": component_count,
-                "cap": self.SAMPLE_COMPONENT_CAP,
-            }
-        )
-        self.logger.warning(
-            "static validator rejected Sample block '%s': %d independent "
-            "components exceed the randomization cap of %d (%d! orderings) — "
-            "no ordering validated; split the block or set is_random=false",
-            block_id,
-            component_count,
-            self.SAMPLE_COMPONENT_CAP,
-            component_count,
-        )
-
-    def _sample_blocks(self) -> dict[str, dict[str, Any]]:
-        """Group Sample inner items by their block, in stable file order.
-
-        Returns ``{block_id: {"items": [item, ...], "n": int,
-        "is_random": bool}}``. Items are collected in ``get_all_items()``
-        order so the block-scoped component enumeration is deterministic and
-        matches the runtime freeze (U5). Sample tags are mutually exclusive
-        with Roster tags (U1), so a Roster item never appears here.
-        """
-        blocks: dict[str, dict[str, Any]] = {}
+        blocks: dict[str, list[dict[str, Any]]] = {}
         for item in self.state.get_all_items():
             item_id = item.get("id")
             if not item_id:
                 continue
-            block_id = item.get("_sample_block_id")
+            block_id = item.get("_group_block_id")
             if not block_id:
                 continue
-            entry = blocks.setdefault(
-                block_id,
-                {
-                    "items": [],
-                    "n": item.get("_sample_n"),
-                    "is_random": bool(item.get("_sample_is_random", False)),
-                },
-            )
-            entry["items"].append(item)
+            blocks.setdefault(block_id, []).append(item)
         return blocks
 
-    def _emit_sample_conditional_presence(self) -> None:
-        """U4: validate Sample blocks via the U2 conditional-presence
-        primitive, enumerating contiguous-tree-block orderings when
-        ``is_random=true`` and rejecting > 7 components loudly (R5, R6, R9,
-        R10).
+    def _emit_capped_group_conditional_presence(self) -> None:
+        """Validate ``count``-capped Group blocks via the shared U2
+        conditional-presence primitive — single-presence-per-item, no ordering
+        enumeration (R12, R14).
 
-        Per Sample block:
+        A capped Group asks at most ``count`` of its inner items in canonical
+        order; any inner item can be left undrawn (precondition-skipped, or
+        beyond the cap). Each inner item is therefore modeled as
+        **conditionally present**: classification-safe (a not-drawn item is not
+        NEVER / dead-code) and its domain/pre/post bind only when it is drawn.
 
-        1. **Block-scoped component extraction.** Restrict
-           ``QMLTopology.get_block_scoped_components`` to the block's inner
-           items over the *real* StaticBuilder dependency graph (the same
-           transitively variable-resolved item→item graph Z3 enumerates — see
-           that helper's docstring for the same-graph proof). The throwaway
-           ``QMLTopology(self.state, self)`` is built here, AFTER Pass 3.6's
-           predecessor passes, so ``get_item_dependencies()`` is fully
-           populated — byte-identical to the graph ``QMLEngine`` builds in its
-           step 2.
+        There is exactly ONE presence variable per inner item (``k = 0``): the
+        item is marked conditionally-present once, and its domain/pre/post bind
+        only under that present var. No ordering enumeration and no component
+        permutation — a single presence var per item, emitted in canonical
+        order; the inner-item independence rule is enforced in U8, out of this
+        pass's scope.
 
-        2. **Count T, gate on > 7 WITHOUT materializing orderings (R9).**
-           ``T = len(components)`` is read directly from the component list;
-           the ``T > 7`` decision is taken on that integer *before* any
-           ``itertools.permutations`` call. An over-cap block records a
-           structured ``sample_cap`` coverage gap and is NOT solved — no
-           ordering is ever generated for it (the gate is an ``int``
-           comparison, never ``len(list(permutations(...)))``).
+        An **uncapped** Group carries no ``_group_*`` tag, so its items never
+        reach this pass — they stay on the canonical unconditional single-pass
+        emission, which is what keeps a genuinely unreachable item in an
+        uncapped Group classifying NEVER / dead-code rather than masking it as
+        CONDITIONAL (R13).
 
-        3. **is_random=false OR T ≤ 1 → single canonical order (R10).** No
-           enumeration, no cap. Every inner item is registered
-           conditionally-present at one selection index and its
-           domain/pre/post are present-gated via U2.
+        Composition mirrors Pass-2 and the Roster unroll: the block
+        precondition gates the whole block (prepended to each item's
+        precondition, block-before-item order); the block postcondition
+        applies to drawn items only (prepended to each item's postcondition).
+        Both compose with the visited sentinel and are wrapped under the
+        ``present`` gate.
 
-        4. **is_random=true, 2 ≤ T ≤ 7 → enumerate the T! orderings.** Each
-           ordering is a permutation of the *components*; every component is
-           emitted contiguously in its fixed stable-Kahn linearization
-           (intra-component order is the topology's existing cycle-tolerant
-           order — valid even for cyclic/diamond components, no forest
-           restriction). Each (item, ordering-index k) is registered
-           conditionally-present and its constraints present-gated. Distinct
-           ``k`` per ordering keeps every ordering's typing check independent.
-
-        Composition: the block precondition gates the whole block (prepended
-        to each item's precondition, same order Pass-2 uses); the block
-        postcondition applies to drawn items only (prepended to each item's
-        postcondition, present-gated like every other constraint). Static
-        enumeration only — NO Z3 quantifiers.
-
-        Selection-index ``k`` scheme: Sample uses small *sequential* integers
-        ``0, 1, 2, …`` (one per enumerated ordering; ``0`` for the single
-        canonical order). U3/Roster uses power-of-2 label keys. Sample items
-        never carry Roster tags (U1), so the keyspaces never collide; the
-        distinct scheme keeps the convention readable.
+        Selection-index ``k`` is always ``0`` — a single presence per item.
+        Roster uses power-of-2 label keys; capped-Group items never carry
+        Roster tags, so the keyspaces never collide.
         """
-        sample_blocks = self._sample_blocks()
-        if not sample_blocks:
-            # No Sample blocks → pure no-op (U2 invariant). Do NOT build the
-            # throwaway topology in this common case.
+        for block_id, items in self._capped_group_blocks().items():
+            block = self.state.get_block(block_id)
+
+            for item in items:
+                item_id = item["id"]
+
+                # Register (item, 0) conditionally-present: flips the U2
+                # antecedent from True to the real present Bool AND tags the
+                # item classification-safe (a beyond-count / not-drawn item is
+                # not NEVER / dead-code). Called exactly once per inner item.
+                self.mark_conditionally_present(item_id, 0)
+
+                canonical_var = self.item_vars.get(item_id)
+                domain_builders = self._pending_domain_constraints.get(item_id, [])
+
+                effective_pre, effective_post = self._compose_effective_conditions(block, item)
+
+                if canonical_var is None:
+                    # Textarea / matrix capped-Group item: no scalar var to
+                    # bind. The presence registration above still tags it
+                    # classification-safe; self.outcome-free predicates lower
+                    # without a per-selection var, so skip the var-bound emit
+                    # (mirrors the Roster Textarea branch in Pass 3.5).
+                    continue
+
+                # Per-item presence-scoped outcome var so the drawn item's
+                # typing/feasibility check is independent of its unconditional
+                # canonical-pass var.
+                sel_var = Int(f"item_{item_id}_group0", self.ctx)
+
+                for build in domain_builders:
+                    self.domain_constraints.append(
+                        self._wrap_present(item_id, 0, build(sel_var))
+                    )
+
+                # Re-emit pre/post present-gated via the shared helper. Block
+                # precondition gates the whole block; composed with the item
+                # precondition and the visited sentinel under the present gate
+                # — block postcondition applies to drawn items only by the same
+                # gate (``effective_pre``/``effective_post`` already include the
+                # block-level conditions per the composition above).
+                self._emit_pre_post_under_present(
+                    item_id, 0, effective_pre, effective_post, sel_var, canonical_var
+                )
+
+    def _emit_capped_group_independence_gaps(self) -> None:
+        """U8 validation-time layer: flag intra-Group dependency edges in
+        ``count``-capped Groups as ``group_dependency`` coverage gaps (R10).
+
+        A capped Group asks at most ``count`` of its inner items; the draw can
+        evict any of them. If one inner item depends on a SIBLING inner item of
+        the same Group, the dependant's precondition / postcondition / codeBlock
+        may evaluate against the undrawn sibling's ``None`` outcome at runtime.
+        The runtime ``FlowProcessor`` never validates, so this — together with
+        the loader's direct-reference check — is the rule's only enforcement.
+
+        Soundness over the loader's name-match: this reads the REAL resolved
+        item-to-item dependency graph (``get_item_dependencies()`` resolves
+        transitive / variable-mediated edges — q_b → var:x → q_a collapses to
+        q_b → q_a), so it catches the variable-mediated case the loader's AST
+        name view structurally cannot. Cross-block edges are allowed: an edge is
+        flagged ONLY when BOTH endpoints are inner items of the SAME capped
+        Group (the dependant's ``_group_block_id`` equals the dependency's).
+
+        Surfacing follows the existing block-level coverage-gap mechanism: the
+        gap is recorded under the BLOCK id key in ``self.coverage_gaps`` (a key
+        disjoint from ``item_order``), which ``ItemClassifier.classify_all_items``
+        surfaces once as a synthetic block-keyed result entry. ``validate_qml_file``
+        reads those gaps from ``issues[]`` (the ``group_dependency`` → issue
+        mapping is wired in U10's Portor tool). No swallowed ``None`` — each
+        offending edge is recorded explicitly and a loud WARNING is emitted, per
+        the silent-drop learning that governs this module.
+
+        Gap shape (one per offending edge)::
+
+            {"kind": "group_dependency", "block_id": <id>,
+             "item_id": <dependant inner item>, "depends_on": <sibling inner item>}
+        """
+        capped_blocks = self._capped_group_blocks()
+        if not capped_blocks:
+            # No capped Group → nothing to check (the common case). Avoid the
+            # cost of resolving the full transitive dependency graph.
             return
 
-        # Local import: qml_topology imports static_builder at module scope,
-        # so importing it at this module's top would be circular. Mirrors the
-        # validation_processor → qml_diagram_ir local-import idiom.
-        from askalot_qml.core.qml_topology import QMLTopology
+        # Map every capped-Group inner item id to its block id so an edge's
+        # endpoints can be tested for same-Group membership in O(1).
+        item_to_block: dict[str, str] = {}
+        for block_id, items in capped_blocks.items():
+            for item in items:
+                item_id = item.get("id")
+                if item_id:
+                    item_to_block[item_id] = block_id
 
-        # ONE throwaway topology over the fully-built dependency graph — the
-        # exact graph QMLEngine builds next (and Z3 enumerates). Built once
-        # and shared across every Sample block.
-        topology = QMLTopology(self.state, self)
-        topo_index = {iid: idx for idx, iid in enumerate(topology.get_topological_order())}
+        # Resolved item-to-item dependencies (transitive through variables).
+        resolved_deps = self.get_item_dependencies()
 
-        for block_id, info in sample_blocks.items():
-            items = info["items"]
-            item_by_id = {it["id"]: it for it in items}
-            block_item_ids = set(item_by_id.keys())
-            is_random = info["is_random"]
+        for item_id, block_id in item_to_block.items():
+            for dep_id in sorted(resolved_deps.get(item_id, set())):
+                # Flag only intra-Group edges: the dependency must be a SIBLING
+                # inner item of the SAME capped Group. Cross-block edges (and
+                # edges into items of a *different* capped Group) are allowed.
+                if item_to_block.get(dep_id) != block_id:
+                    continue
+                # `get_item_dependencies` already discards self-edges, but guard
+                # defensively — a self-reference is not an independence breach.
+                if dep_id == item_id:
+                    continue
+                self._record_group_dependency_gap(block_id, item_id, dep_id)
 
-            components = topology.get_block_scoped_components(block_item_ids)
-            # T is read straight off the component list — an int. The cap gate
-            # below compares this int; it NEVER materializes T! orderings to
-            # count them (R9: "count components first, reject, only then
-            # enumerate").
-            t = len(components)
+    def _record_group_dependency_gap(
+        self, block_id: str, item_id: str, depends_on: str
+    ) -> None:
+        """Record one capped-Group intra-dependency gap (U8) and WARN once.
 
-            if is_random and t > self.SAMPLE_COMPONENT_CAP:
-                # R9 loud reject — structured gap, NO solve. We return before
-                # any permutation is generated and emit ZERO inner
-                # constraints for this block.
-                self._record_sample_cap_gap(block_id, t)
-                continue
-
-            # Linearize each component using the questionnaire-wide topological
-            # order (cycle-tolerant; identical to what the runtime walks).
-            # Components are ordered by their earliest member's topo index so
-            # the component sequence itself is deterministic.
-
-            ordered_components = sorted(
-                components, key=lambda c: min(topo_index.get(i, len(topo_index)) for i in c)
-            ) if components else []
-            linearized = [topology.linearize_component(c, topo_index) for c in ordered_components]
-
-            if not is_random or t <= 1:
-                # R10 single canonical order: components emitted in their
-                # fixed order, intra-component order fixed. Exactly one
-                # ordering (k=0). Empty block → linearized == [] → the
-                # per-item loop body runs zero times: base case = 1 (empty)
-                # ordering, no divide-by-zero, no permutation call.
-                orderings = [[iid for comp in linearized for iid in comp]]
-            else:
-                # is_random, 2 ≤ T ≤ 7: permute the COMPONENTS (each
-                # contiguous, intra-order fixed). itertools.permutations is
-                # only ever reached here — strictly after the T > cap gate, so
-                # at most 7! = 5040 orderings are materialized.
-                orderings = [
-                    [iid for comp in perm for iid in comp]
-                    for perm in itertools.permutations(linearized)
-                ]
-
-            block = self.state.get_block(block_id)
-            block_pre = list((block.get("precondition") if block else None) or [])
-            block_post = list((block.get("postcondition") if block else None) or [])
-
-            for k, ordering in enumerate(orderings):
-                for item_id in ordering:
-                    item = item_by_id[item_id]
-
-                    # Register (item, k) conditionally-present: flips the U2
-                    # antecedent from True to the real present Bool AND tags
-                    # the item classification-safe (a not-drawn-in-this-
-                    # ordering item is not NEVER / dead-code).
-                    self.mark_conditionally_present(item_id, k)
-
-                    canonical_var = self.item_vars.get(item_id)
-                    domain_builders = self._pending_domain_constraints.get(item_id, [])
-
-                    effective_pre = block_pre + list(item.get("precondition", []) or [])
-                    effective_post = block_post + list(item.get("postcondition", []) or [])
-
-                    if canonical_var is None:
-                        # Textarea / matrix Sample item: no scalar var to
-                        # bind. Presence registration above still tags it
-                        # classification-safe and self.outcome-free
-                        # predicates lower without a per-selection var; skip
-                        # the var-bound emit (mirrors the Roster Textarea
-                        # branch in Pass 3.5).
-                        continue
-
-                    # Per-(item, ordering) outcome var so each ordering's
-                    # typing/feasibility check is independent.
-                    sel_var = Int(f"item_{item_id}_sample{k}", self.ctx)
-
-                    for build in domain_builders:
-                        self.domain_constraints.append(
-                            self._wrap_present(item_id, k, build(sel_var))
-                        )
-
-                    # Re-emit pre/post for this selection via the shared
-                    # helper. Block precondition gates the whole block;
-                    # composed with the item precondition and the visited
-                    # sentinel, all under the present gate — block
-                    # postcondition applies to drawn items only by the same
-                    # gate (`effective_pre`/`effective_post` already include
-                    # block-level conditions per the composition above).
-                    self._emit_pre_post_under_present(
-                        item_id, k, effective_pre, effective_post, sel_var, canonical_var
-                    )
+        Keyed by ``block_id`` (disjoint from ``item_order``) so
+        ``ItemClassifier.classify_all_items`` surfaces it as a synthetic
+        block-level entry. Duplicate ``(item_id, depends_on)`` edges under the
+        same block are a no-op so a re-resolved graph never double-reports.
+        """
+        gaps = self.coverage_gaps.setdefault(block_id, [])
+        for existing in gaps:
+            if (
+                existing.get("kind") == "group_dependency"
+                and existing.get("item_id") == item_id
+                and existing.get("depends_on") == depends_on
+            ):
+                return
+        gaps.append(
+            {
+                "kind": "group_dependency",
+                "block_id": block_id,
+                "item_id": item_id,
+                "depends_on": depends_on,
+            }
+        )
+        self.logger.warning(
+            "capped Group '%s' inner item '%s' depends on sibling inner item "
+            "'%s' — inner items of a count-capped Group must be independent "
+            "(the draw can leave '%s' undrawn, so its outcome may be None at "
+            "evaluation time). Move the dependency to a separate block or remove "
+            "the count cap.",
+            block_id,
+            item_id,
+            depends_on,
+            depends_on,
+        )
 
     def _process_code_block(self, context_id: str, code: str):
         """Process code block and create SSA versions for assignments.
@@ -1387,16 +1376,21 @@ class StaticBuilder:
             unsupported_nodes,
         )
 
-    def _build_precondition_constraint(
-        self, predicate: str, item_id: str, condition_idx: int = 0
+    def _build_condition_constraint(
+        self, kind: str, predicate: str, item_id: str, condition_idx: int = 0
     ) -> tuple[BoolRef | None, set[str]]:
-        """Build Z3 constraint for precondition AND track dependencies.
+        """Build a Z3 constraint for one pre/postcondition AND track dependencies.
 
-        Extracts ALL dependencies (items AND variables) and adds them to the
-        dependency graph for proper transitive chain resolution.
+        ``kind`` is ``"precondition"`` or ``"postcondition"`` — it differs only
+        in the coverage-gap label (R7/R13) and the error-log text; the parse →
+        extract deps → wire dependency graph → lower-to-Z3 → record-gap-on-None
+        body is identical for both. Self-references are excluded from the
+        dependency graph for both kinds: a precondition self-loop is invalid,
+        and a postcondition validating its own item's outcome (``q1.outcome > 0``)
+        is legitimate and not a dependency.
 
-        Note: Self-references are excluded - an item referencing itself
-        is not a dependency (would create invalid self-loops).
+        Returns ``(constraint_or_None, item_dependencies)``; ``var:`` nodes are
+        stripped from the returned dep set for backward compatibility.
         """
         try:
             tree = ast.parse(predicate, mode="eval")
@@ -1415,53 +1409,28 @@ class StaticBuilder:
             if constraint is None:
                 unsupported = self._unsupported_node_kinds(tree.body)
                 if unsupported:
-                    self._record_coverage_gap(item_id, "precondition", condition_idx, unsupported)
+                    self._record_coverage_gap(item_id, kind, condition_idx, unsupported)
 
             # Return only item dependencies for backward compatibility
             item_deps = {d for d in all_deps if not d.startswith("var:")}
             return constraint, item_deps
         except Exception as e:
-            self.logger.error(f"Error building precondition constraint for {item_id}: {e}")
+            self.logger.error(f"Error building {kind} constraint for {item_id}: {e}")
             return None, set()
+
+    def _build_precondition_constraint(
+        self, predicate: str, item_id: str, condition_idx: int = 0
+    ) -> tuple[BoolRef | None, set[str]]:
+        """Build a Z3 precondition constraint (thin wrapper over
+        ``_build_condition_constraint``)."""
+        return self._build_condition_constraint("precondition", predicate, item_id, condition_idx)
 
     def _build_postcondition_constraint(
         self, predicate: str, item_id: str, condition_idx: int = 0
     ) -> tuple[BoolRef | None, set[str]]:
-        """Build Z3 constraint for postcondition AND track dependencies.
-
-        Postconditions can also create dependencies! For example, if q2 has a
-        postcondition referencing q1.outcome, q2 depends on q1.
-
-        Note: Self-references ARE allowed in postconditions - an item's postcondition
-        validating its own outcome (e.g., `q1.outcome > 0`) is valid and not a dependency.
-        Self-references are excluded from the dependency graph.
-        """
-        try:
-            tree = ast.parse(predicate, mode="eval")
-
-            # Extract ALL dependencies (items AND variables)
-            all_deps = self._extract_dependencies_from_ast(tree.body)
-
-            # Add to dependency graph (excluding self-references - postconditions validating
-            # their own item's outcome don't create dependencies)
-            for dep in all_deps:
-                if dep != item_id:  # Exclude self-reference
-                    self.dependency_graph[item_id].add(dep)
-
-            constraint = self._ast_to_z3_bool(tree.body, item_id)
-
-            # R7/R13: surface silent drops on constraint-bearing predicates.
-            if constraint is None:
-                unsupported = self._unsupported_node_kinds(tree.body)
-                if unsupported:
-                    self._record_coverage_gap(item_id, "postcondition", condition_idx, unsupported)
-
-            # Return only item dependencies for backward compatibility
-            item_deps = {d for d in all_deps if not d.startswith("var:")}
-            return constraint, item_deps
-        except Exception as e:
-            self.logger.error(f"Error building postcondition constraint for {item_id}: {e}")
-            return None, set()
+        """Build a Z3 postcondition constraint (thin wrapper over
+        ``_build_condition_constraint``)."""
+        return self._build_condition_constraint("postcondition", predicate, item_id, condition_idx)
 
     # ------------------------------------------------------------------
     # Helpers for matrix postcondition lowering
@@ -2020,8 +1989,13 @@ class StaticBuilder:
         item_deps = set()
         for dep in self.dependency_graph.get(node, set()):
             if dep.startswith("var:"):
-                # Recursively resolve variable dependencies
-                item_deps.update(self._resolve_item_dependencies(dep, visited.copy()))
+                # Follow var: edges with a SHARED visited set (not a per-branch
+                # copy). The top-level return is the union of reachable items:
+                # once a var node is explored, its full contribution is unioned
+                # up to the root caller, so a later branch re-reaching it adds
+                # nothing new. Sharing the set turns the walk from O(depth^2)
+                # copies into a single O(V+E) DFS while returning the same set.
+                item_deps.update(self._resolve_item_dependencies(dep, visited))
             else:
                 # Direct item dependency
                 item_deps.add(dep)
@@ -2086,6 +2060,20 @@ class StaticBuilder:
                 all_vars[f"item_{item_id}_{r}_{c}"] = cell_var
         return all_vars
 
+    def _conjoin(self, exprs: list[BoolRef]) -> BoolRef:
+        """Conjoin a list of Z3 booleans into one expression.
+
+        Empty → ``BoolVal(True, ctx)`` (the identity of conjunction); a single
+        element is returned as-is (no redundant ``And`` wrapper); otherwise
+        ``And(*exprs)``. Centralizes the repeated empty/single/many shape used
+        by ``get_domain_base`` / ``get_full_base`` / ``compile_conditions``.
+        """
+        if not exprs:
+            return BoolVal(True, self.ctx)
+        if len(exprs) == 1:
+            return exprs[0]
+        return And(*exprs)
+
     def get_domain_base(self) -> BoolRef:
         """
         Get domain-only base constraint B as defined in the thesis.
@@ -2099,12 +2087,7 @@ class StaticBuilder:
         - Global validation: F = B ∧ ∧(P_i ⇒ Q_i)
         - Path-based validation: A_i = B ∧ ∧{j∈Pred(i)}(P_j ⇒ Q_j)
         """
-        if not self.domain_constraints:
-            return BoolVal(True, self.ctx)
-        elif len(self.domain_constraints) == 1:
-            return self.domain_constraints[0]
-        else:
-            return And(*self.domain_constraints)
+        return self._conjoin(self.domain_constraints)
 
     def get_full_base(self) -> BoolRef:
         """
@@ -2127,12 +2110,7 @@ class StaticBuilder:
         Without codeBlock constraints, var1 would be unconstrained.
         """
         all_constraints = list(self.domain_constraints) + list(self.codeblock_constraints)
-        if not all_constraints:
-            return BoolVal(True, self.ctx)
-        elif len(all_constraints) == 1:
-            return all_constraints[0]
-        else:
-            return And(*all_constraints)
+        return self._conjoin(all_constraints)
 
     def compile_conditions(self, item_id: str, conditions: list[dict[str, Any]]) -> BoolRef:
         """Compile a list of conditions to a single Z3 boolean expression (ItemClassifier compatibility)."""
@@ -2148,12 +2126,7 @@ class StaticBuilder:
                 if compiled is not None:
                     compiled_conditions.append(compiled)
 
-        if not compiled_conditions:
-            return BoolVal(True, self.ctx)
-        elif len(compiled_conditions) == 1:
-            return compiled_conditions[0]
-        else:
-            return And(*compiled_conditions)
+        return self._conjoin(compiled_conditions)
 
     def _compile_predicate_to_z3(self, predicate: str, context: str) -> BoolRef | None:
         """Compile a predicate string to Z3 boolean expression."""

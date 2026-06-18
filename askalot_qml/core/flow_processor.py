@@ -411,6 +411,18 @@ class FlowProcessor:
 
         return active_keys
 
+    @staticmethod
+    def _resolve_cap(n: Any) -> int:
+        """Coerce a Group ``count`` cap to a usable slot count.
+
+        Returns ``n`` when it is a positive int, else ``0``. The loader
+        loud-validates ``count`` as a positive int, so this is defence in
+        depth for the on-reach draw (``_group_reach_decision`` /
+        ``is_item_done``): a malformed / absent cap degrades to a 0-slot draw
+        rather than crashing the walk.
+        """
+        return n if isinstance(n, int) and n > 0 else 0
+
     def _effective_conditions(self, item: dict[str, Any], field: str) -> list[dict[str, Any]]:
         """Compose block-level and item-level conditions for evaluation.
 
@@ -428,174 +440,118 @@ class FlowProcessor:
         item_conds: list[dict[str, Any]] = list(item.get(field) or [])
         return block_conds + item_conds
 
-    def _sample_canonical_order(self, block_id: str, block_item_ids: set[str]) -> list[str]:
-        """Build the single canonical contiguous-tree-block order for a Sample
-        block — IDENTICAL construction to U4's validation-time ordering.
+    def _enter_group_pass(self, item: dict[str, Any]) -> None:
+        """Open a fresh ``count``-capped Group pass: reset the running asked-list
+        to empty so the on-reach walk can fill it slot-by-slot.
 
-        Reproduces ``StaticBuilder._emit_sample_conditional_presence``:
-          1. block-scoped connected components over the *real* StaticBuilder
-             dependency graph (``get_block_scoped_components`` — cross-block
-             edges do NOT merge components);
-          2. components ordered by their earliest member's index in the
-             questionnaire-wide topological order;
-          3. intra-component order = that same cycle-tolerant topo
-             linearization, emitted contiguously.
+        The draw is NOT frozen at entry. The forward walk
+        (``_group_reach_decision``) evaluates each member's precondition *when it
+        reaches the member in navigation_path order* and consumes one of the N
+        slots per asked member. This is the only correct model when a member's
+        precondition depends on a cross-block (outer) item that sorts BETWEEN
+        the Group's members in stable-Kahn order: such a member is ineligible at
+        first block entry but becomes eligible once the walk has run the outer
+        item (every dependency precedes the member in navigation_path).
 
-        This is exactly U4's ``orderings[0]`` for ``is_random=false``/``T<=1``
-        and the IDENTITY permutation for ``is_random=true``. Every
-        `is_random=true` permutation this method's caller produces is therefore
-        one of U4's validated orderings (U4 enumerates every component
-        permutation; the runtime freezes one of them).
-
-        Topology is needed only at FIRST entry (when the order is frozen and
-        persisted). A throwaway ``QMLTopology`` over the same state/StaticBuilder
-        is built when the lightweight cached-state processor has no engine —
-        byte-identical graph to the one ``QMLEngine`` builds.
+        ``group_asked`` therefore becomes the RUNNING list of members the group
+        has actually asked this pass (not a precomputed frozen draw). It starts
+        empty here and persists for the duration of the pass — across foreign
+        items that interleave the block and across backward navigation within
+        the block — so the slot count survives. It is reset only on a fresh
+        entry (this method) and cleared on pass completion / backward exit.
         """
-        topology = self.topology
-        if topology is None:
-            # Lightweight (from_cached_state) path with no engine: rebuild the
-            # same dependency graph U4 / QMLEngine build. Local import: same
-            # circular-import idiom static_builder uses for qml_topology.
-            from askalot_qml.core.qml_topology import QMLTopology
-            from askalot_qml.z3.static_builder import StaticBuilder
+        block_id = item["_group_block_id"]
+        self.state.set_group_asked(block_id, [])
 
-            builder = StaticBuilder(self.state)
-            topology = QMLTopology(self.state, builder)
-            # Cache so _randomize_sample_order (called immediately after for
-            # is_random=True blocks) short-circuits the topology rebuild.
-            self.topology = topology
-
-        topo_index = {iid: idx for idx, iid in enumerate(topology.get_topological_order())}
-        components = topology.get_block_scoped_components(block_item_ids)
-        ordered_components = sorted(
-            components,
-            key=lambda c: min(topo_index.get(i, len(topo_index)) for i in c),
-        ) if components else []
-        return [
-            iid
-            for comp in ordered_components
-            for iid in topology.linearize_component(comp, topo_index)
-        ]
-
-    def _enter_sample_pass(
+    def _group_reach_decision(
         self, item: dict[str, Any], all_items: list[dict[str, Any]]
-    ) -> list[str]:
-        """Freeze the Sample traversal order and compute this pass's drawn set.
+    ) -> bool:
+        """On-reach decision for one capped-Group member the forward walk has
+        reached. Returns True if the member should be PRESENTED now, False if it
+        is skipped (free pass on a False precondition, or beyond the N cap).
 
-        Mirrors ``_enter_roster_pass`` structurally; diverges only where the
-        plan mandates: the ``is_random`` order is frozen for the WHOLE survey
-        execution (persisted in ``state['sample_order'][block_id]``) and is
-        NOT re-evaluated on re-entry — unlike Roster's iterateOver, which is
-        re-evaluated every pass.
+        Model (R8 / AE2–AE4): a member already in the running asked-list is
+        re-presented (drawn-and-unvisited). Otherwise evaluate eligibility:
 
-        Two-phase per the plan's chosen re-entry rule:
+          * precondition holds AND ``len(group_asked) < count`` → ASK: consume
+            one slot (append to ``group_asked``), tag the item ``_group_asked``
+            (the durable "the group asked this") and return True;
+          * precondition False → free pass (no slot), return False;
+          * cap already full → skip, return False.
 
-          * **Order** (``sample_order``): frozen at FIRST entry only. For
-            ``is_random=false``/single-component it is the canonical
-            contiguous-tree-block order; for ``is_random=true`` it is one
-            per-execution permutation of the components (intra-component order
-            still the fixed topo linearization). Either way it is one of U4's
-            validated orderings — same component extraction + topo
-            linearization, then (for random) a component-level permutation.
-
-          * **Drawn set** (``sample_asked``): RE-DERIVED every entry. Walk the
-            frozen order; an item whose precondition holds consumes an N slot;
-            a precondition-False item is passed over for FREE (does not consume
-            a slot — R2 / AE1). Stop when N slots are filled or the frozen
-            order is exhausted. Eligibility is thus recomputed against current
-            answers even though the order slot is frozen (the plan's explicit
-            precondition-flip-on-re-entry rule).
-
-        Returns the drawn item_ids (possibly empty — degenerate pass, handled
-        by the caller like a Roster empty pass: skip silently, do NOT mark
-        visited, preserve last-visited recap).
+        Eviction (A1-scoped, AE13): when a member is skipped (False precondition
+        or cap full) but was asked in a prior pass — its durable ``_group_asked``
+        tag is set and it still carries an ``outcome`` — its answer must be
+        dropped (a backward edit flipped a precondition or pushed it past the
+        cap). ``_evict_group_item`` clears the outcome and removes its history
+        entry. A member the group NEVER asked (e.g. a ``codeInit``-set outcome on
+        an undrawn member — A1) has no ``_group_asked`` tag, so it is never
+        evicted. A benign re-entry re-asks the identical set, so no member is
+        skipped-after-having-been-asked and nothing is evicted (AE19).
         """
-        block_id = item["_sample_block_id"]
-        n = item.get("_sample_n")
-        is_random = bool(item.get("_sample_is_random", False))
+        block_id = item["_group_block_id"]
+        n = item.get("_group_count")
+        asked = self.state.get_group_asked(block_id)
+        item_id = item["id"]
 
-        block_items = self.state.get_items_by_block(block_id)
-        block_item_ids = {bi["id"] for bi in block_items}
+        if item_id in asked:
+            return True  # already asked this pass → re-present (drawn+unvisited)
 
-        # --- Order: freeze once, persist forever (deliberate divergence) ---
-        order = self.state.get_sample_order(block_id)
-        if order is None:
-            canonical = self._sample_canonical_order(block_id, block_item_ids)
-            if is_random and len(block_item_ids) > 0:
-                order = self._randomize_sample_order(block_id, canonical)
-            else:
-                order = canonical
-            self.state.set_sample_order(block_id, order)
+        cap = self._resolve_cap(n)
+        eligible = self._check_preconditions(item, all_items)
+        if eligible and len(asked) < cap:
+            # ASK: consume a slot and tag the item as group-asked (durable).
+            self.state.set_group_asked(block_id, [*asked, item_id])
+            item["_group_asked"] = True
+            return True
 
-        # --- Drawn set: re-derive every entry against current eligibility ---
-        # `n` is a positive int from U1's loader (schema enforces count>=1);
-        # synthesized N<=0 is tolerated → empty draw (no negative-index math).
-        drawn: list[str] = []
-        if isinstance(n, int) and n > 0:
-            for item_id in order:
-                if len(drawn) >= n:
-                    break
-                inner = self.state.get_item(item_id)
-                if inner is None:
-                    continue
-                # Precondition-False items are passed over for FREE — they do
-                # NOT consume an N slot (R2). eval via the shared precondition
-                # path (block + item conditions, same as every other item).
-                if self._check_preconditions(inner, all_items):
-                    drawn.append(item_id)
-        self.state.set_sample_asked(block_id, drawn)
+        # Skipped (free pass or cap full). Evict iff the group previously asked
+        # this member and it still carries an answer — A1: only group-asked items
+        # may be cleared; codeInit/codeBlock-set outcomes on never-asked members
+        # survive.
+        if item.get("_group_asked") and item.get("outcome") is not None:
+            self._evict_group_item(item)
+        return False
 
-        if drawn:
-            # Mark all inner Sample items unvisited so the forward walk picks
-            # up the drawn ones (mirrors the roster entry unvisit).
-            for bi in block_items:
-                bi["visited"] = False
+    def _evict_group_item(self, item: dict[str, Any]) -> None:
+        """Remove a previously-asked capped-Group item from the survey record
+        because a flipped precondition (or a now-consumed earlier slot) dropped
+        it from the on-reach draw.
 
-        return drawn
+        The analysis extractor (``survey_extractor.extract_survey_outcomes``)
+        walks ``state['history']`` and emits any item whose ``outcome`` is not
+        None, so a stale outcome left on an evicted item would leak into the
+        Bronze dataset. Three surfaces are reset:
 
-    def _randomize_sample_order(self, block_id: str, canonical: list[str]) -> list[str]:
-        """Permute the contiguous tree-blocks of the canonical order.
+          * ``item['outcome']`` → None (the value), and the item un-visited so
+            the forward walk does not treat it as already shown;
+          * the durable ``_group_asked`` tag cleared — the group no longer owns
+            this answer, so a later sweep must not re-evict an already-clean item;
+          * the item's ``history`` entry (and its lockstep
+            ``history_iter_key``) removed so the extractor never reaches it.
 
-        Re-derives the components from the canonical layout (each maximal run
-        whose split points are component boundaries is recoverable because the
-        canonical order emits each component contiguously), then shuffles the
-        BLOCK order while keeping each block's internal order fixed. The
-        resulting order is exactly one of U4's enumerated component
-        permutations (intra-component order is the fixed topo linearization),
-        so it is always one of the orderings U4 proved sound.
-
-        Seeded by ``random`` (per-execution randomisation, plan R3). Frozen by
-        the caller into ``sample_order`` so it is reproducible across
-        backward-nav and re-entry for the rest of the survey execution.
+        A capped-Group item has no per-iteration identity (iter_key is always
+        None), so every history occurrence of this item id is removed.
         """
-        import random
+        item_id = item["id"]
+        item["outcome"] = None
+        item["visited"] = False
+        item.pop("_group_asked", None)
 
-        block_items = self.state.get_items_by_block(block_id)
-        block_item_ids = {bi["id"] for bi in block_items}
-        # Re-extract components so we permute exactly the units U4 enumerated
-        # (a list[set]); then map each component to its fixed canonical
-        # sub-sequence (its slice of the canonical order, which already is the
-        # topo linearization emitted contiguously).
-        # _sample_canonical_order (the only caller path) is always invoked
-        # immediately before this method and caches self.topology on the
-        # from_cached_state path, so it is guaranteed non-None here.
-        assert self.topology is not None, (
-            "_randomize_sample_order requires self.topology; "
-            "_sample_canonical_order must be called first to populate it"
-        )
-        components = self.topology.get_block_scoped_components(block_item_ids)
-        comp_of = {iid: idx for idx, comp in enumerate(components) for iid in comp}
-        # Group the canonical order into contiguous component runs.
-        runs: list[list[str]] = []
-        for iid in canonical:
-            cidx = comp_of.get(iid)
-            if runs and cidx is not None and comp_of.get(runs[-1][0]) == cidx:
-                runs[-1].append(iid)
-            else:
-                runs.append([iid])
-        random.shuffle(runs)
-        return [iid for run in runs for iid in run]
+        # Drop the item's history entry/entries, keeping history_iter_key in
+        # lockstep (R9 — the extractor walks history, so nulling outcome alone
+        # would still be insufficient if the entry remained).
+        history = self.state.get("history", [])
+        iter_keys = self.state.get("history_iter_key", [])
+        kept_history: list[str] = []
+        kept_iter_keys: list[int | None] = []
+        for idx, hid in enumerate(history):
+            if hid == item_id:
+                continue
+            kept_history.append(hid)
+            kept_iter_keys.append(iter_keys[idx] if idx < len(iter_keys) else None)
+        self.state["history"] = kept_history
+        self.state["history_iter_key"] = kept_iter_keys
 
     def _check_preconditions(self, item: dict[str, Any], all_items: list[dict[str, Any]]) -> bool:
         """
@@ -709,23 +665,33 @@ class FlowProcessor:
                 active_keys = questionnaire_state.get_roster_active_keys(block_id)
                 if active_keys is not None and len(active_keys) == 0:
                     return True  # empty pass already established
-            # Sample items: once the pass is entered, an item NOT in the drawn
-            # set is implicitly done — it was never shown (precondition-skipped
-            # or beyond the N cap). This is the per-item analogue of Roster's
-            # empty-pass sentinel; like Roster it does NOT flip the visited
-            # flag (preserves the survey's "last item actually visited" recap).
-            # A drawn-but-unvisited Sample item is NOT done. Before pass entry
-            # (sample_order is None) a Sample item is NOT done so the forward
-            # walk proceeds to _enter_sample_pass.
-            sample_block_id = item.get("_sample_block_id")
-            if sample_block_id is not None:
-                if questionnaire_state.has_sample_pass(sample_block_id):
-                    if item.get("id") not in questionnaire_state.get_sample_asked(
-                        sample_block_id
-                    ):
-                        return True  # not drawn this pass → implicitly done
-                    return False  # drawn + unvisited → still pending
-                return False  # pass not entered yet → must enter it
+            # Capped-Group items (on-reach model): a member is "done" only once
+            # the forward walk has REACHED and DECIDED it — either asked (and
+            # then visited, caught above) or skipped (free pass on a False
+            # precondition, or beyond the N cap). The decision is NOT frozen at
+            # entry: a member is presentable iff its precondition holds AND a
+            # slot is still free in the running asked-list. We mirror that here
+            # WITHOUT mutating state (no eviction in the terminator):
+            #   - in the running asked-list → drawn, still pending → NOT done;
+            #   - currently presentable (precond true AND slot free) → NOT done;
+            #   - otherwise (free pass / cap full) → settled-skipped → done.
+            # An un-reached member whose precondition will only flip true after a
+            # later-running outer item is, right now, NOT presentable and would
+            # read "done" here — but the all-done terminator requires EVERY item
+            # done, and the outer item it depends on is itself still unvisited
+            # (so all_done is False) until that item runs and flips the member
+            # presentable. Hence no premature finalization (the C1 guarantee).
+            group_block_id = item.get("_group_block_id")
+            if group_block_id is not None:
+                if not questionnaire_state.has_group_pass(group_block_id):
+                    return False  # pass not entered yet → must enter it
+                asked = questionnaire_state.get_group_asked(group_block_id)
+                if item.get("id") in asked:
+                    return False  # asked + unvisited → still pending
+                n = item.get("_group_count")
+                cap = self._resolve_cap(n)
+                presentable = len(asked) < cap and self._check_preconditions(item, all_items)
+                return not presentable  # free pass / cap full → settled-skipped
             # Item with unsatisfied preconditions is implicitly done (skipped)
             if not self._check_preconditions(item, all_items):
                 return True
@@ -776,50 +742,43 @@ class FlowProcessor:
                     # these as done so the all-done check still terminates.
                     continue
 
-            # Sample items: a structurally identical preflight to Roster, but
-            # presentation is driven by the FROZEN `sample_order` (which may
-            # differ from topological order for is_random=true), not the
-            # navigation_path index. On the first encounter of an unvisited
-            # Sample inner item we enter the pass (freeze order once, re-derive
-            # the drawn set for this pass). We then REDIRECT to the first
-            # drawn-and-unvisited item in frozen order so the user sees the
-            # block in its frozen sequence. A degenerate pass (zero drawn —
-            # all precondition-skipped or N=0) is skipped silently WITHOUT
-            # marking inner items visited (Roster empty-pass parity).
-            if item.get("_sample_block_id"):
-                sblock_id = item["_sample_block_id"]
-                if not questionnaire_state.has_sample_pass(sblock_id):
-                    self._enter_sample_pass(item, all_items)
-                drawn = questionnaire_state.get_sample_asked(sblock_id)
-                if not drawn:
-                    # Degenerate pass — skip silently. is_item_done() treats
-                    # these as done so the all-done check still terminates.
+            # Capped-Group items (on-reach model): no frozen draw, no redirect.
+            # Each member is decided WHEN THE WALK REACHES IT in navigation_path
+            # order, so a member whose precondition depends on an outer item that
+            # sorts between the Group's members is evaluated only after that outer
+            # item has run (the C1 guarantee). On first encounter of an unvisited
+            # member we open the pass (reset the running asked-list to empty);
+            # then _group_reach_decision either ASKS this member (consuming a
+            # slot, recording it in group_asked, tagging it _group_asked) or
+            # skips it (free pass on a False precondition, or beyond the N cap —
+            # evicting any prior answer it carried). A skipped member is left
+            # absent (outcome=None, not visited) and the walk continues; it is
+            # never force-visited. Because the member is visited in
+            # navigation_path order, the user sees the block in its global
+            # sequence with no projection helper.
+            if item.get("_group_block_id"):
+                gblock_id = item["_group_block_id"]
+                if not questionnaire_state.has_group_pass(gblock_id):
+                    self._enter_group_pass(item)
+                if not self._group_reach_decision(item, all_items):
+                    # Free pass / cap full — skip this member silently.
                     continue
-                # Redirect to the first drawn item not yet visited, honouring
-                # the frozen order rather than the topo navigation_path order.
-                frozen = questionnaire_state.get_sample_order(sblock_id) or []
-                next_id = next(
-                    (
-                        iid
-                        for iid in frozen
-                        if iid in drawn
-                        and not (questionnaire_state.get_item(iid) or {}).get("visited")
-                    ),
-                    None,
-                )
-                if next_id is None:
-                    # Every drawn item visited — block exhausted; skip.
-                    continue
-                if next_id != item_id:
-                    # The topo entry we're on is not the frozen-order next.
-                    # Re-resolve to the frozen-order item and present it.
-                    item = questionnaire_state.get_item(next_id)
-                    item_id = next_id
-                    if not item:
-                        continue
+                # Asked this pass: fall through to the normal presentation path
+                # (history append, return). _group_reach_decision already
+                # evaluated this member's precondition (it asked it), so the
+                # redundant precondition gate below is skipped for group items
+                # via the `elif not item.get("_group_block_id")` guard — each
+                # _check_preconditions does a deepcopy + per-item proxy build.
 
-            # Check preconditions — items with unsatisfied preconditions are skipped
-            if self._check_preconditions(item, all_items):
+            # Check preconditions — items with unsatisfied preconditions are
+            # skipped. A group member reaching here was already gated by
+            # _group_reach_decision (precondition known true), so re-checking it
+            # is pure redundant work; present it directly.
+            if item.get("_group_block_id"):
+                presentable = True
+            else:
+                presentable = self._check_preconditions(item, all_items)
+            if presentable:
                 # Track navigation in questionnaire state. Roster items legitimately
                 # appear multiple times in history (once per iteration), so the
                 # non-roster uniqueness check (`item_id not in history`) would drop
@@ -943,17 +902,29 @@ class FlowProcessor:
         # The current item is always marked as visited since it was actively processed
         current_item["visited"] = True
 
-        # Propagate variables to all subsequent items
+        # Propagate variables to all items that execute AFTER this one — in
+        # navigation_path (stable-Kahn topological) order, the authoritative
+        # execution order. Using file order here would skip an item that sorts
+        # before the current item in the file but AFTER it topologically: e.g. a
+        # capped-Group member `c` whose precondition reads a variable an OUTER
+        # item `f` sets, where stable-Kahn orders the path [a, f, c] but the file
+        # lists the Group block (a, c) before f's block. With file-order
+        # propagation f's variable never reaches c's context, so c's
+        # precondition would wrongly read the stale value when the on-reach walk
+        # evaluates it (the C1 bug). nav-order propagation makes every member's
+        # cross-block dependencies visible by the time the walk reaches it.
         variables = {k: v for k, v in new_context.items() if not isinstance(v, ItemProxy)}
-        found_current_item = False
-        for item in all_items:
-            # find the current item
-            if item["id"] == item_id:
-                found_current_item = True
-            # if the current item has been found, propagate the variables to the subsequent items
-            elif found_current_item:
-                for var_name, var_value in variables.items():
-                    item["context"][var_name] = copy.deepcopy(var_value)
+        nav_path = questionnaire_state.get_navigation_path()
+        # O(1) position lookup via the cached index (was nav_path.index(item_id),
+        # O(N) per call → O(N^2) over a full survey). -1 mirrors the prior
+        # ValueError fallback when item_id isn't on the path.
+        current_pos = questionnaire_state.get_navigation_index().get(item_id, -1)
+        if current_pos >= 0:
+            subsequent_ids = set(nav_path[current_pos + 1 :])
+            for item in all_items:
+                if item["id"] in subsequent_ids:
+                    for var_name, var_value in variables.items():
+                        item["context"][var_name] = copy.deepcopy(var_value)
 
         # ------------------------------------------------------------------
         # Roster post-processing: snapshot all roster items in the block
@@ -967,7 +938,6 @@ class FlowProcessor:
         # picks different meals, then walks the roster again with the new mask).
         # ------------------------------------------------------------------
         roster_block_id = current_item.get("_roster_block_id")
-        sample_block_id = current_item.get("_sample_block_id")
         if not roster_block_id:
             # Invalidate all cached roster passes so subsequent forward entries
             # re-evaluate iterateOver against the (potentially modified) state.
@@ -977,18 +947,17 @@ class FlowProcessor:
                 block_id = block.get("id")
                 if block_id:
                     questionnaire_state.clear_roster_iter_state(block_id)
-        if not sample_block_id:
-            # A non-Sample item was processed: invalidate every Sample block's
-            # per-pass DRAWN set so the next forward entry re-derives
-            # eligibility against the (potentially modified) state — this is
-            # the plan's precondition-flip-on-re-entry rule. The FROZEN ORDER
-            # (`sample_order`) is deliberately NOT cleared here: it survives
-            # backward-nav and re-entry for the whole survey execution
-            # (divergence from Roster). Only reset() wipes it.
-            for block in questionnaire_state.get_blocks_by_kind("Sample"):
-                sblock = block.get("id")
-                if sblock:
-                    questionnaire_state.clear_sample_pass_state(sblock)
+        # NOTE: a non-Group item processed mid-survey must NOT clear an active
+        # Group pass. Under the on-reach model `group_asked` is the RUNNING
+        # asked-list and must survive a foreign item that interleaves the
+        # block's members in navigation_path order (the non-contiguous
+        # projection case) so the slot count is preserved across the foreign
+        # item. Eligibility is re-evaluated per member WHEN THE WALK REACHES IT
+        # (_group_reach_decision), so there is no clear-to-re-derive step on
+        # non-Group items — the frozen-model teardown that lived here is gone.
+        # A fresh pass is opened only by _enter_group_pass (first/forward
+        # re-entry) and torn down only on pass completion (below) or backward
+        # exit of the block (_backward_navigate).
         if roster_block_id:
             iter_key = questionnaire_state.get_current_roster_iter(roster_block_id)
             if iter_key is not None:
@@ -1034,29 +1003,26 @@ class FlowProcessor:
                         questionnaire_state.clear_roster_iter_state(roster_block_id)
 
         # ------------------------------------------------------------------
-        # Sample post-processing. Sample items are asked at most ONCE (no
-        # per-iteration repeat), so there is no snapshot/restore sibling map
-        # for outcomes — the item's single outcome lives on item['outcome']
-        # via the canonical flow. The only pass bookkeeping is completion:
-        # once every drawn item is visited, mark ALL inner Sample items
-        # visited (drawn AND non-drawn) so the navigation walk advances past
-        # the block and a trailing non-Sample item processed afterwards does
-        # NOT re-open the completed pass via clear_sample_pass_state. This
-        # mirrors Roster's "all iterations done → mark visited permanently".
-        # Pass state is cleared on completion so a future backward-nav
-        # re-entry re-derives the drawn set (frozen ORDER persists; only
-        # eligibility is recomputed — the plan's re-entry rule).
+        # Capped-Group post-processing (on-reach model). Group members are asked
+        # at most ONCE (no per-iteration repeat), so there is no snapshot/restore
+        # sibling map — the item's single outcome lives on item['outcome'] via
+        # the canonical flow. There is deliberately NO completion bookkeeping
+        # here: a non-asked member is left absent (outcome=None, NOT visited),
+        # and the pass state is NOT cleared on forward completion.
+        #
+        # Clearing on completion would re-open a fresh empty pass the moment the
+        # forward walk reached a still-undecided member of the SAME block (the
+        # cap would reset to zero, so a beyond-cap member would wrongly get a
+        # slot — the C1/A1-adjacent over-ask bug). Instead the pass lingers
+        # active and harmless: every asked member is visited (so never
+        # re-presented), every other member is settled-skipped by the on-reach
+        # terminator (is_item_done keys on has_group_pass + the running
+        # asked-list), and extraction never reads group_asked. The pass is reset
+        # to empty only by _enter_group_pass on a fresh forward (re-)entry, and
+        # cleared only when backward navigation steps out of the block
+        # (_backward_navigate). This is the on-reach analogue of relying on the
+        # walk rather than force-visiting non-asked members.
         # ------------------------------------------------------------------
-        if sample_block_id:
-            drawn = questionnaire_state.get_sample_asked(sample_block_id)
-            sample_items = questionnaire_state.get_items_by_block(sample_block_id)
-            all_drawn_visited = all(
-                (questionnaire_state.get_item(iid) or {}).get("visited") for iid in drawn
-            )
-            if all_drawn_visited:
-                for si in sample_items:
-                    si["visited"] = True
-                questionnaire_state.clear_sample_pass_state(sample_block_id)
 
         # Add output messages to the result if any
         result = {"success": True}
@@ -1082,12 +1048,13 @@ class FlowProcessor:
         - When the new top-of-history is a roster item from a different (or
           re-entered) pass, restore that pass's iter_key and outcomes context.
 
-        Sample-aware: Sample items also use iter_key=None, so the Roster guard
-        does not fire for them. A parallel branch checks _sample_block_id: when
-        backward-nav pops the last remaining Sample item out of history,
-        clear_sample_pass_state wipes sample_asked so the next forward entry
-        re-evaluates eligibility from current precondition values. sample_order
-        is intentionally preserved (frozen-per-execution rule — R3/R6).
+        Group-aware: capped-Group items also use iter_key=None, so the Roster
+        guard does not fire for them. A parallel branch checks _group_block_id:
+        when backward-nav pops the last remaining Group item out of history,
+        clear_group_pass_state wipes group_asked so the next forward entry
+        re-derives the drawn set from current precondition values. There is no
+        frozen order to preserve — draw order comes from the navigation_path
+        projection (R8/R17), itself frozen at init.
         """
         popped = questionnaire_state.pop_history()
         if popped is None:
@@ -1108,15 +1075,21 @@ class FlowProcessor:
                     for ri in questionnaire_state.get_items_by_block(block_id):
                         ri["visited"] = False
                     questionnaire_state.clear_roster_iter_state(block_id)
-            # Sample items: iter_key is always None, so the Roster guard above
-            # never fires. Clear sample_asked so the next forward entry
-            # re-derives eligibility from the current precondition values
-            # (sample_order is preserved — frozen-per-execution rule).
-            sample_block_id = current_item.get("_sample_block_id")
-            if sample_block_id and not self._block_has_sample_history_entries(
-                questionnaire_state, sample_block_id
+            # Capped-Group items: iter_key is always None, so the Roster guard
+            # above never fires. When backward nav has popped the LAST group
+            # history entry (we've stepped out of the pass), clear group_asked so
+            # the next forward entry opens a fresh pass and re-evaluates each
+            # member's eligibility ON REACH. Members keep their outcome and the
+            # durable _group_asked tag across this clear, so on forward re-walk a
+            # member still asked is re-presented (answer preserved — AE19) and a
+            # member pushed out (precondition flipped, or cap now claimed by an
+            # earlier member) is evicted at its reach decision (AE13). There is
+            # no frozen draw to preserve — the on-reach walk re-derives it.
+            group_block_id = current_item.get("_group_block_id")
+            if group_block_id and not self._block_has_group_history_entries(
+                questionnaire_state, group_block_id
             ):
-                questionnaire_state.clear_sample_pass_state(sample_block_id)
+                questionnaire_state.clear_group_pass_state(group_block_id)
 
         # Determine the previous item to return.
         new_history = questionnaire_state.get_history_with_iter()
@@ -1154,15 +1127,16 @@ class FlowProcessor:
         return False
 
     @staticmethod
-    def _block_has_sample_history_entries(state: QMLState, block_id: str) -> bool:
-        """True if any remaining history entry belongs to the given Sample block.
+    def _block_has_group_history_entries(state: QMLState, block_id: str) -> bool:
+        """True if any remaining history entry belongs to the given capped-Group
+        block.
 
-        Sample items carry iter_key=None (no per-iteration identity), so we
-        discriminate by _sample_block_id on the item, not by iter_key.
+        Capped-Group items carry iter_key=None (no per-iteration identity), so
+        we discriminate by _group_block_id on the item, not by iter_key.
         """
-        for item_id, _iter_key in state.get_history_with_iter():
+        for item_id, _ in state.get_history_with_iter():
             item = state.get_item(item_id)
-            if item and item.get("_sample_block_id") == block_id:
+            if item and item.get("_group_block_id") == block_id:
                 return True
         return False
 

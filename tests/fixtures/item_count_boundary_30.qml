@@ -6,14 +6,14 @@
 #   1 Comment                             -> 1 item
 #   27 standalone Questions               -> 27 items
 #   Total                                 -> 30 top-level items
-qmlVersion: "1.0"
+qmlVersion: "2.0"
 
 questionnaire:
   title: "Boundary Thirty Items"
 
   blocks:
     - id: block1
-      kind: Sequence
+      kind: Group
       title: "Thirty top-level items of mixed kinds"
       items:
         - id: matrix1

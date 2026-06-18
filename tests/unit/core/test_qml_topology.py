@@ -326,6 +326,10 @@ class TestQMLTopologyTopologicalOrder(unittest.TestCase):
 
         # Should preserve original order: q1, q2, q3
         self.assertEqual(order, ["q1", "q2", "q3"])
+        # Regression guard: the canonical stable-Kahn order is unchanged by the
+        # removal of the orphaned Sample-only topology helpers — the ordering
+        # path (min-heap Kahn + cycle handling) is byte-identical.
+        self.assertEqual(topology.topological_order, ["q1", "q2", "q3"])
 
     def test_respects_all_dependencies(self):
         """Test that order respects all dependencies in diamond pattern."""

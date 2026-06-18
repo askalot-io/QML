@@ -1,9 +1,9 @@
-qmlVersion: "1.0"
+qmlVersion: "2.0"
 questionnaire:
   title: "Daily Meal Tracker"
   blocks:
     - id: meal_selection
-      kind: Sequence
+      kind: Group
       title: "Today's meals"
       items:
         - id: q_meals_eaten

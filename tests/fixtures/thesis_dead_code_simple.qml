@@ -13,14 +13,14 @@
 #   - Any path including I_2 requires: B ∧ (S_1 > 80) ∧ (S_1 < 50) = UNSAT
 #   - I_2 is CONDITIONAL per-item but unreachable under accumulated constraints
 
-qmlVersion: "1.0"
+qmlVersion: "2.0"
 
 questionnaire:
   title: "Survey with Dead Code"
 
   blocks:
     - id: block1
-      kind: Sequence
+      kind: Group
       title: "Rating Block"
       items:
         - id: q_rating

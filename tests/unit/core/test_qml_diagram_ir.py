@@ -9,8 +9,8 @@ diagram-viewer rewrite:
 - Per-(variable, version) nodes anchor to the defining item via SSA
   `version_history`, replacing the collapsed `var_<name>` single node.
 - Version-chain edges (v_n -> v_{n+1}) emit for every consecutive pair.
-- Block-kind coloring axis (Sequence/Roster/Sample) is declarative —
-  the IR reports `kind`, the client decides visual encoding.
+- Block-kind coloring axis (Group/Roster) is declarative — the IR reports
+  `kind`, the client decides visual encoding.
 - No positions: x/y/width/height/bend_points/arrow_end/arrow_start and
   the top-level `layout` key never appear on any IR entry.
 - apply_validation_coloring inlines `classification` onto item entries
@@ -32,7 +32,7 @@ from askalot_qml.models.qml_state import QMLState
 
 def _make_state(items_data, code_init="", blocks_data=None):
     """Build a QMLState for a single-block questionnaire (unless blocks_data provided)."""
-    default_blocks = [{"id": "b1", "title": "Block 1", "kind": "Sequence"}]
+    default_blocks = [{"id": "b1", "title": "Block 1", "kind": "Group"}]
     return QMLState(
         {
             "title": "Test",
@@ -150,13 +150,13 @@ class TestSSAVersions:
 
 
 class TestBlockKind:
-    def test_sequence_and_roster_kinds_reported_declaratively(self):
+    def test_group_and_roster_kinds_reported_declaratively(self):
         state = QMLState(
             {
                 "title": "Mixed",
                 "codeInit": "",
                 "blocks": [
-                    {"id": "b_seq", "title": "Seq", "kind": "Sequence"},
+                    {"id": "b_group", "title": "Group", "kind": "Group"},
                     {
                         "id": "b_roster",
                         "title": "Roster",
@@ -168,7 +168,7 @@ class TestBlockKind:
                 "items": [
                     {
                         "id": "q_count",
-                        "blockId": "b_seq",
+                        "blockId": "b_group",
                         "kind": "Question",
                         "title": "Count",
                         "input": {"control": "Editbox", "min": 0, "max": 7},
@@ -185,10 +185,47 @@ class TestBlockKind:
         )
         ir = _build_ir(state)
         by_id = {b["id"]: b for b in ir["blocks"]}
-        assert by_id["b_seq"]["kind"] == "Sequence"
+        assert by_id["b_group"]["kind"] == "Group"
+        # An uncapped Group carries no `count` field.
+        assert "count" not in by_id["b_group"]
         assert by_id["b_roster"]["kind"] == "Roster"
         assert by_id["b_roster"]["label_count"] == 3
         assert by_id["b_roster"]["iterate_over"] == "q_count.outcome"
+
+    def test_capped_group_reports_count(self):
+        """A `count`-capped Group surfaces the draw cap; an uncapped one omits it."""
+        state = QMLState(
+            {
+                "title": "Capped",
+                "codeInit": "",
+                "blocks": [
+                    {"id": "b_cap", "title": "Capped", "kind": "Group", "count": 2},
+                ],
+                "items": [
+                    {
+                        "id": "q_a",
+                        "blockId": "b_cap",
+                        "kind": "Question",
+                        "title": "A",
+                        "input": {"control": "Editbox", "min": 0, "max": 9},
+                    },
+                    {
+                        "id": "q_b",
+                        "blockId": "b_cap",
+                        "kind": "Question",
+                        "title": "B",
+                        "input": {"control": "Editbox", "min": 0, "max": 9},
+                    },
+                ],
+            }
+        )
+        ir = _build_ir(state)
+        cap = next(b for b in ir["blocks"] if b["id"] == "b_cap")
+        assert cap["kind"] == "Group"
+        assert cap["count"] == 2
+        # No Sample/randomization residue from the 2.0.0 collapse.
+        assert "is_random" not in cap
+        assert "sample_count" not in cap
 
 
 class TestConditionChiclets:
@@ -276,7 +313,7 @@ class TestConditionChiclets:
                     {
                         "id": "b1",
                         "title": "Gate",
-                        "kind": "Sequence",
+                        "kind": "Group",
                         "precondition": [{"predicate": "True"}],
                     },
                 ],
