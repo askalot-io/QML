@@ -205,3 +205,10 @@ __marimo__/
 
 # MemSearch plugin local index/cache
 .memsearch/
+
+docs/
+
+# QML benchmark harness — generated artifacts (durable results are re-derivable)
+benchmark/results/
+benchmark/figures/
+benchmark/.venv/

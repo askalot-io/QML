@@ -1,0 +1,28 @@
+[project]
+name = "qml-benchmark"
+version = "0.1.0"
+description = "Performance benchmark harness for the QML validator: a scaling study of validation time and memory vs questionnaire size and dependency depth."
+requires-python = "==3.12.10"
+dependencies = [
+    "askalot_qml",
+    "matplotlib>=3.8",
+]
+
+# This project exists to run scripts, not to be built/installed as a wheel.
+[tool.uv]
+package = false
+
+# Import the validator from the repo root as an editable path dependency, so the
+# harness always benchmarks the working-tree askalot_qml (which the release sync
+# regenerates) rather than a vendored copy. Benchmark-only deps live here, never
+# in the root pyproject.toml, which the qml-v* mirror sync overwrites.
+[tool.uv.sources]
+askalot_qml = { path = "..", editable = true }
+
+[dependency-groups]
+dev = ["pytest>=7.0.0"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+addopts = ["-q"]
