@@ -40,8 +40,24 @@ class ItemClassifier:
         self.builder = builder
         self.ctx = builder.ctx
 
-    def classify_item(self, item_id: str) -> dict[str, Any]:
-        """Classify a single item using Z3 SMT solver."""
+    def classify_item(
+        self,
+        item_id: str,
+        *,
+        domain_solver: Solver | None = None,
+        full_solver: Solver | None = None,
+    ) -> dict[str, Any]:
+        """Classify a single item using Z3 SMT solver.
+
+        ``domain_solver`` / ``full_solver`` are optional persistent solvers with
+        the domain / full base already asserted. When classifying every item
+        (``classify_all_items``) they are built once and shared, and each
+        per-item check is wrapped in ``push()`` / ``pop()`` so the base — one
+        constraint per item — is asserted a single time total rather than
+        re-asserted for every item. That is the difference between O(items) and
+        O(items^2) Z3 work. When omitted (standalone single-item use) they are
+        built on demand, so the public API is unchanged.
+        """
         with profile_block("z3_classify_item", {"item_id": item_id}):
             if item_id not in self.builder.item_details:
                 return {
@@ -66,14 +82,18 @@ class ItemClassifier:
                     item_id, details["postconditions"]
                 )  # type: ignore
 
-            # Use domain-only base constraint B for precondition checks
-            # B := ∧_i D_i(S_i) where D_i are domain constraints (min/max, enumeration)
-            domain_base = self.builder.get_domain_base()
-
-            # Use full base (domain + behavioral) for postcondition checks
-            # This includes SSA constraints from codeBlocks, enabling proper
-            # bounds checking for computed variables like var1 = q1 + q2
-            full_base = self.builder.get_full_base()
+            # Persistent base solvers. The domain-only base B := ∧_i D_i(S_i)
+            # (min/max, enumeration) drives precondition reachability; the full
+            # base (B ∧ codeBlock SSA constraints) drives postcondition and
+            # global checks, so computed variables like var1 = q1 + q2 are
+            # properly bounded. Per-check constraints go in under push()/pop()
+            # so the base is asserted once, never per item (see the docstring).
+            if domain_solver is None:
+                domain_solver = Solver(ctx=self.ctx)
+                domain_solver.add(self.builder.get_domain_base())
+            if full_solver is None:
+                full_solver = Solver(ctx=self.ctx)
+                full_solver.add(self.builder.get_full_base())
 
             # ------------------------------
             # Precondition reachability
@@ -82,13 +102,15 @@ class ItemClassifier:
             # else CONDITIONAL
             # ------------------------------
             with profile_block("z3_precondition_check", {"item_id": item_id}):
-                s_always = Solver(ctx=self.ctx)
-                s_always.add(domain_base, Not(P_form))
-                precondition_always = s_always.check() == unsat
+                domain_solver.push()
+                domain_solver.add(Not(P_form))
+                precondition_always = domain_solver.check() == unsat
+                domain_solver.pop()
 
-                s_never = Solver(ctx=self.ctx)
-                s_never.add(domain_base, P_form)
-                precondition_never = s_never.check() == unsat
+                domain_solver.push()
+                domain_solver.add(P_form)
+                precondition_never = domain_solver.check() == unsat
+                domain_solver.pop()
 
             # Classification-safety: an item registered as
             # conditionally-present (capped-Group draw / Roster bit) is
@@ -126,13 +148,15 @@ class ItemClassifier:
                 # Item has postconditions and is reachable
                 # Use full_base to include behavioral constraints from codeBlocks
                 with profile_block("z3_postcondition_check", {"item_id": item_id}):
-                    s_impl = Solver(ctx=self.ctx)
-                    s_impl.add(full_base, P_form, Not(Q_form))
-                    tautological_under_P = s_impl.check() == unsat
+                    full_solver.push()
+                    full_solver.add(P_form, Not(Q_form))
+                    tautological_under_P = full_solver.check() == unsat
+                    full_solver.pop()
 
-                    s_feas = Solver(ctx=self.ctx)
-                    s_feas.add(full_base, P_form, Q_form)
-                    infeasible_under_P = s_feas.check() == unsat
+                    full_solver.push()
+                    full_solver.add(P_form, Q_form)
+                    infeasible_under_P = full_solver.check() == unsat
+                    full_solver.pop()
 
                 if tautological_under_P:
                     post_invariant = "TAUTOLOGICAL"
@@ -152,13 +176,15 @@ class ItemClassifier:
             # ------------------------------
             if has_postconditions:
                 with profile_block("z3_global_flags_check", {"item_id": item_id}):
-                    s_q_false = Solver(ctx=self.ctx)
-                    s_q_false.add(full_base, Q_form)
-                    q_globally_false = s_q_false.check() == unsat
+                    full_solver.push()
+                    full_solver.add(Q_form)
+                    q_globally_false = full_solver.check() == unsat
+                    full_solver.pop()
 
-                    s_q_true = Solver(ctx=self.ctx)
-                    s_q_true.add(full_base, Not(Q_form))
-                    q_globally_true = s_q_true.check() == unsat
+                    full_solver.push()
+                    full_solver.add(Not(Q_form))
+                    q_globally_true = full_solver.check() == unsat
+                    full_solver.pop()
             else:
                 # Items without postconditions have no global Q flags
                 q_globally_false = False
@@ -193,9 +219,21 @@ class ItemClassifier:
         loud WARNING is emitted once at record time by the gap recorder.
         """
         with profile_block("z3_classify_all_items", {"item_count": len(self.builder.item_order)}):
+            # Build the two base solvers once and share them across every item.
+            # classify_item adds its per-item constraints under push()/pop(), so
+            # the base (one domain constraint per item) is asserted a single time
+            # rather than rebuilt and re-asserted for each item — turning an
+            # O(items^2) classification pass into an O(items) one.
+            domain_solver = Solver(ctx=self.ctx)
+            domain_solver.add(self.builder.get_domain_base())
+            full_solver = Solver(ctx=self.ctx)
+            full_solver.add(self.builder.get_full_base())
+
             results: dict[str, Any] = {}
             for item_id in self.builder.item_order:
-                results[item_id] = self.classify_item(item_id)
+                results[item_id] = self.classify_item(
+                    item_id, domain_solver=domain_solver, full_solver=full_solver
+                )
 
             # Surface block-level gaps (keys in builder.coverage_gaps that are
             # NOT real items — block_id-keyed entries). Emit once per block;
