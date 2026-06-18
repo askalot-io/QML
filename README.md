@@ -566,3 +566,29 @@ uv run --project benchmark python -m benchmark.plot
 The committed PNGs above live in [`benchmark/figures/`](benchmark/figures/) and
 are refreshed by hand when Z3 or the harness changes; the re-derivable
 `results/` JSON the harness emits is gitignored.
+
+### Solver choice — why the default `Solver`
+
+[Programming Z3 §4.1](https://z3prover.github.io/papers/programmingz3.html)
+suggests a specialized finite-domain solver (`QF_FD`) for problems over
+bit-vectors, enumerations, and bounded integers. QML outcomes are finite, so we
+benchmarked the default `Solver` against `SolverFor("QF_FD")` and
+`SolverFor("QF_LIA")` on the same questionnaires — median of 3 runs, through the
+identical `push`/`pop` classification path:
+
+| items | default `Solver` | `QF_FD` | `QF_LIA` |
+|------:|-----------------:|--------:|---------:|
+| 100 | **26 ms** | 1 336 ms · ❌ wrong verdicts | 30 ms · ✅ |
+| 200 | **73 ms** | 5 323 ms · ❌ wrong verdicts | 91 ms · ✅ |
+| 500 | **372 ms** | 32 856 ms · ❌ wrong verdicts | 499 ms · ✅ |
+
+The postcondition fixtures (`classification.qml`, `codeblock_postcondition.qml`,
+`thesis_conflicting_postconditions.qml`) showed the same pattern at small N.
+
+`QF_FD` is both **wrong and 50–90× slower**: QML outcomes are unbounded Z3 `Int`
+variables *bounded by constraints*, not values in a native finite sort, so the
+finite-domain engine cannot treat them as finite — it returns `unknown`, which
+flips the `== unsat` determinations — and degrades badly. `QF_LIA` reproduces the
+default's verdicts exactly but runs **~15–35 % slower**, with the gap widening as
+N grows. So the harness keeps the **default `Solver()`**: Z3's general engine
+already selects the best tactic for this problem shape.
