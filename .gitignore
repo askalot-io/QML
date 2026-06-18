@@ -208,7 +208,9 @@ __marimo__/
 
 docs/
 
-# QML benchmark harness — generated artifacts (durable results are re-derivable)
+# QML benchmark harness — ephemeral artifacts.
+#   results/ is a re-derivable intermediate; .venv/ is the local environment.
+#   figures/ is intentionally committed: the root README embeds those PNGs, and
+#   they are refreshed by hand when Z3 or the harness changes (not every run).
 benchmark/results/
-benchmark/figures/
 benchmark/.venv/

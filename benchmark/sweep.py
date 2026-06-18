@@ -116,6 +116,7 @@ def _log_row(log, row: dict[str, Any]) -> None:
         log(
             f"  {row['axis']}={row['axis_value']}: "
             f"total={row['total_s_median']:.4f}s "
+            f"parse={row['parse_s_median']:.4f}s "
             f"z3={row['z3_s_median']:.4f}s "
             f"rss={row['rss_mib_median']:.1f}MiB "
             f"(depth={row.get('achieved_depth')})"

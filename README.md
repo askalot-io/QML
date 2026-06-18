@@ -505,3 +505,64 @@ from askalot_qml.z3 import StaticBuilder, ItemClassifier
 ### Debugging
 
 Both processors provide `debug_dump()` methods for diagnostic output.
+
+## Benchmark
+
+QML validation is an SMT problem, so its cost grows with questionnaire **size**
+and **complexity**. The [`benchmark/`](benchmark/) harness is a scaling study
+that measures how validation **time** and **peak memory** grow along four
+independent axes, sweeping one questionnaire knob at a time while holding the
+others at a fixed baseline. Each data point is validated in a **fresh
+subprocess** (for a clean peak-RSS reading of Z3's native allocations), and the
+time is split into three phases:
+
+- **parse** — `QMLLoader`: file read, YAML parse, and AST/normalization.
+- **construction** — `StaticBuilder` constraint generation + topology.
+- **Z3 solve** — `ItemClassifier` per-item classification (the SMT work).
+
+Per-item classification uses one persistent solver with incremental
+`push`/`pop`, so the base constraint is asserted once and the per-item cost stays
+amortized — the Z3 curve scales roughly linearly rather than quadratically. See
+[`benchmark/README.md`](benchmark/README.md) for the full methodology, CLI, and
+the provenance recorded with every run.
+
+### Items — number of questions
+
+![QML validation cost vs number of items](benchmark/figures/items.png)
+
+The baseline sweep: independent questions, no conditions. Both parsing and Z3
+solving grow with the item count; memory rises roughly linearly.
+
+### Preconditions — number of precondition-gated items
+
+![QML validation cost vs number of preconditions](benchmark/figures/preconditions.png)
+
+Each added precondition introduces a dependency edge and extra reachability
+checks, isolating the cost of precondition analysis.
+
+### Postconditions — number of items carrying a postcondition
+
+![QML validation cost vs number of postconditions](benchmark/figures/postconditions.png)
+
+Postconditions add solver checks (tautological / infeasible / constraining)
+without deepening the dependency graph, isolating postcondition-invariant cost.
+
+### Dependency depth — precondition-chain length
+
+![QML validation cost vs dependency depth](benchmark/figures/depth.png)
+
+Varies the length of the longest precondition chain (the topology's dependency
+depth) while holding the item count fixed.
+
+### Reproducing the figures
+
+```bash
+make benchmark        # fast smoke sweep (all axes) + figures
+# paper-grade (larger ranges, slower):
+uv run --project benchmark python -m benchmark.sweep
+uv run --project benchmark python -m benchmark.plot
+```
+
+The committed PNGs above live in [`benchmark/figures/`](benchmark/figures/) and
+are refreshed by hand when Z3 or the harness changes; the re-derivable
+`results/` JSON the harness emits is gitignored.

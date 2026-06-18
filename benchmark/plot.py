@@ -1,8 +1,8 @@
 """Render scaling figures from a sweep's results file.
 
-One PNG per axis: validation time (total + isolated Z3 solve, with a min/max
-band across repetitions) on top, peak memory below, sharing the swept-axis x.
-Non-completion (timeout) points are marked distinctly.
+One PNG per axis: validation time (total, parse, and isolated Z3 solve, each
+with a min/max band across repetitions) on top, peak memory below, sharing the
+swept-axis x. Non-completion (timeout) points are marked distinctly.
 
 The plotter reads ONLY the results JSON — it imports neither the generator nor
 the validator — so figures regenerate (or restyle) without re-running anything.
@@ -37,8 +37,6 @@ _AXIS_LABEL = {
     "postconditions": "number of postconditions",
     "depth": "dependency depth",
 }
-# Axes whose range spans enough orders of magnitude to warrant a log x-scale.
-_LOG_X_AXES = {"items"}
 
 
 def load_results(path: str | Path) -> tuple[dict[str, Any], list[dict[str, Any]]]:
@@ -71,6 +69,12 @@ def plot_axis(axis: str, rows: list[dict[str, Any]], figures_dir: Path) -> Path:
 
         ax_time.plot(xs, total_med, marker="o", label="total")
         ax_time.fill_between(xs, total_lo, total_hi, alpha=0.2)
+        # Parse phase, present in results produced after parse timing was added;
+        # guarded so older results files (total + Z3 only) still plot.
+        if "parse_s_median" in completed[0]:
+            parse_med, parse_lo, parse_hi = band("parse_s")
+            ax_time.plot(xs, parse_med, marker="d", label="parse")
+            ax_time.fill_between(xs, parse_lo, parse_hi, alpha=0.2)
         ax_time.plot(xs, z3_med, marker="s", label="Z3 solve")
         ax_time.fill_between(xs, z3_lo, z3_hi, alpha=0.2)
 
@@ -93,9 +97,6 @@ def plot_axis(axis: str, rows: list[dict[str, Any]], figures_dir: Path) -> Path:
             va="bottom",
             ha="right",
         )
-
-    if axis in _LOG_X_AXES:
-        ax_time.set_xscale("log")
 
     ax_time.set_title(f"QML validation cost vs {_AXIS_LABEL.get(axis, axis)}")
     ax_time.set_ylabel("time (s)")

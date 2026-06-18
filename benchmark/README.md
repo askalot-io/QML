@@ -50,18 +50,27 @@ contains *D-1* preconditions — so each row records both the requested and the
 
 Each data point runs in a **fresh subprocess** (one per warm-up and per
 repetition), which is required for a clean peak-RSS reading: Z3 allocates
-natively and does not return memory to the OS until the process exits. Per run:
+natively and does not return memory to the OS until the process exits. Per run,
+time is split into three phases:
 
+- **parse time** — `QMLLoader.load_from_path()` (file read, `yaml.safe_load`,
+  and the post-parse pipeline: version gate, predicate normalization, kind
+  handling). This builds the document the validator consumes and grows with
+  questionnaire size — at scale it is 30–50% of end-to-end cost — so it is
+  measured rather than excluded as "file I/O".
 - **construction time** — `QMLState` + `QMLEngine` (`StaticBuilder` constraint
   generation + `QMLTopology` dependency discovery).
 - **Z3 solve time** — `ItemClassifier.classify_all_items()` (the SMT solve),
-  isolated so the figure shows where cost comes from. `total = construction + z3`.
+  isolated so the figure shows where cost comes from.
+
+`total = parse + construction + z3` (summed from the phase deltas, so the
+identity is exact). The figure plots **total**, **parse**, and **Z3 solve**.
+
 - **peak memory** — process RSS via `resource.getrusage` (never `tracemalloc`,
   which is blind to Z3's native allocations), normalized to MiB.
 
-YAML loading happens before the clock starts, so "total" measures the validator,
-not file I/O. A per-run timeout caps pathological cases; a timed-out point is
-recorded as a non-completion and drawn distinctly, never dropped.
+A per-run timeout caps pathological cases; a timed-out point is recorded as a
+non-completion and drawn distinctly, never dropped.
 
 ## CLI options
 
@@ -95,7 +104,9 @@ rewrite `<axis>_<value>.qml` when it exists, since generation is deterministic i
   restyling never re-runs validation.
 - `figures/<axis>.png` — one figure per axis.
 
-Both directories are gitignored.
+`results/` is gitignored (re-derivable intermediate). `figures/` is **committed** —
+the root [`README.md`](../README.md) embeds those PNGs; refresh them by hand when
+Z3 or the harness changes, not on every run.
 
 ## Layout
 

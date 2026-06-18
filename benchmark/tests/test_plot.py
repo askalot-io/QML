@@ -16,7 +16,9 @@ pytest.importorskip("matplotlib")
 from benchmark.plot import plot_all, plot_axis  # noqa: E402
 
 
-def _ok_row(axis, value, total, z3, mem):
+def _ok_row(axis, value, total, z3, mem, parse=None):
+    if parse is None:
+        parse = total * 0.3  # representative parse share
     return {
         "axis": axis,
         "axis_value": value,
@@ -24,6 +26,9 @@ def _ok_row(axis, value, total, z3, mem):
         "total_s_median": total,
         "total_s_min": total * 0.9,
         "total_s_max": total * 1.1,
+        "parse_s_median": parse,
+        "parse_s_min": parse * 0.9,
+        "parse_s_max": parse * 1.1,
         "z3_s_median": z3,
         "z3_s_min": z3 * 0.9,
         "z3_s_max": z3 * 1.1,
@@ -71,6 +76,19 @@ def test_plot_axis_all_timeouts_still_renders(tmp_path):
     rows = [
         {"axis": "items", "axis_value": 500, "status": "timeout", "timeout_s": 1.0},
         {"axis": "items", "axis_value": 1000, "status": "timeout", "timeout_s": 1.0},
+    ]
+    out = plot_axis("items", rows, tmp_path)
+    assert out.exists() and out.stat().st_size > 0
+
+
+def test_plot_axis_without_parse_field_still_renders(tmp_path):
+    # Backward-compat: results produced before parse timing existed have no
+    # parse_s_* fields; the parse line is skipped, the figure still renders.
+    rows = [
+        {k: v for k, v in _ok_row("items", 10, 0.01, 0.005, 60.0).items()
+         if not k.startswith("parse_s")},
+        {k: v for k, v in _ok_row("items", 100, 0.05, 0.03, 65.0).items()
+         if not k.startswith("parse_s")},
     ]
     out = plot_axis("items", rows, tmp_path)
     assert out.exists() and out.stat().st_size > 0

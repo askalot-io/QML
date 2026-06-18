@@ -6,16 +6,21 @@ process is required for a clean peak-RSS reading: Z3 allocates natively and does
 not return memory to the OS until the process exits, so reusing a process would
 accumulate. The subprocess also isolates the parent from any Z3 crash at scale.
 
-Timing splits the validator into two phases, mirroring the integration-test
+Timing splits the validator into three phases, mirroring the integration-test
 invocation (not ``ValidationProcessor.validate()``, which also builds the text
 report and diagram IR):
 
+- **parse** — ``QMLLoader.load_from_path()`` (file read, ``yaml.safe_load``, and
+  the post-parse pipeline: version gate, predicate normalization, kind
+  handling). This builds the document the validator consumes and grows with
+  questionnaire size — at scale it is 30-50% of end-to-end cost — so it is
+  measured, not excluded as "file I/O".
 - **construction** — ``QMLState`` + ``QMLEngine`` (``StaticBuilder`` constraint
   generation + ``QMLTopology`` dependency discovery).
 - **z3** — ``ItemClassifier(...).classify_all_items()`` (the SMT solve).
 
-``total = construction + z3``. YAML loading happens before the clock starts, so
-"total" measures the validator, not file I/O.
+``total = parse + construction + z3``, summed from the phase deltas so the
+identity is exact (subtracting clock endpoints would risk a float mismatch).
 
 Memory is peak process RSS via ``resource.getrusage`` — never ``tracemalloc``,
 which is blind to Z3's native allocations. ``ru_maxrss`` is KiB on Linux and
@@ -36,7 +41,7 @@ from typing import Any
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
 # Metrics aggregated as median + min + max across repetitions.
-_TIMING_FIELDS = ("construction_s", "z3_s", "total_s", "rss_mib")
+_TIMING_FIELDS = ("parse_s", "construction_s", "z3_s", "total_s", "rss_mib")
 # Structural metrics, identical across repetitions of the same questionnaire.
 _STRUCTURAL_FIELDS = (
     "achieved_depth",
@@ -67,27 +72,37 @@ def measure_once(qml_path: str | Path) -> dict[str, Any]:
     from askalot_qml.models.qml_state import QMLState
     from askalot_qml.z3.item_classifier import ItemClassifier
 
-    # --- Untimed: parse YAML off disk (schema-less; schema is parse-time work). ---
+    # --- Timed phase 1: parse (file read + YAML/AST build + post-parse pipeline). ---
+    # Schema-less (schema_path=None); enabling schema validation would add to
+    # this phase. Previously excluded as file I/O, but it scales with size and
+    # is a large fraction of end-to-end cost, so it is measured.
     loader = QMLLoader(schema_path=None)
-    data = loader.load_from_path(str(qml_path))
-
-    # --- Timed phase 1: construction (StaticBuilder + topology). ---
     t0 = perf_counter()
-    state = QMLState(data)
-    engine = QMLEngine(state)
+    data = loader.load_from_path(str(qml_path))
     t1 = perf_counter()
 
-    # --- Timed phase 2: Z3 classification. ---
-    ItemClassifier(engine.static_builder).classify_all_items()
+    # --- Timed phase 2: construction (StaticBuilder + topology). ---
+    state = QMLState(data)
+    engine = QMLEngine(state)
     t2 = perf_counter()
+
+    # --- Timed phase 3: Z3 classification. ---
+    ItemClassifier(engine.static_builder).classify_all_items()
+    t3 = perf_counter()
+
+    parse_s = t1 - t0
+    construction_s = t2 - t1
+    z3_s = t3 - t2
 
     stats = engine.get_statistics()
     z3_constraints = stats.get("z3_constraints", {}) if isinstance(stats, dict) else {}
 
     return {
-        "construction_s": t1 - t0,
-        "z3_s": t2 - t1,
-        "total_s": t2 - t0,
+        "parse_s": parse_s,
+        "construction_s": construction_s,
+        "z3_s": z3_s,
+        # Sum the deltas so total == parse + construction + z3 holds exactly.
+        "total_s": parse_s + construction_s + z3_s,
         "rss_mib": _rss_kib_to_mib(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss),
         "achieved_depth": len(engine.topology.get_dependency_layers()),
         "item_count": len(engine.get_items()),

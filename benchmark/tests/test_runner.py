@@ -14,13 +14,14 @@ def _make_qml(tmp_path: Path, **kwargs) -> tuple[Path, object]:
     return path, stats
 
 
-def test_measure_once_splits_construction_and_z3(tmp_path):
+def test_measure_once_splits_parse_construction_and_z3(tmp_path):
     path, _ = _make_qml(tmp_path, n_items=15, n_preconditions=6, n_postconditions=5, depth=4)
     record = measure_once(path)
-    # Distinct phases, and total is their sum (same clock, same call).
+    # Three distinct phases, and total is exactly their sum (summed from deltas).
+    assert record["parse_s"] > 0
     assert record["construction_s"] > 0
     assert record["z3_s"] > 0
-    assert record["total_s"] == record["construction_s"] + record["z3_s"]
+    assert record["total_s"] == record["parse_s"] + record["construction_s"] + record["z3_s"]
 
 
 def test_measure_once_reports_process_rss_not_tracemalloc(tmp_path):
@@ -59,7 +60,7 @@ def test_run_repeated_aggregates(tmp_path):
     result = run_repeated(path, reps=3, warmup=1, timeout_s=120.0)
     assert result["status"] == "ok"
     assert result["reps"] == 3
-    for field in ("construction_s", "z3_s", "total_s", "rss_mib"):
+    for field in ("parse_s", "construction_s", "z3_s", "total_s", "rss_mib"):
         assert f"{field}_median" in result
         assert result[f"{field}_min"] <= result[f"{field}_median"] <= result[f"{field}_max"]
 
