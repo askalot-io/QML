@@ -173,14 +173,21 @@ def to_yaml(doc: dict[str, Any]) -> str:
     return yaml.safe_dump(doc, sort_keys=False, allow_unicode=True)
 
 
-def write_qml(cfg: GenConfig, path: str | Path) -> GenStats:
+def write_qml(cfg: GenConfig, path: str | Path, *, overwrite: bool = True) -> GenStats:
     """Generate a questionnaire and write it to ``path`` as a ``.qml`` file.
 
     Returns the analytic :class:`GenStats`. The file is what the runner loads;
     the stats are recorded alongside the measurement.
+
+    When ``overwrite`` is False and ``path`` already exists, the existing file is
+    left untouched (reused) — generation is deterministic in
+    ``(axis, value, seed)``, so a present file matches the requested config as
+    long as the seed is unchanged. The stats are still returned (computed from
+    ``cfg``), so the caller's row is populated either way.
     """
     doc, stats = build_questionnaire(cfg)
     path = Path(path)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(to_yaml(doc), encoding="utf-8")
+    if overwrite or not path.exists():
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(to_yaml(doc), encoding="utf-8")
     return stats

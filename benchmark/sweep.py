@@ -70,15 +70,25 @@ def run_sweep(
     warmup: int,
     timeout_s: float,
     seed: int,
+    regenerate: bool = False,
     log=print,
 ) -> list[dict[str, Any]]:
-    """Run one axis sweep and return one row per swept value (completions and not)."""
+    """Run one axis sweep and return one row per swept value (completions and not).
+
+    By default an existing ``<axis>_<value>.qml`` is reused, not rewritten. Pass
+    ``regenerate=True`` to force fresh generation (do this after changing the
+    seed or the sweep ranges, since reuse assumes the on-disk file matches the
+    current config).
+    """
     results_dir.mkdir(parents=True, exist_ok=True)
     rows: list[dict[str, Any]] = []
     for value in spec.values:
         cfg = spec.config_for(value, seed)
         qml_path = results_dir / f"{spec.axis}_{value}.qml"
-        gstats = write_qml(cfg, qml_path)
+        reused = qml_path.exists() and not regenerate
+        gstats = write_qml(cfg, qml_path, overwrite=regenerate)
+        if reused:
+            log(f"  {spec.axis}={value}: reusing existing {qml_path.name}")
 
         result = run_repeated(qml_path, reps=reps, warmup=warmup, timeout_s=timeout_s)
 
@@ -136,6 +146,12 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--warmup", type=int, default=1, help="Discarded warm-up runs per point.")
     parser.add_argument("--timeout", type=float, default=120.0, help="Per-run timeout (seconds).")
     parser.add_argument("--seed", type=int, default=DEFAULT_SEED, help="Generator seed.")
+    parser.add_argument(
+        "--regenerate",
+        action="store_true",
+        help="Overwrite existing .qml artifacts (default: reuse them). "
+        "Use after changing --seed or the sweep ranges.",
+    )
     parser.add_argument("--out", type=Path, default=DEFAULT_OUT, help="Results JSON path.")
     parser.add_argument(
         "--results-dir",
@@ -164,6 +180,7 @@ def main(argv: list[str] | None = None) -> int:
                 warmup=args.warmup,
                 timeout_s=args.timeout,
                 seed=args.seed,
+                regenerate=args.regenerate,
             )
         )
 

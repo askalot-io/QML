@@ -104,6 +104,28 @@ def test_write_qml_roundtrips(tmp_path):
     assert stats.achieved_items == 5
 
 
+def test_write_qml_reuses_existing_unless_overwrite(tmp_path):
+    cfg = GenConfig(n_items=5, depth=2)
+    path = tmp_path / "out.qml"
+    write_qml(cfg, path)  # overwrite defaults True -> writes
+    generated = path.read_text()
+
+    path.write_text("# tampered\n")
+    # Reuse: existing file must be left untouched, but stats still returned.
+    stats = write_qml(cfg, path, overwrite=False)
+    assert path.read_text() == "# tampered\n"
+    assert stats.achieved_items == 5
+
+    # Missing file is always written, even with overwrite=False.
+    fresh = tmp_path / "fresh.qml"
+    write_qml(cfg, fresh, overwrite=False)
+    assert fresh.exists()
+
+    # Forced regeneration overwrites.
+    write_qml(cfg, path, overwrite=True)
+    assert path.read_text() == generated
+
+
 def test_guards_reject_impossible_configs():
     with pytest.raises(ValueError):
         GenConfig(n_items=3, depth=5)  # depth > n_items

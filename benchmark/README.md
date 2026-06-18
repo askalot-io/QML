@@ -75,8 +75,14 @@ recorded as a non-completion and drawn distinctly, never dropped.
 | `--warmup N` | 1 | Discarded warm-up runs per point |
 | `--timeout S` | 120 | Per-run wall-clock timeout (seconds) |
 | `--seed N` | 12345 | Generator seed (deterministic output) |
+| `--regenerate` | off | Overwrite existing `.qml` artifacts (default: **reuse** them) |
 | `--out PATH` | `results/results.json` | Results file |
 | `--results-dir PATH` | `results/` | Where generated `.qml` artifacts go |
+
+Generated `.qml` files are **reused if already present** — a sweep does not
+rewrite `<axis>_<value>.qml` when it exists, since generation is deterministic in
+`(axis, value, seed)`. After changing `--seed` or the sweep ranges, pass
+`--regenerate` to force fresh artifacts.
 
 `benchmark.plot`: `--results PATH` (default `results/results.json`),
 `--figures-dir PATH` (default `figures/`).

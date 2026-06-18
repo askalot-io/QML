@@ -86,6 +86,42 @@ def test_noncompletion_rows_are_written_not_dropped(tmp_path):
     assert all(r["status"] == "timeout" for r in rows)
 
 
+def test_run_sweep_reuses_existing_qml_but_generates_missing(tmp_path):
+    from benchmark.generator import GenConfig, write_qml
+
+    qdir = tmp_path / "q"
+    # Pre-seed one of the sweep's files with a valid but distinct questionnaire.
+    write_qml(GenConfig(n_items=3, depth=1), qdir / "items_5.qml")
+    preexisting = (qdir / "items_5.qml").read_text()
+
+    run_sweep(
+        _tiny_items_spec(),
+        results_dir=qdir,
+        reps=1,
+        warmup=0,
+        timeout_s=120.0,
+        seed=1,
+        regenerate=False,
+        log=lambda *_: None,
+    )
+    # items_5.qml existed -> reused (untouched); items_8.qml was missing -> generated.
+    assert (qdir / "items_5.qml").read_text() == preexisting
+    assert (qdir / "items_8.qml").exists()
+
+    # Forcing regeneration overwrites the reused file.
+    run_sweep(
+        _tiny_items_spec(),
+        results_dir=qdir,
+        reps=1,
+        warmup=0,
+        timeout_s=120.0,
+        seed=1,
+        regenerate=True,
+        log=lambda *_: None,
+    )
+    assert (qdir / "items_5.qml").read_text() != preexisting
+
+
 def test_smoke_sweeps_satisfy_generator_guards():
     # Every smoke point must build a valid GenConfig (no guard violation).
     for spec in sweeps("smoke").values():

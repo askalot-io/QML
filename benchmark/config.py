@@ -50,7 +50,7 @@ class SweepSpec:
 _PAPER: dict[str, SweepSpec] = {
     "items": SweepSpec(
         axis="items",
-        values=(10, 20, 50, 100, 200, 500, 1000),
+        values=(10, 20, 50, 100, 200, 500),
         baseline={"n_preconditions": 0, "n_postconditions": 0, "depth": 1},
     ),
     "preconditions": SweepSpec(
