@@ -6,7 +6,7 @@ PYTHON := uv run python
 
 .DEFAULT_GOAL := help
 
-.PHONY: help sync lock build test test-unit test-integration test-coverage clean install lint format info
+.PHONY: help sync lock build test test-unit test-integration test-coverage clean install lint format info benchmark benchmark-test
 
 help: ## Show this help message
 	@echo "🔧 Askalot QML Module"
@@ -77,6 +77,16 @@ format: ## Format code with black and isort
 	$(UV) run black askalot_qml/ tests/
 	$(UV) run ruff --fix askalot_qml/ tests/
 	@echo "✅ Code formatted"
+
+benchmark: ## Run a fast end-to-end validator benchmark (smoke) and render figures
+	@echo "📈 Running QML validator benchmark (smoke sweep)..."
+	$(UV) run --project benchmark python -m benchmark.sweep --smoke
+	$(UV) run --project benchmark python -m benchmark.plot
+	@echo "✅ Results in benchmark/results/, figures in benchmark/figures/"
+
+benchmark-test: ## Run the benchmark harness's own test suite
+	@echo "🧪 Running benchmark harness tests..."
+	$(UV) run --project benchmark python -m pytest benchmark/tests
 
 info: ## Show package information
 	@echo "📋 Askalot QML Module Information"

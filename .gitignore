@@ -205,3 +205,12 @@ __marimo__/
 
 # MemSearch plugin local index/cache
 .memsearch/
+
+docs/
+
+# QML benchmark harness — ephemeral artifacts.
+#   results/ is a re-derivable intermediate; .venv/ is the local environment.
+#   figures/ is intentionally committed: the root README embeds those PNGs, and
+#   they are refreshed by hand when Z3 or the harness changes (not every run).
+benchmark/results/
+benchmark/.venv/

@@ -107,12 +107,14 @@ class PathBasedValidator:
         # Build predecessor map from topological order
         predecessors_map = self._build_predecessors_map(topological_order)
 
-        # Pre-compile each item's (P_i, Q_i) once and the domain base once, then
-        # reuse across every per-item check. An item that is a predecessor of M
-        # others would otherwise have its P/Q recompiled M times, and the domain
-        # base rebuilt once per item — O(items^2) of redundant Z3 expression
-        # construction. compile_conditions reads the now-frozen SSA versions, so
-        # a single build yields expressions identical to the per-call ones.
+        # Pre-compile each item's (P_i, Q_i) once and assert the domain base once
+        # into a single persistent solver, then reuse both across every per-item
+        # check. An item that is a predecessor of M others would otherwise have
+        # its P/Q recompiled M times, and the domain base rebuilt and re-asserted
+        # once per item — O(items^2) of redundant Z3 work. compile_conditions
+        # reads the now-frozen SSA versions, so a single build yields expressions
+        # identical to the per-call ones; per-item constraints are scoped with
+        # push()/pop() so the shared base is never disturbed.
         base = self.builder.get_domain_base()
         compiled_conditions: dict[str, tuple[BoolRef, BoolRef]] = {
             iid: (
@@ -121,10 +123,12 @@ class PathBasedValidator:
             )
             for iid, details in self.builder.item_details.items()
         }
+        solver = Solver(ctx=self.ctx)
+        solver.add(base)
 
         for item_id in topological_order:
             result = self._check_item_reachability(
-                item_id, predecessors_map, base, compiled_conditions
+                item_id, predecessors_map, solver, compiled_conditions
             )
             item_results[item_id] = result
 
@@ -197,7 +201,7 @@ class PathBasedValidator:
         self,
         item_id: str,
         predecessors_map: dict[str, list[str]],
-        base: BoolRef,
+        solver: Solver,
         compiled_conditions: dict[str, tuple[BoolRef, BoolRef]],
     ) -> ItemReachabilityResult:
         """
@@ -206,6 +210,10 @@ class PathBasedValidator:
         Args:
             item_id: The item to check
             predecessors_map: Map of item_id to predecessor list
+            solver: Shared persistent solver with the domain base B already
+                asserted. Every check here is wrapped in ``push()`` / ``pop()``
+                so the base is asserted once for the whole pass, not per item.
+            compiled_conditions: Pre-compiled (P_i, Q_i) per item.
 
         Returns:
             ItemReachabilityResult for this item
@@ -226,18 +234,20 @@ class PathBasedValidator:
         P_i, _ = compiled_conditions[item_id]
 
         # Check per-item reachability: SAT(B ∧ P_i)?
-        s_per_item = Solver(ctx=self.ctx)
-        s_per_item.add(base, P_i)
-        per_item_reachable = s_per_item.check() == sat
+        solver.push()
+        solver.add(P_i)
+        per_item_reachable = solver.check() == sat
+        solver.pop()
 
         # Determine per-item status
         if not per_item_reachable:
             per_item_status = "NEVER"
         else:
             # Check if always reachable: UNSAT(B ∧ ¬P_i)?
-            s_always = Solver(ctx=self.ctx)
-            s_always.add(base, Not(P_i))
-            always_reachable = s_always.check() == unsat
+            solver.push()
+            solver.add(Not(P_i))
+            always_reachable = solver.check() == unsat
+            solver.pop()
             per_item_status = "ALWAYS" if always_reachable else "CONDITIONAL"
 
         # If per-item is NEVER, no need to check accumulated (already unreachable)
@@ -263,10 +273,9 @@ class PathBasedValidator:
                 message="Item is ALWAYS reachable with no dependencies",
             )
 
-        # Build accumulated formula: A_i = B ∧ ∧{j∈Pred(i)}(P_j ⇒ Q_j)
-        # where B is domain-only base constraint
-        solver = Solver(ctx=self.ctx)
-        solver.add(base)  # base is already domain-only from above
+        # Build accumulated formula: A_i = B ∧ ∧{j∈Pred(i)}(P_j ⇒ Q_j) on the
+        # shared base solver, scoped by push()/pop() so it reverts to just B.
+        solver.push()
 
         # Add implications from all predecessors (P/Q pre-compiled in validate()).
         for pred_id in predecessors:
@@ -278,6 +287,7 @@ class PathBasedValidator:
         # Check SAT(A_i ∧ P_i)
         solver.add(P_i)
         accumulated_reachable = solver.check() == sat
+        solver.pop()
 
         # Dead code: CONDITIONAL per-item but not accumulated-reachable.
         #

@@ -38,18 +38,18 @@ Both processors share a common pipeline through QMLEngine that handles dependenc
 
 ## Examples & Evaluation
 
-### Worked examples — `tests/fixtures/`
+### Worked examples — [`tests/fixtures/`](tests/fixtures/)
 
 [`tests/fixtures/`](tests/fixtures/) holds 38 runnable `.qml` files that
 showcase the language's capabilities (and double as the test suite). Highlights:
 
-- **Core flow** — `basic.qml`, `branching_flow.qml`, `dependencies.qml`, `scoring.qml`, `question_group.qml`
-- **Matrix questions** — `matrix_ranking.qml`, `matrix_symmetry.qml`, `matrix_fixed_sum.qml`, `matrix_infeasible_sum.qml`
+- **Core flow** — [`basic.qml`](tests/fixtures/basic.qml), [`branching_flow.qml`](tests/fixtures/branching_flow.qml), [`dependencies.qml`](tests/fixtures/dependencies.qml), [`scoring.qml`](tests/fixtures/scoring.qml), [`question_group.qml`](tests/fixtures/question_group.qml)
+- **Matrix questions** — [`matrix_ranking.qml`](tests/fixtures/matrix_ranking.qml), [`matrix_symmetry.qml`](tests/fixtures/matrix_symmetry.qml), [`matrix_fixed_sum.qml`](tests/fixtures/matrix_fixed_sum.qml), [`matrix_infeasible_sum.qml`](tests/fixtures/matrix_infeasible_sum.qml)
 - **Group blocks** (single-pass, the default `kind`, optionally `count`-capped) — a Group asks each in-scope inner item once in canonical order; an optional `count: N` caps it to a deterministic, precondition-gated **first-N** draw (not random selection)
-- **Roster blocks** (repeat-over-entities) — `roster_numeric.qml`, `roster_multiselect.qml`, `roster_inner_precondition.qml`, `roster_single_label.qml`
-- **Formal-validation cases** — `cycles.qml`, `classification.qml`, and the `thesis_*.qml` set (dead-code and conflicting-postcondition detection drawn from the paper).
+- **Roster blocks** (repeat-over-entities) — [`roster_numeric.qml`](tests/fixtures/roster_numeric.qml), [`roster_multiselect.qml`](tests/fixtures/roster_multiselect.qml), [`roster_inner_precondition.qml`](tests/fixtures/roster_inner_precondition.qml), [`roster_single_label.qml`](tests/fixtures/roster_single_label.qml)
+- **Formal-validation cases** — [`cycles.qml`](tests/fixtures/cycles.qml), [`classification.qml`](tests/fixtures/classification.qml), and the `thesis_*.qml` set (dead-code and conflicting-postcondition detection drawn from the paper).
 
-### Evaluation corpus — `evaluation/`
+### Evaluation corpus — [`evaluation/`](evaluation/)
 
 [`evaluation/`](evaluation/) evaluates QML against **real-world, publicly
 available questionnaires** rather than toy inputs — established instruments such
@@ -111,7 +111,7 @@ the conjunction of all per-outcome domain constraints.
 
 ### Validation Hierarchy
 
-Three levels of increasing thoroughness, implemented in the `z3/` module:
+Three levels of increasing thoroughness, implemented in the [`z3/`](askalot_qml/z3/) module:
 
 | Level | Formula | Implementation | Purpose |
 |-------|---------|----------------|---------|
@@ -321,15 +321,15 @@ StaticBuilder extracts domain constraints $D_i(S_i)$ from item input specs for b
 
 ## QML Schema & Grammar
 
-The `askalot_qml/schema/` folder holds the canonical contract for **QML** — the
+The [`askalot_qml/schema/`](askalot_qml/schema/) folder holds the canonical contract for **QML** — the
 YAML/JSON document format that authors, the AI generator, the loader, and the
 qml-explorer frontend all agree on.
 
 | File | Role |
 |------|------|
-| `askalot_qml/schema/qml-schema.json` | **Authoritative** JSON Schema (dialect `2020-12`), schema version **2.0.0**. Single source of truth. |
-| `askalot_qml/schema/qml-grammar.w3c.ebnf` | A **W3C-EBNF rendering** of the same contract, for railroad-diagram tools. Derived from the schema; not authoritative. |
-| `askalot_qml/schema/__init__.py` | Exposes `QML_SCHEMA_VERSION`, read from `qml-schema.json` at import (no hardcoded copy). |
+| [`askalot_qml/schema/qml-schema.json`](askalot_qml/schema/qml-schema.json) | **Authoritative** JSON Schema (dialect `2020-12`), schema version **2.0.0**. Single source of truth. |
+| [`askalot_qml/schema/qml-grammar.w3c.ebnf`](askalot_qml/schema/qml-grammar.w3c.ebnf) | A **W3C-EBNF rendering** of the same contract, for railroad-diagram tools. Derived from the schema; not authoritative. |
+| [`askalot_qml/schema/__init__.py`](askalot_qml/schema/__init__.py) | Exposes `QML_SCHEMA_VERSION`, read from `qml-schema.json` at import (no hardcoded copy). |
 
 The schema is the source of truth. The EBNF is a human-readable, diagrammable
 view of it — when the two disagree, the schema wins, and the EBNF should be
@@ -352,7 +352,7 @@ requirements (each discriminator value pulls in its own required and forbidden
 fields). **Those conditionals are the heart of the language**, and they are
 exactly what the grammar turns into alternation forks.
 
-### How to read `qml-grammar.w3c.ebnf`
+### How to read [`qml-grammar.w3c.ebnf`](askalot_qml/schema/qml-grammar.w3c.ebnf)
 
 It is an **abstract field-structure grammar**, not a byte-level JSON/YAML
 grammar. Read it with these conventions in mind:
@@ -380,7 +380,7 @@ alternation, `?` `*` `+` quantifiers, `( )` grouping, `"lit"` terminals, and
 
 ### Visualize the grammar (railroad / syntax diagrams)
 
-Paste the **whole** `qml-grammar.w3c.ebnf` file in, start symbol `QMLDocument`:
+Paste the **whole** [`qml-grammar.w3c.ebnf`](askalot_qml/schema/qml-grammar.w3c.ebnf) file in, start symbol `QMLDocument`:
 
 - **[bottlecaps.de/rr/ui](https://www.bottlecaps.de/rr/ui)** — the de-facto
   standard. *Edit Grammar* tab → paste → *View Diagram*. IPv4 mirror:
@@ -411,7 +411,7 @@ A context-free grammar cannot express everything the schema and loader enforce,
 and in a few places the grammar is deliberately *stricter* than the live schema.
 Know these before trusting the diagram as the full contract:
 
-1. **Open vs closed.** `qml-schema.json` sets `unevaluatedProperties: false`
+1. **Open vs closed.** [`qml-schema.json`](askalot_qml/schema/qml-schema.json) sets `unevaluatedProperties: false`
    **on `Block`** (as of `2.0.0`) — it composes across the kind-conditional
    `allOf`/`if`-`then` branches, so a misplaced key on a block (`iterateOvr`, a
    `count` on a `Roster`, a stray `is_random`) is now **rejected**. The other
@@ -480,7 +480,7 @@ The PythonRunner ([core/python_runner.py](askalot_qml/core/python_runner.py)) pr
 
 ## Testing
 
-Test files are located in `tests/unit/` and `tests/integration/`. Run with:
+Test files are located in [`tests/unit/`](tests/unit/) and [`tests/integration/`](tests/integration/). Run with:
 
 ```bash
 make test           # All tests
@@ -505,3 +505,92 @@ from askalot_qml.z3 import StaticBuilder, ItemClassifier
 ### Debugging
 
 Both processors provide `debug_dump()` methods for diagnostic output.
+
+## Benchmark
+
+QML validation is an SMT problem, so its cost grows with questionnaire **size**
+and **complexity**. The [`benchmark/`](benchmark/) harness is a scaling study
+that measures how validation **time** and **peak memory** grow along four
+independent axes, sweeping one questionnaire knob at a time while holding the
+others at a fixed baseline. Each data point is validated in a **fresh
+subprocess** (for a clean peak-RSS reading of Z3's native allocations), and the
+time is split into three phases:
+
+- **parse** — `QMLLoader`: file read, YAML parse, and AST/normalization.
+- **construction** — `StaticBuilder` constraint generation + topology.
+- **Z3 solve** — `ItemClassifier` per-item classification (the SMT work).
+
+Per-item classification uses one persistent solver with incremental
+`push`/`pop`, so the base constraint is asserted once and the per-item cost stays
+amortized — the Z3 curve scales roughly linearly rather than quadratically. See
+[`benchmark/README.md`](benchmark/README.md) for the full methodology, CLI, and
+the provenance recorded with every run.
+
+### Items — number of questions
+
+![QML validation cost vs number of items](benchmark/figures/items.png)
+
+The baseline sweep: independent questions, no conditions. Both parsing and Z3
+solving grow with the item count; memory rises roughly linearly.
+
+### Preconditions — number of precondition-gated items
+
+![QML validation cost vs number of preconditions](benchmark/figures/preconditions.png)
+
+Each added precondition introduces a dependency edge and extra reachability
+checks, isolating the cost of precondition analysis.
+
+### Postconditions — number of items carrying a postcondition
+
+![QML validation cost vs number of postconditions](benchmark/figures/postconditions.png)
+
+Postconditions add solver checks (tautological / infeasible / constraining)
+without deepening the dependency graph, isolating postcondition-invariant cost.
+
+### Dependency depth — precondition-chain length
+
+![QML validation cost vs dependency depth](benchmark/figures/depth.png)
+
+Varies the length of the longest precondition chain (the topology's dependency
+depth) while holding the item count fixed.
+
+### Reproducing the figures
+
+```bash
+make benchmark        # fast smoke sweep (all axes) + figures
+# paper-grade (larger ranges, slower):
+uv run --project benchmark python -m benchmark.sweep
+uv run --project benchmark python -m benchmark.plot
+```
+
+The committed PNGs above live in [`benchmark/figures/`](benchmark/figures/) and
+are refreshed by hand when Z3 or the harness changes; the re-derivable
+`results/` JSON the harness emits is gitignored.
+
+### Solver choice — why the default `Solver`
+
+[Programming Z3 §4.1](https://z3prover.github.io/papers/programmingz3.html)
+suggests a specialized finite-domain solver (`QF_FD`) for problems over
+bit-vectors, enumerations, and bounded integers. QML outcomes are finite, so we
+benchmarked the default `Solver` against `SolverFor("QF_FD")` and
+`SolverFor("QF_LIA")` on the same questionnaires — median of 3 runs, through the
+identical `push`/`pop` classification path:
+
+| items | default `Solver` | `QF_FD` | `QF_LIA` |
+|------:|-----------------:|--------:|---------:|
+| 100 | **26 ms** | 1 336 ms · ❌ wrong verdicts | 30 ms · ✅ |
+| 200 | **73 ms** | 5 323 ms · ❌ wrong verdicts | 91 ms · ✅ |
+| 500 | **372 ms** | 32 856 ms · ❌ wrong verdicts | 499 ms · ✅ |
+
+The postcondition fixtures ([`classification.qml`](tests/fixtures/classification.qml),
+[`codeblock_postcondition.qml`](tests/fixtures/codeblock_postcondition.qml),
+[`thesis_conflicting_postconditions.qml`](tests/fixtures/thesis_conflicting_postconditions.qml))
+showed the same pattern at small N.
+
+`QF_FD` is both **wrong and 50–90× slower**: QML outcomes are unbounded Z3 `Int`
+variables *bounded by constraints*, not values in a native finite sort, so the
+finite-domain engine cannot treat them as finite — it returns `unknown`, which
+flips the `== unsat` determinations — and degrades badly. `QF_LIA` reproduces the
+default's verdicts exactly but runs **~15–35 % slower**, with the gap widening as
+N grows. So the harness keeps the **default `Solver()`**: Z3's general engine
+already selects the best tactic for this problem shape.
