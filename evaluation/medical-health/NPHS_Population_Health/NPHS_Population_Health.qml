@@ -1,4 +1,4 @@
-qmlVersion: "1.0"
+qmlVersion: "2.0"
 questionnaire:
   title: "NPHS Population Health Survey"
   codeInit: |
@@ -45,7 +45,7 @@ questionnaire:
     #   gates only; the loop behaviour is noted here for reference.
     # =========================================================================
     - id: b_roster
-      kind: Sequence
+      kind: Group
       title: "Household Roster"
       items:
         # DEMO_INT: Interviewer introduction
@@ -106,7 +106,7 @@ questionnaire:
     #          spanning multiple household members)
     # =========================================================================
     - id: b_individual_demographics
-      kind: Sequence
+      kind: Group
       title: "Individual Demographics"
       items:
         # DEMO_Q4 / DHC4_DAT / DHC4_DOB / DHC4_AGE: Date of birth → age
@@ -192,7 +192,7 @@ questionnaire:
     # HHLD_Q6: Type of dwelling (interviewer-coded)
     # =========================================================================
     - id: b_dwelling
-      kind: Sequence
+      kind: Group
       title: "Dwelling Characteristics"
       items:
         # HHLD_Q1 / DHC4_OWN: Dwelling owned?
@@ -280,7 +280,7 @@ questionnaire:
     # HHLD_Q8: Language of interview (interviewer-recorded)
     # =========================================================================
     - id: b_household_administration
-      kind: Sequence
+      kind: Group
       title: "Administration"
       items:
         # HHLD_Q7 / AM34_SRC: Information source indicator
@@ -342,7 +342,7 @@ questionnaire:
     # routing only the primary (non-DK/R) path via preconditions.
     # =========================================================================
     - id: b_two_week_disability
-      kind: Sequence
+      kind: Group
       title: "Two-Week Disability"
       items:
         # TWOWK-INT: Interviewer introduction
@@ -439,7 +439,7 @@ questionnaire:
     # UTIL-Q2: QuestionGroup with 10 sub-items (a–j), each Editbox min=0 max=366.
     # =========================================================================
     - id: b_professional_contacts
-      kind: Sequence
+      kind: Group
       title: "Contacts with Health Professionals"
       precondition:
         - predicate: age >= 12
@@ -509,7 +509,7 @@ questionnaire:
     # UTIL-Q3: Where did the most recent contact take place?
     # =========================================================================
     - id: b_contact_location
-      kind: Sequence
+      kind: Group
       title: "Location of Most Recent Contact"
       precondition:
         - predicate: age >= 12
@@ -542,7 +542,7 @@ questionnaire:
     # UTIL-Q5: Who did they see? (Checkbox, 13 options, powers of 2)
     # =========================================================================
     - id: b_alternative_care
-      kind: Sequence
+      kind: Group
       title: "Alternative Health Care"
       precondition:
         - predicate: age >= 12
@@ -595,7 +595,7 @@ questionnaire:
     # UTIL-Q8: Type of care needed? (Checkbox, 5 options, powers of 2)
     # =========================================================================
     - id: b_unmet_needs
-      kind: Sequence
+      kind: Group
       title: "Unmet Health Care Needs"
       precondition:
         - predicate: age >= 12
@@ -657,7 +657,7 @@ questionnaire:
     # UTIL-Q10: What type of home care services? (Checkbox, 7 options, powers of 2)
     # =========================================================================
     - id: b_home_care
-      kind: Sequence
+      kind: Group
       title: "Home Care Services"
       precondition:
         - predicate: age >= 12
@@ -711,7 +711,7 @@ questionnaire:
     # via preconditions; DK/R paths are absorbed by the block-level age gate.
     # =========================================================================
     - id: b_restriction
-      kind: Sequence
+      kind: Group
       title: "Restriction of Activities"
       precondition:
         - predicate: age >= 12
@@ -852,7 +852,7 @@ questionnaire:
     #   CCC4_1R, CCC4_1S, CCC4_1T (Alzheimer's, cataracts, glaucoma): age >= 18
     # =========================================================================
     - id: b_chronic
-      kind: Sequence
+      kind: Group
       title: "Chronic Conditions"
       precondition:
         - predicate: age >= 12
@@ -1104,7 +1104,7 @@ questionnaire:
     # INTRODUCTION
     # =========================================================================
     - id: b_socio_intro
-      kind: Sequence
+      kind: Group
       title: "Introduction"
       items:
         # SOCIO-INT: Section introduction (interviewer instruction, no response)
@@ -1120,7 +1120,7 @@ questionnaire:
     # SOCIO-Q3: Always ends at Q4 (DK/R included)
     # =========================================================================
     - id: b_socio_birth
-      kind: Sequence
+      kind: Group
       title: "Country of Birth and Immigration"
       items:
         # SOCIO-Q1 / SDC4_1: Country of birth
@@ -1182,7 +1182,7 @@ questionnaire:
     # SOCIO-Q4: Always asked (19 options — use QuestionGroup of Switch items)
     # =========================================================================
     - id: b_socio_ethnicity
-      kind: Sequence
+      kind: Group
       title: "Ethnicity"
       items:
         # SOCIO-Q4 / SDC4_4A-SDC4_4S: Ethnic or cultural groups (mark all that apply)
@@ -1231,7 +1231,7 @@ questionnaire:
     # SOCIO-Q6: Mother tongue (19 options)
     # =========================================================================
     - id: b_socio_language
-      kind: Sequence
+      kind: Group
       title: "Language"
       items:
         # SOCIO-Q5 / SDC4_5A-SDC4_5S: Languages for conversation (mark all that apply)
@@ -1318,7 +1318,7 @@ questionnaire:
     # SOCIO-Q7: 11 options — use QuestionGroup of Switch items
     # =========================================================================
     - id: b_socio_race
-      kind: Sequence
+      kind: Group
       title: "Race"
       items:
         # SOCIO-Q7 / SDC4_7A-SDC4_7L: Race or colour (mark all that apply)
@@ -1365,7 +1365,7 @@ questionnaire:
     # EDUC-Q6: Full/part time. Only if Q5 = Yes (1).
     # =========================================================================
     - id: b_education
-      kind: Sequence
+      kind: Group
       title: "Education"
       precondition:
         - predicate: age >= 12
@@ -1500,7 +1500,7 @@ questionnaire:
     # LFS-C2A: If Q1=7 (retired) → GO TO LFS-C18; else → GO TO Q17B
     # =========================================================================
     - id: b_main_activity
-      kind: Sequence
+      kind: Group
       title: "Labour Force — Main Activity"
       precondition:
         - predicate: age >= 15
@@ -1570,7 +1570,7 @@ questionnaire:
     # LFS-Q16: Class of worker
     # =========================================================================
     - id: b_employment_details
-      kind: Sequence
+      kind: Group
       title: "Employment Details"
       precondition:
         - predicate: age >= 15
@@ -1732,7 +1732,7 @@ questionnaire:
     # the main job is still held.
     # =========================================================================
     - id: b_absence_reason_employed
-      kind: Sequence
+      kind: Group
       title: "Reason Not Working — Currently Employed"
       precondition:
         - predicate: age >= 15
@@ -1771,7 +1771,7 @@ questionnaire:
     #   - OR had no employment (Q2=2) AND Q1≠7 (not retired)
     # =========================================================================
     - id: b_absence_reason_not_employed
-      kind: Sequence
+      kind: Group
       title: "Reason Not Currently Working"
       precondition:
         - predicate: age >= 15
@@ -1807,7 +1807,7 @@ questionnaire:
     # Modeled as a Comment with a codeBlock to set the lfs_work variable.
     # =========================================================================
     - id: b_lfs_derived
-      kind: Sequence
+      kind: Group
       title: "Labour Force Status (Derived)"
       precondition:
         - predicate: age >= 15
@@ -1849,7 +1849,7 @@ questionnaire:
     #   8192 = None
     # =========================================================================
     - id: b_income_sources
-      kind: Sequence
+      kind: Group
       title: "Income Sources"
       items:
         # INCOM-Q1: Which income sources?
@@ -1891,7 +1891,7 @@ questionnaire:
     #   income_multi = 1 if popcount(outcome & 4095) > 1, else 0.
     # =========================================================================
     - id: b_main_income_source
-      kind: Sequence
+      kind: Group
       title: "Main Income Source"
       precondition:
         - predicate: income_multi == 1
@@ -1928,7 +1928,7 @@ questionnaire:
     # per the QML conversion instruction.
     # =========================================================================
     - id: b_income_bracket
-      kind: Sequence
+      kind: Group
       title: "Income Bracket"
       precondition:
         - predicate: q_incom_q1.outcome != 8192
@@ -1960,7 +1960,7 @@ questionnaire:
     # BLOCK 1: ADMINISTRATION (H05-P1, H05-P2, H06-P1)
     # =========================================================================
     - id: b_health_administration
-      kind: Sequence
+      kind: Group
       title: "Administration"
       items:
         # H05-P1 / AM54_TEL: Interview mode
@@ -2015,7 +2015,7 @@ questionnaire:
     # BLOCK 2: GENERAL HEALTH (GENHLT-Q1 to GENHLT-Q3)
     # =========================================================================
     - id: b_general_health
-      kind: Sequence
+      kind: Group
       title: "General Health"
       items:
         # GENHLT-Q1 / GHC4_1: Self-rated health
@@ -2073,7 +2073,7 @@ questionnaire:
     # BLOCK 3: HEIGHT / WEIGHT (HTWT-Q1, HTWT-Q2)
     # =========================================================================
     - id: b_height_weight
-      kind: Sequence
+      kind: Group
       title: "Height and Weight"
       items:
         # HTWT-Q1 / HWC4_2HT: Height
@@ -2110,7 +2110,7 @@ questionnaire:
     # Modeled via individual item preconditions.
     # =========================================================================
     - id: b_preventive_health
-      kind: Sequence
+      kind: Group
       title: "Preventive Health Practices"
       items:
         # PHP-Q1 / BPC4_1: Blood pressure check timing
@@ -2224,7 +2224,7 @@ questionnaire:
     #   SMOK-Q2 = DK/R             → skip to Alcohol
     # =========================================================================
     - id: b_smoking
-      kind: Sequence
+      kind: Group
       title: "Smoking"
       items:
         # SMOK-INT: Section introduction (no response)
@@ -2370,7 +2370,7 @@ questionnaire:
     #       since proxy status is not modelled in this section.
     # =========================================================================
     - id: b_alcohol
-      kind: Sequence
+      kind: Group
       title: "Alcohol"
       items:
         # ALCO-INT: Section introduction (no response)
@@ -2551,7 +2551,7 @@ questionnaire:
     # PHYS-Q6    → Daily activity level (always)
     # =========================================================================
     - id: b_physical_activities
-      kind: Sequence
+      kind: Group
       title: "Physical Activities"
       items:
         # PHYS-INTa: Interviewer introduction
@@ -2712,7 +2712,7 @@ questionnaire:
     # INJ-Q8   → Precautions taken (precondition: Q1=Yes)
     # =========================================================================
     - id: b_injuries
-      kind: Sequence
+      kind: Group
       title: "Injuries"
       items:
         # INJ-INT: Interviewer introduction
@@ -2889,7 +2889,7 @@ questionnaire:
     # Q12-Q18: always shown (within age >= 18 gate)
     # =========================================================================
     - id: b_ongoing_problems
-      kind: Sequence
+      kind: Group
       title: "Ongoing Problems"
       precondition:
         - predicate: age >= 18
@@ -3107,7 +3107,7 @@ questionnaire:
     # RECENT-CHILDREN check: has_children == 1 --> ask Q10
     # =========================================================================
     - id: b_recent_life_events
-      kind: Sequence
+      kind: Group
       title: "Recent Life Events"
       precondition:
         - predicate: age >= 18
@@ -3243,7 +3243,7 @@ questionnaire:
     # TRAUM-Q2 through Q7: always asked (within gate)
     # =========================================================================
     - id: b_childhood_stressors
-      kind: Sequence
+      kind: Group
       title: "Childhood and Adult Stressors"
       precondition:
         - predicate: age >= 18
@@ -3335,7 +3335,7 @@ questionnaire:
     # WSTRESS-Q2: Job satisfaction. Always asked (within gate).
     # =========================================================================
     - id: b_work_stress
-      kind: Sequence
+      kind: Group
       title: "Work Stress"
       precondition:
         - predicate: age >= 15 and lfs_work == 1
@@ -3410,7 +3410,7 @@ questionnaire:
     #   [5] PY_4_E1F - All in all, you're inclined to feel you're a failure
     # =========================================================================
     - id: b_self_esteem
-      kind: Sequence
+      kind: Group
       title: "Self-Esteem"
       precondition:
         - predicate: age >= 12
@@ -3452,7 +3452,7 @@ questionnaire:
     #   [6] PY_4_M1G - You can do just about anything you really set your mind to
     # =========================================================================
     - id: b_mastery
-      kind: Sequence
+      kind: Group
       title: "Mastery"
       precondition:
         - predicate: age >= 12
@@ -3489,7 +3489,7 @@ questionnaire:
     # Each question has unique anchor text incorporated into the title.
     # =========================================================================
     - id: b_sense_of_coherence
-      kind: Sequence
+      kind: Group
       title: "Sense of Coherence"
       precondition:
         - predicate: age >= 18
@@ -3704,7 +3704,7 @@ questionnaire:
     # HSTAT-INT: Interviewer instruction introducing the section.
     # =========================================================================
     - id: b_intro
-      kind: Sequence
+      kind: Group
       title: "Section Introduction"
       items:
         # HSTAT-INT: Section introduction — no response collected
@@ -3728,7 +3728,7 @@ questionnaire:
     #   Q5: (Q1=Yes OR Q2=Yes) AND Q4=No
     # =========================================================================
     - id: b_vision
-      kind: Sequence
+      kind: Group
       title: "Vision"
       items:
         # HSTAT-Q1 / HSC4_1: See newsprint without glasses?
@@ -3808,7 +3808,7 @@ questionnaire:
     #   Q9: Q6=No AND Q7=Yes AND Q8=No
     # =========================================================================
     - id: b_hearing
-      kind: Sequence
+      kind: Group
       title: "Hearing"
       items:
         # HSTAT-Q6 / HSC4_6: Hear group conversation without hearing aid?
@@ -3887,7 +3887,7 @@ questionnaire:
     #   Q13: Q10=No AND Q12=No
     # =========================================================================
     - id: b_speech
-      kind: Sequence
+      kind: Group
       title: "Speech"
       items:
         # HSTAT-Q10 / HSC4_10: Completely understood by strangers?
@@ -3960,7 +3960,7 @@ questionnaire:
     #   Q20: Q14=No AND Q15=No AND Q18=Yes
     # =========================================================================
     - id: b_getting_around
-      kind: Sequence
+      kind: Group
       title: "Getting Around"
       items:
         # HSTAT-Q14 / HSC4_14: Walk around neighbourhood without difficulty?
@@ -4067,7 +4067,7 @@ questionnaire:
     #   Q24: Q21=No (shown regardless of Q22 outcome, after Q23 if applicable)
     # =========================================================================
     - id: b_hands_fingers
-      kind: Sequence
+      kind: Group
       title: "Hands and Fingers"
       items:
         # HSTAT-Q21 / HSC4_21: Usually able to grasp and handle small objects?
@@ -4126,7 +4126,7 @@ questionnaire:
     # Q25: Single question — always asked; no branching.
     # =========================================================================
     - id: b_feelings
-      kind: Sequence
+      kind: Group
       title: "Feelings"
       items:
         # HSTAT-Q25 / HSC4_25: Usual emotional state
@@ -4148,7 +4148,7 @@ questionnaire:
     # Q26: Single question — always asked; no branching.
     # =========================================================================
     - id: b_memory
-      kind: Sequence
+      kind: Group
       title: "Memory"
       items:
         # HSTAT-Q26 / HSC4_26: Usual ability to remember things
@@ -4169,7 +4169,7 @@ questionnaire:
     # Q27: Single question — always asked; no branching.
     # =========================================================================
     - id: b_thinking
-      kind: Sequence
+      kind: Group
       title: "Thinking"
       items:
         # HSTAT-Q27 / HSC4_27: Usual ability to think and solve problems
@@ -4193,7 +4193,7 @@ questionnaire:
     # Q30: Activities prevented by pain (shown when Q28=No)
     # =========================================================================
     - id: b_pain
-      kind: Sequence
+      kind: Group
       title: "Pain and Discomfort"
       items:
         # HSTAT-Q28 / HSC4_28: Usually free of pain or discomfort?
@@ -4260,7 +4260,7 @@ questionnaire:
     # without sex/age gates (keys 1..2^17). The two gated items are separate.
     # =========================================================================
     - id: b_drug_use
-      kind: Sequence
+      kind: Group
       title: "Drug Use"
       items:
         # DRUG-INT: Section introduction (no response)
@@ -4426,7 +4426,7 @@ questionnaire:
     #   Q27 → Q28 → end section
     # =========================================================================
     - id: b_mental_health
-      kind: Sequence
+      kind: Group
       title: "Mental Health"
       items:
         # MHLTH-INTa: Section introduction
@@ -5088,7 +5088,7 @@ questionnaire:
     # SOCSUP-Q7    → Contact frequency grid (always) QuestionGroup with 8 sub-items Radio 8 options
     # =========================================================================
     - id: b_social_support
-      kind: Sequence
+      kind: Group
       title: "Social Support"
       items:
         # SOCSUP-INT: Interviewer introduction
@@ -5207,7 +5207,7 @@ questionnaire:
     # H06-HLTH#1  → Provincial health number. Textarea. Precondition: H06-HLTH# = Yes.
     # =========================================================================
     - id: b_health_number
-      kind: Sequence
+      kind: Group
       title: "Health Number"
       items:
         # H06-HLTH# / AM64_LNK: Permission to link health information
@@ -5240,7 +5240,7 @@ questionnaire:
     # H06-P2     → Language of interview. Dropdown 19 options (always).
     # =========================================================================
     - id: b_agreement_to_share
-      kind: Sequence
+      kind: Group
       title: "Agreement to Share"
       items:
         # H06-SHARE / AM64_SHA: Permission to share survey information
@@ -5329,7 +5329,7 @@ questionnaire:
     #   SPR6-Q13: Layoff coping scenario (Checkbox, 9 options)
     # =========================================================================
     - id: b_manitoba
-      kind: Sequence
+      kind: Group
       title: "Manitoba Buy-in"
       precondition:
         - predicate: age >= 18
@@ -5496,7 +5496,7 @@ questionnaire:
     #   SPR8-Q4: Unexpected stress strategies (Checkbox, 9 options)
     # =========================================================================
     - id: b_alberta
-      kind: Sequence
+      kind: Group
       title: "Alberta Buy-in"
       precondition:
         - predicate: age >= 18
@@ -5582,7 +5582,7 @@ questionnaire:
     # KGH-C5   → Units: Pounds or Kilograms (precondition: weight answered)
     # =========================================================================
     - id: b_child_general_health
-      kind: Sequence
+      kind: Group
       title: "Child General Health"
       items:
         # KGH-Q1: Overall health rating (GHC4_1)
@@ -5651,7 +5651,7 @@ questionnaire:
     # KUT-Q3   → Professional contact counts — QuestionGroup, 8 sub-items
     # =========================================================================
     - id: b_child_hcu
-      kind: Sequence
+      kind: Group
       title: "Child Health Care Utilization"
       items:
         # KUT-INT: Interviewer instruction
@@ -5706,7 +5706,7 @@ questionnaire:
     #             noted in item title)
     # =========================================================================
     - id: b_child_chronic
-      kind: Sequence
+      kind: Group
       title: "Child Chronic Conditions"
       items:
         # KCHR-Q1: Nose/throat infection frequency (CCK4_1)
@@ -5878,7 +5878,7 @@ questionnaire:
     #   Q28 Yes → skip to Injuries block; No → Q29, Q30
     # =========================================================================
     - id: b_child_health_status
-      kind: Sequence
+      kind: Group
       title: "Child Health Status"
       precondition:
         - predicate: age >= 4
@@ -6342,7 +6342,7 @@ questionnaire:
     # KIN-Q6   → What happened / cause (precondition: Q1=Yes)
     # =========================================================================
     - id: b_child_injuries
-      kind: Sequence
+      kind: Group
       title: "Child Injuries"
       items:
         # KIN-INT: Interviewer instruction

@@ -1,4 +1,4 @@
-qmlVersion: "1.0"
+qmlVersion: "2.0"
 questionnaire:
   title: "Participation and Activity Limitation Survey"
   codeInit: |
@@ -69,7 +69,7 @@ questionnaire:
     # SECTION: filter_questions
     # ===================================================================
     - id: b_filter_questions
-      kind: Sequence
+      kind: Group
       title: "Filter Questions"
       items:
         - id: q_a1
@@ -129,7 +129,7 @@ questionnaire:
     # HEARING SUBSECTION (B1–B10)
     # =====================================================================
     - id: b_hearing
-      kind: Sequence
+      kind: Group
       title: "Hearing"
       items:
         # B1: Uses hearing aid?
@@ -309,7 +309,7 @@ questionnaire:
     # VISION SUBSECTION (B11–B20)
     # =====================================================================
     - id: b_vision
-      kind: Sequence
+      kind: Group
       title: "Vision"
       items:
         # B11: Wears glasses/contacts?
@@ -510,7 +510,7 @@ questionnaire:
     # So for age >= 5, everyone reaches B21 eventually
     # =====================================================================
     - id: b_communication
-      kind: Sequence
+      kind: Group
       title: "Communication"
       precondition:
         - predicate: child_under_5 == 0
@@ -692,7 +692,7 @@ questionnaire:
     # which is gated, but B31 is in its own block with same gate
     # =====================================================================
     - id: b_walking
-      kind: Sequence
+      kind: Group
       title: "Walking / Mobility"
       precondition:
         - predicate: child_under_5 == 0
@@ -806,7 +806,7 @@ questionnaire:
     # HANDS/FINGERS SUBSECTION (B37–B42)
     # =====================================================================
     - id: b_hands
-      kind: Sequence
+      kind: Group
       title: "Hands / Fingers"
       precondition:
         - predicate: child_under_5 == 0
@@ -910,7 +910,7 @@ questionnaire:
     # LEARNING DISABILITY SUBSECTION (B43–B50)
     # =====================================================================
     - id: b_learning
-      kind: Sequence
+      kind: Group
       title: "Learning Disability"
       precondition:
         - predicate: child_under_5 == 0
@@ -1057,7 +1057,7 @@ questionnaire:
     # B53-B55 are for age >= 5 children only
     # =====================================================================
     - id: b_developmental
-      kind: Sequence
+      kind: Group
       title: "Developmental Delay / Disability"
       items:
         # B51: Delay in development? (under-5 only)
@@ -1149,7 +1149,7 @@ questionnaire:
     # EMOTIONAL/PSYCHOLOGICAL SUBSECTION (B56–B58)
     # =====================================================================
     - id: b_emotional
-      kind: Sequence
+      kind: Group
       title: "Emotional / Psychological"
       items:
         # B56: Any emotional/psychological/behavioural conditions?
@@ -1204,7 +1204,7 @@ questionnaire:
     # CHRONIC CONDITIONS SUBSECTION (B59–B61)
     # =====================================================================
     - id: b_chronic
-      kind: Sequence
+      kind: Group
       title: "Chronic Conditions"
       items:
         # B59: Long-term diagnosed conditions checklist (20 sub-items)
@@ -1321,7 +1321,7 @@ questionnaire:
     # Compute limitation_count. If 0, skip to end (follow-up).
     # =====================================================================
     - id: b_profile_check
-      kind: Sequence
+      kind: Group
       title: "Profile Sheet Check"
       items:
         # Compute aggregate counts using a Comment with codeBlock
@@ -1336,7 +1336,7 @@ questionnaire:
     # B62.edit: if limitation_count > 0, continue; else end section
     # =====================================================================
     - id: b_diagnosis
-      kind: Sequence
+      kind: Group
       title: "Diagnosis and Cause"
       precondition:
         - predicate: limitation_count > 0
@@ -1422,7 +1422,7 @@ questionnaire:
     # GENERAL HEALTH AND MEDICATIONS SUBSECTION (B68–B79)
     # =====================================================================
     - id: b_health_meds
-      kind: Sequence
+      kind: Group
       title: "General Health and Medications"
       precondition:
         - predicate: limitation_count > 0
@@ -1595,7 +1595,7 @@ questionnaire:
     # HEALTH PROFESSIONAL CONTACTS AND COSTS (B80–B86)
     # =====================================================================
     - id: b_health_prof
-      kind: Sequence
+      kind: Group
       title: "Health Professional Contacts and Costs"
       precondition:
         - predicate: limitation_count > 0
@@ -1740,7 +1740,7 @@ questionnaire:
     # B87.edit: under-5 → skip to Section C (end of this file)
     # =====================================================================
     - id: b_aids_costs
-      kind: Sequence
+      kind: Group
       title: "Aids Usage and Costs"
       precondition:
         - predicate: limitation_count > 0
@@ -1953,7 +1953,7 @@ questionnaire:
     # C11: why not receiving (8 sub-items) → C12 block
     # =========================================================================
     - id: b_personal_mobility
-      kind: Sequence
+      kind: Group
       title: "Personal Care and Mobility Help"
       precondition:
         - predicate: child_under_5 == 0
@@ -2151,7 +2151,7 @@ questionnaire:
     # C16: expense group (if C15 DK/R) → C17 block
     # =========================================================================
     - id: b_housework_received
-      kind: Sequence
+      kind: Group
       title: "Help with Housework and Family Activities (Received)"
 
       items:
@@ -2257,7 +2257,7 @@ questionnaire:
     # C18: why not receiving (8 sub-items) → C19
     # =========================================================================
     - id: b_housework_needed
-      kind: Sequence
+      kind: Group
       title: "Help with Housework and Family Activities (Unmet Need)"
 
       items:
@@ -2312,7 +2312,7 @@ questionnaire:
     # C24: financial problems → Section D
     # =========================================================================
     - id: b_coordination_work
-      kind: Sequence
+      kind: Group
       title: "Care Coordination and Work Impact"
 
       items:
@@ -2429,7 +2429,7 @@ questionnaire:
     # D7   → Types of programs that refused (6 sub-items, Switch). Precondition: D6 = Yes.
     # =========================================================================
     - id: b_child_care
-      kind: Sequence
+      kind: Group
       title: "Child Care"
       items:
 
@@ -2572,7 +2572,7 @@ questionnaire:
     # E37 → E38(if E37=1) → end
     # =========================================================================
     - id: b_education
-      kind: Sequence
+      kind: Group
       title: "Section E — Education"
       precondition:
         - predicate: child_under_5 == 0
@@ -3489,7 +3489,7 @@ questionnaire:
     #       Yes → F16a–F16d (Internet usage frequency + hours)
     # =========================================================================
     - id: b_leisure_recreation
-      kind: Sequence
+      kind: Group
       title: "Leisure and Recreation Activities"
       precondition:
         - predicate: child_under_5 == 0
@@ -4098,7 +4098,7 @@ questionnaire:
     #   G10 multi-select (Yes/No per sub-item, why not) → end
     # =========================================================================
     - id: b_home_accommodation
-      kind: Sequence
+      kind: Group
       title: "Home Accommodation"
       precondition:
         - predicate: child_under_5 == 0
@@ -4301,7 +4301,7 @@ questionnaire:
     # H16  → Expense group. Radio 7 options. →end.
     # =========================================================================
     - id: b_transportation
-      kind: Sequence
+      kind: Group
       title: "Transportation"
       precondition:
         - predicate: child_under_5 == 0
@@ -4587,7 +4587,7 @@ questionnaire:
     # I10  → Income bracket Radio (10 groups). Precondition: dk_i9 == 1.
     # =========================================================================
     - id: b_economic
-      kind: Sequence
+      kind: Group
       title: "Economic Characteristics"
       items:
 
@@ -4763,7 +4763,7 @@ questionnaire:
     # FU1 — longitudinal follow-up contact capture (inventory item 267)
     # ===================================================================
     - id: b_follow_up
-      kind: Sequence
+      kind: Group
       title: "Follow-up"
       items:
         - id: q_fu1

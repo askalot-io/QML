@@ -1,4 +1,4 @@
-qmlVersion: "1.0"
+qmlVersion: "2.0"
 questionnaire:
   title: "Behavioral Risk Factor Surveillance System 2023"
   codeInit: |
@@ -30,7 +30,7 @@ questionnaire:
     # LL05: Is this a cell phone? 1→TERMINATE not modeled
     # =========================================================================
     - id: b_phone_screening
-      kind: Sequence
+      kind: Group
       title: "Phone and Residence Screening"
       items:
         # LL01: Confirm the dialled number
@@ -117,7 +117,7 @@ questionnaire:
     #        after transfer). QML cannot model loops; Yes/No is recorded.
     # =========================================================================
     - id: b_household_selection
-      kind: Sequence
+      kind: Group
       title: "Age Verification and Household Selection"
       items:
         # LL06: Age verification
@@ -178,7 +178,7 @@ questionnaire:
     #        7 (DK) and 9 (R) are system codes → TERMINATE (not modeled)
     # =========================================================================
     - id: b_gender_identity
-      kind: Sequence
+      kind: Group
       title: "Gender Identity and Sex at Birth"
       items:
         # LL09: Gender identity
@@ -228,7 +228,7 @@ questionnaire:
     # CP04: 18 years of age or older? 2→TERMINATE (not modeled)
     # =========================================================================
     - id: b_safety_device
-      kind: Sequence
+      kind: Group
       title: "Safety and Device Verification"
       items:
         # CP01: Safe to talk
@@ -295,7 +295,7 @@ questionnaire:
     #        7 (DK) or 9 (R) → TERMINATE (not modeled)
     # =========================================================================
     - id: b_cell_phone_intro_gender_identity
-      kind: Sequence
+      kind: Group
       title: "Gender Identity and Sex at Birth"
       items:
         # CP05: Gender identity
@@ -341,7 +341,7 @@ questionnaire:
     #        Ineligible codes (77, 99) are TERMINATE paths not modeled.
     # =========================================================================
     - id: b_residence
-      kind: Sequence
+      kind: Group
       title: "Residence Verification"
       items:
         # CP07: Private residence
@@ -414,7 +414,7 @@ questionnaire:
     #        DK (77) and Refused (99) proceed to Section 1 (system codes).
     # =========================================================================
     - id: b_household
-      kind: Sequence
+      kind: Group
       title: "Landline Overlap and Household Size"
       items:
         # CP11: Landline telephone in home?
@@ -461,7 +461,7 @@ questionnaire:
     # BLOCK 1: CORE SECTION 1 - HEALTH STATUS (CHS.01)
     # =========================================================================
     - id: b_health_status
-      kind: Sequence
+      kind: Group
       title: "Core Section 1: Health Status"
       items:
         # CHS.01: Self-rated general health
@@ -481,7 +481,7 @@ questionnaire:
     # BLOCK 2: CORE SECTION 2 - HEALTHY DAYS (CHD.01–CHD.03)
     # =========================================================================
     - id: b_healthy_days
-      kind: Sequence
+      kind: Group
       title: "Core Section 2: Healthy Days"
       items:
         # CHD.01: Days physical health not good (past 30 days)
@@ -524,7 +524,7 @@ questionnaire:
     # BLOCK 3: CORE SECTION 3 - HEALTH CARE ACCESS (CHCA.01–CHCA.04)
     # =========================================================================
     - id: b_health_care_access
-      kind: Sequence
+      kind: Group
       title: "Core Section 3: Health Care Access"
       items:
         # CHCA.01: Primary health insurance source
@@ -585,7 +585,7 @@ questionnaire:
     # BLOCK 1: CORE SECTION 4 - EXERCISE / PHYSICAL ACTIVITY (CEXP.01–CEXP.08)
     # =========================================================================
     - id: b_exercise
-      kind: Sequence
+      kind: Group
       title: "Core Section 4: Exercise / Physical Activity"
       items:
         # CEXP.01: Any physical activity past month (besides regular job)
@@ -705,7 +705,7 @@ questionnaire:
     #           All other outcomes (2, 3, DK=7, R=9) skip to next section.
     # =========================================================================
     - id: b_hypertension
-      kind: Sequence
+      kind: Group
       title: "Hypertension Awareness"
       items:
         # CHYPA.01: Ever told have high blood pressure
@@ -743,7 +743,7 @@ questionnaire:
     # CCHLA.02 → CCHLA.03: Always asked if precondition met (no skip within).
     # =========================================================================
     - id: b_cholesterol
-      kind: Sequence
+      kind: Group
       title: "Cholesterol Awareness"
       items:
         # CCHLA.01: Time since last cholesterol check
@@ -802,7 +802,7 @@ questionnaire:
     # CCHC.13: Precondition: CCHC.12 == 1 (Yes — active diabetes).
     # =========================================================================
     - id: b_chronic_conditions
-      kind: Sequence
+      kind: Group
       title: "Chronic Health Conditions"
       items:
         # CCHC.01: Heart attack / myocardial infarction
@@ -935,7 +935,7 @@ questionnaire:
     # SECTION: demographics
     # ===================================================================
     - id: b_demographics
-      kind: Sequence
+      kind: Group
       title: "Demographics"
       items:
         # CDEM.01: Age in years
@@ -1150,7 +1150,7 @@ questionnaire:
     # preconditions are needed within this block.
     # =========================================================================
     - id: b_disability
-      kind: Sequence
+      kind: Group
       title: "Core Section 9: Disability"
       items:
         # CDIS.01: Hearing difficulty
@@ -1220,7 +1220,7 @@ questionnaire:
     # CFAL.02: Falls causing limiting injury. Precondition: CFAL.01 > 0.
     # =========================================================================
     - id: b_falls
-      kind: Sequence
+      kind: Group
       title: "Core Section 10: Falls"
       precondition:
         - predicate: age >= 45
@@ -1264,7 +1264,7 @@ questionnaire:
     # CTOB.04: E-cigarette / vaping use — always asked.
     # =========================================================================
     - id: b_tobacco
-      kind: Sequence
+      kind: Group
       title: "Core Section 11: Tobacco Use"
       items:
         # CTOB.01: 100+ cigarettes smoked in lifetime
@@ -1333,7 +1333,7 @@ questionnaire:
     # CALC.04: Largest number of drinks on any single occasion. Precondition: CALC.01 > 0.
     # =========================================================================
     - id: b_alcohol
-      kind: Sequence
+      kind: Group
       title: "Core Section 12: Alcohol Consumption"
       items:
         # CALC.PROLOGUE: Introductory instruction (no response captured)
@@ -1411,7 +1411,7 @@ questionnaire:
     #   Precondition: age >= 50 (only relevant for respondents 50 or older).
     # =========================================================================
     - id: b_immunization
-      kind: Sequence
+      kind: Group
       title: "Core Section 13: Immunization"
       items:
         # CIMM.01: Flu vaccine in past 12 months
@@ -1468,7 +1468,7 @@ questionnaire:
     # CHIV.02: Month of most recent HIV test. Precondition: CHIV.01 == 1.
     # =========================================================================
     - id: b_hiv
-      kind: Sequence
+      kind: Group
       title: "Core Section 14: H.I.V./AIDS"
       items:
         # CHIV.01: Ever been tested for HIV (excluding blood donation tests)
@@ -1508,7 +1508,7 @@ questionnaire:
     #             AND alcohol_days > 0 (drank in past 30 days)
     # =========================================================================
     - id: b_seatbelt
-      kind: Sequence
+      kind: Group
       title: "Core Section 15: Seat Belt Use / Drinking and Driving"
       items:
         # CSBD.01: Seat belt use frequency
@@ -1555,7 +1555,7 @@ questionnaire:
     #   Precondition: COVID.01 == 1 AND COVID.02 == 1
     # =========================================================================
     - id: b_covid
-      kind: Sequence
+      kind: Group
       title: "Emerging Core: Long-term COVID Effects"
       items:
         # COVID.01: Ever diagnosed with / tested positive for COVID-19
@@ -1608,7 +1608,7 @@ questionnaire:
     # auto-code case (diabetes_status==4) would simply produce outcome 1.
     # =========================================================================
     - id: b_prediabetes
-      kind: Sequence
+      kind: Group
       title: "Module 1: Prediabetes"
       precondition:
         - predicate: diabetes_status != 1
@@ -1646,7 +1646,7 @@ questionnaire:
     # Module filter: Ask only if CCHC.12=1 (respondent has diabetes).
     # =========================================================================
     - id: b_diabetes
-      kind: Sequence
+      kind: Group
       title: "Module 2: Diabetes"
       precondition:
         - predicate: diabetes_status == 1
@@ -1738,7 +1738,7 @@ questionnaire:
     # Module filter: Ask only if CCHC.11=1 (respondent has arthritis).
     # =========================================================================
     - id: b_arthritis
-      kind: Sequence
+      kind: Group
       title: "Module 3: Arthritis"
       precondition:
         - predicate: has_arthritis == 1
@@ -1800,7 +1800,7 @@ questionnaire:
     # MLCS.04 onward asked for all respondents regardless of smoking history.
     # =========================================================================
     - id: b_lung_cancer_smokers
-      kind: Sequence
+      kind: Group
       title: "Module 4: Lung Cancer Screening - Smoking History"
       precondition:
         - predicate: smoked_100 == 1
@@ -1835,7 +1835,7 @@ questionnaire:
             max: 200
 
     - id: b_lung_cancer_all
-      kind: Sequence
+      kind: Group
       title: "Module 4: Lung Cancer Screening - CT Scan"
       items:
         # MLCS.04: Ever had CT or CAT scan of chest
@@ -1880,7 +1880,7 @@ questionnaire:
     # Module filter: Skip entire module if male (sex_at_birth == 1).
     # =========================================================================
     - id: b_breast_cervical
-      kind: Sequence
+      kind: Group
       title: "Module 5: Breast and Cervical Cancer Screening"
       precondition:
         - predicate: sex_at_birth == 2
@@ -1973,7 +1973,7 @@ questionnaire:
     # Module filter: Skip if female OR age < 39.
     # =========================================================================
     - id: b_prostate
-      kind: Sequence
+      kind: Group
       title: "Module 6: Prostate Cancer Screening"
       precondition:
         - predicate: sex_at_birth == 1 and age >= 39
@@ -2061,7 +2061,7 @@ questionnaire:
     # MCCS.12 → MCCS.13
     # =========================================================================
     - id: b_colorectal
-      kind: Sequence
+      kind: Group
       title: "Module 7: Colorectal Cancer Screening"
       precondition:
         - predicate: age >= 45
@@ -2241,7 +2241,7 @@ questionnaire:
     # MTOC.03: Type of cancer. Dropdown of 30 types.
     # =========================================================================
     - id: b_cancer_type
-      kind: Sequence
+      kind: Group
       title: "Module 8: Cancer Survivorship — Type of Cancer"
       precondition:
         - predicate: has_skin_cancer == 1 or has_other_cancer == 1
@@ -2324,7 +2324,7 @@ questionnaire:
     # MCOT.08: Participated in clinical trial. Switch.
     # =========================================================================
     - id: b_cancer_treatment
-      kind: Sequence
+      kind: Group
       title: "Module 9: Cancer Survivorship — Course of Treatment"
       precondition:
         - predicate: has_skin_cancer == 1 or has_other_cancer == 1
@@ -2443,7 +2443,7 @@ questionnaire:
     #   Precondition: MCPM.01 == 1.
     # =========================================================================
     - id: b_cancer_pain
-      kind: Sequence
+      kind: Group
       title: "Module 10: Cancer Survivorship — Pain Management"
       precondition:
         - predicate: has_skin_cancer == 1 or has_other_cancer == 1
@@ -2482,7 +2482,7 @@ questionnaire:
     # MNTAN.01: Number of indoor tanning sessions in past 12 months (0–365).
     # =========================================================================
     - id: b_indoor_tanning
-      kind: Sequence
+      kind: Group
       title: "Module 11: Indoor Tanning"
       items:
         # MNTAN.01: Indoor tanning device use in past 12 months
@@ -2507,7 +2507,7 @@ questionnaire:
     # MSUN.04: Weekend outdoor time in summer (10am–4pm). Dropdown (7 ranges).
     # =========================================================================
     - id: b_sun_exposure
-      kind: Sequence
+      kind: Group
       title: "Module 12: Excess Sun Exposure"
       items:
         # MSUN.01: Number of sunburns in past 12 months
@@ -2576,7 +2576,7 @@ questionnaire:
     # MCOG.02–05: Precondition: MCOG.01 == 1. All Switch items.
     # =========================================================================
     - id: b_cognitive_decline
-      kind: Sequence
+      kind: Group
       title: "Module 13: Cognitive Decline"
       precondition:
         - predicate: age >= 45
@@ -2669,7 +2669,7 @@ questionnaire:
     #   (i.e., not a current caregiver and recipient did not die)
     # =========================================================================
     - id: b_caregiver
-      kind: Sequence
+      kind: Group
       title: "Module 14: Caregiver"
       items:
         # MCARE.01: Provided care or assistance in past 30 days
@@ -2839,7 +2839,7 @@ questionnaire:
     # MTC.02: Quit attempt in past 12 months. Switch.
     # =========================================================================
     - id: b_tobacco_cessation
-      kind: Sequence
+      kind: Group
       title: "Module 15: Tobacco Cessation"
       items:
         # MTC.01: Time since last cigarette (former smokers only)
@@ -2887,7 +2887,7 @@ questionnaire:
     # MOTU.03: No precondition (asked of all respondents).
     # =========================================================================
     - id: b_other_tobacco
-      kind: Sequence
+      kind: Group
       title: "Module 16: Other Tobacco Use"
       items:
         # MOTU.01: Currently smokes menthol cigarettes (current smokers only)
@@ -2941,7 +2941,7 @@ questionnaire:
     #   Always routes to next module after response.
     # =========================================================================
     - id: b_firearm
-      kind: Sequence
+      kind: Group
       title: "Module 17: Firearm Safety"
       items:
         # MFS.01: Firearms in or around home
@@ -2986,7 +2986,7 @@ questionnaire:
     # MIO.01 and MIO.02: Both asked when module filter is met; no internal routing.
     # =========================================================================
     - id: b_industry
-      kind: Sequence
+      kind: Group
       title: "Module 18: Industry and Occupation"
       precondition:
         - predicate: employment_status in [1, 2, 4]
@@ -3017,7 +3017,7 @@ questionnaire:
     # All 13 items are always asked (no skip logic within this module).
     # =========================================================================
     - id: b_heart_attack_stroke
-      kind: Sequence
+      kind: Group
       title: "Module 19: Heart Attack and Stroke"
       items:
         # MHAS.01: Jaw/neck/back pain as heart attack symptom
@@ -3147,7 +3147,7 @@ questionnaire:
     # MASPRN.01: Always asked (no module filter or internal routing).
     # =========================================================================
     - id: b_aspirin
-      kind: Sequence
+      kind: Group
       title: "Module 20: Aspirin for CVD Prevention"
       items:
         # MASPRN.01: Frequency of aspirin use for heart disease prevention
@@ -3173,7 +3173,7 @@ questionnaire:
     # ask only when sex_from_intro == 3 (not yet specified in intro).
     # =========================================================================
     - id: b_sex_at_birth
-      kind: Sequence
+      kind: Group
       title: "Module 21: Sex at Birth"
       items:
         # MSAB.01: Sex at birth — asked only when intro sex was unspecified
@@ -3197,7 +3197,7 @@ questionnaire:
     # MSOGI.03: Always asked (transgender question), no routing condition.
     # =========================================================================
     - id: b_sogi
-      kind: Sequence
+      kind: Group
       title: "Module 22: Sexual Orientation and Gender Identity"
       items:
         # MSOGI.01: Sexual orientation — male version
@@ -3257,7 +3257,7 @@ questionnaire:
     # MMU.07: Most-used method — asked only when >1 method was used (method_count > 1).
     # =========================================================================
     - id: b_marijuana
-      kind: Sequence
+      kind: Group
       title: "Module 23: Marijuana Use"
       items:
         # MMU.01: Days used marijuana in past 30 days (0 = none)
@@ -3377,7 +3377,7 @@ questionnaire:
     # MACE.12–13: Protective adult presence (Dropdown — 5-point frequency scale)
     # =========================================================================
     - id: b_adverse_childhood
-      kind: Sequence
+      kind: Group
       title: "Module 24: Adverse Childhood Experiences"
       items:
         # MACE.01: Lived with someone who was depressed, mentally ill, or suicidal
@@ -3530,7 +3530,7 @@ questionnaire:
     # MFP.01: Where respondent received most recent flu shot/vaccine.
     # =========================================================================
     - id: b_flu_place
-      kind: Sequence
+      kind: Group
       title: "Module 25: Place of Flu Vaccination"
       precondition:
         - predicate: had_flu_vaccine == 1
@@ -3566,7 +3566,7 @@ questionnaire:
     #   Editbox min 1 max 3 (source captures 1, 2, or 3/all shots).
     # =========================================================================
     - id: b_hpv
-      kind: Sequence
+      kind: Group
       title: "Module 26: HPV Vaccination"
       precondition:
         - predicate: age >= 18 and age <= 49
@@ -3602,7 +3602,7 @@ questionnaire:
     #   All responses → go to next module (no branching).
     # =========================================================================
     - id: b_tdap
-      kind: Sequence
+      kind: Group
       title: "Module 27: Tetanus Diphtheria / Tdap Vaccination"
       items:
         # MTDAP.01: Tetanus shot in past 10 years
@@ -3631,7 +3631,7 @@ questionnaire:
     #   All responses → go to next module.
     # =========================================================================
     - id: b_covid_vaccination
-      kind: Sequence
+      kind: Group
       title: "Module 28: COVID Vaccination"
       items:
         # MCOV.01: Received at least one dose of COVID-19 vaccine
@@ -3684,7 +3684,7 @@ questionnaire:
     # every item regardless of prior responses.
     # =========================================================================
     - id: b_social_determinants
-      kind: Sequence
+      kind: Group
       title: "Module 29: Social Determinants and Health Equity"
       items:
         # MSDHE.01: Overall life satisfaction
@@ -3804,7 +3804,7 @@ questionnaire:
     # MRTR.05–MRTR.06: Asked of all respondents.
     # =========================================================================
     - id: b_reactions_race
-      kind: Sequence
+      kind: Group
       title: "Module 30: Reactions to Race"
       items:
         # MRTR.01: How other people usually classify respondent by race
@@ -3909,7 +3909,7 @@ questionnaire:
     # MRCS.06: Relationship of respondent to child.
     # =========================================================================
     - id: b_child_selection
-      kind: Sequence
+      kind: Group
       title: "Module 31: Random Child Selection"
       precondition:
         - predicate: num_children >= 1 and num_children <= 87
@@ -4001,7 +4001,7 @@ questionnaire:
     # MCAP.02: Child still has asthma. Precondition: MCAP.01 == 1.
     # =========================================================================
     - id: b_childhood_asthma
-      kind: Sequence
+      kind: Group
       title: "Module 32: Childhood Asthma Prevalence"
       precondition:
         - predicate: num_children >= 1 and num_children <= 87
@@ -4041,7 +4041,7 @@ questionnaire:
     #   Precondition: CB01.01 == 1
     # =========================================================================
     - id: b_asthma_callback
-      kind: Sequence
+      kind: Group
       title: "Asthma Call-Back Permission Script"
       items:
         # CB01.01: Consent for asthma call-back interview

@@ -1,4 +1,4 @@
-qmlVersion: "1.0"
+qmlVersion: "2.0"
 questionnaire:
   title: "Survey of Labour and Income Dynamics"
   codeInit: |
@@ -32,7 +32,7 @@ questionnaire:
     # Block precondition: age >= 15 (START-EMPPRE gate)
     # =========================================================================
     - id: b_emppre_main
-      kind: Sequence
+      kind: Group
       title: "Current or Recent Work Activity"
       precondition:
         - predicate: age >= 15
@@ -399,7 +399,7 @@ questionnaire:
     # Entered when has_employer_j1 == 1 (set by J1.Q1 or J1.Q1A).
     # =========================================================================
     - id: b_emppre_job1
-      kind: Sequence
+      kind: Group
       title: "First Employer Details"
       precondition:
         - predicate: age >= 15
@@ -639,7 +639,7 @@ questionnaire:
     # No block precondition — J2.Q1 handles entry gating.
     # =========================================================================
     - id: b_emppre_job2
-      kind: Sequence
+      kind: Group
       title: "Second Employer Details"
       precondition:
         - predicate: age >= 15
@@ -972,7 +972,7 @@ questionnaire:
     # Q6D: Sum-check warning (Comment) if Q6A+Q6B+Q6C != Q5A
     # =========================================================================
     - id: b_expre
-      kind: Sequence
+      kind: Group
       title: "Work Experience"
       precondition:
         - predicate: age <= 69
@@ -1184,7 +1184,7 @@ questionnaire:
     # SECTION: demographics
     # ===================================================================
     - id: b_marital_history
-      kind: Sequence
+      kind: Group
       title: Marital History
       items:
       - id: q_demographics_q1a
@@ -1345,7 +1345,7 @@ questionnaire:
           right: year
 
     - id: b_birth_history
-      kind: Sequence
+      kind: Group
       title: Birth History
       precondition:
       - predicate: sex == 2
@@ -1410,7 +1410,7 @@ questionnaire:
           right: children
 
     - id: b_background
-      kind: Sequence
+      kind: Group
       title: Background
       items:
       - id: q_demographics_q16
@@ -1536,7 +1536,7 @@ questionnaire:
     # Q17-Q18: Parents' education level
     # =========================================================================
     - id: b_edupre
-      kind: Sequence
+      kind: Group
       title: "Educational Attainment"
       items:
         # Q1: Years of elementary and high school

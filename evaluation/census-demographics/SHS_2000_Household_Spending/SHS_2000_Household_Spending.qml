@@ -1,4 +1,4 @@
-qmlVersion: "1.0"
+qmlVersion: "2.0"
 questionnaire:
   title: "Survey of Household Spending 2000"
   codeInit: |
@@ -35,7 +35,7 @@ questionnaire:
     # Person 01 is pre-coded as the household reference person (A_Q02=1).
     # =========================================================================
     - id: b_household_composition
-      kind: Sequence
+      kind: Group
       title: "Household Composition"
       items:
         # A_Q01: Roster instruction
@@ -179,7 +179,7 @@ questionnaire:
     # "Other (Specify)" follow-ups for B_Q01, B_Q07, B_Q09, B_Q10, B_Q11.
     # =========================================================================
     - id: b_dwelling
-      kind: Sequence
+      kind: Group
       title: "Dwelling Characteristics"
       items:
         # B_Q01: Dwelling type
@@ -383,7 +383,7 @@ questionnaire:
     # C_Q13 gated on C_Q12=Yes (modem).
     # =========================================================================
     - id: b_facilities
-      kind: Sequence
+      kind: Group
       title: "Facilities Associated with the Dwelling"
       items:
         # C_Q01: Refrigerators
@@ -571,7 +571,7 @@ questionnaire:
     #   D_Q07.x gated on D_Q06.1=Yes or D_Q06.2=Yes (previously owned)
     # =========================================================================
     - id: b_tenure
-      kind: Sequence
+      kind: Group
       title: "Tenure"
       items:
         # D_Q01: Dwelling tenure status
@@ -769,7 +769,7 @@ questionnaire:
     # If E_Q01 = 0 -> skip to Section I (rented residences).
     # =========================================================================
     - id: b_owned_residences
-      kind: Sequence
+      kind: Group
       title: "Owned Principal Residences"
       items:
         # E_Q01: Number of dwellings owned and occupied
@@ -894,7 +894,7 @@ questionnaire:
     # Entire block gated on owning at least one dwelling.
     # =========================================================================
     - id: b_home_purchase_sale
-      kind: Sequence
+      kind: Group
       title: "Purchase and Sale of Homes"
       precondition:
         - predicate: q_e_q01.outcome > 0
@@ -1016,7 +1016,7 @@ questionnaire:
     # Entire block gated on owning at least one dwelling.
     # =========================================================================
     - id: b_mortgages
-      kind: Sequence
+      kind: Group
       title: "Mortgages on Owned Principal Residences"
       precondition:
         - predicate: num_dwellings_owned > 0
@@ -1132,7 +1132,7 @@ questionnaire:
     # Entire block gated on owning at least one dwelling.
     # =========================================================================
     - id: b_renovations
-      kind: Sequence
+      kind: Group
       title: "Renovations and Repairs of Owned Principal Residences"
       precondition:
         - predicate: num_dwellings_owned > 0
@@ -1217,7 +1217,7 @@ questionnaire:
     # If I_Q01 = 0 -> skip to Section J.
     # =========================================================================
     - id: b_rented_residences
-      kind: Sequence
+      kind: Group
       title: "Rented Principal Residences"
       items:
         # I_Q01: Months rented in 2000
@@ -1387,7 +1387,7 @@ questionnaire:
     # expenses (reported in Section K).
     # =========================================================================
     - id: b_utilities_accommodation
-      kind: Sequence
+      kind: Group
       title: "Utilities and Other Rented Accommodation"
       items:
         # J_Q01.1: Water and sewage
@@ -1478,7 +1478,7 @@ questionnaire:
     # K_Q06.1-Q06.6: Expenditure items (gated on K_Q01=Yes)
     # =========================================================================
     - id: b_vacation_homes
-      kind: Sequence
+      kind: Group
       title: "Vacation Homes and Secondary Residences"
       items:
         # K_Q01: Own vacation home?
@@ -1656,7 +1656,7 @@ questionnaire:
     # K_Q13: Sold? K_Q13.1-Q13.2: Sale details (if sold)
     # =========================================================================
     - id: b_other_property
-      kind: Sequence
+      kind: Group
       title: "Other Property"
       items:
         # K_Q07: Own other property?
@@ -1788,7 +1788,7 @@ questionnaire:
     # Exclude business expenses.
     # =========================================================================
     - id: b_furnishings_art
-      kind: Sequence
+      kind: Group
       title: "Furnishings, Art and Antiques"
       items:
         # L_Q01: Furniture
@@ -1877,7 +1877,7 @@ questionnaire:
     # Net purchase price after trade-in.
     # =========================================================================
     - id: b_entertainment_equipment
-      kind: Sequence
+      kind: Group
       title: "Home Entertainment Equipment"
       items:
         # L_Q09: Audio equipment
@@ -1934,7 +1934,7 @@ questionnaire:
     # BLOCK 3: COMPUTER EQUIPMENT (L_Q14.1-Q16)
     # =========================================================================
     - id: b_computer_equipment
-      kind: Sequence
+      kind: Group
       title: "Computer Equipment"
       items:
         # L_Q14.1: Computer hardware (new)
@@ -1991,7 +1991,7 @@ questionnaire:
     # BLOCK 4: HOME ENTERTAINMENT SERVICES (L_Q17-Q20)
     # =========================================================================
     - id: b_entertainment_services
-      kind: Sequence
+      kind: Group
       title: "Home Entertainment Services"
       items:
         # L_Q17: Video rentals
@@ -2040,7 +2040,7 @@ questionnaire:
     # Net purchase price after trade-in.
     # =========================================================================
     - id: b_major_appliances
-      kind: Sequence
+      kind: Group
       title: "Major Household Appliances"
       items:
         # L_Q21: Refrigerators/freezers
@@ -2167,7 +2167,7 @@ questionnaire:
     # BLOCK 6: SMALL APPLIANCES AND FOOD EQUIPMENT (L_Q32-Q36)
     # =========================================================================
     - id: b_small_appliances
-      kind: Sequence
+      kind: Group
       title: "Small Electrical Appliances and Food Equipment"
       items:
         # L_Q32: Electric food preparation
@@ -2224,7 +2224,7 @@ questionnaire:
     # BLOCK 7: TOOLS AND OTHER EQUIPMENT (L_Q37-Q47)
     # =========================================================================
     - id: b_tools_equipment
-      kind: Sequence
+      kind: Group
       title: "Tools, Equipment and Services"
       items:
         # L_Q37: Power lawn/garden equipment
@@ -2346,7 +2346,7 @@ questionnaire:
     # No routing — all sequential expenditure items.
     # =========================================================================
     - id: b_communications
-      kind: Sequence
+      kind: Group
       title: "Communications"
       items:
         # M_Q01.1: Telephone services
@@ -2413,7 +2413,7 @@ questionnaire:
     # BLOCK 2: CHILD CARE (M_Q03-Q05)
     # =========================================================================
     - id: b_child_care
-      kind: Sequence
+      kind: Group
       title: "Child Care"
       items:
         # M_Q03: Day care centres
@@ -2450,7 +2450,7 @@ questionnaire:
     # BLOCK 3: HOME AND GARDEN SERVICES (M_Q06-Q07)
     # =========================================================================
     - id: b_home_garden_services
-      kind: Sequence
+      kind: Group
       title: "Home and Garden Services"
       items:
         # M_Q06: Domestic help
@@ -2477,7 +2477,7 @@ questionnaire:
     # BLOCK 4: GARDEN SUPPLIES (M_Q08-Q10)
     # =========================================================================
     - id: b_garden_supplies
-      kind: Sequence
+      kind: Group
       title: "Flowers and Garden Supplies"
       items:
         # M_Q08: Nursery stock and flowers
@@ -2514,7 +2514,7 @@ questionnaire:
     # BLOCK 5: PET EXPENSES (M_Q11-Q14)
     # =========================================================================
     - id: b_pet_expenses
-      kind: Sequence
+      kind: Group
       title: "Pet Expenses"
       items:
         # M_Q11: Pet food
@@ -2561,7 +2561,7 @@ questionnaire:
     # BLOCK 6: CLEANING SUPPLIES AND HOUSEHOLD SUPPLIES (M_Q15-Q20)
     # =========================================================================
     - id: b_cleaning_supplies
-      kind: Sequence
+      kind: Group
       title: "Cleaning and Household Supplies"
       items:
         # M_Q15: Laundry/dry-cleaning services
@@ -2635,7 +2635,7 @@ questionnaire:
     # No routing — all sequential expenditure items.
     # =========================================================================
     - id: b_food_alcohol
-      kind: Sequence
+      kind: Group
       title: "Food and Alcohol"
       items:
         # N_Q01: Food and groceries
@@ -2780,7 +2780,7 @@ questionnaire:
     # Interviewers should sum amounts across all persons in each category.
     # =========================================================================
     - id: b_womens_clothing
-      kind: Sequence
+      kind: Group
       title: "Women and Girls 4 Years and Over"
       items:
         # Explanatory comment
@@ -2832,7 +2832,7 @@ questionnaire:
     # BLOCK 2: MEN'S AND BOYS' CLOTHING (O_Q05-Q08)
     # =========================================================================
     - id: b_mens_clothing
-      kind: Sequence
+      kind: Group
       title: "Men and Boys 4 Years and Over"
       items:
         # Explanatory comment
@@ -2884,7 +2884,7 @@ questionnaire:
     # BLOCK 3: CHILDREN'S CLOTHING (O_Q09-Q11)
     # =========================================================================
     - id: b_childrens_clothing
-      kind: Sequence
+      kind: Group
       title: "Children Under 4 Years"
       items:
         # Explanatory comment
@@ -2926,7 +2926,7 @@ questionnaire:
     # BLOCK 4: CLOTHING GIFTS (O_Q12.1-Q12.3)
     # =========================================================================
     - id: b_clothing_gifts
-      kind: Sequence
+      kind: Group
       title: "Gifts of Clothing"
       items:
         # O_Q12.1: Gifts for women/girls
@@ -2963,7 +2963,7 @@ questionnaire:
     # BLOCK 5: CLOTHING SERVICES (O_Q13-Q16)
     # =========================================================================
     - id: b_clothing_services
-      kind: Sequence
+      kind: Group
       title: "Clothing Materials and Services"
       items:
         # O_Q13: Clothing material
@@ -3015,7 +3015,7 @@ questionnaire:
     # No routing — all sequential expenditure items.
     # =========================================================================
     - id: b_personal_care
-      kind: Sequence
+      kind: Group
       title: "Personal Care"
       items:
         # P_Q01: Hair grooming
@@ -3062,7 +3062,7 @@ questionnaire:
     # BLOCK 2: HEALTH INSURANCE PREMIUMS (P_Q05.1-Q05.4)
     # =========================================================================
     - id: b_health_insurance
-      kind: Sequence
+      kind: Group
       title: "Health Insurance Premiums"
       items:
         # P_Q05.1: Provincial/territorial plans
@@ -3109,7 +3109,7 @@ questionnaire:
     # BLOCK 3: DIRECT HEALTH COSTS (P_Q06-Q16)
     # =========================================================================
     - id: b_direct_health
-      kind: Sequence
+      kind: Group
       title: "Direct Health Costs"
       items:
         # P_Q06: Prescription eye wear
@@ -3229,7 +3229,7 @@ questionnaire:
     # BLOCK 1: VEHICLE SCREENER
     # =========================================================================
     - id: b_vehicle_screener
-      kind: Sequence
+      kind: Group
       title: "Vehicle Ownership Screener"
       items:
         # Q_Q01: Own/lease/operate a vehicle?
@@ -3251,7 +3251,7 @@ questionnaire:
     # QML cannot dynamically loop, so ONE representative vehicle is modeled.
     # =========================================================================
     - id: b_vehicle_details
-      kind: Sequence
+      kind: Group
       title: "Vehicle Details"
       precondition:
         - predicate: has_vehicle == 1
@@ -3366,7 +3366,7 @@ questionnaire:
     # BLOCK 3: VEHICLE OPERATING EXPENSES
     # =========================================================================
     - id: b_vehicle_operation
-      kind: Sequence
+      kind: Group
       title: "Vehicle Operating Expenses"
       precondition:
         - predicate: has_vehicle == 1
@@ -3475,7 +3475,7 @@ questionnaire:
     # BLOCK 4: RENTED VEHICLES
     # =========================================================================
     - id: b_rented_vehicles
-      kind: Sequence
+      kind: Group
       title: "Rented Vehicles"
       items:
         # Q_Q20.1: Rented cars
@@ -3525,7 +3525,7 @@ questionnaire:
     # BLOCK 1: BICYCLES
     # =========================================================================
     - id: b_bicycles
-      kind: Sequence
+      kind: Group
       title: "Bicycles"
       items:
         # R_Q01: Bicycle purchase
@@ -3552,7 +3552,7 @@ questionnaire:
     # BLOCK 2: RECREATIONAL VEHICLE SCREENER
     # =========================================================================
     - id: b_rec_vehicle_screener
-      kind: Sequence
+      kind: Group
       title: "Recreational Vehicle Screener"
       items:
         # R_Q03: Own rec vehicle?
@@ -3574,7 +3574,7 @@ questionnaire:
     # QML cannot dynamically loop, so ONE representative vehicle is modeled.
     # =========================================================================
     - id: b_rec_vehicle_details
-      kind: Sequence
+      kind: Group
       title: "Recreational Vehicle Details"
       precondition:
         - predicate: has_rec_vehicle == 1
@@ -3694,7 +3694,7 @@ questionnaire:
     # BLOCK 4: RENTED RECREATIONAL VEHICLES
     # =========================================================================
     - id: b_rented_rec_vehicles
-      kind: Sequence
+      kind: Group
       title: "Rented Recreational Vehicles"
       items:
         # R_Q14: Rented rec vehicles
@@ -3711,7 +3711,7 @@ questionnaire:
     # BLOCK 5: TRANSPORTATION SERVICES
     # =========================================================================
     - id: b_transportation
-      kind: Sequence
+      kind: Group
       title: "Transportation Services"
       items:
         # R_Q15.1: City transit
@@ -3788,7 +3788,7 @@ questionnaire:
     # BLOCK 6: PACKAGE TRIPS
     # =========================================================================
     - id: b_package_trips
-      kind: Sequence
+      kind: Group
       title: "Package Trips"
       items:
         # R_Q17: Package trip?
@@ -3822,7 +3822,7 @@ questionnaire:
     # BLOCK 1: SPORTS AND CAMPING EQUIPMENT
     # =========================================================================
     - id: b_sports_camping
-      kind: Sequence
+      kind: Group
       title: "Sports and Camping Equipment"
       items:
         # S_Q01: Sports equipment
@@ -3849,7 +3849,7 @@ questionnaire:
     # BLOCK 2: PHOTOGRAPHIC
     # =========================================================================
     - id: b_photographic
-      kind: Sequence
+      kind: Group
       title: "Photographic"
       items:
         # S_Q03: Cameras
@@ -3886,7 +3886,7 @@ questionnaire:
     # BLOCK 3: MUSIC AND RECREATION EQUIPMENT
     # =========================================================================
     - id: b_music_recreation
-      kind: Sequence
+      kind: Group
       title: "Music and Other Recreation Equipment"
       items:
         # S_Q06: Musical instruments
@@ -3983,7 +3983,7 @@ questionnaire:
     # BLOCK 4: ADMISSIONS
     # =========================================================================
     - id: b_admissions
-      kind: Sequence
+      kind: Group
       title: "Admissions"
       items:
         # S_Q15.1: Movie theatres
@@ -4030,7 +4030,7 @@ questionnaire:
     # BLOCK 5: RECREATION SERVICES
     # =========================================================================
     - id: b_recreation_services
-      kind: Sequence
+      kind: Group
       title: "Recreation Services"
       items:
         # S_Q16: Coin-operated and carnival games
@@ -4087,7 +4087,7 @@ questionnaire:
     # BLOCK 6: READING MATERIALS
     # =========================================================================
     - id: b_reading
-      kind: Sequence
+      kind: Group
       title: "Reading Materials"
       items:
         # S_Q21: Newspapers
@@ -4144,7 +4144,7 @@ questionnaire:
     # BLOCK 7: EDUCATION
     # =========================================================================
     - id: b_education
-      kind: Sequence
+      kind: Group
       title: "Education"
       items:
         # S_Q26: Elementary/secondary education (tuition, books, supplies)
@@ -4202,7 +4202,7 @@ questionnaire:
     # BLOCK 1: TOBACCO
     # =========================================================================
     - id: b_tobacco
-      kind: Sequence
+      kind: Group
       title: "Tobacco"
       items:
         # T_Q01: Cigarettes
@@ -4229,7 +4229,7 @@ questionnaire:
     # BLOCK 2: FINANCIAL SERVICES
     # =========================================================================
     - id: b_financial_services
-      kind: Sequence
+      kind: Group
       title: "Financial Services"
       items:
         # T_Q03.1: Bank charges
@@ -4278,7 +4278,7 @@ questionnaire:
     # Each gambling type has expenses and winnings sub-columns.
     # =========================================================================
     - id: b_gambling
-      kind: Sequence
+      kind: Group
       title: "Gambling"
       items:
         # T_Q04.1: Government-run lotteries
@@ -4337,7 +4337,7 @@ questionnaire:
     # BLOCK 4: MISCELLANEOUS
     # =========================================================================
     - id: b_miscellaneous
-      kind: Sequence
+      kind: Group
       title: "Miscellaneous"
       items:
         # T_Q05: Fines and losses
@@ -4418,7 +4418,7 @@ questionnaire:
     # BLOCK 5: DIRECT SALES
     # =========================================================================
     - id: b_direct_sales
-      kind: Sequence
+      kind: Group
       title: "Direct Sales"
       items:
         # T_Q11: Direct sales screener
@@ -4515,7 +4515,7 @@ questionnaire:
     # BLOCK 6: PURCHASES OUTSIDE CANADA
     # =========================================================================
     - id: b_outside_canada
-      kind: Sequence
+      kind: Group
       title: "Purchases Outside Canada"
       items:
         # T_Q12: Purchases outside Canada
@@ -4538,7 +4538,7 @@ questionnaire:
     # U_Q01.2: Weeks worked part-time
     # =========================================================================
     - id: b_employment
-      kind: Sequence
+      kind: Group
       title: "Employment"
       items:
         - id: q_u_q01_1
@@ -4566,7 +4566,7 @@ questionnaire:
     # All amounts are in dollars for the year 2000.
     # =========================================================================
     - id: b_income
-      kind: Sequence
+      kind: Group
       title: "Income Sources"
       items:
         - id: q_u_q02
@@ -4724,7 +4724,7 @@ questionnaire:
     # V_Q03: Other personal taxes
     # =========================================================================
     - id: b_personal_taxes
-      kind: Sequence
+      kind: Group
       title: "Personal Taxes"
       items:
         - id: q_v_q01
@@ -4760,7 +4760,7 @@ questionnaire:
     # V_Q04 through V_Q10: Insurance, pension, and professional dues
     # =========================================================================
     - id: b_security_payments
-      kind: Sequence
+      kind: Group
       title: "Security and Employment Payments"
       items:
         - id: q_v_q04
@@ -4834,7 +4834,7 @@ questionnaire:
     # V_Q13.1-Q13.2: Charitable contributions
     # =========================================================================
     - id: b_gifts_contributions
-      kind: Sequence
+      kind: Group
       title: "Money Gifts, Contributions and Support"
       items:
         - id: q_v_q11
@@ -4893,7 +4893,7 @@ questionnaire:
     # Each net-change item has an increase and decrease column.
     # =========================================================================
     - id: b_change_in_assets
-      kind: Sequence
+      kind: Group
       title: "Change in Assets"
       items:
         # W_Q01.1: Cash in banks, trust companies, cash on hand
@@ -5009,7 +5009,7 @@ questionnaire:
     # farms or rental property?
     # =========================================================================
     - id: b_business_screener
-      kind: Sequence
+      kind: Group
       title: "Unincorporated Business Screener"
       items:
         - id: q_x_q01
@@ -5030,7 +5030,7 @@ questionnaire:
     # Only asked if has_business == 1.
     # =========================================================================
     - id: b_business_finances
-      kind: Sequence
+      kind: Group
       title: "Business Financial Details"
       precondition:
         - predicate: has_business == 1
@@ -5127,7 +5127,7 @@ questionnaire:
     # Y_Q01: Does the household have any loans with regular payments?
     # =========================================================================
     - id: b_loan_screener
-      kind: Sequence
+      kind: Group
       title: "Loan Screener"
       items:
         - id: q_y_q01
@@ -5157,7 +5157,7 @@ questionnaire:
     # Y_Q05.1: Additional amount (if Y_Q05 = Yes)
     # =========================================================================
     - id: b_loan_details
-      kind: Sequence
+      kind: Group
       title: "Loan Details"
       precondition:
         - predicate: has_loans == 1
@@ -5224,7 +5224,7 @@ questionnaire:
     # Modeled as QuestionGroups with 3 sub-questions each.
     # =========================================================================
     - id: b_other_debts
-      kind: Sequence
+      kind: Group
       title: "Other Money Owed"
       items:
         - id: qg_y_q06

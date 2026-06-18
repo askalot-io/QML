@@ -1,4 +1,4 @@
-qmlVersion: "1.0"
+qmlVersion: "2.0"
 questionnaire:
   title: "Canadian Labour Force Survey"
   codeInit: |
@@ -38,7 +38,7 @@ questionnaire:
     # routing hinges on this value.
     # =========================================================================
     - id: b_interview_type
-      kind: Sequence
+      kind: Group
       title: "Interview Type"
       items:
         - id: q_interview_type
@@ -69,7 +69,7 @@ questionnaire:
     #   TC_Q01: Yes->AR_Q01, No->call_ended
     # =========================================================================
     - id: b_initial_contact
-      kind: Sequence
+      kind: Group
       title: "Initial Introduction and Respondent Contact"
       precondition:
         - predicate: interview_type == 2 or interview_type == 3
@@ -133,7 +133,7 @@ questionnaire:
     #   3 -> appointment scheduling (SRA/ARA block)
     # =========================================================================
     - id: b_adult_contact
-      kind: Sequence
+      kind: Group
       title: "Adult Contact"
       items:
         # AR_Q01: May I speak with an adult?
@@ -169,7 +169,7 @@ questionnaire:
     # All paths in this block end the call (terminal).
     # =========================================================================
     - id: b_appointments
-      kind: Sequence
+      kind: Group
       title: "Appointment Scheduling"
       items:
         # SRA_Q01: Schedule appointment for specific respondent
@@ -213,7 +213,7 @@ questionnaire:
     #   AR_Q01=2 (via II_R01C)
     # =========================================================================
     - id: b_address_confirm
-      kind: Sequence
+      kind: Group
       title: "Address Confirmation"
       precondition:
         - predicate: interview_type == 2
@@ -262,7 +262,7 @@ questionnaire:
     # conditions to be the final state.
     # =========================================================================
     - id: b_survey_intro
-      kind: Sequence
+      kind: Group
       title: "Survey Introduction and Language Preference"
       items:
         # IC_R01: Survey introduction
@@ -306,7 +306,7 @@ questionnaire:
     # interviews (1,2) go to MA_Q01.
     # =========================================================================
     - id: b_address_filter
-      kind: Sequence
+      kind: Group
       title: "Address Confirmation Filter"
       items:
         # LA_N01: Confirm listing address — interviewer filter
@@ -322,7 +322,7 @@ questionnaire:
     # for completeness but represent interview termination.
     # =========================================================================
     - id: b_address_subsequent
-      kind: Sequence
+      kind: Group
       title: "Address Confirmation (Subsequent Telephone)"
       precondition:
         - predicate: interview_type == 3
@@ -398,7 +398,7 @@ questionnaire:
     # MA_Q01: Collect new mailing address (multiple entry paths)
     # =========================================================================
     - id: b_mailing_address
-      kind: Sequence
+      kind: Group
       title: "Mailing Address Confirmation"
       items:
         # CHM_Q01: Is listing address also mailing address?
@@ -451,7 +451,7 @@ questionnaire:
     # Both produce dwelling_type variable.
     # =========================================================================
     - id: b_dwelling
-      kind: Sequence
+      kind: Group
       title: "Dwelling Type"
       precondition:
         - predicate: interview_type == 1 or interview_type == 2
@@ -509,7 +509,7 @@ questionnaire:
     # after DW_Q01/DW_N02.
     # =========================================================================
     - id: b_tenure
-      kind: Sequence
+      kind: Group
       title: "Tenure"
       items:
         # TN_Q01: Dwelling owned by household member?
@@ -536,7 +536,7 @@ questionnaire:
     # QML cannot model dynamic roster loops; roster items use Textarea.
     # =========================================================================
     - id: b_roster_birth
-      kind: Sequence
+      kind: Group
       title: "Household Roster (Birth Interview)"
       precondition:
         - predicate: interview_type == 1 or interview_type == 2
@@ -606,7 +606,7 @@ questionnaire:
     # OTH2_Q01: New household members roster
     # =========================================================================
     - id: b_roster_subsequent
-      kind: Sequence
+      kind: Group
       title: "Household Roster (Subsequent Interview)"
       precondition:
         - predicate: interview_type == 3
@@ -676,7 +676,7 @@ questionnaire:
     # ANC_Q03 overrides respondent_age.
     # =========================================================================
     - id: b_age
-      kind: Sequence
+      kind: Group
       title: "Age and Date of Birth"
       items:
         # ANC_Q01: Date of birth (modeled as age in years)
@@ -722,7 +722,7 @@ questionnaire:
     # BLOCK 2: SEX
     # =========================================================================
     - id: b_sex
-      kind: Sequence
+      kind: Group
       title: "Sex"
       items:
         # SEX_Q01: Enter sex
@@ -744,7 +744,7 @@ questionnaire:
     # Filter: age < 16 -> skip to FI_N01 (precondition gates this question)
     # =========================================================================
     - id: b_marital
-      kind: Sequence
+      kind: Group
       title: "Marital Status"
       items:
         # MSNC_Q01: Marital status (only if age >= 16)
@@ -770,7 +770,7 @@ questionnaire:
     # RR_N01: Relationship to reference person (10 options -> Dropdown)
     # =========================================================================
     - id: b_family
-      kind: Sequence
+      kind: Group
       title: "Family and Relationship"
       items:
         # FI_N01: Family identifier
@@ -812,7 +812,7 @@ questionnaire:
     # IMM_Q04: Month of immigration (only if within 5 years)
     # =========================================================================
     - id: b_immigration
-      kind: Sequence
+      kind: Group
       title: "Immigration"
       items:
         # IMM_Q01: Country of birth
@@ -894,7 +894,7 @@ questionnaire:
     # ABO_Q02: North American Indian, Metis, or Inuit (Checkbox, power-of-2)
     # =========================================================================
     - id: b_aboriginal
-      kind: Sequence
+      kind: Group
       title: "Aboriginal Identity"
       items:
         # ABO_Q01: Is person an Aboriginal person?
@@ -937,7 +937,7 @@ questionnaire:
     #   Filter: born in Canada OR not landed immigrant OR no post-secondary
     # =========================================================================
     - id: b_education
-      kind: Sequence
+      kind: Group
       title: "Education"
       precondition:
         - predicate: respondent_age >= 14
@@ -1030,7 +1030,7 @@ questionnaire:
     #   No -> Labour Force section
     # =========================================================================
     - id: b_armed_forces
-      kind: Sequence
+      kind: Group
       title: "Canadian Armed Forces"
       precondition:
         - predicate: respondent_age >= 16
@@ -1057,7 +1057,7 @@ questionnaire:
     # Block-level precondition: tenure == 1 (dwelling is rented).
     # =========================================================================
     - id: b_rent_intro
-      kind: Sequence
+      kind: Group
       title: "Rent Introduction"
       precondition:
         - predicate: tenure == 1
@@ -1081,7 +1081,7 @@ questionnaire:
     #   RM_Q02 -> RM_Q03 -> RM_Q04
     # =========================================================================
     - id: b_dwelling_chars
-      kind: Sequence
+      kind: Group
       title: "Dwelling Characteristics"
       precondition:
         - predicate: tenure == 1
@@ -1129,7 +1129,7 @@ questionnaire:
     # RM_Q05A: Does business affect rent? (if Yes)
     # =========================================================================
     - id: b_subsidy_business
-      kind: Sequence
+      kind: Group
       title: "Rent Subsidy and Business Use"
       precondition:
         - predicate: tenure == 1
@@ -1192,7 +1192,7 @@ questionnaire:
     #   RM_Q08A -> RM_Q09B
     # =========================================================================
     - id: b_rent_amount
-      kind: Sequence
+      kind: Group
       title: "Rent Amount and Changes"
       precondition:
         - predicate: tenure == 1
@@ -1266,7 +1266,7 @@ questionnaire:
     #     (if no plug-in) -> RM_Q14
     # =========================================================================
     - id: b_parking
-      kind: Sequence
+      kind: Group
       title: "Parking Facilities"
       precondition:
         - predicate: tenure == 1
@@ -1363,7 +1363,7 @@ questionnaire:
     #   RM_Q15 -> end of Rent Component
     # =========================================================================
     - id: b_utilities
-      kind: Sequence
+      kind: Group
       title: "Utilities and Furnishings"
       precondition:
         - predicate: tenure == 1
@@ -1425,7 +1425,7 @@ questionnaire:
     # Q105: When last worked? (if Q104=Yes) — routing depends on recency
     # =========================================================================
     - id: b_job_attachment
-      kind: Sequence
+      kind: Group
       title: "Job Attachment"
       items:
         # Q100: Last week, did person work at a job or business?
@@ -1524,7 +1524,7 @@ questionnaire:
     # Reached from: Q100=Yes (PATH=1), Q101=Yes, or Q105 recent and not PATH=7.
     # =========================================================================
     - id: b_job_description
-      kind: Sequence
+      kind: Group
       title: "Job Description"
       precondition:
         - predicate: "q_100.outcome == 1 or q_101.outcome == 1 or (q_104.outcome == 1 and last_work_recent == 1 and q_100.outcome != 3)"
@@ -1632,7 +1632,7 @@ questionnaire:
     # Q137: Usually work >=30 or <30 hours?
     # =========================================================================
     - id: b_absence
-      kind: Sequence
+      kind: Group
       title: "Absence and Separation"
       items:
         # Q130: Main reason absent from work last week
@@ -1809,7 +1809,7 @@ questionnaire:
     #   Q130 answered with non-layoff reason (PATH=2, i.e., q_130 not in [8,9,10])
     # =========================================================================
     - id: b_work_hours
-      kind: Sequence
+      kind: Group
       title: "Work Hours - Main Job"
       precondition:
         - predicate: "q_100.outcome == 1 or (q_100.outcome == 2 and q_101.outcome == 1 and q_130.outcome not in [8, 9, 10])"
@@ -2049,7 +2049,7 @@ questionnaire:
     # Q176-Q178: Want a job, reason not looking
     # =========================================================================
     - id: b_job_search
-      kind: Sequence
+      kind: Group
       title: "Job Search and Future Start"
       items:
         # Q170: Did anything to find work in past 4 weeks?
@@ -2219,7 +2219,7 @@ questionnaire:
     #   Q178=8 (believes no work available, discouraged worker)
     # =========================================================================
     - id: b_availability
-      kind: Sequence
+      kind: Group
       title: "Availability"
       precondition:
         - predicate: "is_temp_layoff == 1 or search_status in [1, 2] or q_178.outcome == 8"
@@ -2259,7 +2259,7 @@ questionnaire:
     # Reached from work hours block (PATH=1 or PATH=2).
     # =========================================================================
     - id: b_earnings
-      kind: Sequence
+      kind: Group
       title: "Earnings, Union, and Permanence"
       precondition:
         - predicate: "q_100.outcome == 1 or (q_100.outcome == 2 and q_101.outcome == 1 and q_130.outcome not in [8, 9, 10])"
@@ -2482,7 +2482,7 @@ questionnaire:
     # Filter: Q102=No (only one job) -> skip to Q400/Q500
     # =========================================================================
     - id: b_other_job
-      kind: Sequence
+      kind: Group
       title: "Class of Worker - Other Job"
       precondition:
         - predicate: "q_100.outcome == 1 or (q_100.outcome == 2 and q_101.outcome == 1 and q_130.outcome not in [8, 9, 10])"
@@ -2553,7 +2553,7 @@ questionnaire:
     # Filter: Only if is_temp_layoff=1 (PATH=3 equivalent)
     # =========================================================================
     - id: b_layoff_search
-      kind: Sequence
+      kind: Group
       title: "Temporary Layoff Job Search"
       precondition:
         - predicate: is_temp_layoff == 1
@@ -2574,7 +2574,7 @@ questionnaire:
     # Filter: age >= 65 -> END (block precondition)
     # =========================================================================
     - id: b_school
-      kind: Sequence
+      kind: Group
       title: "School Attendance"
       precondition:
         - predicate: respondent_age < 65
@@ -2656,7 +2656,7 @@ questionnaire:
     # (not rotate-out). Rotate-out respondents skip directly to TY_R02.
     # =========================================================================
     - id: b_exit_intro
-      kind: Sequence
+      kind: Group
       title: "Exit Introduction"
       precondition:
         - predicate: is_rotate_out == 0
@@ -2674,7 +2674,7 @@ questionnaire:
     # Only for continuing respondents (not rotate-out).
     # =========================================================================
     - id: b_future_contact
-      kind: Sequence
+      kind: Group
       title: "Future Contact Scheduling"
       precondition:
         - predicate: is_rotate_out == 0
@@ -2700,7 +2700,7 @@ questionnaire:
     # Only for continuing respondents.
     # =========================================================================
     - id: b_telephone
-      kind: Sequence
+      kind: Group
       title: "Telephone Confirmation"
       precondition:
         - predicate: is_rotate_out == 0
@@ -2738,7 +2738,7 @@ questionnaire:
     # Only for continuing respondents.
     # =========================================================================
     - id: b_interview_mode
-      kind: Sequence
+      kind: Group
       title: "Interview Mode for Next Month"
       precondition:
         - predicate: is_rotate_out == 0
@@ -2775,7 +2775,7 @@ questionnaire:
     #   - In-person interviews only if PC_Q01 = Yes (outcome 1)
     # =========================================================================
     - id: b_call_time
-      kind: Sequence
+      kind: Group
       title: "Preferred Call Time"
       precondition:
         - predicate: is_rotate_out == 0
@@ -2829,7 +2829,7 @@ questionnaire:
     # row/duplex dwellings (types 1-4). CATI and subsequent interviews skip.
     # =========================================================================
     - id: b_living_quarters
-      kind: Sequence
+      kind: Group
       title: "Living Quarters Check"
       precondition:
         - predicate: is_rotate_out == 0
@@ -2857,7 +2857,7 @@ questionnaire:
     # Shown only for non-rotate-out respondents.
     # =========================================================================
     - id: b_thankyou_continue
-      kind: Sequence
+      kind: Group
       title: "Thank You (Continuing)"
       precondition:
         - predicate: is_rotate_out == 0
@@ -2873,7 +2873,7 @@ questionnaire:
     # Shown only for rotate-out respondents.
     # =========================================================================
     - id: b_thankyou_rotateout
-      kind: Sequence
+      kind: Group
       title: "Thank You (Rotate-Out)"
       precondition:
         - predicate: is_rotate_out == 1

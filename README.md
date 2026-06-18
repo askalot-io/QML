@@ -45,8 +45,8 @@ showcase the language's capabilities (and double as the test suite). Highlights:
 
 - **Core flow** — `basic.qml`, `branching_flow.qml`, `dependencies.qml`, `scoring.qml`, `question_group.qml`
 - **Matrix questions** — `matrix_ranking.qml`, `matrix_symmetry.qml`, `matrix_fixed_sum.qml`, `matrix_infeasible_sum.qml`
-- **Roster blocks** (repeat-over-entities) — `roster_numeric.qml`, `roster_multiselect.qml`, `roster_inner_precondition.qml`
-- **Sample blocks** (randomized sub-selection) — `sample_random.qml`, `sample_traversal_*.qml`, `sample_over_cap.qml`, `sample_cyclic.qml`
+- **Group blocks** (single-pass, the default `kind`, optionally `count`-capped) — a Group asks each in-scope inner item once in canonical order; an optional `count: N` caps it to a deterministic, precondition-gated **first-N** draw (not random selection)
+- **Roster blocks** (repeat-over-entities) — `roster_numeric.qml`, `roster_multiselect.qml`, `roster_inner_precondition.qml`, `roster_single_label.qml`
 - **Formal-validation cases** — `cycles.qml`, `classification.qml`, and the `thesis_*.qml` set (dead-code and conflicting-postcondition detection drawn from the paper).
 
 ### Evaluation corpus — `evaluation/`
@@ -294,7 +294,7 @@ Cycle members are linearized in QML file order at their natural position. The or
 
 Emits a **positions-free** structural intermediate representation (IR) — top-level `blocks`, `items`, and `conditions` arrays — consumed by the React + React Flow webview in the QML Explorer. Layout is computed **client-side by ELK.js**; this module never computes node positions.
 
-1. **Structure**: blocks (incl. Roster `iterate_over`/`labels` and Sample `count`/`is_random`), items (kind, control, classification), and conditions (pre/post predicates with item-outcome and variable references)
+1. **Structure**: blocks (incl. Roster `iterate_over`/`labels` and Group `count`), items (kind, control, classification), and conditions (pre/post predicates with item-outcome and variable references)
 2. **Classification**: per-item flow/validation classification is attached to the IR for the viewer to color
 
 ## QML Language
@@ -311,7 +311,7 @@ Key elements:
 
 ### Block-Level Preconditions
 
-Blocks can define preconditions (and postconditions) that apply to all items within them. The block's `precondition`/`postcondition` lists stay **on the block** — they are not copied onto items. Consumers compose them at evaluation time: `FlowProcessor` (and `StaticBuilder`, when emitting Z3 constraints) gate each item on `(block.precondition or []) + (item.precondition or [])`. During flattening, `QMLLoader` propagates only block-*kind* metadata onto inner items — `_roster_block_id` / `_roster_iterate_over` / `_roster_labels` for Roster blocks, and `_sample_block_id` / `_sample_n` / `_sample_is_random` for Sample blocks — so downstream code can detect roster/sample membership without re-walking the block tree.
+Blocks can define preconditions (and postconditions) that apply to all items within them. The block's `precondition`/`postcondition` lists stay **on the block** — they are not copied onto items. Consumers compose them at evaluation time: `FlowProcessor` (and `StaticBuilder`, when emitting Z3 constraints) gate each item on `(block.precondition or []) + (item.precondition or [])`. During flattening, `QMLLoader` propagates only block-*kind* metadata onto inner items — `_roster_block_id` / `_roster_iterate_over` / `_roster_labels` for Roster blocks, and `_group_block_id` / `_group_count` for the inner items of a `count`-capped Group (an uncapped Group adds no tags) — so downstream code can detect roster/Group membership without re-walking the block tree.
 
 ### Domain Constraints for Z3
 
@@ -327,7 +327,7 @@ qml-explorer frontend all agree on.
 
 | File | Role |
 |------|------|
-| `askalot_qml/schema/qml-schema.json` | **Authoritative** JSON Schema (dialect `2020-12`), schema version **1.1.1**. Single source of truth. |
+| `askalot_qml/schema/qml-schema.json` | **Authoritative** JSON Schema (dialect `2020-12`), schema version **2.0.0**. Single source of truth. |
 | `askalot_qml/schema/qml-grammar.w3c.ebnf` | A **W3C-EBNF rendering** of the same contract, for railroad-diagram tools. Derived from the schema; not authoritative. |
 | `askalot_qml/schema/__init__.py` | Exposes `QML_SCHEMA_VERSION`, read from `qml-schema.json` at import (no hardcoded copy). |
 
@@ -343,7 +343,7 @@ control. Items and blocks may carry `precondition` / `postcondition` lists
 (predicates over prior answers) and Python `codeBlock` / `codeInit` snippets.
 Three discriminators shape almost everything:
 
-- **`Block.kind`** — `Sequence` | `Roster` | `Sample`
+- **`Block.kind`** — `Group` | `Roster` (optional; defaults to `Group`)
 - **`Item.kind`** — `Comment` | `Question` | `QuestionGroup` | `MatrixQuestion`
 - **`Input.control`** — `Switch` | `Radio` | `Dropdown` | `Checkbox` | `Editbox` | `Textarea` | `Slider` | `Range`
 
@@ -411,12 +411,16 @@ A context-free grammar cannot express everything the schema and loader enforce,
 and in a few places the grammar is deliberately *stricter* than the live schema.
 Know these before trusting the diagram as the full contract:
 
-1. **Open vs closed.** `qml-schema.json` sets neither `additionalProperties:
-   false` nor `unevaluatedProperties: false`, so it **silently accepts unknown,
-   misspelled, or misplaced keys** today (`iterateOvr`, a `count` on a
-   `Sequence`, `precondtion`). The grammar models the *intended, closed*
-   language — it lists only declared members. Adopting
-   `unevaluatedProperties: false` is a planned schema **MINOR** bump.
+1. **Open vs closed.** `qml-schema.json` sets `unevaluatedProperties: false`
+   **on `Block`** (as of `2.0.0`) — it composes across the kind-conditional
+   `allOf`/`if`-`then` branches, so a misplaced key on a block (`iterateOvr`, a
+   `count` on a `Roster`, a stray `is_random`) is now **rejected**. The other
+   object types (`Item`, `Input`, `Condition`, `Questionnaire`) still set neither
+   `additionalProperties: false` nor `unevaluatedProperties: false`, so they
+   **silently accept unknown, misspelled, or misplaced keys** today
+   (`precondtion`). The grammar models the *intended, closed* language — it lists
+   only declared members. Broader `unevaluatedProperties: false` adoption beyond
+   `Block` is deferred follow-up.
 2. **Vestigial Roster guard.** The schema's Roster branch forbids `as` and
    `maxEntries` via `not`/`anyOf`, but those properties are declared nowhere, so
    the guard is dead weight. The grammar simply omits them.
@@ -427,14 +431,14 @@ Know these before trusting the diagram as the full contract:
 
 | Construct / field | Constraint | Enforced by |
 |---|---|---|
-| `Sample.count` | integer ≥ 1 (no silent default) | schema (`minimum: 1`) + loader |
-| `Sample.is_random` | defaults to `false` when omitted | schema default |
+| `Group.count` | optional positive integer ≥ 1 (omitted = ask all in-scope items; no silent default) | schema (`minimum: 1`) + loader |
+| `Group.count` inner-item independence | inner items of a `count`-capped Group must not depend on one another | loader (AST sibling-ref) + Z3 validator (transitive dep graph) |
 | `Roster.labels` keys | must be powers of two (1, 2, 4, …) | loader / code |
 | `Checkbox.labels` keys | must be powers of two | loader / code |
 | `Switch.default` | `0` or `1` | schema (`enum`) |
 | `Radio.default`, `Dropdown.default` | must be an existing key of `labels` | code / UI |
 | `Editbox.default`, `Slider.default`, `Range.default` | `min ≤ default ≤ max` | code / UI |
-| `qmlVersion` | advisory — the loader does **not** yet gate on it | (planned loader gate) |
+| `qmlVersion` | a **declared** MAJOR != 2 is rejected loudly (e.g. `qmlVersion: "1.0"` fails to load); an **absent** `qmlVersion` stays advisory | loader |
 
 ### Why the grammar is hand-derived
 
