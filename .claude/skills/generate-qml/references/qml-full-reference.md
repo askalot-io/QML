@@ -27,7 +27,7 @@
 ## Root Structure
 
 ```yaml
-qmlVersion: "1.0"
+qmlVersion: "2.0"
 questionnaire:
   title: "Survey Title"           # Required
   codeInit: |                     # Optional — global variable initialization
