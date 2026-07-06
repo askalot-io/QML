@@ -4,6 +4,9 @@
 
 1. [Root Structure](#root-structure)
 2. [Blocks](#blocks)
+   - [Block Kinds](#block-kinds)
+   - [Group with count](#group-with-count)
+   - [Roster](#roster)
 3. [Item Kinds](#item-kinds)
    - [Comment](#comment)
    - [Question](#question)
@@ -48,6 +51,7 @@ questionnaire:
 ```yaml
 blocks:
   - id: b_demographics            # Required — unique identifier
+    kind: Group                   # Optional — Group (default) or Roster
     title: "Demographics"         # Optional — section heading
     precondition:                 # Optional — skip entire block
       - predicate: q_consent.outcome == 1
@@ -58,7 +62,119 @@ blocks:
       - ...
 ```
 
-Multiple block preconditions are AND-ed.
+Multiple block preconditions are AND-ed. Block-level pre/postconditions are not
+copied onto items — they stay on the block and are AND-composed with each item's
+own conditions at evaluation time.
+
+### Block Kinds
+
+`kind` is optional and defaults to `Group`. Exactly two kinds exist:
+
+| Kind | Semantics |
+|------|-----------|
+| `Group` (default) | Ask each in-scope inner item **once**, in canonical order. An optional `count: N` (positive integer) caps the block to the first N eligible items — a deterministic first-N draw, not random selection. |
+| `Roster` | Repeat the inner items once per set bit in an `iterateOver` integer bitmask. Required: `iterateOver` (a Python expression → non-negative int bitmask) and `labels` (map of power-of-2 keys to display strings, declaring the universe of iterations). |
+
+`count` applies only to `Group`; a `Roster` must not declare it (rejected). A
+`Roster` requires both `iterateOver` and `labels`; a `Group` must not declare
+either.
+
+### Group with count
+
+```yaml
+- id: b_question_pool
+  kind: Group
+  count: 3                        # Ask the first 3 eligible items only
+  items:
+    - id: q_topic_a
+      kind: Question
+      title: "Topic A question"
+      input:
+        control: Radio
+        labels:
+          1: "Correct"
+          2: "Incorrect"
+    - id: q_topic_b
+      kind: Question
+      title: "Topic B question"
+      input:
+        control: Radio
+        labels:
+          1: "Correct"
+          2: "Incorrect"
+    - id: q_topic_c
+      kind: Question
+      title: "Topic C question"
+      input:
+        control: Radio
+        labels:
+          1: "Correct"
+          2: "Incorrect"
+    - id: q_topic_d
+      kind: Question
+      title: "Topic D question"
+      input:
+        control: Radio
+        labels:
+          1: "Correct"
+          2: "Incorrect"
+```
+
+The block walks its items in canonical order: a precondition-true item consumes
+a slot, a precondition-false item is a free pass (no slot consumed), and the
+draw stops once `count` slots are filled or the pool is exhausted — always the
+same asked set for the same answers. **Inner items of a `count`-capped Group
+must be independent**: no inner item may reference another inner item of the
+same Group (directly or via a variable), because the draw can leave any sibling
+undrawn. An uncapped Group may contain inner dependencies freely.
+
+### Roster
+
+A `Roster` repeats its inner items once per set bit in `iterateOver`. Pair it
+with an upstream Checkbox whose `labels` keys are the same powers of 2 — the
+Checkbox outcome (a bitmask of the selected keys) flows straight into
+`iterateOver` with no decode step.
+
+```yaml
+- id: b_meal_selection
+  kind: Group
+  items:
+    - id: q_meals_eaten
+      kind: Question
+      title: "Which meals did you eat today?"
+      input:
+        control: Checkbox
+        labels:
+          1: "Breakfast"
+          2: "Lunch"
+          4: "Dinner"
+
+- id: b_per_meal
+  kind: Roster
+  iterateOver: "q_meals_eaten.outcome"   # Bitmask: which iterations run
+  labels:                                # Power-of-2 keys — the iteration universe
+    1: "Breakfast"
+    2: "Lunch"
+    4: "Dinner"
+  subjectFrom: q_meal_name                # Optional — inner item id whose answer
+                                          # becomes the iteration's display label
+  items:
+    - id: q_satisfaction
+      kind: Question
+      title: "How satisfied were you with this meal?"
+      input:
+        control: Slider
+        min: 1
+        max: 5
+```
+
+The engine walks set bits low to high; for each set bit whose key is in
+`labels`, the inner items run once with that bit value as the iteration's
+identity. Cross-iteration reads from outside the Roster use the bit-keyed
+accessor: `q_satisfaction.outcomes[1]` is the Breakfast iteration's answer.
+`subjectFrom` only changes the displayed label (falls back to the static
+`labels` entry until that item is answered) — it never changes the canonical
+power-of-2 iteration key used for storage and references.
 
 ## Item Kinds
 
