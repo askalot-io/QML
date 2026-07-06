@@ -4,6 +4,7 @@ from askalot_qml.core.flow_processor import FlowProcessor
 from askalot_qml.core.item_count import questionnaire_item_count
 from askalot_qml.core.python_runner import PythonRunner
 from askalot_qml.core.qml_engine import QMLEngine
+from askalot_qml.core.publish_gate import PublishGateResult, evaluate_publish_gate
 from askalot_qml.core.qml_loader import QMLLoader
 from askalot_qml.core.qml_topology import QMLTopology
 from askalot_qml.core.validation_processor import ValidationProcessor
@@ -14,6 +15,8 @@ __all__ = [
     "QMLEngine",
     "FlowProcessor",
     "ValidationProcessor",
+    "PublishGateResult",
     "PythonRunner",
+    "evaluate_publish_gate",
     "questionnaire_item_count",
 ]

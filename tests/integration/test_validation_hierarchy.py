@@ -6,6 +6,16 @@ This test suite verifies the three-level validation hierarchy from the thesis:
 2. Global validation (GlobalFormula) - F = B ∧ ∧(P_i ⇒ Q_i)
 3. Path-based validation (PathBasedValidator) - A_i = B ∧ ∧{j∈Pred(i)}(P_j ⇒ Q_j)
 
+It also covers U2 frozen-gate reachability (constant propagation into the
+reachability base):
+- A frozen codeInit variable (initialized, never reassigned) makes a gate on it
+  statically decidable: `has_partner == 1` classifies NEVER (unreachable_item
+  error), `has_partner == 0` classifies ALWAYS.
+- A produced variable (reassigned in a codeBlock) is NOT propagated, so a gate on
+  it stays CONDITIONAL — no regression.
+- The full base still carries the frozen constant, so a postcondition on a frozen
+  variable still fires the INFEASIBLE / globally-false machinery.
+
 Reference: askalot-research/thesis/chapters/comprehensive_validation.tex
 """
 
@@ -15,6 +25,7 @@ from pathlib import Path
 import pytest
 from askalot_qml.core.qml_engine import QMLEngine
 from askalot_qml.core.qml_loader import QMLLoader
+from askalot_qml.core.validation_processor import ValidationProcessor
 from askalot_qml.models.qml_state import QMLState
 from askalot_qml.z3 import (
     GlobalFormula,
@@ -204,18 +215,24 @@ class TestTheoremGlobalNotSufficient(unittest.TestCase):
 @pytest.mark.integration
 class TestAccumulatedReachabilityExample(unittest.TestCase):
     """
-    Definition 2.5: Accumulated Reachability.
+    Accumulated Reachability — sibling-mediated dead code (icai2026 ex:income).
 
-    Example: Income survey with low-income assistance dead code
-    - I_1: income ∈ [0, 1M], P_1 = true, Q_1 = (income >= 50000)
-    - I_2: tax_bracket ∈ {1,2,3}, P_2 = true, Q_2 = true (independent)
-    - I_3: low_income_assist ∈ {0,1}, P_3 = (income < 30000), Q_3 = true
+    Example: Income survey where a tax-bracket postcondition smuggles a lower
+    bound on income through an always-present sibling, killing a low-income branch.
+    - I_1: income ∈ [0, 1M], P_1 = true, Q_1 = true
+    - I_2: tax_bracket ∈ {1,2,3}, P_2 = true, Q_2 = (income >= tax_bracket * 10000)
+    - I_3: low_income_assist ∈ {0,1}, P_3 = (income < 10000), Q_3 = true
 
-    Dependency: I_1 → I_3 (P_3 references income)
-    Pred(3) = {1} (I_2 is independent, not a predecessor)
+    Dependency: I_1 → I_2 (Q_2 references income) and I_1 → I_3 (P_3 references
+    income). I_2 and I_3 are independent siblings (no edge between them); stable
+    topological order is I_1, I_2, I_3.
 
-    A_3 = B ∧ (true => income >= 50000) = B ∧ (income >= 50000)
-    A_3 ∧ P_3 = B ∧ (income >= 50000) ∧ (income < 30000) = UNSAT
+    Pred(3) = {1, 2} — every item earlier in the topological order. I_2 is
+    always-present, so Q_2 is enforced on every execution reaching I_3.
+
+    A_3 = B ∧ (true => true) ∧ (true => income >= tax_bracket * 10000)
+    A_3 ∧ P_3 = B ∧ (income >= tax_bracket * 10000) ∧ (income < 10000) = UNSAT
+    (since tax_bracket >= 1, income is forced >= 10000)
 
     I_3 is dead code despite being CONDITIONAL per-item.
     """
@@ -271,30 +288,37 @@ class TestAccumulatedReachabilityExample(unittest.TestCase):
             "q_low_income_assist should be identified as dead code",
         )
 
-    def test_independent_item_not_dead_code(self):
-        """q_tax_bracket (independent) should NOT be dead code."""
+    def test_always_present_sibling_not_dead_code(self):
+        """q_tax_bracket is always-present (P_2 = true), so it is never dead code."""
         validator = PathBasedValidator(self.engine.static_builder, self.engine.topology)
         result = validator.validate()
 
         self.assertNotIn(
             "q_tax_bracket",
             result.dead_code_items,
-            "q_tax_bracket should NOT be dead code (it's independent)",
+            "q_tax_bracket is always-present and cannot be dead code",
         )
 
     def test_predecessor_relationship(self):
-        """Verify predecessor relationship is correctly identified."""
+        """Verify Pred(3) includes every earlier item, not only data-flow ancestors."""
         validator = PathBasedValidator(self.engine.static_builder, self.engine.topology)
         result = validator.validate()
 
         q_assist_result = result.item_results.get("q_low_income_assist")
         self.assertIsNotNone(q_assist_result)
 
-        # q_income should be in predecessors, q_tax_bracket should NOT be
+        # Both earlier items are predecessors: q_income (a data-flow ancestor) and
+        # q_tax_bracket (a sibling whose postcondition makes q_low_income_assist
+        # dead). The latter is the crux of sibling-mediated dead-code detection.
         self.assertIn(
             "q_income",
             q_assist_result.predecessors,
             "q_income should be a predecessor of q_low_income_assist",
+        )
+        self.assertIn(
+            "q_tax_bracket",
+            q_assist_result.predecessors,
+            "q_tax_bracket should be a predecessor of q_low_income_assist",
         )
 
 
@@ -359,6 +383,208 @@ class TestValidationHierarchyRelationships(unittest.TestCase):
             # The path-based validator may detect this as dead code or other issues
             # At minimum, the questionnaire is not completable
             self.assertEqual(global_result.status, "UNSAT", "Global formula should be UNSAT")
+
+
+@pytest.mark.integration
+class TestFrozenGateReachability(unittest.TestCase):
+    """U2: constant propagation of frozen codeInit variables into the
+    reachability base (R10, AE4).
+
+    A frozen variable — initialized in codeInit and never reassigned by any
+    codeBlock — holds its initializer constant for the whole run. Its SSA
+    constant constraint now contributes to the base the ItemClassifier's
+    precondition-reachability check uses, so gates on it decide statically
+    (NEVER / ALWAYS) instead of treating the variable as a free symbol
+    (CONDITIONAL). Postcondition and global checks keep using the full base
+    unchanged.
+    """
+
+    def _classifications(self, filename: str) -> dict:
+        engine = create_engine(filename)
+        return ItemClassifier(engine.static_builder).classify_all_items()
+
+    def test_frozen_gate_equal_one_is_never(self):
+        """AE4: `has_partner == 1` on a frozen `has_partner = 0` → NEVER."""
+        classifications = self._classifications("lint_frozen_gate.qml")
+        status = classifications["q_partner_age"]["precondition"]["status"]
+        self.assertEqual(
+            status,
+            "NEVER",
+            "A gate on frozen `has_partner == 1` must classify NEVER (dead code), "
+            "not CONDITIONAL as a domain-only base would report.",
+        )
+
+    def test_frozen_gate_emits_unreachable_item_error(self):
+        """AE4: the NEVER item surfaces the existing unreachable_item ERROR."""
+        state = load_qml_fixture("lint_frozen_gate.qml")
+        issues = ValidationProcessor(state).to_issues()
+        unreachable = [
+            i
+            for i in issues
+            if i["type"] == "unreachable_item" and i["item_id"] == "q_partner_age"
+        ]
+        self.assertEqual(
+            len(unreachable),
+            1,
+            f"expected one unreachable_item error on q_partner_age, got {issues}",
+        )
+        self.assertEqual(unreachable[0]["severity"], "error")
+
+        # The frozen gate is the ONLY error the fixture yields — the frozen
+        # variable is a real defect, not incidental noise.
+        errors = [i for i in issues if i["severity"] == "error"]
+        self.assertEqual(
+            len(errors),
+            1,
+            f"frozen-gate fixture should yield exactly one error, got {errors}",
+        )
+
+    def test_frozen_gate_equal_zero_is_always(self):
+        """`has_partner == 0` on a frozen `has_partner = 0` → ALWAYS (no error)."""
+        classifications = self._classifications("lint_frozen_gate.qml")
+        status = classifications["q_living_alone"]["precondition"]["status"]
+        self.assertEqual(
+            status,
+            "ALWAYS",
+            "A gate on frozen `has_partner == 0` must classify ALWAYS — the "
+            "constant satisfies it on every run.",
+        )
+
+    def test_produced_variable_gate_stays_conditional(self):
+        """No regression: a gate on a codeBlock-produced variable stays
+        CONDITIONAL. `scoring.qml`'s `risk_level` is initialized in codeInit but
+        reassigned by three item codeBlocks, so it is NOT frozen — its
+        initializer is not propagated and `q_result` (gated `risk_level >= 0`)
+        keeps its CONDITIONAL classification under the domain-only base."""
+        classifications = self._classifications("scoring.qml")
+        status = classifications["q_result"]["precondition"]["status"]
+        self.assertEqual(
+            status,
+            "CONDITIONAL",
+            "A produced (reassigned) variable must not be constant-propagated; "
+            "its gated item stays CONDITIONAL.",
+        )
+
+    def test_frozen_postcondition_infeasible_full_base_unchanged(self):
+        """Full-base semantics unchanged: a postcondition on a frozen variable
+        still fires the existing INFEASIBLE / globally-false machinery.
+
+        The frozen constant lives in ``codeblock_constraints`` (hence the full
+        base) — only the reachability base additionally carries a copy.
+        An item reachable by a satisfiable outcome gate whose postcondition
+        asserts `has_partner == 1` (impossible for the frozen `has_partner = 0`)
+        must classify INFEASIBLE and flag q_globally_false."""
+        state = QMLState(
+            {
+                "title": "Frozen Postcondition",
+                "codeInit": "has_partner = 0",
+                "blocks": [{"id": "b1", "kind": "Group", "title": "B"}],
+                "items": [
+                    {
+                        "id": "q_income",
+                        "blockId": "b1",
+                        "kind": "Question",
+                        "title": "Household income bracket?",
+                        "input": {"control": "Editbox", "min": 0, "max": 100},
+                        "postcondition": [
+                            {
+                                "predicate": "has_partner == 1",
+                                "hint": "impossible for a frozen has_partner = 0",
+                            }
+                        ],
+                    }
+                ],
+            }
+        )
+        engine = QMLEngine(state)
+        classification = ItemClassifier(engine.static_builder).classify_all_items()["q_income"]
+
+        # Reachable (ALWAYS) — the item itself is not gated away...
+        self.assertEqual(classification["precondition"]["status"], "ALWAYS")
+        # ...yet its postcondition can never hold under the frozen constant.
+        self.assertEqual(classification["postcondition"]["invariant"], "INFEASIBLE")
+        self.assertTrue(classification["postcondition"]["global"]["q_globally_false"])
+
+    def test_item_outcome_gates_unchanged(self):
+        """Scenario 5: fixtures whose gates reference item outcomes (not frozen
+        variables) classify exactly as before — they carry no frozen codeInit
+        variable, so the reachability base equals the domain base for them.
+
+        `thesis_dead_code_simple` / `thesis_dead_code_income` gate on outcomes;
+        their per-item precondition stays CONDITIONAL (dead code is a path-based
+        finding, unchanged by U2)."""
+        simple = self._classifications("thesis_dead_code_simple.qml")
+        self.assertEqual(simple["q_feedback"]["precondition"]["status"], "CONDITIONAL")
+
+        income = self._classifications("thesis_dead_code_income.qml")
+        # The income fixture's outcome-gated item remains CONDITIONAL per-item.
+        self.assertEqual(income["q_low_income_assist"]["precondition"]["status"], "CONDITIONAL")
+
+    def test_non_name_rebinding_keeps_gate_conditional(self):
+        """A codeInit variable rebound in a codeBlock ONLY through a tuple-unpack
+        is produced, not frozen — so a gate on it stays CONDITIONAL and does not
+        raise a false unreachable_item error.
+
+        SSA registers only plain ``Name`` assignment targets, so the tuple-unpack
+        ``x, y = q_a.outcome, q_b.outcome`` leaves ``version_history`` all
+        ``__init__``. Freezing on that alone would pin the stale ``x = 0``
+        constant into the reachability base, classify the ``x == 5`` gate NEVER,
+        and block saving a valid questionnaire. Excluding any codeBlock-bound
+        name from the frozen set keeps ``x`` free."""
+        state = QMLState(
+            {
+                "title": "Tuple-unpack rebinding",
+                "codeInit": "x = 0\ny = 0",
+                "blocks": [{"id": "b1", "kind": "Group", "title": "B"}],
+                "items": [
+                    {
+                        "id": "q_a",
+                        "blockId": "b1",
+                        "kind": "Question",
+                        "title": "A?",
+                        "input": {"control": "Editbox", "min": 0, "max": 10},
+                    },
+                    {
+                        "id": "q_b",
+                        "blockId": "b1",
+                        "kind": "Question",
+                        "title": "B?",
+                        "input": {"control": "Editbox", "min": 0, "max": 10},
+                    },
+                    {
+                        "id": "q_pair",
+                        "blockId": "b1",
+                        "kind": "Question",
+                        "title": "Pair",
+                        "input": {"control": "Editbox", "min": 0, "max": 10},
+                        "codeBlock": "x, y = q_a.outcome, q_b.outcome",
+                    },
+                    {
+                        "id": "q_gate",
+                        "blockId": "b1",
+                        "kind": "Question",
+                        "title": "Gated on x",
+                        "input": {"control": "Editbox", "min": 0, "max": 10},
+                        "precondition": [{"predicate": "x == 5"}],
+                    },
+                ],
+            }
+        )
+        engine = QMLEngine(state)
+        classification = ItemClassifier(engine.static_builder).classify_all_items()["q_gate"]
+        self.assertEqual(
+            classification["precondition"]["status"],
+            "CONDITIONAL",
+            "a gate on a tuple-unpack-rebound variable must stay CONDITIONAL",
+        )
+
+        issues = ValidationProcessor(state).to_issues()
+        unreachable = [
+            i for i in issues if i["type"] == "unreachable_item" and i["item_id"] == "q_gate"
+        ]
+        self.assertEqual(
+            unreachable, [], f"q_gate must not raise a false unreachable_item error, got {issues}"
+        )
 
 
 if __name__ == "__main__":

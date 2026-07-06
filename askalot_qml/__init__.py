@@ -11,4 +11,4 @@ Import from the specific submodule you need:
     from askalot_qml.schema import SCHEMA_PATH
 """
 
-__version__ = "1.30.0"
+__version__ = "1.36.0"

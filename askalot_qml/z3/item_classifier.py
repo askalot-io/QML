@@ -44,13 +44,13 @@ class ItemClassifier:
         self,
         item_id: str,
         *,
-        domain_solver: Solver | None = None,
+        reachability_solver: Solver | None = None,
         full_solver: Solver | None = None,
     ) -> dict[str, Any]:
         """Classify a single item using Z3 SMT solver.
 
-        ``domain_solver`` / ``full_solver`` are optional persistent solvers with
-        the domain / full base already asserted. When classifying every item
+        ``reachability_solver`` / ``full_solver`` are optional persistent solvers
+        with the reachability / full base already asserted. When classifying every item
         (``classify_all_items``) they are built once and shared, and each
         per-item check is wrapped in ``push()`` / ``pop()`` so the base — one
         constraint per item — is asserted a single time total rather than
@@ -82,15 +82,17 @@ class ItemClassifier:
                     item_id, details["postconditions"]
                 )  # type: ignore
 
-            # Persistent base solvers. The domain-only base B := ∧_i D_i(S_i)
-            # (min/max, enumeration) drives precondition reachability; the full
-            # base (B ∧ codeBlock SSA constraints) drives postcondition and
-            # global checks, so computed variables like var1 = q1 + q2 are
-            # properly bounded. Per-check constraints go in under push()/pop()
-            # so the base is asserted once, never per item (see the docstring).
-            if domain_solver is None:
-                domain_solver = Solver(ctx=self.ctx)
-                domain_solver.add(self.builder.get_domain_base())
+            # Persistent base solvers. The reachability base B := ∧_i D_i(S_i)
+            # (min/max, enumeration) PLUS frozen-variable constants — a variable
+            # initialized in codeInit and never reassigned holds its constant, so
+            # a gate on it is statically decidable (U2). The full base (B ∧
+            # codeBlock SSA constraints) drives postcondition and global checks,
+            # so computed variables like var1 = q1 + q2 are properly bounded.
+            # Per-check constraints go in under push()/pop() so the base is
+            # asserted once, never per item (see the docstring).
+            if reachability_solver is None:
+                reachability_solver = Solver(ctx=self.ctx)
+                reachability_solver.add(self.builder.get_reachability_base())
             if full_solver is None:
                 full_solver = Solver(ctx=self.ctx)
                 full_solver.add(self.builder.get_full_base())
@@ -102,15 +104,15 @@ class ItemClassifier:
             # else CONDITIONAL
             # ------------------------------
             with profile_block("z3_precondition_check", {"item_id": item_id}):
-                domain_solver.push()
-                domain_solver.add(Not(P_form))
-                precondition_always = domain_solver.check() == unsat
-                domain_solver.pop()
+                reachability_solver.push()
+                reachability_solver.add(Not(P_form))
+                precondition_always = reachability_solver.check() == unsat
+                reachability_solver.pop()
 
-                domain_solver.push()
-                domain_solver.add(P_form)
-                precondition_never = domain_solver.check() == unsat
-                domain_solver.pop()
+                reachability_solver.push()
+                reachability_solver.add(P_form)
+                precondition_never = reachability_solver.check() == unsat
+                reachability_solver.pop()
 
             # Classification-safety: an item registered as
             # conditionally-present (capped-Group draw / Roster bit) is
@@ -224,15 +226,15 @@ class ItemClassifier:
             # the base (one domain constraint per item) is asserted a single time
             # rather than rebuilt and re-asserted for each item — turning an
             # O(items^2) classification pass into an O(items) one.
-            domain_solver = Solver(ctx=self.ctx)
-            domain_solver.add(self.builder.get_domain_base())
+            reachability_solver = Solver(ctx=self.ctx)
+            reachability_solver.add(self.builder.get_reachability_base())
             full_solver = Solver(ctx=self.ctx)
             full_solver.add(self.builder.get_full_base())
 
             results: dict[str, Any] = {}
             for item_id in self.builder.item_order:
                 results[item_id] = self.classify_item(
-                    item_id, domain_solver=domain_solver, full_solver=full_solver
+                    item_id, reachability_solver=reachability_solver, full_solver=full_solver
                 )
 
             # Surface block-level gaps (keys in builder.coverage_gaps that are

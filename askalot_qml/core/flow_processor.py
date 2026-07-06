@@ -298,7 +298,12 @@ class FlowProcessor:
         raw_labels = item.get("_roster_labels", {})
         labels = {int(k): v for k, v in raw_labels.items()}
         item["_roster_current_key"] = iter_key
-        item["_roster_current_label"] = labels.get(iter_key)
+        # Dynamic subject (F-001): when the block declares subjectFrom, the
+        # iteration's display label is the respondent's answer to that inner
+        # item; it falls back to the static label until that item is answered.
+        item["_roster_current_label"] = self._resolve_roster_subject(
+            block_id, iter_key, item.get("_roster_subject_from"), labels.get(iter_key)
+        )
         try:
             item["_roster_iteration_index"] = active_keys.index(iter_key) + 1
         except ValueError:
@@ -307,6 +312,24 @@ class FlowProcessor:
             item["_roster_iteration_index"] = None
         item["_roster_iteration_count"] = len(active_keys)
         return item
+
+    def _resolve_roster_subject(
+        self, block_id: str, iter_key: int, subject_from: str | None, static_label: Any
+    ) -> Any:
+        """The iteration's display subject (F-001).
+
+        When the Roster block declares ``subjectFrom``, return the respondent's
+        stored answer to that inner item for the current iteration (e.g. the name
+        they typed), falling back to the static label until it is answered.
+        Tries both int and str ``iter_key`` — roster_outcomes keys arrive as
+        strings after a JSONB roundtrip, the same reason the label lookup does.
+        """
+        if not subject_from:
+            return static_label
+        block_outcomes = self.state.get("roster_outcomes", {}).get(block_id, {})
+        iter_outcomes = block_outcomes.get(iter_key) or block_outcomes.get(str(iter_key)) or {}
+        value = iter_outcomes.get(subject_from)
+        return str(value) if value not in (None, "") else static_label
 
     def _restore_roster_outcomes_for_iter(self, block_id: str, iter_key: int) -> None:
         """

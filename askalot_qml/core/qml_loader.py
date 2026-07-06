@@ -195,7 +195,9 @@ class QMLLoader:
         3. JSON-Schema validation (when a schema is available)
         4. default missing ``kind`` to "Group" (the JSON-Schema ``default`` is
            not injected during validation)
-        5. loader-level kind validation (legacy-kind rejection)
+        5. loader-level kind validation (legacy-kind rejection) + reserved
+           item-id rejection (``__init__`` / ``codeInit`` collide with Z3
+           static-builder sentinels)
         6. Roster/Checkbox power-of-2 label keys + Group ``count`` positivity +
            iterateOver self-cycle
         7. capped-Group inner-item independence (direct sibling references)
@@ -226,6 +228,7 @@ class QMLLoader:
 
         # 5-7. Loader-level validation that JSON Schema can't express cleanly.
         self._validate_block_kinds(self.parsed_yaml["questionnaire"])
+        self._validate_reserved_item_ids(self.parsed_yaml["questionnaire"])
         self._validate_roster_and_checkbox_constraints(self.parsed_yaml["questionnaire"])
         self._validate_group_independence(self.parsed_yaml["questionnaire"])
 
@@ -338,6 +341,16 @@ class QMLLoader:
     SUPPORTED_BLOCK_KINDS = ("Group", "Roster")
     RESERVED_BLOCK_KINDS = ()
 
+    # Item ids that collide with internal sentinels in the Z3 static builder:
+    # ``__init__`` is the codeInit assignment context (an item so named would be
+    # treated as codeInit — its codeBlock assignment goes in unconditionally
+    # instead of ``Implies``-gated, corrupting full-base soundness and the
+    # frozen-variable oracle), and ``codeInit`` is the census/hygiene owner label
+    # for "assigned in codeInit, not an item" (an item so named misroutes its
+    # hygiene findings to item_id=None). Both are rejected at load time so the
+    # collision can never reach the builder. See docs/plans review findings #3/#5.
+    RESERVED_ITEM_IDS = ("__init__", "codeInit")
+
     def _default_block_kinds(self, questionnaire: dict[str, Any]) -> None:
         """
         Inject the default ``kind: "Group"`` onto any block that omits `kind`.
@@ -399,6 +412,30 @@ class QMLLoader:
                     f"Block '{block_id}': unknown kind {kind!r}. Allowed: "
                     f"{list(self.SUPPORTED_BLOCK_KINDS)}.{hint}"
                 )
+
+    def _validate_reserved_item_ids(self, questionnaire: dict[str, Any]) -> None:
+        """Reject any item whose id collides with a Z3 static-builder sentinel.
+
+        ``__init__`` and ``codeInit`` (see ``RESERVED_ITEM_IDS``) are used
+        internally as the codeInit assignment context and the codeInit hygiene
+        owner label. The JSON schema places no reserved-word constraint on
+        ``Item.id``, so an item legally named either string would silently
+        corrupt full-base soundness / the frozen-variable oracle (``__init__``)
+        or misroute hygiene findings to ``item_id=None`` (``codeInit``). Fail
+        loud at load time so the collision can never reach the builder.
+
+        Raises:
+            ValueError: when an item id is a reserved sentinel string.
+        """
+        for block in questionnaire.get("blocks", []):
+            for item in block.get("items", []):
+                item_id = item.get("id")
+                if item_id in self.RESERVED_ITEM_IDS:
+                    raise ValueError(
+                        f"Item id {item_id!r} is reserved: it collides with an "
+                        f"internal Z3 static-builder sentinel. Rename the item "
+                        f"(reserved ids: {list(self.RESERVED_ITEM_IDS)})."
+                    )
 
     def _validate_roster_and_checkbox_constraints(self, questionnaire: dict[str, Any]) -> None:
         """
@@ -702,6 +739,10 @@ class QMLLoader:
             item["_roster_block_id"] = block["id"]
             item["_roster_iterate_over"] = block.get("iterateOver", "")
             item["_roster_labels"] = block.get("labels", {})
+            # subjectFrom (optional): id of the inner item whose per-iteration
+            # answer becomes the iteration's display subject (F-001). None when
+            # the roster keeps the static labels.
+            item["_roster_subject_from"] = block.get("subjectFrom")
         # Capped-Group metadata propagation, mirroring the Roster branch. Only a
         # Group that declares `count` tags its items — an uncapped Group asks
         # all items, so there is no draw cap to carry. `count` is already

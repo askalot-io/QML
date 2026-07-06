@@ -52,12 +52,22 @@ This test suite verifies the StaticBuilder class which provides:
 - Outcome augmented assignment (item.outcome += expr)
 - Complex code block with if/elif/else and AugAssign
 
-Total: 53 tests covering StaticBuilder.
+### U1 Undefined-Name Detection & Variable Census
+- Phantom predicate identifier recorded as an undefined_name coverage gap,
+  with a `q_<name>.outcome` suggestion when that item exists
+- Forward codeBlock reference NOT flagged (definedness is file-scoped)
+- codeInit target / item outcome / safe builtin / safe module / comprehension
+  and for-loop-bound names NOT flagged
+- Undefined name in a postcondition and on a codeBlock RHS flagged with the
+  right condition kind
+- Per-variable read/write census (assignments with context, bare-outcome RHS
+  shape, read count across predicates and code) exposed for the U3 hygiene lints
 """
 
 import unittest
 
 import pytest
+from askalot_qml.core.validation_processor import ValidationProcessor
 from askalot_qml.models.qml_state import QMLState
 from askalot_qml.z3.static_builder import StaticBuilder
 from z3 import *
@@ -1190,6 +1200,500 @@ class TestPresentPrimitiveBehavior(unittest.TestCase):
             result.dead_code_items,
             "Conditionally-present item must be excluded from dead-code",
         )
+
+
+# ---------------------------------------------------------------------------
+# U1 — undefined-name detection + variable read/write census
+# ---------------------------------------------------------------------------
+
+
+def _undefined_gaps(builder: StaticBuilder) -> list[dict]:
+    """Flatten every ``undefined_name`` coverage gap the builder recorded.
+
+    Each returned dict carries ``owner`` (the item_id / block_id the gap is
+    keyed under) plus the gap's own fields (identifier, condition_kind,
+    suggested_outcome)."""
+    out = []
+    for owner_id, gaps in builder.coverage_gaps.items():
+        for gap in gaps:
+            if gap.get("kind") == "undefined_name":
+                out.append({"owner": owner_id, **gap})
+    return out
+
+
+@pytest.mark.unit
+@pytest.mark.z3
+class TestUndefinedNameDetection(unittest.TestCase):
+    """U1: identifiers in predicates / codeBlocks that resolve to no item id,
+    codeInit/codeBlock assignment target, or safe builtin/module are recorded as
+    ``undefined_name`` coverage gaps.
+
+    The known-variable oracle is ``version_history`` (real assignments), NOT
+    ``version_map`` — the latter is polluted with a version-0 entry for every
+    phantom name by ``_get_current_z3_var`` during constraint lowering, so using
+    it would mask exactly the defect this lint targets.
+    """
+
+    def test_phantom_precondition_name_flagged_with_suggestion(self):
+        """Bare `smoking_status` where item `q_smoking_status` exists → one
+        undefined_name gap on the gated item, suggesting the item outcome."""
+        state = create_questionnaire(
+            [
+                {
+                    "id": "q_smoking_status",
+                    "input": {"control": "Radio", "labels": {1: "Yes", 2: "No"}},
+                },
+                {
+                    "id": "q_cigs",
+                    "precondition": [{"predicate": "smoking_status == 1"}],
+                    "input": {"control": "Editbox", "min": 0, "max": 100},
+                },
+            ]
+        )
+        builder = StaticBuilder(state)
+        gaps = _undefined_gaps(builder)
+        self.assertEqual(len(gaps), 1, f"expected one undefined_name gap, got {gaps}")
+        gap = gaps[0]
+        self.assertEqual(gap["owner"], "q_cigs")
+        self.assertEqual(gap["identifier"], "smoking_status")
+        self.assertEqual(gap["condition_kind"], "precondition")
+        self.assertEqual(gap["suggested_outcome"], "q_smoking_status.outcome")
+
+    def test_forward_codeblock_reference_not_flagged(self):
+        """A name assigned only by a LATER item's codeBlock, referenced earlier,
+        is not undefined — definedness is file-scoped, ordering is the topology
+        pass's concern."""
+        state = create_questionnaire(
+            [
+                {"id": "q1", "precondition": [{"predicate": "flag == 1"}]},
+                {"id": "q2", "codeBlock": "flag = 1"},
+            ]
+        )
+        builder = StaticBuilder(state)
+        self.assertEqual(_undefined_gaps(builder), [])
+
+    def test_codeinit_variable_reference_not_flagged(self):
+        """A codeInit-defined variable referenced in a predicate is defined."""
+        state = create_questionnaire(
+            [{"id": "q1", "precondition": [{"predicate": "has_partner == 1"}]}],
+            code_init="has_partner = 0",
+        )
+        builder = StaticBuilder(state)
+        self.assertEqual(_undefined_gaps(builder), [])
+
+    def test_item_outcome_reference_not_flagged(self):
+        """`q_item.outcome` resolves to an item id — not undefined."""
+        state = create_questionnaire(
+            [{"id": "q1"}, {"id": "q2", "precondition": [{"predicate": "q1.outcome == 1"}]}]
+        )
+        builder = StaticBuilder(state)
+        self.assertEqual(_undefined_gaps(builder), [])
+
+    def test_safe_builtins_in_codeblock_not_flagged(self):
+        """`range` / `int` / `bool` in a codeBlock are safe builtins."""
+        state = create_questionnaire(
+            [
+                {
+                    "id": "q1",
+                    "input": {"control": "Editbox", "min": 0, "max": 10},
+                    "codeBlock": "n = int(q1.outcome)\nr = range(n)\nb = bool(n)",
+                }
+            ]
+        )
+        builder = StaticBuilder(state)
+        self.assertEqual(_undefined_gaps(builder), [])
+
+    def test_undefined_name_in_postcondition_flagged(self):
+        """An undefined name in a postcondition is flagged with the postcondition
+        condition kind."""
+        state = create_questionnaire(
+            [
+                {
+                    "id": "q1",
+                    "input": {"control": "Editbox", "min": 0, "max": 10},
+                    "postcondition": [{"predicate": "phantom_limit >= q1.outcome"}],
+                }
+            ]
+        )
+        builder = StaticBuilder(state)
+        gaps = _undefined_gaps(builder)
+        self.assertEqual(len(gaps), 1, f"expected one gap, got {gaps}")
+        self.assertEqual(gaps[0]["identifier"], "phantom_limit")
+        self.assertEqual(gaps[0]["condition_kind"], "postcondition")
+        # No `q_phantom_limit` item exists → no suggestion.
+        self.assertIsNone(gaps[0]["suggested_outcome"])
+
+    def test_undefined_name_on_codeblock_rhs_flagged(self):
+        """An undefined name read only on a codeBlock RHS (never in a predicate)
+        is flagged with the codeBlock condition kind. The assigned target is
+        itself defined and never flagged."""
+        state = create_questionnaire(
+            [
+                {"id": "q1"},
+                {"id": "q2", "codeBlock": "derived = phantom_input + 1"},
+            ]
+        )
+        builder = StaticBuilder(state)
+        gaps = _undefined_gaps(builder)
+        self.assertEqual(len(gaps), 1, f"expected one gap, got {gaps}")
+        self.assertEqual(gaps[0]["owner"], "q2")
+        self.assertEqual(gaps[0]["identifier"], "phantom_input")
+        self.assertEqual(gaps[0]["condition_kind"], "codeBlock")
+
+    def test_comprehension_bound_variable_not_flagged(self):
+        """Comprehension loop variables are locally bound — flagging them would
+        make valid matrix-style predicates unsaveable."""
+        state = create_questionnaire(
+            [
+                {
+                    "id": "q1",
+                    "input": {"control": "Editbox", "min": 0, "max": 10},
+                    "postcondition": [{"predicate": "all([q1.outcome > k for k in range(3)])"}],
+                }
+            ]
+        )
+        builder = StaticBuilder(state)
+        self.assertEqual(_undefined_gaps(builder), [])
+
+    def test_for_loop_target_in_codeblock_not_flagged(self):
+        """A for-loop target inside a codeBlock is locally bound, not undefined."""
+        state = create_questionnaire(
+            [
+                {
+                    "id": "q1",
+                    "input": {"control": "Editbox", "min": 0, "max": 10},
+                    "codeBlock": "acc = 0\nfor i in range(3):\n    acc = acc + i",
+                }
+            ]
+        )
+        builder = StaticBuilder(state)
+        self.assertEqual(_undefined_gaps(builder), [])
+
+    def test_tuple_unpacked_codeinit_name_not_flagged(self):
+        """A codeInit tuple-unpacking target binds at runtime even though SSA does
+        not model it — a predicate reading it must NOT be flagged undefined."""
+        state = create_questionnaire(
+            [{"id": "q1", "precondition": [{"predicate": "lo <= 1"}]}],
+            code_init="lo, hi = 0, 10",
+        )
+        builder = StaticBuilder(state)
+        self.assertEqual(_undefined_gaps(builder), [])
+
+    def test_safe_module_usage_in_codeblock_not_flagged(self):
+        """`math.floor(...)` — `math` is a safe module name; `floor` is an
+        attribute, not a bare name."""
+        state = create_questionnaire(
+            [
+                {
+                    "id": "q1",
+                    "input": {"control": "Editbox", "min": 0, "max": 120},
+                    "codeBlock": "years = math.floor(q1.outcome / 12)",
+                }
+            ]
+        )
+        builder = StaticBuilder(state)
+        self.assertEqual(_undefined_gaps(builder), [])
+
+    def test_repeated_phantom_reference_deduplicated(self):
+        """The same identifier referenced twice in one condition kind yields a
+        single gap (dedup by identifier + condition kind)."""
+        state = create_questionnaire(
+            [
+                {
+                    "id": "q1",
+                    "input": {"control": "Editbox", "min": 0, "max": 10},
+                    "precondition": [{"predicate": "ghost > 0 and ghost < 5"}],
+                }
+            ]
+        )
+        builder = StaticBuilder(state)
+        gaps = _undefined_gaps(builder)
+        self.assertEqual(len(gaps), 1, f"expected dedup to one gap, got {gaps}")
+        self.assertEqual(gaps[0]["identifier"], "ghost")
+
+
+@pytest.mark.unit
+@pytest.mark.z3
+class TestVariableCensus(unittest.TestCase):
+    """U1 deliverable for U3: the per-variable read/write census.
+
+    ``get_variable_census()`` returns ``{var: {"assignments": [...], "reads": int}}``
+    where each assignment carries its ``context`` (``"codeInit"`` or the item id)
+    and ``bare_outcome_item`` (the item id X when the assignment is exactly
+    ``var = X.outcome``, else None). Reads count Load references across
+    predicates and code (codeInit + codeBlocks). U3 consumes it for the
+    write-only and pass-through-alias hygiene lints.
+    """
+
+    def test_write_only_variable_has_no_reads(self):
+        """A variable assigned repeatedly but never read → reads == 0."""
+        state = create_questionnaire(
+            [
+                {"id": "q1"},
+                {"id": "q2", "codeBlock": "path = 1"},
+                {"id": "q3", "codeBlock": "path = 2"},
+            ],
+            code_init="path = 0",
+        )
+        census = StaticBuilder(state).get_variable_census()
+        self.assertIn("path", census)
+        self.assertEqual(census["path"]["reads"], 0)
+        self.assertEqual(len(census["path"]["assignments"]), 3)
+        contexts = [a["context"] for a in census["path"]["assignments"]]
+        self.assertIn("codeInit", contexts)
+        self.assertIn("q2", contexts)
+        self.assertIn("q3", contexts)
+
+    def test_pass_through_alias_records_bare_outcome_item(self):
+        """A single `var = X.outcome` assignment records X as the bare-outcome
+        item and is read at least once."""
+        state = create_questionnaire(
+            [
+                {"id": "q_a1_num_children", "input": {"control": "Editbox", "min": 0, "max": 10}},
+                {"id": "q_x", "codeBlock": "num_children = q_a1_num_children.outcome"},
+                {"id": "q_y", "precondition": [{"predicate": "num_children >= 1"}]},
+            ]
+        )
+        census = StaticBuilder(state).get_variable_census()
+        self.assertIn("num_children", census)
+        assignments = census["num_children"]["assignments"]
+        self.assertEqual(len(assignments), 1)
+        self.assertEqual(assignments[0]["bare_outcome_item"], "q_a1_num_children")
+        self.assertGreaterEqual(census["num_children"]["reads"], 1)
+
+    def test_transformed_assignment_is_not_bare_outcome(self):
+        """`months = q_age.outcome * 12` transforms the outcome → not a bare
+        alias (bare_outcome_item is None)."""
+        state = create_questionnaire(
+            [
+                {"id": "q_age", "input": {"control": "Editbox", "min": 0, "max": 120}},
+                {"id": "q_x", "codeBlock": "months = q_age.outcome * 12"},
+            ]
+        )
+        census = StaticBuilder(state).get_variable_census()
+        self.assertIsNone(census["months"]["assignments"][0]["bare_outcome_item"])
+
+    def test_two_producers_are_not_single_assignment(self):
+        """Two mutually exclusive producers into one variable → two assignments
+        (consolidation is legal; U3 exempts it from the alias lint)."""
+        state = create_questionnaire(
+            [
+                {"id": "q_p", "codeBlock": "status = 1"},
+                {"id": "q_q", "codeBlock": "status = 2"},
+            ]
+        )
+        census = StaticBuilder(state).get_variable_census()
+        self.assertEqual(len(census["status"]["assignments"]), 2)
+
+    def test_reads_counted_across_predicate_and_codeblock(self):
+        """Reads sum across a codeBlock RHS reference and a predicate reference."""
+        state = create_questionnaire(
+            [
+                {"id": "q1"},
+                {"id": "q2", "codeBlock": "total = total + q1.outcome"},
+                {"id": "q3", "precondition": [{"predicate": "total > 5"}]},
+            ],
+            code_init="total = 0",
+        )
+        census = StaticBuilder(state).get_variable_census()
+        # q2 RHS `total` + q3 precondition `total` = 2 reads.
+        self.assertEqual(census["total"]["reads"], 2)
+
+    def test_census_keys_are_exactly_the_assigned_variables(self):
+        """The census covers every assigned variable and nothing else (no item
+        ids, no phantom names)."""
+        state = create_questionnaire(
+            [
+                {"id": "q1", "precondition": [{"predicate": "phantom > 0"}]},
+                {"id": "q2", "codeBlock": "real = q1.outcome"},
+            ],
+            code_init="init_var = 0",
+        )
+        census = StaticBuilder(state).get_variable_census()
+        self.assertEqual(set(census.keys()), {"real", "init_var"})
+
+    def test_augmented_assignment_counts_as_a_read(self):
+        """``x += 20`` reads ``x`` even though the target carries a Store ctx.
+        The census must count that read so a self-only accumulator is exempt from
+        the write-only lint — matching the semantically identical ``x = x + 1``,
+        which already records a read."""
+        state = create_questionnaire(
+            [{"id": "q1", "codeBlock": "risk_score += 20"}],
+            code_init="risk_score = 0",
+        )
+        census = StaticBuilder(state).get_variable_census()
+        self.assertGreaterEqual(census["risk_score"]["reads"], 1)
+
+        # A self-only accumulator is not write-only: no hygiene warning fires.
+        issues = ValidationProcessor(state).to_issues()
+        write_only = [
+            i
+            for i in issues
+            if i["type"] == "write_only_variable" and "risk_score" in i["message"]
+        ]
+        self.assertEqual(write_only, [], f"risk_score must not be flagged write-only, got {issues}")
+
+
+@pytest.mark.unit
+@pytest.mark.z3
+class TestFrozenReachabilityBase(unittest.TestCase):
+    """U2: constant propagation of frozen codeInit variables into the
+    precondition-reachability base.
+
+    A frozen variable is one whose entire ``version_history`` is ``__init__``
+    contexts (initialized in codeInit, never reassigned by any codeBlock). Its
+    SSA constant constraint — already in ``codeblock_constraints`` (hence the
+    full base) — is additionally conjoined into ``get_reachability_base()`` so a
+    gate on it is statically decidable. A produced variable (any codeBlock
+    assignment) is NOT frozen and its initializer is not propagated.
+    """
+
+    def test_frozen_variable_detected(self):
+        """A codeInit-only variable is frozen; a reassigned one is not."""
+        state = create_questionnaire(
+            [{"id": "q1", "codeBlock": "produced = produced + 1"}],
+            code_init="frozen_v = 3\nproduced = 0",
+        )
+        builder = StaticBuilder(state)
+        self.assertEqual(builder._frozen_variable_names(), {"frozen_v"})
+
+    def test_frozen_constant_in_reachability_base_not_domain_base(self):
+        """The frozen constant pins its Z3 var in the reachability base but the
+        domain base leaves it free."""
+        state = create_questionnaire(
+            [
+                {
+                    "id": "q1",
+                    "precondition": [{"predicate": "has_partner == 1"}],
+                    "input": {"control": "Editbox", "min": 0, "max": 10},
+                }
+            ],
+            code_init="has_partner = 0",
+        )
+        builder = StaticBuilder(state)
+        hp = builder.z3_vars["has_partner_0"]
+
+        reach = Solver(ctx=builder.ctx)
+        reach.add(builder.get_reachability_base())
+        reach.add(hp != 0)
+        self.assertEqual(
+            reach.check(), unsat, "frozen constant must be enforced in the reachability base"
+        )
+
+        domain = Solver(ctx=builder.ctx)
+        domain.add(builder.get_domain_base())
+        domain.add(hp != 0)
+        self.assertEqual(
+            domain.check(), sat, "the domain base must leave the frozen variable free"
+        )
+
+    def test_produced_variable_not_propagated(self):
+        """A variable reassigned by a codeBlock is not frozen — its initializer
+        is absent from the reachability base, so a gate on it stays decidable
+        only by the (free) variable, i.e. CONDITIONAL at classification time."""
+        state = create_questionnaire(
+            [
+                {"id": "q_age", "codeBlock": "band = 1", "input": {"control": "Editbox"}},
+                {
+                    "id": "q_dep",
+                    "precondition": [{"predicate": "band == 1"}],
+                    "input": {"control": "Editbox"},
+                },
+            ],
+            code_init="band = 0",
+        )
+        builder = StaticBuilder(state)
+        self.assertNotIn("band", builder._frozen_variable_names())
+
+        band0 = builder.z3_vars["band_0"]
+        reach = Solver(ctx=builder.ctx)
+        reach.add(builder.get_reachability_base())
+        reach.add(band0 != 0)
+        self.assertEqual(
+            reach.check(), sat, "a produced variable's initializer must NOT be propagated"
+        )
+
+    def test_reachability_base_selective_across_mixed_variables(self):
+        """With a frozen and a produced variable co-existing, only the frozen
+        one's constant is propagated."""
+        state = create_questionnaire(
+            [{"id": "q1", "codeBlock": "produced = produced + 5"}],
+            code_init="frozen_v = 7\nproduced = 2",
+        )
+        builder = StaticBuilder(state)
+        frozen0 = builder.z3_vars["frozen_v_0"]
+        produced0 = builder.z3_vars["produced_0"]
+
+        solver = Solver(ctx=builder.ctx)
+        solver.add(builder.get_reachability_base())
+        solver.push()
+        solver.add(frozen0 != 7)
+        self.assertEqual(solver.check(), unsat, "frozen constant is propagated")
+        solver.pop()
+        solver.add(produced0 != 2)
+        self.assertEqual(solver.check(), sat, "produced initializer is not propagated")
+
+    def test_reachability_base_equals_domain_when_no_frozen_vars(self):
+        """No codeInit variable → no frozen constants → the reachability base is
+        the domain base (both give identical satisfiability)."""
+        state = create_questionnaire(
+            [{"id": "q1", "input": {"control": "Editbox", "min": 1, "max": 5}}]
+        )
+        builder = StaticBuilder(state)
+        self.assertEqual(builder._frozen_variable_names(), set())
+
+        # Equisatisfiable: neither base implies anything the other does not.
+        s = Solver(ctx=builder.ctx)
+        s.add(builder.get_reachability_base() != builder.get_domain_base())
+        self.assertEqual(s.check(), unsat, "with no frozen vars the two bases are identical")
+
+    def test_tuple_unpack_rebinding_unfreezes(self):
+        """A codeInit variable rebound ONLY via tuple-unpack in a codeBlock is
+        produced, not frozen. SSA records no ``Name`` target for the unpack, so
+        the ``version_history`` oracle alone would wrongly freeze it and pin its
+        stale initializer into the reachability base."""
+        state = create_questionnaire(
+            [
+                {"id": "q_a", "input": {"control": "Editbox", "min": 0, "max": 10}},
+                {"id": "q_b", "input": {"control": "Editbox", "min": 0, "max": 10}},
+                {"id": "q_pair", "codeBlock": "x, y = q_a.outcome, q_b.outcome"},
+            ],
+            code_init="x = 0\ny = 0",
+        )
+        builder = StaticBuilder(state)
+        self.assertNotIn("x", builder._frozen_variable_names())
+        self.assertNotIn("y", builder._frozen_variable_names())
+
+        # The stale codeInit constant must NOT be pinned into the reachability base.
+        x0 = builder.z3_vars["x_0"]
+        reach = Solver(ctx=builder.ctx)
+        reach.add(builder.get_reachability_base())
+        reach.add(x0 != 0)
+        self.assertEqual(
+            reach.check(),
+            sat,
+            "a tuple-unpack-rebound variable's initializer must not be propagated",
+        )
+
+    def test_for_loop_target_rebinding_unfreezes(self):
+        """A codeInit variable rebound as a for-loop target is produced, not
+        frozen — SSA does not model the loop target."""
+        state = create_questionnaire(
+            [{"id": "q1", "codeBlock": "for x in [1, 2]:\n    pass"}],
+            code_init="x = 0",
+        )
+        builder = StaticBuilder(state)
+        self.assertNotIn("x", builder._frozen_variable_names())
+
+    def test_walrus_rebinding_unfreezes(self):
+        """A codeInit variable rebound via a walrus in a codeBlock is produced,
+        not frozen — SSA does not model the walrus target."""
+        state = create_questionnaire(
+            [{"id": "q1", "codeBlock": "y = (x := 5) + 1"}],
+            code_init="x = 0\ny = 0",
+        )
+        builder = StaticBuilder(state)
+        self.assertNotIn("x", builder._frozen_variable_names())
 
 
 if __name__ == "__main__":

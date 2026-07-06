@@ -26,6 +26,7 @@ RosterBlock   ::= "id" String "kind" "Roster"
                   BlockMeta
                   "iterateOver" PythonExpr
                   "labels" Labels
+                  ( "subjectFrom" String )?
                   "items" Item+
 
 BlockMeta     ::= ( "title" String )?

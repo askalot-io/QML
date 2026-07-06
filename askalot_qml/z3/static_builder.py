@@ -47,6 +47,28 @@ except ImportError:
         yield
 
 
+# Lazily-computed, process-wide cache of the names available in the predicate /
+# code evaluation namespace. Single source of truth: the ``PythonRunner`` sandbox
+# that actually evaluates preconditions/postconditions/codeBlocks at runtime — so
+# the undefined-name lint's "known name" set can never drift from what the runner
+# exposes. Names only (values discarded); computed once because the sandbox's
+# allowed builtins/modules are fixed for the process lifetime.
+_SAFE_EVAL_NAMES: frozenset[str] | None = None
+
+
+def _safe_eval_names() -> frozenset[str]:
+    """Return the builtin + module names the ``PythonRunner`` sandbox exposes."""
+    global _SAFE_EVAL_NAMES
+    if _SAFE_EVAL_NAMES is None:
+        # Local import avoids a core↔z3 import cycle at module load; by the time
+        # a build runs, both packages are fully imported.
+        from askalot_qml.core.python_runner import PythonRunner
+
+        runner = PythonRunner()
+        _SAFE_EVAL_NAMES = frozenset(runner._safe_builtins) | frozenset(runner._safe_modules)
+    return _SAFE_EVAL_NAMES
+
+
 class StaticBuilder:
     """
     Manages Static Single Assignment versioning and Z3 constraint generation.
@@ -99,6 +121,19 @@ class StaticBuilder:
         # e.g., var1 = q1.outcome + q2.outcome
         self.codeblock_constraints: list[BoolRef] = []
 
+        # U2: per-variable codeInit constant constraints (``var_i == literal``),
+        # keyed by variable name. A subset of ``codeblock_constraints`` — the
+        # unconditional codeInit assignments only (never the ``Implies(item >= 0,
+        # …)``-guarded codeBlock ones). ``get_reachability_base`` conjoins the
+        # entries of *frozen* variables (assigned only in codeInit, never in a
+        # codeBlock) into the precondition-reachability base so a gate on a
+        # never-reassigned constant is statically decidable (NEVER / ALWAYS)
+        # instead of a free symbol (CONDITIONAL). Populated in
+        # ``_register_variable_assignment``; frozen-ness resolved lazily against
+        # ``version_history`` at accessor time (a later codeBlock assignment to
+        # the same name un-freezes it).
+        self.codeinit_constant_constraints: dict[str, list[BoolRef]] = {}
+
         # Behavioral constraints from preconditions and postconditions
         # Used for dependency discovery and constraint verification
         # NOTE: These are kept separate from codeblock_constraints for validation
@@ -122,7 +157,26 @@ class StaticBuilder:
         # ``ItemClassifier`` can surface it in its per-item classification and
         # ``validate_qml_file`` can pass it through to authors.
         # Shape: ``{item_id: [{"kind": str, "condition_idx": int, "unsupported_nodes": List[str]}, ...]}``
+        #
+        # The U1 undefined-name lint reuses this same channel (as
+        # ``group_dependency`` already does): a phantom identifier is recorded as
+        # ``{"kind": "undefined_name", "identifier": str, "condition_kind":
+        # "precondition"|"postcondition"|"codeBlock", "suggested_outcome":
+        # str | None}`` under the owning item_id (or block_id for block-level
+        # conditions), so it flows builder → ItemClassifier → to_issues unchanged.
         self.coverage_gaps: dict[str, list[dict[str, Any]]] = {}
+
+        # U1 → U3 handoff: per-variable read/write census, keyed by variable name
+        # (codeInit/codeBlock assignment targets; never item ids or phantom
+        # names). Populated by the ``_detect_undefined_names_and_census`` post-pass.
+        # Shape per variable:
+        #   {"assignments": [{"context": "codeInit"|item_id,
+        #                     "bare_outcome_item": item_id | None}, ...],
+        #    "reads": int}   # Load references across predicates + code
+        # ``bare_outcome_item`` is the item X when the assignment is exactly
+        # ``var = X.outcome`` (the pass-through-alias signal U3 keys on); any
+        # transformation or a second assignment leaves it None / exempts the var.
+        self.variable_census: dict[str, dict[str, Any]] = {}
 
         # ------------------------------------------------------------------
         # U2: shared conditionally-present Z3 primitive.
@@ -768,6 +822,21 @@ class StaticBuilder:
         # ------------------------------------------------------------------
         self._emit_capped_group_independence_gaps()
 
+        # ------------------------------------------------------------------
+        # Pass 5 (U1): undefined-name lint + variable read/write census.
+        #
+        # Runs LAST, after SSA is complete: ``version_history`` only holds every
+        # real assignment target once every codeInit/codeBlock has been
+        # processed, and definedness is file-scoped (a name assigned by a
+        # codeBlock LATER in source order than the predicate that reads it is
+        # still defined — ordering is the topology pass's concern, not this
+        # one's). A purely additive walk of stored predicate / codeBlock ASTs:
+        # it records ``undefined_name`` coverage gaps and fills
+        # ``variable_census``, touching no constraint, dependency edge, or
+        # existing classification.
+        # ------------------------------------------------------------------
+        self._detect_undefined_names_and_census()
+
     def _roster_label_keys(self, raw_labels: Any) -> list[int]:
         """Return the sorted power-of-2 label-key universe for a Roster item.
 
@@ -1245,7 +1314,14 @@ class StaticBuilder:
                     Implies(self.item_vars[context_id] >= 0, z3_var == z3_value)
                 )
             else:
-                self.codeblock_constraints.append(z3_var == z3_value)
+                # codeInit assignment: unconditional ``var_i == value``. Recorded
+                # separately (U2) so ``get_reachability_base`` can propagate the
+                # constant IFF this variable turns out to be frozen (no codeBlock
+                # ever reassigns it — decided at accessor time against
+                # ``version_history``).
+                init_constraint = z3_var == z3_value
+                self.codeblock_constraints.append(init_constraint)
+                self.codeinit_constant_constraints.setdefault(var_name, []).append(init_constraint)
 
     def _register_outcome_assignment(
         self, item_id: str, value_node: ast.AST, enclosing_deps: set[str], context_id: str
@@ -1375,6 +1451,773 @@ class StaticBuilder:
             condition_idx,
             unsupported_nodes,
         )
+
+    # ------------------------------------------------------------------
+    # U1: undefined-name lint + variable read/write census
+    # ------------------------------------------------------------------
+
+    def _known_name_set(self) -> set[str]:
+        """Names that legitimately resolve in a predicate / codeBlock.
+
+        The closed evaluation namespace: every item id (scalar, matrix,
+        Textarea, Comment — all carry an ``item_details`` entry), every name any
+        codeInit/codeBlock binds at runtime, and every safe builtin/module the
+        sandbox exposes.
+
+        Two deliberate choices in the variable half:
+        - ``version_history`` — NOT ``version_map`` — is the SSA oracle:
+          ``_get_current_z3_var`` seeds ``version_map`` with a version-0 entry
+          for every phantom it lowers, so ``version_map`` would mask exactly the
+          defect this lint targets; ``version_history`` only ever grows through
+          ``_register_variable_assignment`` (genuine assignments).
+        - ``_all_bound_code_names`` additionally covers names the SSA layer does
+          not model but the runtime still binds — tuple-unpacking / for-loop /
+          walrus / with-as targets — so those are never mis-flagged as phantoms.
+          It is a superset of the ``version_history`` Name-target assignments;
+          both are unioned for clarity of intent.
+        """
+        return (
+            set(self.item_details.keys())
+            | set(self.version_history.keys())
+            | self._all_bound_code_names()
+            | _safe_eval_names()
+        )
+
+    def _all_bound_code_names(self, include_init: bool = True) -> set[str]:
+        """Every name a codeInit / codeBlock binds *in a scope that leaks*.
+
+        File-scoped by design: definedness does not depend on source order, and a
+        name a codeBlock binds is valid to read in any predicate. A genuine
+        phantom — never a binding target anywhere — is absent from this set and
+        stays flagged.
+
+        Crucially this counts only names bound at code-unit (module) scope —
+        assignment / augmented-assignment / for-target / ``with ... as`` /
+        walrus / import / def / class targets that actually persist after the
+        code unit runs. Comprehension, generator, and lambda locals do NOT leak
+        in Python 3, so a name used only as a comprehension loop variable in one
+        unit must never define (or un-freeze) a same-named variable in an
+        unrelated unit. Using the scope-flattened ``_collect_bound_names`` here
+        instead would let an unrelated ``[… for X in …]`` silently suppress a
+        real undefined_name / frozen-gate / write-only finding elsewhere in the
+        document (the file-wide-union suppression class).
+
+        ``include_init=False`` restricts the walk to item codeBlocks (excludes
+        codeInit): the set of names any codeBlock re-binds at leaking scope, used
+        by ``_frozen_variable_names`` to un-freeze a codeInit constant a codeBlock
+        rebinds through a construct SSA does not model (tuple/list unpack,
+        for-loop target, walrus, ``with ... as``). Frozenness must not be
+        defeated by codeInit's own bindings, so those are dropped here.
+        """
+        names: set[str] = set()
+        code_units: list[str | None] = [self.state.get_code_init()] if include_init else []
+        code_units.extend(item.get("codeBlock") for item in self.state.get_all_items())
+        for code in code_units:
+            if not code:
+                continue
+            try:
+                names |= self._collect_leaking_bound_names(ast.parse(code))
+            except SyntaxError:
+                continue
+        return names
+
+    @staticmethod
+    def _collect_leaking_bound_names(tree: ast.AST) -> set[str]:
+        """Names bound at the code unit's own (module-level) scope — the names
+        that persist after the unit runs and are therefore visible to any other
+        predicate / codeBlock in the document.
+
+        Unlike ``_collect_bound_names`` (a scope-flattened over-approximation
+        that is correct only as a *per-unit local mask*), this deliberately does
+        NOT descend into comprehensions, generator expressions, or lambdas: their
+        loop variables and parameters are local to that expression and never leak
+        (Python 3 comprehension scoping). Walking those in a file-wide union is
+        exactly what let an unrelated ``[… for X in …]`` suppress a real finding
+        for a same-named module-scope variable elsewhere.
+
+        Covers the leaking binders: assignment / augmented-assignment / annotated
+        targets, ``for`` / ``async for`` targets (statement loops, not
+        comprehensions), ``with ... as`` / ``except ... as``, statement-level
+        walrus, ``import`` / ``from … import`` aliases, and ``def`` / ``async
+        def`` / ``class`` names. Nested function/lambda *bodies* are not
+        descended into — a name bound only inside a nested def does not leak to
+        the code unit either.
+        """
+        leaking: set[str] = set()
+
+        def _add_target(target: ast.AST) -> None:
+            # Assignment / for / with-as targets: a Name (possibly nested in
+            # Tuple/List/Starred unpacking) binds at this scope. Attribute and
+            # Subscript targets bind nothing new.
+            if isinstance(target, ast.Name):
+                leaking.add(target.id)
+            elif isinstance(target, (ast.Tuple, ast.List)):
+                for elt in target.elts:
+                    _add_target(elt)
+            elif isinstance(target, ast.Starred):
+                _add_target(target.value)
+
+        def _walk_stmt(node: ast.AST) -> None:
+            for child in ast.iter_child_nodes(node):
+                if isinstance(child, ast.Assign):
+                    for tgt in child.targets:
+                        _add_target(tgt)
+                    _walk_stmt(child)  # a walrus can hide in the RHS value
+                elif isinstance(child, (ast.AugAssign, ast.AnnAssign)):
+                    _add_target(child.target)
+                    _walk_stmt(child)
+                elif isinstance(child, (ast.For, ast.AsyncFor)):
+                    _add_target(child.target)
+                    _walk_stmt(child)
+                elif isinstance(child, (ast.With, ast.AsyncWith)):
+                    for item in child.items:
+                        if item.optional_vars is not None:
+                            _add_target(item.optional_vars)
+                    _walk_stmt(child)
+                elif isinstance(child, ast.NamedExpr):
+                    # Statement-level walrus (``(x := …)``); the target leaks.
+                    _add_target(child.target)
+                    _walk_stmt(child)
+                elif isinstance(child, ast.ExceptHandler):
+                    if child.name:
+                        leaking.add(child.name)
+                    _walk_stmt(child)
+                elif isinstance(child, (ast.Import, ast.ImportFrom)):
+                    for alias in child.names:
+                        leaking.add(alias.asname or alias.name.split(".")[0])
+                elif isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+                    # The def/class name leaks; its body's local bindings do not.
+                    leaking.add(child.name)
+                elif isinstance(child, (ast.Lambda, ast.ListComp, ast.SetComp, ast.DictComp, ast.GeneratorExp)):
+                    # A comprehension / lambda introduces its own non-leaking
+                    # scope: descend for a statement-level walrus (which DOES
+                    # leak to the enclosing scope) but never treat its loop vars
+                    # or params as bindings.
+                    for named in ast.walk(child):
+                        if isinstance(named, ast.NamedExpr):
+                            _add_target(named.target)
+                else:
+                    _walk_stmt(child)
+
+        _walk_stmt(tree)
+        return leaking
+
+    @staticmethod
+    def _collect_bound_names(tree: ast.AST) -> set[str]:
+        """Names bound *locally* within an expression or code block.
+
+        A conservative over-approximation (whole-subtree, scope-flattened): any
+        such name is treated as defined so a locally-binding construct never
+        produces a false undefined_name. Covers comprehension / for-loop targets
+        (Store-context ``Name``), assignment and walrus targets, ``with ... as``
+        and ``except ... as`` bindings, and lambda / def parameters. Flattening
+        scopes only widens the "defined" set, so it can never over-flag; it can
+        under-flag a shadowed sibling scope, which is the safe direction.
+        """
+        bound: set[str] = set()
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Name) and isinstance(node.ctx, (ast.Store, ast.Del)):
+                bound.add(node.id)
+            elif isinstance(node, ast.arg):
+                bound.add(node.arg)
+            elif isinstance(node, ast.ExceptHandler) and node.name:
+                bound.add(node.name)
+            elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+                bound.add(node.name)
+            elif isinstance(node, (ast.Import, ast.ImportFrom)):
+                for alias in node.names:
+                    bound.add(alias.asname or alias.name.split(".")[0])
+        return bound
+
+    @staticmethod
+    def _outcome_ref_name(node: ast.AST) -> str | None:
+        """The base name X iff ``node`` is exactly ``X.outcome`` (a plain
+        ``Name.outcome`` attribute access); else None.
+
+        Shared shape primitive for the pass-through-alias RHS check
+        (``_bare_outcome_item``, which filters the name against known items) and
+        the own-outcome postcondition test (``_is_own_outcome``, which compares
+        it to a specific item id).
+        """
+        if (
+            isinstance(node, ast.Attribute)
+            and node.attr == "outcome"
+            and isinstance(node.value, ast.Name)
+        ):
+            return node.value.id
+        return None
+
+    @staticmethod
+    def _bare_outcome_item(value_node: ast.AST, item_details: dict[str, Any]) -> str | None:
+        """Return item X iff ``value_node`` is exactly ``X.outcome`` for a known
+        item X (the pass-through-alias RHS shape U3 keys on); else None."""
+        name = StaticBuilder._outcome_ref_name(value_node)
+        return name if name in item_details else None
+
+    def _record_undefined_name(
+        self, owner_id: str, identifier: str, condition_kind: str
+    ) -> None:
+        """Record one undefined-name gap under ``owner_id`` and WARN once.
+
+        Deduplicated by ``(identifier, condition_kind)`` so a name referenced
+        several times in one predicate/codeBlock yields a single finding. The
+        suggestion targets ``q_<identifier>.outcome`` when that item exists — the
+        dominant corpus phantom pattern (bare ``smk_status`` → ``q_smk_status``).
+        """
+        gaps = self.coverage_gaps.setdefault(owner_id, [])
+        for existing in gaps:
+            if (
+                existing.get("kind") == "undefined_name"
+                and existing.get("identifier") == identifier
+                and existing.get("condition_kind") == condition_kind
+            ):
+                return
+        candidate = f"q_{identifier}"
+        suggested = f"{candidate}.outcome" if candidate in self.item_details else None
+        gaps.append(
+            {
+                "kind": "undefined_name",
+                "identifier": identifier,
+                "condition_kind": condition_kind,
+                "suggested_outcome": suggested,
+            }
+        )
+        self.logger.warning(
+            "undefined name '%s' referenced in the %s of '%s' — it resolves to no "
+            "item id, codeInit/codeBlock variable, or safe builtin. At runtime the "
+            "predicate fails open and Z3 sees a free symbol, so the logic enforces "
+            "nothing.%s",
+            identifier,
+            condition_kind,
+            owner_id,
+            f" Did you mean '{suggested}'?" if suggested else "",
+        )
+
+    def _record_textarea_in_predicate(
+        self, owner_id: str, item_name: str, condition_kind: str
+    ) -> None:
+        """Record one ``textarea_in_predicate`` gap under ``owner_id`` and WARN once.
+
+        A Textarea item has a string outcome for which no Z3 integer variable is
+        created; ``<item>.outcome`` in a predicate lowers to the sentinel
+        ``IntVal(0)``, so the constraint is statically wrong and can even
+        misclassify reachability. Deduplicated by ``(item_name, condition_kind)``
+        so a Textarea outcome referenced several times in one location yields a
+        single finding. WARNING, not error — a stored file that already does this
+        must still save.
+        """
+        gaps = self.coverage_gaps.setdefault(owner_id, [])
+        for existing in gaps:
+            if (
+                existing.get("kind") == "textarea_in_predicate"
+                and existing.get("item") == item_name
+                and existing.get("condition_kind") == condition_kind
+            ):
+                return
+        gaps.append(
+            {
+                "kind": "textarea_in_predicate",
+                "item": item_name,
+                "condition_kind": condition_kind,
+            }
+        )
+        self.logger.warning(
+            "Textarea outcome '%s.outcome' referenced in the %s of '%s' — a "
+            "free-text outcome has no verified Z3 model (it lowers to a sentinel), "
+            "so gating logic on it is outside the verified envelope.",
+            item_name,
+            condition_kind,
+            owner_id,
+        )
+
+    def _is_textarea_outcome_ref(self, node: ast.AST) -> str | None:
+        """The item name X iff ``node`` is ``X.outcome`` for a Textarea-controlled
+        item; else None. The shape check reuses ``_outcome_ref_name``; the control
+        lookup reads ``item_details`` (populated in pass 1)."""
+        name = self._outcome_ref_name(node)
+        if name is not None and self.item_details.get(name, {}).get("control") == "Textarea":
+            return name
+        return None
+
+    def _census_read(self, name: str) -> None:
+        """Count a Load reference to ``name`` if it is a tracked variable."""
+        entry = self.variable_census.get(name)
+        if entry is not None:
+            entry["reads"] += 1
+
+    def _count_census_reads(self, tree: ast.AST) -> None:
+        """Count every Load reference to a tracked variable in ``tree``, scoped.
+
+        A Load whose name is bound by an *enclosing* comprehension / generator /
+        lambda scope refers to that expression-local, not to a same-named
+        module-scope variable, so it does NOT count as a read of a tracked
+        variable — that is exactly what let an unrelated ``[… for path in …]``
+        mask a genuine write-only ``path`` elsewhere. A Load of the same name
+        *outside* that expression (e.g. a real ``x = x + 1`` self-accumulator, or
+        a read that follows the comprehension in the same unit) still counts.
+
+        Scope-accurate by construction: the walk carries the set of names shadowed
+        by the comprehension/lambda scopes currently enclosing the node, so only
+        Loads genuinely bound to an expression-local are skipped.
+        """
+
+        def _recurse(node: ast.AST, shadowed: frozenset[str]) -> None:
+            # An augmented assignment (``x += 1``) reads its target's prior value,
+            # but the target carries a Store ctx so the Load branch below misses
+            # it. Count it as a read (unless shadowed) so a self-only accumulator
+            # stays off the write-only lint — matching the ``x = x + 1`` form,
+            # whose RHS Load is counted normally.
+            if isinstance(node, ast.AugAssign):
+                tgt = node.target
+                if isinstance(tgt, ast.Name) and tgt.id not in shadowed:
+                    self._census_read(tgt.id)
+            if isinstance(node, (ast.ListComp, ast.SetComp, ast.DictComp, ast.GeneratorExp)):
+                inner = set(shadowed)
+                for gen in node.generators:
+                    for name_node in ast.walk(gen.target):
+                        if isinstance(name_node, ast.Name):
+                            inner.add(name_node.id)
+                child_shadow = frozenset(inner)
+                for child in ast.iter_child_nodes(node):
+                    _recurse(child, child_shadow)
+                return
+            if isinstance(node, ast.Lambda):
+                inner = set(shadowed)
+                for arg in ast.walk(node.args):
+                    if isinstance(arg, ast.arg):
+                        inner.add(arg.arg)
+                child_shadow = frozenset(inner)
+                for child in ast.iter_child_nodes(node):
+                    _recurse(child, child_shadow)
+                return
+            if (
+                isinstance(node, ast.Name)
+                and isinstance(node.ctx, ast.Load)
+                and node.id not in shadowed
+            ):
+                self._census_read(node.id)
+            for child in ast.iter_child_nodes(node):
+                _recurse(child, shadowed)
+
+        _recurse(tree, frozenset())
+
+    def _census_iterate_over(self, expr: str) -> None:
+        """Count variable reads inside a Roster ``iterateOver`` expression.
+
+        Census-only: undefined-name detection deliberately does NOT run here —
+        adding it would change U1's shipped undefined-name behavior, and an
+        ``iterateOver`` phantom already surfaces through the Pass-3 dependency
+        walk and the FlowProcessor runtime roster channel. This exists purely so
+        a variable consumed only by a Roster (``family_mask`` → ``iterateOver``)
+        is not mis-flagged write-only by the U3 hygiene lint.
+        """
+        try:
+            tree = ast.parse(expr, mode="eval")
+        except SyntaxError:
+            return
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Name) and isinstance(node.ctx, ast.Load):
+                self._census_read(node.id)
+
+    def _scan_predicate(
+        self, predicate: str, owner_id: str, condition_kind: str, known: set[str]
+    ) -> None:
+        """Walk one precondition/postcondition string: flag undefined Load names
+        (attributed to ``owner_id``) and count variable reads for the census."""
+        try:
+            tree = ast.parse(predicate, mode="eval")
+        except SyntaxError:
+            # Unparseable predicate — the runtime warning channel and the R13
+            # coverage-gap path already surface it; nothing to lint here.
+            return
+        bound = self._collect_bound_names(tree)
+        # Census reads: scope-aware, so a comprehension/lambda-local Load is not
+        # counted as a read of a same-named tracked variable.
+        self._count_census_reads(tree)
+        for node in ast.walk(tree):
+            # A Textarea outcome reference has no verified Z3 model — flag it
+            # (WARNING) regardless of the Name-Load census/undefined-name path.
+            textarea = self._is_textarea_outcome_ref(node)
+            if textarea is not None:
+                self._record_textarea_in_predicate(owner_id, textarea, condition_kind)
+            if not (isinstance(node, ast.Name) and isinstance(node.ctx, ast.Load)):
+                continue
+            name = node.id
+            # ``bound`` (scope-flattened, per-unit) masks only the undefined-name
+            # check: a comprehension local read here is legitimately defined.
+            if name in bound:
+                continue
+            if name not in known:
+                self._record_undefined_name(owner_id, name, condition_kind)
+
+    def _scan_code(self, code: str, item_id: str | None, known: set[str]) -> None:
+        """Walk one codeInit / codeBlock string: record variable assignments
+        (with context + bare-outcome shape) and reads for the census, and flag
+        undefined Load names for an item's codeBlock.
+
+        ``item_id`` is ``None`` for codeInit (census only — codeInit has no item
+        to attribute an undefined_name to and runs before any item); otherwise it
+        is both the assignment context label and the undefined-name owner.
+        """
+        try:
+            tree = ast.parse(code)
+        except SyntaxError:
+            return
+        context = item_id if item_id is not None else "codeInit"
+        bound = self._collect_bound_names(tree)
+
+        # Assignments: one census record per tracked target. Plain ``x = …``
+        # carries the bare-outcome shape (for the pass-through-alias lint); every
+        # other producing form (augmented assign, tuple/list unpack, for-target,
+        # ``with ... as``, walrus) records a non-bare assignment so the variable
+        # is seen as *produced*. Missing the non-Name forms is what let a real
+        # second producer look like a single-assignment alias, and a
+        # non-Name-only producer escape the write-only lint entirely.
+        self._record_census_assignments(tree, context)
+
+        # Reads (scope-aware): a comprehension/lambda-local Load is not a read of
+        # a same-named tracked variable.
+        self._count_census_reads(tree)
+
+        # Undefined names (Load context). ``bound`` (scope-flattened, per-unit)
+        # masks locally-bound names so a comprehension local is not mis-flagged.
+        for node in ast.walk(tree):
+            # A codeBlock read of a Textarea outcome is flagged (WARNING); as with
+            # undefined_name, only real codeBlocks own a finding, not codeInit.
+            if item_id is not None:
+                textarea = self._is_textarea_outcome_ref(node)
+                if textarea is not None:
+                    self._record_textarea_in_predicate(item_id, textarea, "codeBlock")
+            if not (isinstance(node, ast.Name) and isinstance(node.ctx, ast.Load)):
+                continue
+            name = node.id
+            if name in bound:
+                continue
+            if item_id is not None and name not in known:
+                self._record_undefined_name(item_id, name, "codeBlock")
+
+    def _record_census_assignments(self, tree: ast.AST, context: str) -> None:
+        """Record one census assignment per tracked target bound in ``tree``.
+
+        Covers every producing form so the census sees a variable as *produced*
+        regardless of how it is bound: a plain ``x = <X.outcome>`` records the
+        bare-outcome item (the only pass-through-alias candidate); augmented
+        assignment, tuple/list unpacking, ``for`` targets, ``with ... as``, and
+        statement-level walrus all record a non-bare (``bare_outcome_item=None``)
+        assignment. A ``for``/aug-assign target that also reads its prior value is
+        counted as a read via ``_count_census_reads`` over the same tree, so a
+        self-accumulator stays off the write-only lint.
+
+        Comprehension / generator / lambda loop-locals are deliberately NOT
+        recorded — they never leak, so they are neither a producer nor a reader
+        of a same-named tracked variable.
+        """
+
+        def _record_target(target: ast.AST, bare_outcome_item: str | None) -> None:
+            if isinstance(target, ast.Name):
+                if target.id in self.variable_census:
+                    self.variable_census[target.id]["assignments"].append(
+                        {"context": context, "bare_outcome_item": bare_outcome_item}
+                    )
+            elif isinstance(target, (ast.Tuple, ast.List)):
+                # Unpacking splits one RHS across targets — no single target is a
+                # bare ``X.outcome`` alias.
+                for elt in target.elts:
+                    _record_target(elt, None)
+            elif isinstance(target, ast.Starred):
+                _record_target(target.value, None)
+
+        def _walk(node: ast.AST) -> None:
+            for child in ast.iter_child_nodes(node):
+                if isinstance(child, ast.Assign):
+                    bare = self._bare_outcome_item(child.value, self.item_details)
+                    for tgt in child.targets:
+                        _record_target(tgt, bare)
+                    _walk(child)
+                elif isinstance(child, (ast.AugAssign, ast.AnnAssign)):
+                    if child.target is not None:
+                        _record_target(child.target, None)
+                    _walk(child)
+                elif isinstance(child, (ast.For, ast.AsyncFor)):
+                    _record_target(child.target, None)
+                    _walk(child)
+                elif isinstance(child, (ast.With, ast.AsyncWith)):
+                    for item in child.items:
+                        if item.optional_vars is not None:
+                            _record_target(item.optional_vars, None)
+                    _walk(child)
+                elif isinstance(child, ast.NamedExpr):
+                    _record_target(child.target, None)
+                    _walk(child)
+                elif isinstance(child, (ast.Lambda, ast.ListComp, ast.SetComp, ast.DictComp, ast.GeneratorExp)):
+                    # Non-leaking scope: only a statement-level walrus inside it
+                    # produces a leaking binding.
+                    for named in ast.walk(child):
+                        if isinstance(named, ast.NamedExpr):
+                            _record_target(named.target, None)
+                else:
+                    _walk(child)
+
+        _walk(tree)
+
+    def _detect_undefined_names_and_census(self) -> None:
+        """Pass 5 (U1): populate ``variable_census`` and record undefined-name
+        coverage gaps across every stored predicate and code block.
+
+        Purely additive — no constraint, dependency edge, or classification is
+        touched. Definedness is file-scoped: the known-name set is fixed once
+        (after full SSA) and applied uniformly, so a predicate that reads a
+        variable a later codeBlock produces is not flagged.
+        """
+        known = self._known_name_set()
+        # Census keys are every assigned variable; seed them all so a write-only
+        # variable (0 reads) still has an entry. ``version_history`` covers plain
+        # ``ast.Name`` assignment targets (all SSA models); union in the leaking
+        # code-bound names so a variable produced ONLY via tuple-unpack / for /
+        # walrus / with-as (which SSA never records) is still censused — else a
+        # non-Name-only unread producer escapes the write-only lint entirely.
+        censused_names = set(self.version_history) | self._all_bound_code_names()
+        self.variable_census = {
+            var: {"assignments": [], "reads": 0} for var in censused_names
+        }
+
+        # codeInit is a code unit for the census (assignments + reads) but has no
+        # item to own an undefined_name, so pass item_id=None.
+        init_code = self.state.get_code_init()
+        if init_code:
+            self._scan_code(init_code, None, known)
+
+        for item in self.state.get_all_items():
+            item_id = item.get("id")
+            if not item_id:
+                continue
+            for cond in item.get("precondition", []) or []:
+                predicate = cond.get("predicate", "")
+                if predicate:
+                    self._scan_predicate(predicate, item_id, "precondition", known)
+            for cond in item.get("postcondition", []) or []:
+                predicate = cond.get("predicate", "")
+                if predicate:
+                    self._scan_predicate(predicate, item_id, "postcondition", known)
+            code_block = item.get("codeBlock")
+            if code_block:
+                self._scan_code(code_block, item_id, known)
+
+        # Roster ``iterateOver`` expressions read a variable / item outcome that
+        # the roster consumes — a genuine read the predicate/codeBlock scans above
+        # miss. Count those reads (once per Roster block) so a variable that
+        # exists only to drive a Roster is not mis-classified write-only by U3.
+        # Census-only: this deliberately does NOT run undefined-name detection
+        # (see _census_iterate_over) so U1's shipped behavior is unchanged.
+        seen_roster_blocks: set[str] = set()
+        for item in self.state.get_all_items():
+            block_id = item.get("_roster_block_id")
+            iterate_over = item.get("_roster_iterate_over")
+            if block_id and iterate_over and block_id not in seen_roster_blocks:
+                seen_roster_blocks.add(block_id)
+                self._census_iterate_over(iterate_over)
+
+        # Block-level conditions (kept on the block per R25, not copied onto
+        # items): attribute findings to the block_id, mirroring the block-keyed
+        # group_dependency gap so classify_all_items surfaces them as a synthetic
+        # block entry.
+        for block in self.state.get_blocks():
+            block_id = block.get("id")
+            if not block_id:
+                continue
+            for cond in block.get("precondition", []) or []:
+                predicate = cond.get("predicate", "")
+                if predicate:
+                    self._scan_predicate(predicate, block_id, "precondition", known)
+            for cond in block.get("postcondition", []) or []:
+                predicate = cond.get("predicate", "")
+                if predicate:
+                    self._scan_predicate(predicate, block_id, "postcondition", known)
+
+    def get_variable_census(self) -> dict[str, dict[str, Any]]:
+        """Return the per-variable read/write census (U3 hygiene lints).
+
+        See ``self.variable_census`` for the shape. Read-only view intent: the
+        returned dict is the live structure — callers must not mutate it.
+        """
+        return self.variable_census
+
+    # ------------------------------------------------------------------
+    # U3: postcondition coverage analysis (relational vs local) + the
+    # duplicate-input-bound hygiene signal. Pure read-only analysis over
+    # stored postcondition ASTs — it records nothing and mutates no state;
+    # the issue/severity policy and the statistics keys live in
+    # ``ValidationProcessor`` (the single home of that policy), which consumes
+    # these records alongside ``get_variable_census``.
+    # ------------------------------------------------------------------
+
+    def analyze_postconditions(self) -> list[dict[str, Any]]:
+        """Classify every item-level postcondition for R12 coverage stats and the
+        duplicate-input-bound lint.
+
+        One record per (item, postcondition predicate)::
+
+            {"item_id": str, "condition_idx": int, "predicate": str,
+             "relational": bool,             # deps include another item's
+                                             # outcome OR any variable (else LOCAL)
+             "duplicate_input_bound": bool}  # restates the item's own control
+                                             # min/max exactly, references nothing
+                                             # else
+
+        Block-level postconditions are intentionally excluded: they have no
+        single owning item to test "own outcome" against, and the coverage metric
+        (relational cross-question constraints) is an item-level notion.
+        """
+        records: list[dict[str, Any]] = []
+        for item in self.state.get_all_items():
+            item_id = item.get("id")
+            if not item_id:
+                continue
+            input_spec = item.get("input", {}) or {}
+            control = input_spec.get("control", "")
+            numeric = control in ("Editbox", "Slider", "Range")
+            lo = input_spec.get("min")
+            hi = input_spec.get("max")
+            for idx, cond in enumerate(item.get("postcondition", []) or []):
+                predicate = cond.get("predicate", "")
+                if not predicate:
+                    continue
+                try:
+                    tree = ast.parse(predicate, mode="eval")
+                except SyntaxError:
+                    continue
+                deps = self._extract_dependencies_from_ast(tree.body)
+                # Relational iff any dependency is a variable (``var:`` node) or
+                # a DIFFERENT item's outcome. A postcondition that references only
+                # its own outcome (or nothing) is local.
+                relational = any(d.startswith("var:") or d != item_id for d in deps)
+                duplicate = (
+                    numeric
+                    and not relational
+                    and self._restates_input_bounds(tree.body, item_id, lo, hi)
+                )
+                records.append(
+                    {
+                        "item_id": item_id,
+                        "condition_idx": idx,
+                        "predicate": predicate,
+                        "relational": relational,
+                        "duplicate_input_bound": duplicate,
+                    }
+                )
+        return records
+
+    @staticmethod
+    def _is_own_outcome(node: ast.AST, item_id: str) -> bool:
+        """True iff ``node`` is exactly ``<item_id>.outcome``."""
+        return StaticBuilder._outcome_ref_name(node) == item_id
+
+    @staticmethod
+    def _literal_int(node: ast.AST) -> int | None:
+        """Resolve ``node`` to a Python int literal (optionally unary-signed).
+
+        Conservative on purpose: floats and any non-literal (a name, a BinOp)
+        return ``None`` so the duplicate-input-bound check only ever fires on an
+        exact integer restatement of an integer control bound.
+        """
+        if (
+            isinstance(node, ast.Constant)
+            and isinstance(node.value, int)
+            and not isinstance(node.value, bool)
+        ):
+            return node.value
+        if isinstance(node, ast.UnaryOp) and isinstance(node.op, (ast.USub, ast.UAdd)):
+            inner = StaticBuilder._literal_int(node.operand)
+            if inner is None:
+                return None
+            return -inner if isinstance(node.op, ast.USub) else inner
+        return None
+
+    @staticmethod
+    def _flatten_and_comparisons(node: ast.AST) -> list[ast.Compare] | None:
+        """Flatten an ``And`` tree of ``Compare`` nodes into a flat list.
+
+        Returns ``None`` if any leaf is not a ``Compare`` — an ``Or`` / ``Not`` /
+        call / bare name means the predicate is doing more than restating bounds,
+        so it is not a duplicate-input-bound candidate.
+        """
+        if isinstance(node, ast.Compare):
+            return [node]
+        if isinstance(node, ast.BoolOp) and isinstance(node.op, ast.And):
+            out: list[ast.Compare] = []
+            for value in node.values:
+                sub = StaticBuilder._flatten_and_comparisons(value)
+                if sub is None:
+                    return None
+                out.extend(sub)
+            return out
+        return None
+
+    def _bound_kind(
+        self,
+        left: ast.AST,
+        op: ast.cmpop,
+        right: ast.AST,
+        item_id: str,
+        lo: Any,
+        hi: Any,
+    ) -> str | None:
+        """Classify one binary comparison as restating ``"min"`` / ``"max"``, else
+        ``None``.
+
+        Exact-constant, own-outcome only: ``own.outcome >= lo`` (or ``lo <=
+        own.outcome``) restates the min; ``own.outcome <= hi`` (or ``hi >=
+        own.outcome``) restates the max. Any tighter constant, a different
+        operator (``>``, ``==``), or a non-own-outcome operand returns ``None``,
+        which disqualifies the whole predicate.
+        """
+        if self._is_own_outcome(left, item_id):
+            const = self._literal_int(right)
+            if const is None:
+                return None
+            if isinstance(op, ast.GtE) and lo is not None and const == lo:
+                return "min"
+            if isinstance(op, ast.LtE) and hi is not None and const == hi:
+                return "max"
+            return None
+        if self._is_own_outcome(right, item_id):
+            const = self._literal_int(left)
+            if const is None:
+                return None
+            if isinstance(op, ast.LtE) and lo is not None and const == lo:
+                return "min"
+            if isinstance(op, ast.GtE) and hi is not None and const == hi:
+                return "max"
+            return None
+        return None
+
+    def _restates_input_bounds(
+        self, node: ast.AST, item_id: str, lo: Any, hi: Any
+    ) -> bool:
+        """True iff every comparison in ``node`` restates the item's own control
+        min/max exactly and at least one bound is restated.
+
+        Handles a single (possibly chained) ``Compare`` and ``And`` conjunctions
+        of them; a single disqualifying comparison fails the whole predicate.
+        """
+        comparisons = self._flatten_and_comparisons(node)
+        if not comparisons:
+            return False
+        restated_min = False
+        restated_max = False
+        for cmp_node in comparisons:
+            operands = [cmp_node.left, *cmp_node.comparators]
+            for i, op in enumerate(cmp_node.ops):
+                kind = self._bound_kind(
+                    operands[i], op, operands[i + 1], item_id, lo, hi
+                )
+                if kind is None:
+                    return False
+                if kind == "min":
+                    restated_min = True
+                else:
+                    restated_max = True
+        return restated_min or restated_max
 
     def _build_condition_constraint(
         self, kind: str, predicate: str, item_id: str, condition_idx: int = 0
@@ -2083,11 +2926,68 @@ class StaticBuilder:
         - enumeration for Radio/Dropdown controls
 
         This is the correct B for use in:
-        - Per-item validation: W_i = B ∧ P_i ∧ ¬Q_i
         - Global validation: F = B ∧ ∧(P_i ⇒ Q_i)
         - Path-based validation: A_i = B ∧ ∧{j∈Pred(i)}(P_j ⇒ Q_j)
+
+        Per-item *precondition reachability* uses ``get_reachability_base``
+        instead (B plus frozen-variable constants); ``get_full_base`` drives the
+        postcondition / global-Q checks.
         """
         return self._conjoin(self.domain_constraints)
+
+    def _frozen_variable_names(self) -> set[str]:
+        """Names of *frozen* variables: assigned in codeInit and never
+        reassigned by any codeBlock.
+
+        The primary oracle is ``version_history`` — every genuine SSA assignment
+        records its ``context_id`` there (``"__init__"`` for codeInit, else the
+        owning item id). A variable is a frozen candidate iff it has at least one
+        recorded assignment and every one is a codeInit assignment: it then holds
+        its initializer constant for the entire run. A single codeBlock ``Name``
+        assignment (any non-``__init__`` context) un-freezes it — the variable is
+        *produced* and its runtime value is not statically a constant.
+
+        SSA only records plain ``ast.Name`` assignment targets, so a codeInit
+        variable a codeBlock rebinds ONLY through a tuple/list unpack, for-loop
+        target, walrus, or ``with ... as`` leaves ``version_history`` all
+        ``__init__`` and would look frozen — pinning a stale constant into
+        ``get_reachability_base`` and misclassifying its gates. To close that,
+        any name bound by any codeBlock (``_all_bound_code_names`` excluding
+        codeInit) is additionally excluded: it too is produced, not frozen.
+        """
+        codeblock_bound = self._all_bound_code_names(include_init=False)
+        return {
+            var_name
+            for var_name, history in self.version_history.items()
+            if history
+            and all(context_id == "__init__" for _, context_id in history)
+            and var_name not in codeblock_bound
+        }
+
+    def get_reachability_base(self) -> BoolRef:
+        """Reachability base for precondition classification: B ∧ frozen-var
+        constants.
+
+        Domain base B conjoined with the codeInit constant constraints of every
+        *frozen* variable (see ``_frozen_variable_names``). A frozen variable is
+        a compile-time constant for the whole run, so a gate referencing it is
+        statically decidable — ``get_domain_base`` alone leaves it a free symbol,
+        which is why a permanently-false gate (e.g. ``has_partner == 1`` over a
+        frozen ``has_partner = 0``) would classify CONDITIONAL under the
+        domain-only base.
+
+        Only frozen variables contribute: a *produced* variable (any codeBlock
+        assignment) keeps a free codeInit version so its gate stays CONDITIONAL,
+        exactly as before. The constants themselves already live in
+        ``codeblock_constraints`` (hence the full base) — this accessor conjoins
+        only the frozen subset onto the domain base, leaving ``get_full_base``
+        untouched.
+        """
+        frozen = self._frozen_variable_names()
+        frozen_constraints: list[BoolRef] = []
+        for var_name in frozen:
+            frozen_constraints.extend(self.codeinit_constant_constraints.get(var_name, []))
+        return self._conjoin(list(self.domain_constraints) + frozen_constraints)
 
     def get_full_base(self) -> BoolRef:
         """

@@ -328,9 +328,14 @@ def create_flow_blueprint(
                 labels = item_data.get("_roster_labels") or {}
                 if iter_key is not None:
                     item_data["iterationKey"] = iter_key
+                    # Prefer the engine-resolved subject (dynamic subjectFrom, or
+                    # the static label — FlowProcessor._resolve_roster_subject).
                     # Labels keys may arrive as strings after JSONB roundtrip; try both.
                     item_data["iterationLabelText"] = (
-                        labels.get(iter_key) or labels.get(str(iter_key)) or ""
+                        item_data.get("_roster_current_label")
+                        or labels.get(iter_key)
+                        or labels.get(str(iter_key))
+                        or ""
                     )
                     if iter_key in active_keys:
                         item_data["iterationPosition"] = active_keys.index(iter_key) + 1

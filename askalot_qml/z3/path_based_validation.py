@@ -151,10 +151,23 @@ class PathBasedValidator:
 
     def _build_predecessors_map(self, topological_order: list[str]) -> dict[str, list[str]]:
         """
-        Build map of predecessors for each item based on dependency graph.
+        Build Pred(i) for each item: every item earlier in the topological order.
 
-        Pred(i) includes only items that are actual dependencies (direct or transitive),
-        not all items that come before in topological order.
+        Per the accumulated-reachability definition, Pred(i) = {j : I_j ≺ I_i} —
+        all items preceding I_i in the topological order, NOT only I_i's data-flow
+        ancestors. Accumulating a non-ancestor predecessor's implication
+        (P_j ⇒ Q_j) is sound: when P_j is unsatisfiable the implication is vacuous,
+        and when P_j is always true (an always-present sibling) its postcondition
+        Q_j genuinely constrains every execution that reaches I_i. This is what
+        lets accumulated reachability catch dead code whose killing constraint is
+        carried by an always-present sibling rather than a direct ancestor (e.g.
+        a tax-bracket postcondition that forces a lower bound on income, making a
+        sibling low-income item unreachable).
+
+        Consequently dead-code detection depends on the topological order.
+        QMLTopology emits a deterministic stable-Kahn order (keyed by QML file
+        index) — the same canonical order the runtime FlowProcessor follows — so
+        the result is reproducible for a given questionnaire.
 
         Args:
             topological_order: Items in topological order
@@ -162,40 +175,10 @@ class PathBasedValidator:
         Returns:
             Dict mapping item_id to list of predecessor item_ids
         """
-        predecessors = {}
-
-        # Pre-compute index lookup for O(1) position checks
-        topo_index = {item_id: idx for idx, item_id in enumerate(topological_order)}
-
-        # Get transitive dependencies for each item
-        for item_id in topological_order:
-            deps = self._get_transitive_dependencies(item_id)
-            # Filter to only include items that come before in topological order
-            item_idx = topo_index[item_id]
-            predecessors[item_id] = [dep for dep in topological_order[:item_idx] if dep in deps]
-
-        return predecessors
-
-    def _get_transitive_dependencies(self, item_id: str) -> set[str]:
-        """
-        Get all transitive dependencies for an item.
-
-        Args:
-            item_id: The item to get dependencies for
-
-        Returns:
-            Set of all items this item depends on (directly or transitively)
-        """
-        visited = set()
-        to_visit = list(self.topology.dependencies.get(item_id, set()))
-
-        while to_visit:
-            dep = to_visit.pop()
-            if dep not in visited:
-                visited.add(dep)
-                to_visit.extend(self.topology.dependencies.get(dep, set()))
-
-        return visited
+        return {
+            item_id: list(topological_order[:idx])
+            for idx, item_id in enumerate(topological_order)
+        }
 
     def _check_item_reachability(
         self,
