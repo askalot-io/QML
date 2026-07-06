@@ -3,14 +3,24 @@ questionnaire:
   title: "Behavioral Risk Factor Surveillance System 2023"
   codeInit: |
     # =====================================================================
-    # Cross-section variables. With a single codeInit scope and one
-    # dependency graph, variables written by an earlier block are visible
-    # to every later block without any extern declaration.
+    # Cross-section state. One codeInit scope, one dependency graph: a
+    # variable written by an earlier block is visible to every later block.
+    # Only three variables survive the state-variable contract — everything
+    # else references q_<item>.outcome directly (inside the Z3-verified
+    # envelope). Each earns its place under exactly one justification class:
+    #   sex            — CONSOLIDATE: one respondent sex (1=male, 2=female,
+    #                    0=unknown) folded from the two mutually-exclusive
+    #                    intro frames (landline LL09/LL10, cell CP05/CP06).
+    #                    Consumed by the pregnancy filter (CDEM.16) and the
+    #                    sex-gated modules (breast/cervical, prostate, SOGI).
+    #   interview_mode — CLASSIFY: 1=landline, 2=cell, set on each frame's
+    #                    gender item. Gates the landline-only phone-count
+    #                    items CDEM.09/CDEM.10.
+    #   method_count   — ACCUMULATE: number of marijuana consumption methods
+    #                    reported Yes across MMU.02–06. Gates MMU.07.
     # =====================================================================
-    gender_identity = 0
-    sex_at_birth = 0
-    household_adults = 0
-    has_landline = 0
+    sex = 0
+    interview_mode = 0
     method_count = 0
 
   blocks:
@@ -192,7 +202,12 @@ questionnaire:
           precondition:
             - predicate: (q_ll06.outcome == 1 and q_ll03.outcome == 1) or q_ll07.outcome == 1 or q_ll08.outcome == 1
           codeBlock: |
-            gender_identity = q_ll09.outcome
+            # CLASSIFY: reaching the landline gender item means a landline frame.
+            interview_mode = 1
+            # CONSOLIDATE: a stated Male/Female sets sex directly; "another gender
+            # identity" (3) leaves sex for the LL10 sex-at-birth fallback below.
+            if q_ll09.outcome == 1 or q_ll09.outcome == 2:
+                sex = q_ll09.outcome
           input:
             control: Radio
             labels:
@@ -209,7 +224,9 @@ questionnaire:
           precondition:
             - predicate: q_ll09.outcome == 3
           codeBlock: |
-            sex_at_birth = q_ll10.outcome
+            # CONSOLIDATE: sex-at-birth fallback when landline gender was "another
+            # gender identity" (LL09 == 3) — resolves sex to Male/Female.
+            sex = q_ll10.outcome
           input:
             control: Radio
             labels:
@@ -306,7 +323,12 @@ questionnaire:
           precondition:
             - predicate: q_cp04.outcome == 1
           codeBlock: |
-            gender_identity = q_cp05.outcome
+            # CLASSIFY: reaching the cell gender item means a cell-phone frame.
+            interview_mode = 2
+            # CONSOLIDATE: a stated Male/Female sets sex directly; "another gender
+            # identity" (3) leaves sex for the CP06 sex-at-birth fallback below.
+            if q_cp05.outcome == 1 or q_cp05.outcome == 2:
+                sex = q_cp05.outcome
           input:
             control: Radio
             labels:
@@ -323,7 +345,9 @@ questionnaire:
           precondition:
             - predicate: q_cp05.outcome == 3
           codeBlock: |
-            sex_at_birth = q_cp06.outcome
+            # CONSOLIDATE: sex-at-birth fallback when cell gender was "another
+            # gender identity" (CP05 == 3) — resolves sex to Male/Female.
+            sex = q_cp06.outcome
           input:
             control: Radio
             labels:
@@ -425,8 +449,6 @@ questionnaire:
           title: "Do you also have a landline telephone in your home that is used to make and receive calls?"
           precondition:
             - predicate: q_cp09.outcome == 1 or q_cp10.outcome >= 1
-          codeBlock: |
-            has_landline = q_cp11.outcome
           input:
             control: Radio
             labels:
@@ -434,20 +456,15 @@ questionnaire:
               2: "No"
 
         # CP12: Number of adults in household (18+)
-        # Note: When CP08=Yes (college housing), household adult count is
-        # automatically 1 per BRFSS protocol. This is handled in codeBlock.
-        # DK (77) and Refused (99) proceed to Section 1 as system codes;
+        # Note: the source auto-sets this to 1 when CP08=Yes (college housing);
+        # that CATI convenience is dropped here (the count is not consumed for
+        # routing). DK (77) and Refused (99) proceed to Section 1 as system codes;
         # they are not offered as respondent choices.
         - id: q_cp12
           kind: Question
           title: "How many members of your household, including yourself, are 18 years of age or older?"
           precondition:
             - predicate: q_cp11.outcome >= 1
-          codeBlock: |
-            if q_cp08.outcome == 1:
-              household_adults = 1
-            else:
-              household_adults = q_cp12.outcome
           input:
             control: Editbox
             min: 1
@@ -492,8 +509,8 @@ questionnaire:
           input:
             control: Editbox
             min: 0
-            max: 88
-            right: "days (0–30, or 88 for none)"
+            max: 30
+            right: "days (0 = none)"
 
         # CHD.02: Days mental health not good (past 30 days)
         # 01–30 = number of days, 88 = None
@@ -503,22 +520,27 @@ questionnaire:
           input:
             control: Editbox
             min: 0
-            max: 88
-            right: "days (0–30, or 88 for none)"
+            max: 30
+            right: "days (0 = none)"
 
         # CHD.03: Days poor health limited usual activities (past 30 days)
-        # CHD.FILTER: Skip CHD.03 if CHD.01=88 AND CHD.02=88 (both "none")
-        # 01–30 = number of days, 88 = None
+        # CHD.FILTER: skip when both physical and mental bad-day counts are 0 (none).
         - id: q_chd_03
           kind: Question
           title: "During the past 30 days, for about how many days did poor physical or mental health keep you from doing your usual activities, such as self-care, work, or recreation?"
           precondition:
-            - predicate: not (q_chd_01.outcome == 88 and q_chd_02.outcome == 88)
+            - predicate: q_chd_01.outcome > 0 or q_chd_02.outcome > 0
+          # MINE (part-whole / physical-budget): activity-limited days cannot exceed
+          # the days of poor physical OR mental health. The union of the two bad-day
+          # sets is at most their sum, so this is the objective upper bound.
+          postcondition:
+            - predicate: q_chd_03.outcome <= q_chd_01.outcome + q_chd_02.outcome
+              hint: "Days that poor health kept you from your usual activities cannot exceed your total days of poor physical health plus poor mental health."
           input:
             control: Editbox
             min: 0
-            max: 88
-            right: "days (0–30, or 88 for none)"
+            max: 30
+            right: "days (0 = none)"
 
     # =========================================================================
     # BLOCK 3: CORE SECTION 3 - HEALTH CARE ACCESS (CHCA.01–CHCA.04)
@@ -939,9 +961,15 @@ questionnaire:
       title: "Demographics"
       items:
         # CDEM.01: Age in years
+        # MINE (temporal-ordering): current age must be at least the age at which
+        # diabetes was first diagnosed (CCHC.13, asked earlier in Chronic
+        # Conditions). The check lands here because CDEM.01 is the later item.
         - id: q_cdem_01
           kind: Question
           title: "What is your age?"
+          postcondition:
+            - predicate: q_cdem_01.outcome >= q_cchc_13.outcome
+              hint: "Your current age cannot be less than the age at which you were first told you had diabetes."
           input:
             control: Editbox
             min: 18
@@ -1084,14 +1112,18 @@ questionnaire:
               7: "Retired"
               8: "Unable to work"
 
-        # CDEM.14: Children under 18 in household (88 = none)
+        # CDEM.14: Children under 18 in household.
+        # Modelled as a plain count (0 = none) rather than the source's 88=None
+        # sentinel, so the "has children" gate on the child-selection/childhood-
+        # asthma modules is the clean q_cdem_14.outcome >= 1.
         - id: q_cdem_14
           kind: Question
           title: "How many children less than 18 years of age live in your household?"
           input:
             control: Editbox
             min: 0
-            max: 88
+            max: 20
+            right: "children (0 = none)"
 
         # CDEM.15: Annual household income — 11 categories → Dropdown
         - id: q_cdem_15
@@ -1117,7 +1149,7 @@ questionnaire:
           kind: Question
           title: "To your knowledge, are you now pregnant?"
           precondition:
-            - predicate: "sex_at_birth == 2 and q_cdem_01.outcome <= 49"
+            - predicate: "sex == 2 and q_cdem_01.outcome <= 49"
           input:
             control: Switch
 
@@ -1223,7 +1255,7 @@ questionnaire:
       kind: Group
       title: "Core Section 10: Falls"
       precondition:
-        - predicate: age >= 45
+        - predicate: q_cdem_01.outcome >= 45
       items:
         # CFAL.01: Number of falls in past 12 months
         # 0–76 = count (76 = 76 or more), 88 = None (no falls)
@@ -1243,6 +1275,10 @@ questionnaire:
           title: "How many of these falls caused an injury that limited your regular activities for at least a day or caused you to go to see a doctor?"
           precondition:
             - predicate: q_cfal_01.outcome > 0
+          # MINE (counts-vs-capacity): injurious falls are a subset of all falls.
+          postcondition:
+            - predicate: q_cfal_02.outcome <= q_cfal_01.outcome
+              hint: "The number of falls that caused an injury cannot exceed your total number of falls in the past 12 months."
           input:
             control: Editbox
             min: 0
@@ -1385,6 +1421,11 @@ questionnaire:
           title: "During the past 30 days, what is the largest number of drinks you had on any occasion?"
           precondition:
             - predicate: q_calc_01.outcome > 0
+          # MINE (max-vs-typical): the largest number of drinks on any occasion
+          # cannot be smaller than the average number of drinks per drinking day.
+          postcondition:
+            - predicate: q_calc_04.outcome >= q_calc_02.outcome
+              hint: "The largest number of drinks on any one occasion cannot be less than your average number of drinks per drinking day."
           input:
             control: Editbox
             min: 1
@@ -1452,7 +1493,7 @@ questionnaire:
           kind: Question
           title: "Have you ever had the shingles or zoster vaccine?"
           precondition:
-            - predicate: age >= 50
+            - predicate: q_cdem_01.outcome >= 50
           input:
             control: Switch
             on: "Yes"
@@ -1500,12 +1541,12 @@ questionnaire:
     #   8 (Never drive or ride in a car) → skip CSBD.02, go to next section
     #   All other responses → CSBD.FILTER
     #
-    # CSBD.FILTER: If alcohol_days == 0 (no drinks in past 30 days) →
+    # CSBD.FILTER: If no drinks in the past 30 days (CALC.01 == 0) →
     #              skip CSBD.02, go to next section.
     #
     # CSBD.02: Driving after drinking too much.
     #   Precondition: CSBD.01 != 8 (respondent drives or rides)
-    #             AND alcohol_days > 0 (drank in past 30 days)
+    #             AND q_calc_01.outcome > 0 (drank in past 30 days)
     # =========================================================================
     - id: b_seatbelt
       kind: Group
@@ -1532,7 +1573,7 @@ questionnaire:
           title: "During the past 30 days, how many times have you driven when you've had perhaps too much to drink?"
           precondition:
             - predicate: q_csbd_01.outcome != 8
-            - predicate: alcohol_days > 0
+            - predicate: q_calc_01.outcome > 0
           input:
             control: Editbox
             min: 0
@@ -1600,18 +1641,17 @@ questionnaire:
     # =========================================================================
     # MODULE 1: PREDIABETES (MPDIAB)
     # =========================================================================
-    # Module filter: Skip if CCHC.12=1 (respondent already has diabetes).
-    # If CCHC.12=4 (prediabetes), auto-code MPDIAB.02=1 (Yes) — modelled by
-    # block precondition; when diabetes_status==4 the interviewer reads
-    # MPDIAB.01 but MPDIAB.02 is not needed (already confirmed prediabetes).
-    # For QML we include MPDIAB.02 for all non-diabetic respondents since the
-    # auto-code case (diabetes_status==4) would simply produce outcome 1.
+    # Module filter: Skip if CCHC.12=1 (respondent already has diabetes) — the
+    # block precondition is q_cchc_12.outcome != 1, referencing the diabetes
+    # outcome directly. The source auto-codes MPDIAB.02=Yes when CCHC.12=4
+    # (borderline); this model asks MPDIAB.02 of all non-diabetic respondents,
+    # since that auto-code case would simply produce outcome 1.
     # =========================================================================
     - id: b_prediabetes
       kind: Group
       title: "Module 1: Prediabetes"
       precondition:
-        - predicate: diabetes_status != 1
+        - predicate: q_cchc_12.outcome != 1
       items:
         # MPDIAB.01: Last blood sugar / diabetes test
         - id: q_mpdiab_01
@@ -1629,7 +1669,7 @@ questionnaire:
               8: "Never"
 
         # MPDIAB.02: Ever told prediabetes or borderline diabetes
-        # Auto-coded to 1 when diabetes_status==4; asked otherwise
+        # Source auto-codes to Yes when CCHC.12==4 (borderline); asked here.
         - id: q_mpdiab_02
           kind: Question
           title: "Has a doctor or other health professional ever told you that you had prediabetes or borderline diabetes?"
@@ -1649,7 +1689,7 @@ questionnaire:
       kind: Group
       title: "Module 2: Diabetes"
       precondition:
-        - predicate: diabetes_status == 1
+        - predicate: q_cchc_12.outcome == 1
       items:
         # MDIAB.01: Type of diabetes
         - id: q_mdiab_01
@@ -1741,7 +1781,7 @@ questionnaire:
       kind: Group
       title: "Module 3: Arthritis"
       precondition:
-        - predicate: has_arthritis == 1
+        - predicate: q_cchc_11.outcome == 1
       items:
         # MARTH.01: Physical activity suggested
         - id: q_marth_01
@@ -1803,23 +1843,34 @@ questionnaire:
       kind: Group
       title: "Module 4: Lung Cancer Screening - Smoking History"
       precondition:
-        - predicate: smoked_100 == 1
+        - predicate: q_ctob_01.outcome == 1
       items:
         # MLCS.01: Age when first started smoking regularly
+        # MINE (temporal-ordering): age started smoking <= current age (CDEM.01).
         - id: q_mlcs_01
           kind: Question
           title: "How old were you when you first started to smoke cigarettes regularly?"
+          postcondition:
+            - predicate: q_mlcs_01.outcome <= q_cdem_01.outcome
+              hint: "The age when you first started smoking regularly cannot be greater than your current age."
           input:
             control: Editbox
             min: 5
             max: 99
 
         # MLCS.02: Age when last smoked regularly (skip if everyday smoker)
+        # MINE (temporal-ordering): age last smoked falls between the age started
+        # smoking (MLCS.01) and current age (CDEM.01).
         - id: q_mlcs_02
           kind: Question
           title: "How old were you when you last smoked cigarettes regularly?"
           precondition:
-            - predicate: smoking_status != 1
+            - predicate: q_ctob_02.outcome != 1
+          postcondition:
+            - predicate: q_mlcs_02.outcome >= q_mlcs_01.outcome
+              hint: "The age when you last smoked regularly cannot be earlier than the age when you first started smoking regularly."
+            - predicate: q_mlcs_02.outcome <= q_cdem_01.outcome
+              hint: "The age when you last smoked regularly cannot be greater than your current age."
           input:
             control: Editbox
             min: 5
@@ -1877,13 +1928,13 @@ questionnaire:
     # =========================================================================
     # MODULE 5: BREAST AND CERVICAL CANCER SCREENING (MBCCS)
     # =========================================================================
-    # Module filter: Skip entire module if male (sex_at_birth == 1).
+    # Module filter: Skip entire module if male (sex == 1).
     # =========================================================================
     - id: b_breast_cervical
       kind: Group
       title: "Module 5: Breast and Cervical Cancer Screening"
       precondition:
-        - predicate: sex_at_birth == 2
+        - predicate: sex == 2
       items:
         # MBCCS.01: Ever had a mammogram
         - id: q_mbccs_01
@@ -1961,7 +2012,7 @@ questionnaire:
           kind: Question
           title: "Have you had a hysterectomy?"
           precondition:
-            - predicate: is_pregnant == 0
+            - predicate: q_cdem_16.outcome != 1
           input:
             control: Switch
             on: "Yes"
@@ -1976,7 +2027,7 @@ questionnaire:
       kind: Group
       title: "Module 6: Prostate Cancer Screening"
       precondition:
-        - predicate: sex_at_birth == 1 and age >= 39
+        - predicate: sex == 1 and q_cdem_01.outcome >= 39
       items:
         # MPCS.01: Ever had a PSA test
         - id: q_mpcs_01
@@ -2064,7 +2115,7 @@ questionnaire:
       kind: Group
       title: "Module 7: Colorectal Cancer Screening"
       precondition:
-        - predicate: age >= 45
+        - predicate: q_cdem_01.outcome >= 45
       items:
         # MCCS.01: Ever had colonoscopy or sigmoidoscopy
         - id: q_mccs_01
@@ -2244,7 +2295,7 @@ questionnaire:
       kind: Group
       title: "Module 8: Cancer Survivorship — Type of Cancer"
       precondition:
-        - predicate: has_skin_cancer == 1 or has_other_cancer == 1
+        - predicate: q_cchc_06.outcome == 1 or q_cchc_07.outcome == 1
       items:
         # MTOC.01: Number of cancer types
         - id: q_mtoc_01
@@ -2259,9 +2310,13 @@ questionnaire:
 
         # MTOC.02: Age at (first) cancer diagnosis
         # All MTOC.01 responses (1–3) continue to MTOC.02.
+        # MINE (temporal-ordering): age first told of cancer <= current age (CDEM.01).
         - id: q_mtoc_02
           kind: Question
           title: "At what age were you (first) told that you had cancer?"
+          postcondition:
+            - predicate: q_mtoc_02.outcome <= q_cdem_01.outcome
+              hint: "The age when you were first told you had cancer cannot be greater than your current age."
           input:
             control: Editbox
             min: 0
@@ -2327,7 +2382,7 @@ questionnaire:
       kind: Group
       title: "Module 9: Cancer Survivorship — Course of Treatment"
       precondition:
-        - predicate: has_skin_cancer == 1 or has_other_cancer == 1
+        - predicate: q_cchc_06.outcome == 1 or q_cchc_07.outcome == 1
       items:
         # MCOT.01: Current treatment status
         # Option 3 (refused treatment) ends the module; all others continue.
@@ -2446,7 +2501,7 @@ questionnaire:
       kind: Group
       title: "Module 10: Cancer Survivorship — Pain Management"
       precondition:
-        - predicate: has_skin_cancer == 1 or has_other_cancer == 1
+        - predicate: q_cchc_06.outcome == 1 or q_cchc_07.outcome == 1
       items:
         # MCPM.01: Currently has cancer-related pain
         - id: q_mcpm_01
@@ -2579,7 +2634,7 @@ questionnaire:
       kind: Group
       title: "Module 13: Cognitive Decline"
       precondition:
-        - predicate: age >= 45
+        - predicate: q_cdem_01.outcome >= 45
       items:
         # MCOG.01: Worsening thinking or memory difficulties in past 12 months
         - id: q_mcog_01
@@ -2826,14 +2881,13 @@ questionnaire:
     # =========================================================================
     # MODULE 15: TOBACCO CESSATION (MTC)
     # =========================================================================
-    # Source variables:
-    #   smoked_100    ← CTOB.01: smoked at least 100 cigarettes in lifetime
-    #                   1=Yes, 0=No
-    #   smoking_status ← CTOB.02: current smoking status
-    #                   1=every day, 2=some days, 3=not at all (former)
+    # Source items referenced directly by outcome:
+    #   CTOB.01 (q_ctob_01) — smoked 100+ cigarettes in lifetime (Yes=1)
+    #   CTOB.02 (q_ctob_02) — current smoking status (1=every day, 2=some days,
+    #                         3=not at all / former)
     #
-    # MTC.01 precondition: smoked_100==1 AND smoking_status==3 (former smoker)
-    # MTC.02 precondition: smoking_status in [1, 2] (current smoker)
+    # MTC.01 precondition: q_ctob_01.outcome==1 AND q_ctob_02.outcome==3 (former smoker)
+    # MTC.02 precondition: q_ctob_02.outcome in {1, 2} (current smoker)
     #
     # MTC.01: Time since last cigarette. Dropdown (8 time ranges).
     # MTC.02: Quit attempt in past 12 months. Switch.
@@ -2848,7 +2902,7 @@ questionnaire:
           kind: Question
           title: "How long has it been since you last smoked a cigarette, even one or two puffs?"
           precondition:
-            - predicate: smoked_100 == 1 and smoking_status == 3
+            - predicate: q_ctob_01.outcome == 1 and q_ctob_02.outcome == 3
           input:
             control: Dropdown
             labels:
@@ -2867,7 +2921,7 @@ questionnaire:
           kind: Question
           title: "During the past 12 months, have you stopped smoking for one day or longer because you were trying to quit smoking?"
           precondition:
-            - predicate: smoking_status == 1 or smoking_status == 2
+            - predicate: q_ctob_02.outcome == 1 or q_ctob_02.outcome == 2
           input:
             control: Switch
             on: "Yes"
@@ -2876,14 +2930,14 @@ questionnaire:
     # =========================================================================
     # MODULE 16: OTHER TOBACCO USE (MOTU)
     # =========================================================================
-    # Source variables:
-    #   smoking_status ← CTOB.02: 1=every day, 2=some days, 3=not at all
-    #   ecig_status    ← CTOB.04: 1=every day, 2=some days, 3=not at all,
-    #                              4=never used
+    # Source items referenced directly by outcome:
+    #   CTOB.02 (q_ctob_02) — cigarette status (1=every day, 2=some days, 3=not at all)
+    #   CTOB.04 (q_ctob_04) — e-cigarette status (1=never used, 2=every day,
+    #                         3=some days, 4=not at all right now)
     #
-    # MOTU.01 precondition: smoking_status in [1, 2] (current cigarette smoker)
-    # MOTU.02 precondition: ecig_status in [2, 3] (current e-cigarette user —
-    #   some days or not at all but formerly; source filter: CTOB.04=2 or 3)
+    # MOTU.01 precondition: q_ctob_02.outcome in {1, 2} (current cigarette smoker)
+    # MOTU.02 precondition: q_ctob_04.outcome in {2, 3} (current e-cigarette user —
+    #   source filter MOTU.FILTER2: CTOB.04=2 or 3)
     # MOTU.03: No precondition (asked of all respondents).
     # =========================================================================
     - id: b_other_tobacco
@@ -2895,20 +2949,20 @@ questionnaire:
           kind: Question
           title: "Currently, when you smoke cigarettes, do you usually smoke menthol cigarettes?"
           precondition:
-            - predicate: smoking_status == 1 or smoking_status == 2
+            - predicate: q_ctob_02.outcome == 1 or q_ctob_02.outcome == 2
           input:
             control: Switch
             on: "Yes"
             off: "No"
 
         # MOTU.02: Currently uses menthol e-cigarettes (current e-cig users only)
-        # Precondition: ecig_status in [2, 3] per source filter MOTU.FILTER2
-        # (CTOB.04=2: some days; CTOB.04=3: not at all [former daily user])
+        # Precondition: q_ctob_04.outcome in {2, 3} per source filter MOTU.FILTER2
+        # (CTOB.04=2: every day; CTOB.04=3: some days)
         - id: q_motu_02
           kind: Question
           title: "Currently, when you use e-cigarettes, do you usually use menthol e-cigarettes?"
           precondition:
-            - predicate: ecig_status == 2 or ecig_status == 3
+            - predicate: q_ctob_04.outcome == 2 or q_ctob_04.outcome == 3
           input:
             control: Switch
             on: "Yes"
@@ -2989,7 +3043,7 @@ questionnaire:
       kind: Group
       title: "Module 18: Industry and Occupation"
       precondition:
-        - predicate: employment_status in [1, 2, 4]
+        - predicate: q_cdem_13.outcome == 1 or q_cdem_13.outcome == 2 or q_cdem_13.outcome == 4
       items:
         # MIO.01: Type of work / job title
         - id: q_mio_01
@@ -3168,20 +3222,24 @@ questionnaire:
     # =========================================================================
     # MODULE 21: SEX AT BIRTH (MSAB)
     # =========================================================================
-    # Module filter: If LL10 or CP06 already coded sex as 1 or 2, auto-code
-    # MSAB.01 and skip the question. In QML this is modelled as:
-    # ask only when sex_from_intro == 3 (not yet specified in intro).
+    # Module filter: the source auto-codes MSAB.01 and skips it when LL10 or CP06
+    # already coded sex. In this linear model the intro always resolves `sex`, so
+    # that skip would make the item statically dead; MSAB.01 is therefore asked
+    # outright (see the item note below) rather than gated on a never-true value.
     # =========================================================================
     - id: b_sex_at_birth
       kind: Group
       title: "Module 21: Sex at Birth"
       items:
-        # MSAB.01: Sex at birth — asked only when intro sex was unspecified
+        # MSAB.01: Sex at birth — standalone module item.
+        # Source auto-codes and skips this when LL10/CP06 already captured sex at
+        # birth. In this linear model the intro always resolves `sex` (1/2), so a
+        # `sex == 0` gate would be statically dead (unreachable_item); the CATI
+        # auto-code/skip optimization is intentionally dropped and the question is
+        # asked outright so the inventory item stays represented and reachable.
         - id: q_msab_01
           kind: Question
           title: "What was your sex at birth? Was it male or female?"
-          precondition:
-            - predicate: sex_from_intro == 3
           input:
             control: Radio
             labels:
@@ -3192,8 +3250,8 @@ questionnaire:
     # MODULE 22: SEXUAL ORIENTATION AND GENDER IDENTITY (SOGI)
     # =========================================================================
     # MSOGI.FILTER1 routes by sex:
-    #   Male (sex_at_birth == 1) → ask MSOGI.01 (male version), skip MSOGI.02
-    #   Female (sex_at_birth == 2) → skip MSOGI.01, ask MSOGI.02 (female version)
+    #   Male (sex == 1) → ask MSOGI.01 (male version), skip MSOGI.02
+    #   Female (sex == 2) → skip MSOGI.01, ask MSOGI.02 (female version)
     # MSOGI.03: Always asked (transgender question), no routing condition.
     # =========================================================================
     - id: b_sogi
@@ -3206,7 +3264,7 @@ questionnaire:
           kind: Question
           title: "Which of the following best represents how you think of yourself?"
           precondition:
-            - predicate: sex_at_birth == 1
+            - predicate: sex == 1
           input:
             control: Radio
             labels:
@@ -3221,7 +3279,7 @@ questionnaire:
           kind: Question
           title: "Which of the following best represents how you think of yourself?"
           precondition:
-            - predicate: sex_at_birth == 2
+            - predicate: sex == 2
           input:
             control: Radio
             labels:
@@ -3533,7 +3591,7 @@ questionnaire:
       kind: Group
       title: "Module 25: Place of Flu Vaccination"
       precondition:
-        - predicate: had_flu_vaccine == 1
+        - predicate: q_cimm_01.outcome == 1
       items:
         # MFP.01: Place where most recent flu vaccine was received
         - id: q_mfp_01
@@ -3569,7 +3627,7 @@ questionnaire:
       kind: Group
       title: "Module 26: HPV Vaccination"
       precondition:
-        - predicate: age >= 18 and age <= 49
+        - predicate: q_cdem_01.outcome <= 49
       items:
         # MHPV.01: Ever had an HPV vaccination
         - id: q_mhpv_01
@@ -3858,7 +3916,7 @@ questionnaire:
           kind: Question
           title: "Within the past 12 months at work, do you feel you were treated worse than, the same as, or better than people of other races?"
           precondition:
-            - predicate: employment_status in [1, 2, 4]
+            - predicate: q_cdem_13.outcome == 1 or q_cdem_13.outcome == 2 or q_cdem_13.outcome == 4
           input:
             control: Dropdown
             labels:
@@ -3897,7 +3955,7 @@ questionnaire:
     # MODULE 31: RANDOM CHILD SELECTION (MRCS)
     # =========================================================================
     # Module filter: Ask only if household has at least one child under 18
-    # (num_children 1–87; 88 = none, 0 = not reported).
+    # (q_cdem_14.outcome >= 1; 0 = none).
     #
     # MRCS.01: Birth month of selected child (MM only; year not collected here).
     # MRCS.02: Gender identity of child.
@@ -3912,7 +3970,7 @@ questionnaire:
       kind: Group
       title: "Module 31: Random Child Selection"
       precondition:
-        - predicate: num_children >= 1 and num_children <= 87
+        - predicate: q_cdem_14.outcome >= 1
       items:
         # MRCS.01: Birth month of randomly selected child
         - id: q_mrcs_01
@@ -4004,7 +4062,7 @@ questionnaire:
       kind: Group
       title: "Module 32: Childhood Asthma Prevalence"
       precondition:
-        - predicate: num_children >= 1 and num_children <= 87
+        - predicate: q_cdem_14.outcome >= 1
       items:
         # MCAP.01: Child ever told by health professional they have asthma
         - id: q_mcap_01
