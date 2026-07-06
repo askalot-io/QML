@@ -36,7 +36,7 @@ there are no logical contradictions. You define **what must be true**, not **how
 Every QML file follows this skeleton:
 
 ```yaml
-qmlVersion: "1.0"
+qmlVersion: "2.0"
 questionnaire:
   title: "Survey Title"
   codeInit: |
@@ -58,7 +58,7 @@ questionnaire:
 ```
 
 Key structural rules:
-- `qmlVersion: "1.0"` is required at root level
+- `qmlVersion: "2.0"` is required at root level
 - At least one block, each block has at least one item
 - All IDs must be unique across the entire questionnaire
 - Convention: block IDs start with `b_`, question IDs with `q_`
@@ -144,6 +144,19 @@ precondition:
 
 Blocks can also have preconditions — use this when an entire section should be skipped.
 
+#### Hoisting shared gates
+
+When one predicate guards **every** item in a block, do not repeat it on each item — hoist
+it to the block's `precondition`. A block-level precondition is AND-ed with each item's own
+precondition, so one gate covers them all and each item keeps only its **item-specific
+residual**. This is not the same as relying on a sibling item's precondition to cascade —
+preconditions never cascade between items; hoisting moves the shared gate *up a level* to
+the block, which legitimately gates every item the block contains.
+
+- **Shared by all items in a block** → move the gate to the block `precondition`; items keep residuals only.
+- **Shared by some items** (gated and ungated interleaved) → factor the gated items into their own dedicated **sibling Group block** carrying the shared gate. QML blocks do not nest inside an item's `items:`, so a sibling Group placed immediately after the block that produces the gate is the scoping mechanism — never a Group nested inside an item.
+- **Not shared** → keep the gate on the individual item.
+
 ### Postconditions — Validation After Response
 
 ```yaml
@@ -155,6 +168,53 @@ postcondition:
 ```
 
 The `hint` is shown to the respondent when validation fails. Make hints specific and helpful.
+
+## Constraint Mining (before writing items)
+
+Most relational validation is *implied* by the source — the requirements, regulation, or
+instrument you are converting — not spelled out as an explicit check. Before writing a
+section's items, mine its source material for the cross-item rules that make an answer set
+objectively impossible, using these six trigger patterns:
+
+1. **part-whole** — "of that total" / component-and-total structures → a component cannot
+   exceed the total, or the components sum to it: `part <= whole`, or an explicit-sum
+   equality `a + b + c == total`.
+2. **temporal-ordering** — age-at-event chains and start/stop pairs → the earlier value
+   bounds the later one: `earlier <= later` (age at diagnosis ≤ current age; start year ≤
+   end year).
+3. **counts-vs-capacities** — a count of things cannot exceed the container that holds them:
+   `count <= capacity` (children ≤ household size).
+4. **physical-budget** — fixed real-world totals: 24 hours in a day, 168 hours in a week,
+   52 weeks in a year, percentages summing to 100. Components sum to (or stay under) the budget.
+5. **screener-consistency** — a yes-gate implies a non-zero downstream count, and a non-zero
+   count implies the gate was yes: `q_screener.outcome == 1` pairs with `q_count.outcome >= 1`.
+6. **max-vs-typical** — a reported maximum bounds a reported typical/usual value of the same
+   quantity: `typical <= maximum`.
+
+Implement each surviving constraint as a postcondition on the **later** of the two items it
+ties, with an actionable hint. Explicit CATI/edit checks in the source map the same way (see
+Pattern 4 in `references/goto-conversion-guide.md`); mining additionally recovers the checks
+the source *implied* but never wrote down.
+
+**Mine and justify omissions.** Every section either carries its mined relational
+postconditions or gets an explicit no-constraints note in the conversion summary — silence
+is indistinguishable from a section you forgot to mine.
+
+### Guard-rails (do NOT over-constrain)
+
+- **Objective impossibilities only.** Mine constraints that are physically or logically
+  impossible to violate — never opinion, attitude, or preference patterns. Two subjective
+  ratings have no "correct" relationship; inventing one corrupts the data. A section of
+  purely subjective scales correctly yields zero relational postconditions.
+- **Never restate an input's own bounds.** A postcondition that repeats a control's
+  `min`/`max` (e.g. `q_age.outcome >= 18` on an Editbox already `min: 18`) validates nothing.
+  A postcondition must relate the item to a *different* item or variable.
+- **Actionable hints.** Every hint tells the respondent how to fix the answer and names both
+  items involved — "Years worked cannot exceed your age minus 16", not "Invalid value".
+- **Stay in the Z3-verifiable subset.** Generated predicates use only the subset the
+  validator can reason about: NO `sum()`, `len()`, or list comprehensions — the validator
+  silently drops them, so the constraint would enforce nothing. Write sums as explicit
+  additions (`a + b + c == total`), never `sum([a, b, c])`.
 
 ## Code Blocks
 
@@ -179,29 +239,68 @@ undefined when later code reads it. Use ordinary assignments
 (`age = 0`, `sex = 0`) and let Z3 infer the domain from the producer
 item's input control (see "Cross-block state" below).
 
-**Do NOT create variables that merely copy an item's outcome.** Every item's outcome is
-always accessible via `q_item.outcome` in preconditions and codeBlocks. A variable like
-`smoking_status = q_smoking.outcome` is redundant — use `q_smoking.outcome` directly.
+#### State Variable Discipline
 
-Variables are justified ONLY when they:
-- **Compute or derive** a value from multiple inputs (e.g., `actual_hours = q_151.outcome - q_153.outcome + q_155.outcome`)
-- **Aggregate or count** across items (e.g., `symptom_count = symptom_count + 1`)
-- **Classify** based on conditional logic (e.g., `if q_100.outcome == 1: path = 1`)
-- **Consolidate** outcomes from mutually exclusive items (e.g., `respondent_age` set by either `q_age_dob` or `q_age_manual`)
+A `codeInit` variable narrows what the solver can prove, so the default is to
+**reference `q_item.outcome` directly** and create a variable only when you genuinely
+cannot. An outcome reference is inside the Z3-verified envelope — the solver knows its
+domain from the input control and reasons about every gate on it. A variable is only as
+verified as its wiring: if nothing produces it, or nothing reads it, the logic it was
+meant to carry silently enforces nothing.
+
+**A variable is justified by exactly one of four uses:**
+
+- **accumulate** across items — a running counter or sum (e.g., `symptom_count = symptom_count + 1`)
+- **derive** a value from multiple outcomes (e.g., `actual_hours = q_151.outcome - q_153.outcome + q_155.outcome`)
+- **classify** an outcome into a routing key (e.g., `if q_100.outcome == 1: path = 1`)
+- **consolidate** mutually exclusive producers into one name (e.g., `respondent_age` set by either `q_age_dob` or `q_age_manual`, never both)
+
+If a variable does none of these, delete it and reference the outcome directly.
+
+**Producer-and-consumer obligation.** Every `codeInit` variable must have at least one
+`codeBlock` that assigns it (a producer) AND at least one precondition, postcondition, or
+codeBlock that reads it (a consumer). A variable missing either half is a defect:
+
+- No producer → a **frozen variable**: it keeps its `codeInit` constant for the whole run,
+  so every gate on it is permanently true or permanently false while looking conditional.
+  When converting, the usual cause is a planned producer in a section you stubbed, omitted,
+  or delegated that was never written.
+- No consumer → a **write-only variable**: state computed and thrown away.
+
+**Bare-name ban.** Every identifier in every predicate must resolve to an item outcome
+(`q_x.outcome`) or a variable some `codeBlock` produces — nothing else exists at runtime.
+A name with no producer anywhere in the file is a **phantom variable**: the predicate
+namespace is closed (no runtime context is injected), so the predicate fails open at
+runtime (treated as true) and is a free symbol to the validator (treated as satisfiable).
+The intended logic enforces nothing, statically and at runtime.
+
+**When the source implies logic you cannot fully wire, do not leave a phantom.** A common
+conversion trap is to name a variable the source instrument's flow implies (e.g. a
+`marital_status` or `smoking_status` the routing depends on) and then leave it with only a
+`# wired in the roster section` comment. Either fully wire it — a producer codeBlock plus a
+consumer — or replace every reference with the direct outcome (`q_marital.outcome`). Never
+ship a bare name backed by a wiring comment instead of a producer.
+
+**Pass-through aliases are not variables.** A variable whose only assignment copies one
+outcome unchanged adds indirection for nothing and shrinks verification coverage:
 
 ```yaml
-# WRONG: variable just copies the outcome
+# WRONG: pass-through alias — the copy leaves the verified envelope
 codeBlock: |
   smoking_status = q_smoking.outcome   # redundant!
-
-# Later precondition uses the copy:
 precondition:
   - predicate: smoking_status == 1     # should be q_smoking.outcome == 1
 
-# RIGHT: use the outcome directly
+# RIGHT: reference the outcome directly (its domain is verified)
 precondition:
   - predicate: q_smoking.outcome == 1
 ```
+
+**Roster fail-safe.** When a per-entity loop (Roster) is stubbed, omitted, or delegated
+during conversion, every variable that loop would have produced becomes unproduced. Do not
+leave any consumer gating on it: rewire the consumer to a collected outcome or a variable
+that is actually produced, or delete the consumer. A gate on an unproduced variable is a
+frozen variable — permanently true or false while looking conditional.
 
 ### Cross-block state
 
@@ -344,8 +443,8 @@ Before outputting the QML, verify every point:
 10. Multiple precondition predicates correctly express AND logic (use `or` within a single
     predicate for OR logic)
 11. **No redundant outcome-copying variables** — every variable in `codeInit` must serve a
-    purpose beyond copying `q_item.outcome`. If a precondition can reference `q_item.outcome`
-    directly, do NOT create a variable for it
+    purpose beyond copying `q_item.outcome`. A variable whose only assignment copies one
+    outcome unchanged is a pass-through alias; reference `q_item.outcome` directly instead
 12. **One file** — the questionnaire lives in a single `<SURVEY>.qml`, not multiple
     section files. The original survey's sections become blocks within that file.
 13. **No annotation-style declarations in `codeInit`** — `age: range(0, 120)` is a
@@ -353,6 +452,16 @@ Before outputting the QML, verify every point:
 14. **Producer blocks come before consumer blocks** in the `blocks:` list. If a
     block's precondition reads a variable, the block that writes that variable
     must be ordered earlier.
+15. **Every `codeInit` variable is produced AND consumed** — each has at least one codeBlock
+    that assigns it (producer) and at least one predicate or codeBlock that reads it
+    (consumer). A variable with no producer is frozen; with no consumer is write-only.
+    accumulate / derive / classify / consolidate are the only justifications
+16. **Zero bare names** — every identifier in every predicate resolves to an item outcome
+    (`q_x.outcome`) or a variable some codeBlock produces. A name with no producer anywhere
+    in the file is a phantom that enforces nothing — never leave one backed by a wiring comment
+17. **Mined constraints implemented or justified** — every relational constraint from
+    Constraint Mining is a postcondition on the later item, or the conversion summary
+    explicitly records that the section has no objective cross-item constraint
 
 ## Workflow
 
@@ -373,7 +482,7 @@ Before outputting the QML, verify every point:
 After writing a QML file, validate it:
 
 ```bash
-cd /root/QML && \
+cd /Project/QML && \
 uv run python .claude/skills/generate-qml/scripts/validate_qml.py <path-to-qml-file> [--json]
 ```
 

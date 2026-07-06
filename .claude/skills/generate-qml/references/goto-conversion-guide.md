@@ -336,6 +336,25 @@ In QML, PREVENT the contradiction with a postcondition instead of allowing and c
 Or better: simply remove the contradictory option from the labels if it's always
 invalid when the precondition is met.
 
+### Mining implied cross-checks
+
+Not every cross-check is written as an explicit CATI edit. Many are *implied* by the
+instrument's structure and were only ever enforced by an alert interviewer. Before finishing
+a section, mine it for these implied constraints using six trigger patterns — each yields a
+postcondition on the later item exactly like an explicit edit:
+
+1. **part-whole** — a component cannot exceed its total, or components sum to it (`a + b + c == total`). The `q153 + q154 + q155 <= q152` check above is this pattern made explicit.
+2. **temporal-ordering** — age-at-event chains and start/stop pairs: `earlier <= later`.
+3. **counts-vs-capacities** — a count cannot exceed its container: `count <= capacity`.
+4. **physical-budget** — fixed totals (24h day, 168h week, 52 weeks, percentages to 100). The `q136 <= 52` layoff check above is this pattern.
+5. **screener-consistency** — a yes-gate implies a downstream count ≥ 1, and vice versa.
+6. **max-vs-typical** — a reported maximum bounds a reported typical/usual value.
+
+Guard-rails: objective impossibilities only (never opinion or attitude items), never restate
+an input's own `min`/`max`, and stay in the Z3-verifiable subset (no `sum()`/`len()`/
+comprehensions — write sums as explicit additions). A section with no objective cross-item
+constraint carries none; record that in the conversion summary rather than inventing one.
+
 ## Pattern 5: Converging Paths
 
 When multiple GOTO branches converge at the same question, the conversion depends on

@@ -31,12 +31,12 @@ An analysis report at `evaluation/<category>/SURVEY_NAME/SURVEY_NAME.md`.
 
 ## Step 1: Run Z3 Validator
 
-Run the validator on each section file:
+Run the validator on the survey's merged QML file:
 
 ```bash
-cd /root/QML && \
+cd /Project/QML && \
 uv run python .claude/skills/generate-qml/scripts/validate_qml.py \
-  evaluation/<category>/SURVEY_NAME/NN_section.qml --level 2 --json
+  evaluation/<category>/SURVEY_NAME/SURVEY_NAME.qml --json
 ```
 
 The validator runs four formal verification steps:

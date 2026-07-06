@@ -105,6 +105,19 @@ blocks:
 
 The file itself is `evaluation/<category>/SURVEY_NAME/SURVEY_NAME.qml`.
 
+### Hoisting Shared Gates
+
+When one predicate guards **every** item in a block, do not repeat it on each item — hoist
+it to the block's `precondition`. A block-level precondition is AND-ed with each item's own
+precondition, so one gate covers them all and each item keeps only its item-specific residual.
+This never conflicts with the per-item rule (preconditions do not cascade between sibling
+items); hoisting moves the shared gate *up a level* to the block, which legitimately gates
+every item the block contains.
+
+- **Shared by all items in a block** → move the gate to the block `precondition`; items keep residuals only.
+- **Shared by some items** (gated and ungated interleaved) → factor the gated items into their own dedicated **sibling Group block** carrying the shared gate, placed immediately after the block that produces the gate. QML blocks do not nest inside an item's `items:`, so a sibling Group — never a Group nested inside an item — is the scoping mechanism.
+- **Not shared** → keep the gate on the individual item.
+
 ## Step 2: Per-Block QML Generation (Subagents)
 
 For large questionnaires, launch **subagents per block** to draft block YAML
@@ -119,7 +132,7 @@ fragments in parallel. Each subagent receives:
 
 Each subagent outputs one or more **block YAML fragments** — never a complete
 standalone QML file. The coordinator assembles all block fragments into the
-single output file with one shared `codeInit`, one `qmlVersion: "1.0"`, and one
+single output file with one shared `codeInit`, one `qmlVersion: "2.0"`, and one
 `questionnaire:` wrapper.
 
 Example block fragment returned by a subagent:
@@ -145,7 +158,7 @@ Example block fragment returned by a subagent:
 The coordinator assembles these into:
 
 ```yaml
-qmlVersion: "1.0"
+qmlVersion: "2.0"
 questionnaire:
   title: "Survey Name"
   codeInit: |
@@ -170,6 +183,70 @@ respondent reported having diabetes in the chronic conditions block above it).
 
 Variables set in earlier blocks' codeBlocks are directly available to later
 blocks — everything shares one `codeInit` scope.
+
+### State-Variable Contract
+
+The "may read" / "must produce" lists a subagent receives (inputs 3 and 4 above) are its
+**state contract** slice. The default is to reference `q_item.outcome` directly and create a
+variable only when you genuinely cannot — an outcome reference is inside the Z3-verified
+envelope; a variable is only as verified as its wiring.
+
+- **Four justification classes.** A `codeInit` variable is justified by exactly one of:
+  **accumulate** across items (running counter/sum), **derive** from multiple outcomes,
+  **classify** an outcome into a routing key, or **consolidate** mutually exclusive producers
+  into one name. A variable that does none of these does not belong in the contract — drop it
+  and reference the outcome directly.
+- **Producer-and-consumer obligation.** Every `codeInit` variable must have at least one
+  codeBlock that assigns it (a producer) AND at least one predicate or codeBlock that reads it
+  (a consumer). No producer → a **frozen variable** (holds its `codeInit` constant, so every
+  gate on it is permanently true or false while looking conditional). No consumer → a
+  **write-only variable** (state computed and thrown away). Each subagent must produce every
+  variable on its "must produce" list.
+- **Bare-name ban.** Every identifier in every predicate must resolve to an item outcome
+  (`q_x.outcome`) or a variable some codeBlock produces. A name with no producer anywhere in
+  the file is a **phantom variable**: the predicate namespace is closed, so it fails open at
+  runtime (treated as true) and is invisible to the validator — the intended logic enforces
+  nothing.
+- **Do not leave the source's implied logic as a phantom.** When the source instrument's flow
+  implies a variable (e.g. a `marital_status` the routing depends on) but the loop or section
+  that would produce it is stubbed, omitted, or delegated, either fully wire it (producer
+  codeBlock + consumer) or replace every reference with the direct outcome. Never ship a bare
+  name backed by a `# wired later` comment instead of a real producer.
+- **No pass-through aliases.** A variable whose only assignment copies one outcome unchanged
+  (`smoking_status = q_smoking.outcome`) adds indirection for nothing and shrinks verification
+  coverage — reference `q_smoking.outcome` directly.
+- **Roster fail-safe.** When a per-entity loop (Roster) is stubbed, omitted, or delegated
+  during conversion, every variable that loop would have produced becomes unproduced. Rewire
+  each consumer to a collected outcome or a variable that is actually produced, or delete the
+  consumer — never leave a gate on an unproduced (frozen) variable.
+
+### Constraint Mining
+
+Most relational validation is *implied* by the source instrument, not written as an explicit
+CATI/edit check. Before (and while) writing a block's items, mine its inventory section for
+the cross-item rules that make an answer set objectively impossible, using six trigger patterns:
+
+1. **part-whole** — component-and-total structures → `part <= whole`, or explicit-sum equality `a + b + c == total`.
+2. **temporal-ordering** — age-at-event chains, start/stop pairs → `earlier <= later`.
+3. **counts-vs-capacities** — a count cannot exceed its container → `count <= capacity`.
+4. **physical-budget** — fixed totals: 24h day, 168h week, 52 weeks, percentages to 100 → components sum to (or stay under) the budget.
+5. **screener-consistency** — a yes-gate implies a downstream count ≥ 1, and vice versa.
+6. **max-vs-typical** — a reported maximum bounds a reported typical/usual value.
+
+Implement each surviving constraint as a postcondition on the **later** item, with an
+actionable hint that names both items. This extends Pattern 4 (Cross-Checks → Postconditions)
+below: explicit CATI checks convert directly, and mining additionally recovers the checks the
+source implied but never wrote down.
+
+**Mine and justify omissions.** Each section/chapter either carries its mined relational
+postconditions or gets an explicit no-constraints note in the conversion summary — silence is
+indistinguishable from a section you forgot to mine.
+
+**Guard-rails.** Objective impossibilities only — never mine opinion, attitude, or preference
+patterns (a purely subjective section correctly yields zero relational postconditions). Never
+restate an input's own `min`/`max` (that validates nothing). Stay in the Z3-verifiable subset:
+no `sum()`, `len()`, or list comprehensions — write sums as explicit additions
+(`a + b + c == total`), never `sum([a, b, c])`.
 
 ### Conversion Patterns: GOTO to Declarative
 
@@ -229,7 +306,7 @@ codeInit: |
 After the coordinator assembles all block fragments into one file, validate it:
 
 ```bash
-cd /root/QML && \
+cd /Project/QML && \
 uv run python .claude/skills/generate-qml/scripts/validate_qml.py \
   evaluation/<category>/SURVEY_NAME/SURVEY_NAME.qml
 ```
@@ -261,13 +338,21 @@ Before proceeding to the judgement agent, verify every point:
 14. Age boundaries match the source exactly (watch off-by-one: >= 15 vs >= 16)
 15. Waterfall/cascade patterns use direct outcome references, NOT shared routing variables
 16. **No redundant outcome-copying variables** — use `q_item.outcome` directly in preconditions
-    instead of creating variables like `q156_outcome = q_156.outcome`. Variables are only for
-    computation, aggregation, counting, conditional classification, or consolidating outcomes
-    from mutually exclusive items
+    instead of creating variables like `q156_outcome = q_156.outcome` (a pass-through alias).
+    Variables are only for accumulate / derive / classify / consolidate
 17. **No type annotations in `codeInit`** — declarations like `age: range(0, 120)` or
     `sex: {1, 2}` are not supported. Every variable in `codeInit` must be a plain assignment
     (`score = 0`, `path = 0`). If you think you need an annotation, reorder blocks so the
     producer runs first
+18. **Every `codeInit` variable is produced AND consumed** — each has at least one producer
+    codeBlock and at least one consumer predicate/codeBlock. No producer → a frozen variable;
+    no consumer → a write-only variable
+19. **Zero bare names** — every identifier in every predicate resolves to an item outcome
+    (`q_x.outcome`) or a variable some codeBlock produces. A name with no producer anywhere in
+    the file is a phantom that enforces nothing — never leave one backed by a wiring comment
+20. **Mined constraints implemented or justified** — every relational constraint from Constraint
+    Mining is a postcondition on the later item, or the conversion summary records that the
+    section has no objective cross-item constraint
 
 ## Step 4: Judgement Agent — Verify QML Fidelity
 
