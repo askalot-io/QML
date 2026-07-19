@@ -190,6 +190,11 @@ objectively impossible, using these six trigger patterns:
    count implies the gate was yes: `q_screener.outcome == 1` pairs with `q_count.outcome >= 1`.
 6. **max-vs-typical** — a reported maximum bounds a reported typical/usual value of the same
    quantity: `typical <= maximum`.
+7. **none-exclusivity** — a Checkbox with a "None of the above" / "No difficulty" option
+   cannot combine that option with substantive ones. With the none-option on bit `N`, the
+   Z3-verifiable idiom is `q_x.outcome != N + k` enumerated per conflict, or the arithmetic
+   bit test `(q_x.outcome // N) % 2 == 0 or q_x.outcome == N` ("either the none-bit is off,
+   or it is the only bit"). Postcondition on the Checkbox itself.
 
 Implement each surviving constraint as a postcondition on the **later** of the two items it
 ties, with an actionable hint. Explicit CATI/edit checks in the source map the same way (see
@@ -211,10 +216,74 @@ is indistinguishable from a section you forgot to mine.
   A postcondition must relate the item to a *different* item or variable.
 - **Actionable hints.** Every hint tells the respondent how to fix the answer and names both
   items involved — "Years worked cannot exceed your age minus 16", not "Invalid value".
-- **Stay in the Z3-verifiable subset.** Generated predicates use only the subset the
-  validator can reason about: NO `sum()`, `len()`, or list comprehensions — the validator
-  silently drops them, so the constraint would enforce nothing. Write sums as explicit
-  additions (`a + b + c == total`), never `sum([a, b, c])`.
+- **Stay in the Z3-verifiable subset.** For scalar variables write sums as explicit
+  additions (`a + b + c == total`). Over QuestionGroup/Matrix *outcome collections*,
+  the canonical folded shapes ARE verified — `sum([...])`, `all([...])`/`any([...])`,
+  `len(set([...])) == N`, list comprehensions with literal `range` bounds (see
+  "Structural constraints on vectors and matrices"). Avoid `min`/`max`, non-literal
+  bounds, and "exactly N distinct" — those fall back to runtime-only enforcement and
+  are recorded as coverage gaps.
+- **Do not transcribe CATI sentinel edits.** Legacy instruments encode "don't know /
+  refused / not stated" as sentinel values (99, 999) and write edits against them
+  (`Q2 <= 14 or Q2 == 99`). In a typed QML model the sentinel does not exist, so the
+  transcribed edit collapses into the declared domain and Z3 classifies it TAUTOLOGICAL.
+  Model the real-world constraint instead (the actual bound or cross-item relation), or
+  omit it with a note.
+
+### Close the loop on validator feedback
+
+Postconditions are only worth writing if they CONSTRAIN. After validation, read Step 1's
+invariant classification and iterate:
+
+- **TAUTOLOGICAL** — the rule enforces nothing beyond the control's declared domain.
+  Either strengthen it into a genuine relational constraint (usually the mined pattern
+  the source implied) or delete it; never leave it as decoration.
+- **INFEASIBLE / globally false** — the rule contradicts the domain or other rules;
+  re-read the source, one of the two is transcribed wrong.
+- A section whose items all classify NONE deserves one more mining pass before you
+  conclude it truly has no objective constraints — mature instruments average only
+  ~1.5% constraining postconditions precisely because paper-era practice deferred
+  consistency to post-collection cleaning. The conversion's value-add is moving those
+  checks to the point of collection, so mine deliberately, not incidentally.
+
+### Structural constraints on vectors and matrices
+
+QuestionGroup and MatrixQuestion outcomes support statically verified structural
+postconditions via three canonical idioms (each classifies CONSTRAINING; verified by
+`tests/integration/test_matrix_static_gap.py`):
+
+```yaml
+# Symmetry — pairwise comparison grid m (4x4): cell (j,k) must equal (k,j)
+postcondition:
+  - predicate: all([mq_compare.outcome[j][k] == mq_compare.outcome[k][j] for j in range(4) for k in range(4) if k > j])
+    hint: "Comparisons must be consistent: rating A vs B must mirror B vs A."
+
+# Fixed-sum — each row allocates exactly 100 points across 4 columns
+postcondition:
+  - predicate: all([sum([mq_alloc.outcome[j][k] for k in range(4)]) == 100 for j in range(4)])
+    hint: "Each row's allocation must total exactly 100 points."
+
+# Ranking / all-distinct — each row ranks 4 options with no ties
+postcondition:
+  - predicate: all([len(set([mq_rank.outcome[j][k] for k in range(4)])) == 4 for j in range(3)])
+    hint: "Ranks within a row must all be different."
+```
+
+Discipline for these shapes:
+
+- Keep `range` bounds **literal** and matching the declared `questions`/`rows`/
+  `columns` sizes. Use the `if k > j` filter form for triangular iteration —
+  `range(j+1, 4)` with a variable lower bound evaluates at runtime but is invisible
+  to the static builder.
+- `len(set(...)) == N` verifies only the all-distinct case (N = collection size).
+- Off-canonical variants (`min`/`max` folds, totals bound at runtime, partial
+  distinctness) still *run* — the runtime enforces them — but they are recorded as
+  coverage gaps and excluded from static classification. Prefer restructuring into a
+  canonical shape over shipping a runtime-only constraint.
+
+These idioms are prime Constraint Mining targets: allocation grids (physical-budget
+pattern), pairwise-comparison matrices (symmetry), and ranking tasks (all-distinct)
+appear constantly in market-research and time-use instruments.
 
 ## Code Blocks
 
@@ -400,15 +469,35 @@ Code blocks are analyzed by the Z3 SMT solver. Only use these features:
 - Built-ins: `range()`, `int()`, `bool()`, `abs()` only
 - Outcome access: `q_item.outcome`, `qg_item.outcome[i]`, `mq_item.outcome[i][j]`
 
-**NOT allowed — these silently return 0 in the solver, creating unverifiable logic:**
-- `len()`, `sum()`, `max()`, `min()` — all return 0
+**Verified aggregate shapes over QuestionGroup/Matrix outcome collections** (the
+static builder lowers these canonical forms to Z3 — see "Structural constraints on
+vectors and matrices" below):
+- `sum([<outcome subscripts>])` → `z3.Sum`
+- `all([...])` / `any([...])` → `And` / `Or`
+- `len(set([<outcome subscripts>])) == N` → `Distinct` (all-distinct case only)
+- List comprehensions over `range(<literal>)` (incl. two-arg `range(a, b)` with
+  literal bounds and `if` filters on the loop indices) — statically unrolled
+
+**NOT verified — these silently return 0 (or are dropped) in the solver, creating
+unverifiable logic:**
+- `max()`, `min()` — return 0 in the solver
+- `sum()`/`len()` over plain scalar variables (the verified shapes cover *outcome
+  collections*; for scalars write explicit additions: `a + b + c == total`)
+- `len(set(...)) == N` where N is less than the collection size ("exactly N
+  distinct" has no Distinct equivalent — runtime-only)
+- Non-literal range bounds (`range(q_n.outcome)`) — bounded unrolling needs
+  compile-time constants
 - `list.append()`, any method calls — return 0
-- List comprehensions, lambda, dict literals
-- String methods, subscript on regular variables
+- lambda, dict literals, string methods, subscript on regular (non-outcome) variables
 - `while` loops, `break`, `continue`
 - Functions, classes, imports
 
-Instead of `sum()`, add values explicitly:
+When the static builder cannot lower a construct it records a **coverage gap**
+(surfaced as "static validator skipped ..." / classification falls back to NONE):
+runtime enforcement still applies, but the constraint is outside the verified
+envelope. Prefer the canonical shapes above so validation stays static.
+
+For scalar totals, add values explicitly:
 ```yaml
 codeBlock: |
   total = qg_ratings.outcome[0] + qg_ratings.outcome[1] + qg_ratings.outcome[2]
@@ -438,7 +527,9 @@ Before outputting the QML, verify every point:
 6. All variables referenced in predicates are initialized in `codeInit` or prior codeBlocks
 7. Producer items appear before consumer items (items that set a variable come before items
    that reference it in preconditions)
-8. No unsupported Python features in code blocks (no len, sum, max, min, append, etc.)
+8. No unsupported Python features in code blocks (no max/min/append/method calls;
+   `sum`/`len(set(...))`/comprehensions only in the canonical verified shapes over
+   outcome collections with literal range bounds)
 9. Postcondition hints are specific and user-friendly
 10. Multiple precondition predicates correctly express AND logic (use `or` within a single
     predicate for OR logic)
@@ -486,8 +577,17 @@ cd /Project/QML && \
 uv run python .claude/skills/generate-qml/scripts/validate_qml.py <path-to-qml-file> [--json]
 ```
 
-Exit code 0 = valid, 1 = issues found, 2 = error. For detailed Z3 analysis and
-interpreting classifications, see the `write-analysis` skill.
+Exit code 0 = valid, 1 = issues found, 2 = error. The validator runs the four-step
+formal hierarchy (per-item classification, global satisfiability, cycle detection,
+path-based reachability) plus the production lint channel. Error-severity lint issues
+fail validation — most importantly `undefined_name`: an identifier in a predicate with
+no producer fails open at runtime and is a free symbol to Z3, so the file can look
+formally valid while the gate enforces nothing. The lint channel also grades
+`write_only_variable`, `pass_through_alias`, `duplicate_input_bound`,
+`textarea_in_predicate`, and the postcondition invariants (`tautological` /
+`infeasible`) as issues with remediation suggestions — act on them per "Close the loop
+on validator feedback" above. For detailed Z3 analysis and interpreting
+classifications, see the `write-analysis` skill.
 
 ### Platform Validation via MCP
 
@@ -501,6 +601,17 @@ When working with the Askalot platform:
 - `publish_qml_file` / `unpublish_qml_file` — Control questionnaire availability
 
 ## Reference Files
+
+- **Askalot plugin (if installed)** — when the `askalot` plugin
+  (askalot-io/askalot-plugin) is enabled, its `qml-syntax`,
+  `kb-qml-syntax-reference`, and `qml-preconditions` skills are the
+  platform-synced language reference and MCP save/validate workflow; prefer them
+  for pure language questions. The conversion-specific discipline stays HERE
+  (constraint mining, external inputs, validator gate, GOTO patterns) — the plugin
+  covers designing questionnaires, not converting them. Caveat: plugin ≤ 2.39.6
+  still bans the verified aggregate shapes (`sum([...])`, `len(set([...]))==k`,
+  comprehensions — see askalot-io/askalot#170); until a fixed release, THIS file's
+  "Z3-Verifiable Python Subset" section is the accurate rule.
 
 - **`references/qml-full-reference.md`** — Complete syntax reference with all control
   properties, QuestionGroup/MatrixQuestion examples, and the full JSON schema summary.

@@ -12,9 +12,10 @@
 8. [Pattern 7: Intermediate Filter Gates](#pattern-7-intermediate-filter-gates)
 9. [Pattern 8: Roster/Loop Structures](#pattern-8-rosterloop-structures)
 10. [Pattern 9: Composite Score Gates](#pattern-9-composite-score-gates)
-11. [Variable Feedback Loops](#variable-feedback-loops)
-12. [Common Pitfalls](#common-pitfalls)
-13. [Real-World Examples](#real-world-examples)
+11. [Pattern 10: External Inputs → Preamble Questions](#pattern-10-external-inputs--preamble-questions)
+12. [Variable Feedback Loops](#variable-feedback-loops)
+13. [Common Pitfalls](#common-pitfalls)
+14. [Real-World Examples](#real-world-examples)
 
 ---
 
@@ -722,6 +723,70 @@ codeBlock: |
 Place the summation in the LAST scored question's codeBlock, not spread across multiple
 items. This keeps the dependency graph simple and avoids partial-sum variables that
 complicate precondition reasoning.
+
+## Pattern 10: External Inputs → Preamble Questions
+
+Legacy CATI/CAPI instruments routinely branch on values **no question in the
+instrument collects**: sample-file prefills (sex, age of selected respondent),
+proxy-interview flags, panel rotation status ("IF ROTATE-OUT"), previous-cycle
+carryovers ("rent reported last cycle"), split-ballot / sample-group assignments,
+Profile Sheet fields filled by the interviewer, and country-context constants.
+In the source these arrive from the survey system, so the questionnaire text just
+uses them.
+
+A declarative single-file QML has no survey system to inject values. Every such
+value must be **materialized as an admin question in a `b_preamble` block** — the
+first block of the file — answered by the interviewer or the hosting system:
+
+```yaml
+blocks:
+  - id: b_preamble
+    kind: Group
+    title: "Interview Setup (administrative)"
+    items:
+      # EXTERNAL — sample-file prefill: rotation status (source: "IF ROTATE-OUT")
+      - id: q_pre_rotate_out
+        kind: Question
+        title: "ADMIN: Is this household in its final (rotate-out) cycle?"
+        input:
+          control: Switch
+          "off": "No"
+          "on": "Yes"
+
+  - id: b_exit
+    # ...
+    items:
+      - id: q_exit_thanks
+        kind: Comment
+        title: "Thank you; this was the household's final interview."
+        precondition:
+          - predicate: q_pre_rotate_out.outcome == 1
+```
+
+**The two wrong ways, and why they fail:**
+
+- **Bare name** (`precondition: rotate_out == 1` with no producer): the predicate
+  namespace is closed, so at runtime the NameError fails open (gate treated as
+  true) while Z3 sees a free symbol (gate unconstrained). The logic enforces
+  nothing, invisibly. The validator flags this as error `undefined_name`.
+- **codeInit constant** (`rotate_out = 0` with no producer): a frozen variable —
+  Z3 propagates the constant, so every gate on it is statically decided; gated
+  items classify NEVER (unreachable) or the gate is trivially true. The validator
+  flags the items as error `unreachable_item`.
+
+In the 12-survey corpus repair (2026-07), five questionnaires had dropped external
+inputs, producing 176 fail-open gates and 188 statically-dead items (CCHS
+`is_proxy`/`sex`, LFS rotation/prior-cycle flags, PALS Profile Sheet age,
+ESS12 `sample_group`/`is_eu_member`, NLSCY `respondent_age`). All were repaired
+with this pattern; `SLID_Labour_Income.qml`'s `b_preamble` is the reference
+implementation.
+
+**Judgement checklist for this pattern:**
+- Every identifier the source routes on resolves to a question outcome or a
+  produced variable (validator lint channel must be clean).
+- Each preamble admin question cites its source identifier in a comment.
+- Gates reference the admin question's outcome **directly** — copying it into a
+  variable is a pass-through alias (banned).
 
 ## Variable Feedback Loops
 

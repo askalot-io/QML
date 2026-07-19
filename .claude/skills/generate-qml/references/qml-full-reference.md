@@ -551,7 +551,12 @@ Indices are 0-based and follow the order of `questions` (QuestionGroup) or
 
 ### Aggregating QuestionGroup Outcomes
 
-Since `sum()` is NOT available, add values explicitly:
+In **postconditions**, canonical folded shapes over outcome collections are
+statically verified: `sum([qg_x.outcome[i] for i in range(k)]) == T`,
+`all([...])`/`any([...])`, and `len(set([...])) == k` (all-distinct). Keep range
+bounds literal. See "Structural constraints on vectors and matrices" in SKILL.md.
+
+For scalar totals in **codeBlocks**, add values explicitly:
 
 ```yaml
 codeBlock: |

@@ -1,11 +1,11 @@
 ---
 name: write-analysis
 description: >
-  Run Z3 formal validation on QML section files and write an analysis report that
-  exposes design problems in the original questionnaire. Includes a judgement agent
-  that verifies every reported finding actually exists in the source document.
-  Trigger on: analysis report, Z3 validation, questionnaire analysis, validation
-  report, structural analysis, finding verification.
+  Run Z3 formal validation on a consolidated QML questionnaire file and write an
+  analysis report that exposes design problems in the original questionnaire.
+  Includes a judgement agent that verifies every reported finding actually exists
+  in the source document. Trigger on: analysis report, Z3 validation, questionnaire
+  analysis, validation report, structural analysis, finding verification.
 ---
 
 # Write Analysis Report
@@ -19,9 +19,11 @@ ensures no hallucinated problems make it into the final report.
 
 ## Input
 
-- Section QML files at `evaluation/<category>/SURVEY_NAME/NN_section_name.qml`
+- The single consolidated QML file at `evaluation/<category>/SURVEY_NAME/SURVEY_NAME.qml`
+  (one file per questionnaire; the survey's sections are blocks inside it)
 - The question inventory at `evaluation/<category>/SURVEY_NAME/SURVEY_NAME_question_inventory.md`
-- The source text file or PDF
+- The source text intermediate `SURVEY_NAME_text.md` (fall back to the PDF only for
+  page-image verification)
 
 ## Output
 
@@ -39,11 +41,13 @@ uv run python .claude/skills/generate-qml/scripts/validate_qml.py \
   evaluation/<category>/SURVEY_NAME/SURVEY_NAME.qml --json
 ```
 
-The validator runs four formal verification steps:
+The validator runs four formal verification steps plus the production lint channel:
 
-1. **Per-item classification** — W_i = B AND P_i AND NOT Q_i
+1. **Per-item classification + lints** — W_i = B AND P_i AND NOT Q_i
    Classifies reachability (ALWAYS/CONDITIONAL/NEVER) and postcondition invariant
-   (TAUTOLOGICAL/CONSTRAINING/INFEASIBLE/NONE).
+   (TAUTOLOGICAL/CONSTRAINING/INFEASIBLE/NONE), and grades lint issues
+   (undefined_name, group_dependency, write_only_variable, pass_through_alias,
+   duplicate_input_bound, textarea_in_predicate, ...).
 2. **Global satisfiability** — F = B AND conjunction(P_i => Q_i)
    Checks at least one valid completion exists. UNSAT = no valid path.
 3. **Dependency loops** — Kahn's algorithm with cycle detection
@@ -53,8 +57,12 @@ Exit code 0 = valid, 1 = issues found, 2 = error.
 
 Also run without `--json` to get human-readable output for the report.
 
-Collect results from all section files: item counts, classifications, cycles, issues.
-Produce aggregate statistics across all sections.
+**The QML must already be conversion-clean before analysis**: zero error-severity
+issues (no undefined names, no unreachable items caused by frozen variables, no
+infeasible postconditions introduced by the conversion). Analysis findings about the
+ORIGINAL instrument are only credible when the conversion itself is verified — a
+fail-open gate in the QML invalidates every reachability claim downstream of it. If
+errors remain, go back to `inventory-to-qml` first.
 
 ## Step 2: Draft the Report
 
@@ -64,7 +72,7 @@ Write the report as `SURVEY_NAME.md` following this structure:
 # Survey Title: Declarative Conversion Analysis
 
 **Source:** Organization, Survey Name, N pages
-**QML Files:** `evaluation/<category>/SURVEY_NAME/`
+**QML File:** `evaluation/<category>/SURVEY_NAME/SURVEY_NAME.qml` (single consolidated file, qmlVersion 2.0)
 **Date:** YYYY-MM-DD
 
 ## Objective
@@ -123,13 +131,31 @@ hidden in the imperative version.
 
 [Interpretation of classifications]
 
-## Section Files
+### Conversion Integrity (Lint Channel)
 
-| # | File | Block(s) | Items | Variables Read | Variables Written |
-|---|------|----------|-------|----------------|-------------------|
-| 01 | `01_demographics.qml` | b_demographics | N | — | age, sex |
-| 02 | `02_health.qml` | b_health | N | age, sex | health_flag |
-| ... | ... | ... | ... | ... | ... |
+| Check | Result |
+|-------|--------|
+| undefined_name (fail-open gates) | 0 (required) |
+| unreachable_item from frozen variables | 0 (required) |
+| write_only_variable / pass_through_alias | N (each explained below) |
+| duplicate_input_bound | N |
+| tautological_postcondition | N (each attributed: source edit vs conversion artifact) |
+
+{One line per remaining warning: what it is and why it is acceptable or what
+it reveals about the source instrument (e.g., a CATI sentinel edit that does
+not map to a typed model).}
+
+### Postcondition Audit
+
+| Block | Items | Constraining postconditions | Mined patterns applied | No-constraint justification |
+|-------|-------|-----------------------------|------------------------|------------------------------|
+| b_... | N | N | part-whole, temporal-ordering | — |
+| b_... | N | 0 | — | purely subjective attitude scales |
+
+Overall: {X} constraining postconditions across {N} items ({X/N}%). {Interpretation:
+how many came from explicit source edits vs constraint mining; which sections the
+source left entirely unvalidated — this quantifies the instrument's data-quality gap
+and is a headline number for the corpus evaluation.}
 
 ## Problems in the Original [Source] (Exposed by Declarative Conversion)
 
@@ -193,7 +219,7 @@ judgement agent receives:
 - The draft report file path
 - The source text file or PDF path
 - The inventory file path
-- All section QML file paths
+- The consolidated QML file path
 
 The judgement agent must NOT have written the report — it acts as an independent reviewer.
 

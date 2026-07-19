@@ -85,6 +85,45 @@ Because there is only one QML file:
 - There are no extern variables and no cross-file hand-overs. If an ordering
   issue looks like it needs one, the fix is to move the producer block earlier
   in the file
+- If the value the routing needs is not produced by ANY question in the
+  inventory (it comes from the survey system: CATI prefill, sample file,
+  Profile Sheet, rotation flag, split-ballot assignment), it is an
+  **External input** — materialize it as an admin question in `b_preamble`
+  (see below), never as a codeInit constant and never as a bare name
+
+### External Inputs → Preamble Block (mandatory)
+
+The inventory's External input entries (node type 4 in `build-inventory`) must each
+become an explicit **admin question in a `b_preamble` block** at the top of the file —
+the first block, before any block whose gates read the value. Model:
+
+```yaml
+- id: b_preamble
+  kind: Group
+  title: "Interview Setup (administrative)"
+  items:
+    # EXTERNAL — PROXY flag: set by the interviewer/system, not the respondent.
+    - id: q_pre_is_proxy
+      kind: Question
+      title: "ADMIN: Is this interview being completed by a proxy respondent?"
+      input:
+        control: Switch
+        "off": "No"
+        "on": "Yes"
+```
+
+Gates then reference `q_pre_is_proxy.outcome` directly. This is conversion
+Pattern 10 (see `goto-conversion-guide.md`). Rules:
+
+- One admin question per External input; keep the source identifier in a comment.
+- Reference outcomes directly in every gate — creating a codeInit variable that
+  copies the outcome is a banned pass-through alias.
+- A codeInit constant (`is_proxy = 0`) is NOT an acceptable substitute: with no
+  producer it is a frozen variable, every gate on it is statically decided, and the
+  validator will report the gated items as unreachable (or the gates as trivially
+  true). This exact failure killed 121 gates in CCHS and 188 items in NLSCY.
+- The 12-survey corpus repair (2026-07) converted every dropped extern this way;
+  `SLID_Labour_Income.qml`'s `b_preamble` is the reference implementation.
 
 ### Block Naming
 
@@ -245,8 +284,14 @@ indistinguishable from a section you forgot to mine.
 **Guard-rails.** Objective impossibilities only — never mine opinion, attitude, or preference
 patterns (a purely subjective section correctly yields zero relational postconditions). Never
 restate an input's own `min`/`max` (that validates nothing). Stay in the Z3-verifiable subset:
-no `sum()`, `len()`, or list comprehensions — write sums as explicit additions
-(`a + b + c == total`), never `sum([a, b, c])`.
+for scalar variables write sums as explicit additions (`a + b + c == total`); over
+QuestionGroup/Matrix *outcome collections* the canonical folded shapes ARE statically
+verified — `sum([...])`, `all([...])`/`any([...])`, `len(set([...])) == k` (all-distinct),
+list comprehensions with literal `range` bounds. Allocation grids, pairwise-comparison
+matrices, and ranking tasks should get their structural postconditions this way (see
+"Structural constraints on vectors and matrices" in the generate-qml skill). Avoid
+`min`/`max`, non-literal bounds, and partial distinctness — runtime-only, recorded as
+coverage gaps.
 
 ### Conversion Patterns: GOTO to Declarative
 
@@ -263,6 +308,7 @@ Apply these patterns when converting imperative routing. For detailed examples, 
 | 6 | Flag routing | Edit block sets flag, later section tests it | `codeBlock` increments counter; block precondition tests it |
 | 7 | Parallel sections | Identical sections for different subjects | Separate blocks, each fully spelled out |
 | 8 | Filter gates | "If count < N, skip section" | Counter variable + precondition |
+| 10 | External input | "IF PROXY", "from sample file", split-ballot group | Admin question in `b_preamble`; gates read its outcome |
 
 **Pattern 1** — most common. Instead of routing FROM the gate, put a precondition ON the
 target:
@@ -311,10 +357,43 @@ uv run python .claude/skills/generate-qml/scripts/validate_qml.py \
   evaluation/<category>/SURVEY_NAME/SURVEY_NAME.qml
 ```
 
-Fix any structural errors. If the validator reports variables referenced
-before they are defined, the fix is to reorder blocks so producers come
-before consumers — not to split the file or introduce any form of extern
-declaration.
+The validator runs the four-step formal hierarchy AND the production lint channel.
+**Exit code must be 0.** Error-severity issues that block completion:
+
+- `undefined_name` — a predicate references an identifier with no producer; it fails
+  open at runtime and Z3 sees a free symbol, so the gate enforces nothing. Fix by
+  referencing the correct `q_x.outcome` or adding the missing preamble admin question
+  (Pattern 9) — never by inventing a codeInit constant.
+- `unreachable_item` (NEVER) — usually a frozen variable: a codeInit constant gates
+  the item and nothing ever reassigns it. Wire the real producer or reference the
+  outcome directly.
+- `infeasible_postcondition`, `globally_false_postcondition`, `group_dependency`,
+  dependency cycles, global UNSAT — genuine logic defects; fix the logic.
+
+Warnings must each be explained in the conversion summary: `write_only_variable` and
+`pass_through_alias` are almost always conversion defects (fix them);
+`tautological_postcondition` means the postcondition enforces nothing beyond the
+declared domain — strengthen it into a real relational constraint or delete it;
+`dead code` (step 4) on a converted file usually means a gate contradicts an upstream
+postcondition — check the source before assuming the original had dead code.
+
+If the validator reports variables referenced before they are defined, the fix is to
+reorder blocks so producers come before consumers — not to split the file or introduce
+any form of extern declaration.
+
+### Symptom → Fix Cheatsheet
+
+| Validator symptom | Likely root cause | Fix |
+|---|---|---|
+| `undefined_name` on a gate | Dropped external input or typo'd item ref | Preamble admin question (Pattern 10) or correct `q_x.outcome` |
+| `unreachable_item` on a run of consecutive items | Frozen codeInit variable gating their block (no producer) | Reference the producing question's outcome directly; delete the dead codeInit entry |
+| Item ALWAYS-reachable that the source gates | Always-true frozen gate (dual of the above — no error raised!) | Same fix; grep every codeInit variable for a producer |
+| `infeasible_postcondition` | Transcription error in the rule, or sentinel-coded CATI edit collapsed by the typed domain | Re-read the source; model the real-world constraint |
+| `tautological_postcondition` | Rule restates the control's min/max, or CATI sentinel edit | Strengthen into a relational constraint or remove; if it documents a sentinel edit, keep with a comment |
+| Dead code (step 4) on a converted file | A gate contradicts an upstream postcondition | Check the source: usually one of the two is transcribed wrong; occasionally a genuine source defect worth reporting |
+| Dependency cycle | PATH variable both read in a precondition and written downstream | Split initial vs refined classification into separate variables (Pattern 2 warning) |
+| `write_only_variable` | Consumer section stubbed/omitted, or flag family partially wired | Delete the dead producer+init, or wire the intended consumer; check sibling flags for the same disease |
+| "static validator skipped … unsupported AST node" | Predicate outside the verified subset (e.g. non-canonical fold, Subscript in precondition) | Restructure into a canonical verified shape; treat runtime-only enforcement as a last resort |
 
 ### QML Validation Checklist
 
@@ -353,6 +432,11 @@ Before proceeding to the judgement agent, verify every point:
 20. **Mined constraints implemented or justified** — every relational constraint from Constraint
     Mining is a postcondition on the later item, or the conversion summary records that the
     section has no objective cross-item constraint
+21. **Every External input materialized** — each External input entry in the inventory has a
+    corresponding admin question in `b_preamble`, and every gate that the source routed on it
+    references that question's outcome directly (Pattern 9). Zero identifiers left to "fail open"
+22. **Validator exit code 0** — the full validator (formal hierarchy + lint channel) passes with
+    no error-severity issues, and every remaining warning is explained in the conversion summary
 
 ## Step 4: Judgement Agent — Verify QML Fidelity
 
@@ -387,10 +471,17 @@ The judgement agent must NOT have generated the QML — it acts as an independen
 
    **Justified omissions** are ONLY:
    - Procedural elements: interviewer visit logs, consent signatures, cover page fields
-   - Dynamic roster loops where the same questions repeat N times for N household members
-     (document which questions are templated and that they represent a per-person loop)
    - Iterative calendar/history grids that require dynamic row generation
    - TERMINATE/END paths (QML represents qualified respondents)
+   - Truly unbounded roster loops — but ONLY after considering a Roster conversion.
+     When the entity list is bounded and selectable (household members, products,
+     children), QML's `Roster` block with `iterateOver` on a Checkbox outcome
+     converts the loop faithfully: the Checkbox's power-of-2 bits enumerate the
+     entities and the Roster repeats its inner items per set bit. Prefer that over
+     omission; document any remaining per-person loop as a justified omission only
+     when the entity list is unbounded or dynamically generated mid-interview.
+     Remember the Roster fail-safe: an omitted loop must never leave gates on
+     variables the loop would have produced.
 
    Everything else must be present.
 

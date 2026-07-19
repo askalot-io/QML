@@ -197,17 +197,37 @@ marked OUT must have a stated reason.
 
 ### Node Types to Capture
 
-There are **three node types** — missing any type creates gaps that block QML generation:
+There are **four node types** — missing any type creates gaps that block QML generation:
 
 | Node Type | Examples | Purpose | QML Mapping |
 |-----------|----------|---------|-------------|
 | **Question** | Q##, q_## | Asked of respondent | Item with outcome |
 | **Check / Filter** | C##, CHECK, IF..., routing gates | Controls question visibility | Precondition |
 | **Constraint** | Hard/soft edit, cross-check, consistency rule, interviewer instruction | Validates answers, enforces consistency | Postcondition |
+| **External input** | CATI prefill, sample-file variable, rotation flag, split-ballot / sample-group assignment, Profile Sheet field, country-context value, proxy-interview flag | Value the routing reads but no question collects — it enters from the survey system | Admin question in a preamble block (never a bare variable) |
 
 Node type labels vary across questionnaire traditions (StatCan uses C-prefixed checks
 and CATI-XXXe edits; DHS uses CHECK filters; other formats use different conventions).
 Look for the **function**, not the label.
+
+**External inputs are the most dangerous omissions.** When a GOTO or filter tests a
+value that no question in the instrument collects (`IF PROXY`, `IF ROTATE-OUT`,
+`IF SAMPLE GROUP A`, "from Profile Sheet", "preloaded from previous cycle"), that value
+is an External input node. Record it as its own inventory entry with: the identifier the
+routing uses, where the value comes from (sample file, previous wave, interviewer
+observation, administrative system), its value domain, and every routing reference to it.
+If External inputs are not inventoried, the QML generator either drops the gate (losing a
+skip path) or invents an unproduced variable — which fails open at runtime and enforces
+nothing while looking conditional. Every questionnaire-external value must surface in the
+QML as an explicit admin/preamble question the interviewer or system answers.
+
+Example entry:
+
+```
+E1. EXTERNAL — PROXY: "Is this interview being completed by a proxy respondent?"
+    — source: interviewer/system flag, not asked of the respondent — Yes/No —
+    referenced by: MAM_C01 (skip if proxy), GEN_C08, SMK_C05 ... (list every gate)
+```
 
 **Commonly missed** (from auditing 10 StatCan questionnaires):
 - **Checks/filters**: Missed in 4/10 inventories. Silent routing gates like
@@ -445,11 +465,23 @@ inventory. Every `GO TO`, `IF...GO TO`, and filter checkpoint must appear.
 
 ### (d) Node Type Coverage
 
-Verify all three node types are captured (questions, checks/filters, constraints).
-The most common omissions:
+Verify all four node types are captured (questions, checks/filters, constraints,
+external inputs). The most common omissions:
 - Checks/filters: caused entire skip paths to vanish in 4/10 inventories
 - Constraints: lost validation rules and derived variables needed for section routing in 6/10 inventories
 - DK/Refusal branches: created incomplete routing graphs in 5/10 inventories
+- External inputs: dropped in 5/12 converted questionnaires (CCHS `is_proxy`/`sex`
+  prefills, LFS rotation and previous-cycle flags, PALS Profile Sheet `child_under_5`,
+  ESS12 `sample_group`/`is_eu_member`, SHS spouse/dwelling prefills) — every dropped
+  one became a fail-open gate in the QML that enforced nothing
+
+### (d2) External-Input Closure
+
+Collect every identifier tested by any GOTO/filter/check in the inventory. Each must
+resolve to either (a) a question entry in the inventory, or (b) an External input
+entry. Any identifier resolving to neither is an inventory gap — add the missing
+External input entry before declaring the inventory ready. This closure is what lets
+the QML generator guarantee zero phantom variables downstream.
 
 ### (e) Annotation Preservation
 

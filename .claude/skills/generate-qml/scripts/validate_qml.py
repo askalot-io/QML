@@ -2,20 +2,31 @@
 """
 QML Validator — CLI tool for formally verifying QML questionnaire files.
 
-Runs all four validation steps from the thesis validation hierarchy
-(see TODO):
+Runs the full validation hierarchy plus the production lint channel:
 
-  Step 1: Per-item classification with witness formula W_i = B ∧ P_i ∧ ¬Q_i
+  Step 1: Per-item classification + lint channel (ValidationProcessor.to_issues)
+          Witness formula W_i = B ∧ P_i ∧ ¬Q_i, plus the graded lints:
+          undefined_name, group_dependency, textarea_in_predicate,
+          write_only_variable, pass_through_alias, duplicate_input_bound, ...
   Step 2: Global satisfiability F = B ∧ ∧(P_i ⇒ Q_i)
   Step 3: Dependency loop detection via QMLTopology (stable Kahn's algorithm)
   Step 4: Path-based reachability with accumulated constraints A_i = B ∧ ∧{j∈Pred(i)}(P_j ⇒ Q_j)
+
+The lint channel matters: an undefined name in a predicate FAILS OPEN at
+runtime (the gate enforces nothing) while Z3 treats it as a free symbol, so
+the file can look formally valid while its logic is hollow. A validator that
+skips Step 1's lints will happily pass such a file — this one refuses to.
+
+The Z3 engine (StaticBuilder + topology) is built exactly once and shared by
+all four steps via ValidationProcessor.
 
 Usage:
     python validate_qml.py <path-to-qml-file> [--json]
 
 Exit codes:
-    0 = Valid (no issues)
-    1 = Issues found (NEVER reachable items, INFEASIBLE postconditions, cycles, dead code)
+    0 = Valid (no error-severity issues)
+    1 = Issues found (undefined names, NEVER reachable items, INFEASIBLE
+        postconditions, capped-Group dependencies, cycles, global UNSAT)
     2 = Error (file not found, parse error, schema violation)
 """
 
@@ -30,9 +41,8 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 from askalot_qml.core.qml_loader import QMLLoader
-from askalot_qml.core.qml_engine import QMLEngine
+from askalot_qml.core.validation_processor import ValidationProcessor
 from askalot_qml.models.qml_state import QMLState
-from askalot_qml.z3.item_classifier import ItemClassifier
 from askalot_qml.z3.global_formula import GlobalFormula
 from askalot_qml.z3.path_based_validation import PathBasedValidator
 
@@ -69,22 +79,23 @@ def validate_qml(file_path: str) -> dict:
         schema_loader = QMLLoader()
         schema_loader.qml_content = Path(file_path).read_text(encoding="utf-8")
         schema_loader.parsed_yaml = __import__("yaml").safe_load(schema_loader.qml_content)
-        if "questionnaire" in schema_loader.parsed_yaml:
+        if schema_loader.parsed_yaml and "questionnaire" in schema_loader.parsed_yaml:
             schema_loader._normalize_all_predicates(schema_loader.parsed_yaml["questionnaire"])
         schema_loader._validate_against_schema()
     except Exception as e:
         msg = str(e).split("\n")[0] if "\n" in str(e) else str(e)
         results["issues"].append({"type": "warning", "message": f"Schema: {msg}"})
 
-    # --- Build engine (StaticBuilder + QMLTopology) ---
+    # --- Build the shared Z3 engine ONCE (StaticBuilder + QMLTopology) ---
     state = QMLState(data)
     try:
-        engine = QMLEngine(state)
+        processor = ValidationProcessor(state)
     except Exception as e:
         results["valid"] = False
         results["issues"].append({"type": "error", "message": f"Engine initialization failed: {e}"})
         return results
 
+    engine = processor.engine
     items = state.get_items()
     engine_stats = engine.get_statistics()
     results["statistics"] = {
@@ -98,54 +109,55 @@ def validate_qml(file_path: str) -> dict:
     }
 
     # ================================================================
-    # Step 1: Per-item classification with witness formula
-    #         W_i = B ∧ P_i ∧ ¬Q_i
+    # Step 1: Per-item classification + lint channel
+    #         W_i = B ∧ P_i ∧ ¬Q_i, plus ValidationProcessor.to_issues()
     #
-    # For each item, classifies:
+    # Classifications:
     #   Precondition reachability: ALWAYS | CONDITIONAL | NEVER
     #   Postcondition invariant:   TAUTOLOGICAL | CONSTRAINING | INFEASIBLE | NONE
     #
-    # NEVER reachable → dead code (precondition unsatisfiable under domain B)
-    # INFEASIBLE      → design error (postcondition can never hold when reached)
-    # SAT(W_i)        → witness exists where item is reached but postcondition fails
+    # to_issues() is the production severity-and-message policy. It grades:
+    #   error   → unreachable_item, infeasible_postcondition,
+    #             globally_false_postcondition, undefined_name (fails open at
+    #             runtime — the gate enforces NOTHING), group_dependency
+    #   warning → tautological_postcondition, vacuous_postcondition,
+    #             textarea_in_predicate, write_only_variable,
+    #             pass_through_alias, duplicate_input_bound, ...
+    # Any error-severity issue marks the file invalid.
     # ================================================================
     step1 = {"name": "per_item_classification", "status": "skipped", "detail": {}}
     try:
-        classifier = ItemClassifier(engine.static_builder)
-        classifications = classifier.classify_all_items()
+        classifications = processor.get_item_classifications()
+        lint_issues = processor.to_issues()
 
         precond_counts = {}
         postcond_counts = {}
-
         for item_id, cls in classifications.items():
             precond = cls.get("precondition", {}).get("status", "UNKNOWN")
             postcond = cls.get("postcondition", {}).get("invariant", "NONE")
-
             precond_counts[precond] = precond_counts.get(precond, 0) + 1
             postcond_counts[postcond] = postcond_counts.get(postcond, 0) + 1
 
-            if precond == "NEVER":
-                results["issues"].append({
-                    "type": "error",
-                    "step": 1,
-                    "item": item_id,
-                    "message": "NEVER reachable — precondition unsatisfiable under domain constraints B"
-                })
-                results["valid"] = False
-
-            if postcond == "INFEASIBLE":
-                results["issues"].append({
-                    "type": "error",
-                    "step": 1,
-                    "item": item_id,
-                    "message": "INFEASIBLE postcondition — UNSAT(B ∧ P_i ∧ Q_i), can never be satisfied when reached"
-                })
+        issue_type_counts = {}
+        for issue in lint_issues:
+            key = f"{issue['severity']}:{issue['type']}"
+            issue_type_counts[key] = issue_type_counts.get(key, 0) + 1
+            results["issues"].append({
+                "type": issue["severity"],          # "error" | "warning"
+                "step": 1,
+                "item": issue.get("item_id"),
+                "issue_type": issue["type"],
+                "message": issue["message"],
+                "suggestion": issue.get("suggestion"),
+            })
+            if issue["severity"] == "error":
                 results["valid"] = False
 
         step1["status"] = "completed"
         step1["detail"] = {
             "precondition_reachability": precond_counts,
             "postcondition_invariant": postcond_counts,
+            "issue_type_counts": issue_type_counts,
             "classifications": classifications,
         }
 
@@ -335,20 +347,26 @@ def print_results(results: dict, output_json: bool = False) -> None:
     print(f"  Preconditions: {stats.get('preconditions', '?')}  |  Postconditions: {stats.get('postconditions', '?')}")
     print(f"  Variables (SSA): {stats.get('variables', '?')}  |  Dependencies: {stats.get('dependencies', '?')}")
 
-    # Step 1: Per-item classification
+    # Step 1: Per-item classification + lints
     s1 = steps.get("step1_per_item", {})
-    print(f"\n  Step 1: Per-Item Classification  W_i = B ∧ P_i ∧ ¬Q_i")
+    print(f"\n  Step 1: Per-Item Classification + Lints  W_i = B ∧ P_i ∧ ¬Q_i")
     print(f"  {'─' * 40}")
     if s1.get("status") == "completed":
         detail = s1.get("detail", {})
         precond = detail.get("precondition_reachability", {})
         postcond = detail.get("postcondition_invariant", {})
+        lint_counts = detail.get("issue_type_counts", {})
         if precond:
             parts = [f"{status}: {count}" for status, count in sorted(precond.items())]
             print(f"  Reachability:  {' | '.join(parts)}")
         if postcond:
             parts = [f"{status}: {count}" for status, count in sorted(postcond.items())]
             print(f"  Invariant:     {' | '.join(parts)}")
+        if lint_counts:
+            parts = [f"{key}: {count}" for key, count in sorted(lint_counts.items())]
+            print(f"  Lint channel:  {' | '.join(parts)}")
+        else:
+            print(f"  Lint channel:  clean")
     else:
         print(f"  Status: {s1.get('status', 'skipped')}")
 
@@ -407,7 +425,10 @@ def print_results(results: dict, output_json: bool = False) -> None:
             icon = "X" if issue["type"] == "error" else "!"
             step = f"[Step {issue['step']}] " if "step" in issue else ""
             item = f"{issue['item']}: " if issue.get("item") else ""
-            print(f"  [{icon}] {step}{item}{issue['message']}")
+            kind = f"({issue['issue_type']}) " if issue.get("issue_type") else ""
+            print(f"  [{icon}] {step}{kind}{item}{issue['message']}")
+            if issue.get("suggestion") and issue["type"] == "error":
+                print(f"        ↳ {issue['suggestion']}")
 
     # Final verdict
     status = "VALID" if results["valid"] else "ISSUES FOUND"

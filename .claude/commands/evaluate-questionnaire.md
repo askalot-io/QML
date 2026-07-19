@@ -22,11 +22,16 @@ Before starting, check what artifacts already exist in the evaluation directory 
 determine which phase to resume from:
 
 1. **Check for the QML file** (`SURVEY_NAME.qml` in the directory):
-   - If the QML file exists → resume from **Phase 3: Write Analysis Report**
-   - Read the `write-analysis` skill and proceed directly to report generation
-   - Note: some historical evaluations contain multiple `NN_section_name.qml`
-     files from an earlier pipeline version. Treat these as existing artifacts
-     and resume to Phase 3; do not regenerate or merge them
+   - If the QML file exists → first re-run the validator on it
+     (`.claude/skills/generate-qml/scripts/validate_qml.py`). If it reports
+     error-severity issues (undefined names, unreachable items, infeasible
+     postconditions), fix the QML per the `inventory-to-qml` skill before
+     anything else. Once it exits 0 → resume from **Phase 3: Write Analysis Report**
+   - Read the `write-analysis` skill and proceed to report generation
+   - Note: if a directory still contains multiple `NN_section_name.qml` files
+     from the retired multi-file pipeline, merge them into one
+     `SURVEY_NAME.qml` first (see "Merging legacy multi-file questionnaires"
+     in the `generate-qml` skill), then validate
 
 2. **Check for question inventory** (`*_question_inventory.md` in the directory):
    - If inventory exists with `READY FOR QML` status → resume from **Phase 2: Inventory to QML**
@@ -62,7 +67,10 @@ Also read the QML language references:
 Convert the inventory into a single `SURVEY_NAME.qml` file (the survey's original
 sections become ordered blocks inside it), validate it with Z3, and run the
 judgement agent to verify fidelity. A questionnaire is never split across multiple
-QML files. Gate: 0 unjustified missing items, file passes validation.
+QML files. Gate: 0 unjustified missing items, validator exit code 0 (formal
+hierarchy AND lint channel — zero undefined names, zero frozen-variable
+unreachable items), every External input from the inventory materialized as a
+preamble admin question, every remaining warning explained.
 
 ## Phase 3: Write Analysis Report
 
@@ -172,16 +180,20 @@ Prioritize by impact. Reference literature where it supports a recommendation.
 
 ## Existing Evaluation Corpus
 
-The `evaluation/` directory contains 18 completed conversions organized by domain:
+The `evaluation/` directory contains **12 completed conversions** (inventory + QML +
+analysis report), all large national instruments:
 
-- `census-demographics/` — ACS, Demographics, LFS, SHS, SLID
-- `medical-health/` — BRFSS, CCHS, DHS-8 (Man's & Woman's), ICS, NPHS, PALS
-- `sociology/` — ESS, GSS Victimization, GSS Time Use, NLSCY
-- `education-psychology/` — SAEP
-- `market-research/` — Conjoint (QSF), Ego Network (QSF), NPS (SurveyJS), Distribution Builder
-- `compliance-risk/` — PCI DSS SAQs, Wolfsberg CBDDQ/FCCQ, NIST CSF, ISO audits, CISA SCRM
-- `safety-critical/` — *(aviation, nuclear, surgical, maritime, space, emergency response)*
-- `legal-regulatory/` — *(USCIS forms, court forms, SEC/FTC/EPA, bankruptcy, human rights)*
-- `infrastructure-inspection/` — *(bridge/elevator/vehicle inspection, ISO 9001, cloud assessment)*
+- `census-demographics/` — ACS_2025, LFS_Labour_Force, SHS_2000_Household_Spending, SLID_Labour_Income
+- `medical-health/` — BRFSS_2023, CCHS_2005_Health, NPHS_Population_Health, PALS_Activity_Limitation
+- `sociology/` — ESS12, GSS_Time_Use, NLSCY_Children_Youth
+- `education-psychology/` — SAEP_Education_Planning
 
-Use these as reference for format, depth, and problem categorization.
+Use these as reference for format, depth, and problem categorization —
+`SLID_Labour_Income` is the reference conversion (preamble block for external
+inputs, state-variable contract comments, relational postconditions).
+
+The remaining domain folders (`compliance-risk/`, `safety-critical/`,
+`legal-regulatory/`, `infrastructure-inspection/`, `market-research/`,
+`format-samples/`) hold extracted sources (`_text.md`) or raw platform exports with
+NO conversions yet — a `_text.md` there means Phase 1 can start from the existing
+intermediate. Do not cite them as completed conversions.
