@@ -1,5 +1,20 @@
 # National Longitudinal Survey of Children (NLSCY) - Question Inventory
 
+## Scope
+
+| Unit | Pages | Status | Reason |
+|---|---:|---|---|
+| Household Record Variables | 3-8 | IN | core instrument |
+| General Questionnaire (adults 15+) | 9-26 | IN | core instrument |
+| Parent Questionnaire (PMK) | 27-40 | IN | core instrument |
+| Children's Questionnaire | 44-161 | IN | core instrument |
+| Appendix A: Questionnaire for 10-11 Year Olds | 162-184 | IN | child self-report, 135 items |
+| Appendix B: Informed Consent Form | 185-187 | OUT | procedural signature form, no questions; consent outcome carried as EXT-CONSENT external input |
+| Appendix C: Teacher's Questionnaire | 188-212 | IN | 58 items, mail-back |
+| Appendix D: Principal's Questionnaire | 213-228 | IN | 42 items, mail-back |
+| Appendix E: NPHS Questions (TWOWK/UTIL) | 229-233 | IN | 24 entries, integrated-collection periods only |
+| Appendix F: Administrative Information (KCON/TCH/OBS/PPVT) | 234-244 | IN | 43 entries, CATI consent/observation/test-admin |
+
 ## Verification Status
 
 | Section | Source Qs | Inv. Qs | Missing | Source Checks | Inv. Checks | Missing |
@@ -28,18 +43,24 @@
 | TMP     | 52       | 52      | 0       | 15           | 15          | 0       |
 | CUS     | 91       | 91      | 0       | 25           | 25          | 0       |
 | CAR     | 29       | 29      | 0       | 6            | 6           | 0       |
+| App. A (10-11 self-report) | 135 | 135 | 0 | 5 skips | 5 | 0 |
+| App. C (Teacher) | 58 | 58 | 0 | 8 | 8 | 0 |
+| App. D (Principal) | 34 (+8 admin/intro) | 42 | 0 | 6 | 6 | 0 |
+| App. E (NPHS TWOWK/UTIL) | 19 (+5) | 24 | 0 | ~11 | ~11 | 0 |
+| App. F (KCON/TCH/OBS/PPVT) | 37 (+6) | 43 | 0 | ~20 | ~20 | 0 |
 
-- **Coverage**: 24/24 sections verified, 849 items total (including intros and routing nodes)
-- **Routing**: All routing annotations captured per section (source has ~939 GOTO references across response options; inventory captures these at item level)
+- **Coverage**: 24/24 main-body sections + 5/5 question-bearing appendices verified, 849 main + ~303 appendix entries
+- **Routing**: All routing annotations captured per section (main body ~939 GOTO references; appendices ~50 across A/C/D/E/F)
+- **External inputs**: EXT-SEX, EXT-AGE-ELIG, EXT-CONSENT (App. A); pre-printed header prefills (App. C/D covers); NPHS/KCON-COLLECTION-PERIOD (App. E/F) — each documented as a dedicated entry in its appendix section
 - **Status**: READY FOR QML
-- **Missing**: None
+- **Missing**: None (Appendix B excluded with reason — see Scope table)
 
 ## Document Overview
 - **Title**: National Longitudinal Survey of Children - Survey Instruments for 1994-95 Data Collection, Cycle 1
 - **Organization**: Statistics Canada / Human Resources Development Canada
 - **Date**: February 1995
 - **Catalogue No.**: 89F0077XIE
-- **Pages**: 161 (main questionnaire, excluding appendices)
+- **Pages**: 244 (main questionnaire pp. 3-161 + appendices A-F pp. 162-244; see Scope table)
 - **Language**: English
 - **Type**: Computer-Assisted Personal Interview (CAPI) questionnaire for longitudinal survey of children aged 0-11 years
 
@@ -1068,3 +1089,651 @@ Note: Per the document's conventions, where the same response categories are use
 ---
 
 ## TOTAL UNIQUE QUESTION NODES: ~843
+---
+
+## Appendices (pp. 161-244)
+
+The survey package carries six appendices (TOC on p.161). Appendix B is the
+**Informed Consent Form** (pp. 185-187): a procedural signature document with no
+questions — OUT of inventory scope (its consent *outcome* enters the flow as the
+EXT-CONSENT external input used by Appendix A and the TCH consent items in
+Appendix F). All five question-bearing appendices are inventoried below.
+
+### Appendix A — Questionnaire for 10-11 Year Olds (self-report) — pages 162-184, 135 items
+
+**Administration**: This is a self-administered paper booklet completed **by the selected child** (not a proxy) when that child is aged 10-11 and the family has given informed consent (Appendix B). Instructions to the child (p.163): "This is not a test and there are no right or wrong answers... please be sure to answer each question based on what you really think. If you need help with any questions, you may ask the Interviewer." Answers are kept private by Statistics Canada; the child seals the completed booklet in an envelope and returns it to the Interviewer. Almost all items are self-completed Likert/scale batteries with **no skip routing**; the few explicit skips (A.07, G.02, G.06, G.10, plus the G.01 embedded filter) are captured verbatim below. Section F (Puberty) routes on the child's **sex** (girls-only vs boys-only sub-parts) — sex is an External input from the household roster, not asked in this booklet.
+
+**External inputs referenced by this appendix** (values the routing/applicability reads but no item in the booklet collects):
+
+- **EXT-SEX** — child's sex (Male/Female) — source: household roster / main questionnaire, not asked of the child here — referenced by F.02 (girls only), F.03 (girls only), F.04 (boys only), F.05 (boys only) as section-level applicability gates.
+- **EXT-AGE-ELIG** — selected-child age is 10-11 — source: household roster — gates administration of the **entire** appendix (booklet is issued only to children aged 10-11).
+- **EXT-CONSENT** — informed consent given (see Appendix B) — source: interviewer/administrative consent record — gates administration of the **entire** appendix ("You can choose whether or not to fill out this questionnaire", p.163).
+
+---
+
+#### Section A — Friends and Family (p.164-166) — 12 items
+
+Instruction (p.164): "The following statements are about your friends and family. Please answer each question. Mark your answers like this ❑ or write in a number."
+
+**A.01-A.04 battery** — shared 5-point scale {0/5: "False", 1/6: "Mostly false", 2/7: "Sometimes false/Sometimes true", 3/8: "Mostly true", 4/9: "True"} (option field codes cycle 0-4 then 5-9 per item; single select, mark one).
+
+1. A.01: "I have a lot of friends." — Single select (False→True 5-point, codes 0-4) — GO TO A.02
+2. A.02: "I get along with kids easily." — Single select (False→True 5-point, codes 5-9) — GO TO A.03
+3. A.03: "Other kids want me to be their friend." — Single select (False→True 5-point, codes 0-4) — GO TO A.04
+4. A.04: "Most other kids like me." — Single select (False→True 5-point, codes 5-9) — GO TO A.05
+
+5. A.05: "About how many days a week do you do things with friends outside of school hours?" — Single select {0: "Never", 1: "Less than once a week", 2: "1 day a week", 3: "2-3 days a week", 4: "4-5 days a week", 5: "6-7 days a week"} — GO TO A.06
+
+6. A.06: "How many close friends do you have?" — Numeric (2-digit, "Number of close friends"; "If none write 00") — GO TO A.07
+
+7. A.07: "Other than your friends, do you have anyone else in particular you can talk to about yourself or your problems?" — Yes/No {0: "Yes", 1: "No"} — Yes → Go to question 08 (A.08); No → Go to question 09 (A.09)
+
+8. A.08: "What is their relationship to you? (Mark everyone you feel you can talk to about yourself or your problems)" — Multi select {01: "Mother", 02: "Father", 03: "Stepmother", 04: "Stepfather", 05: "Brother", 06: "Sister", 07: "Grandparents", 08: "Other relatives", 09: "A friend of the family", 10: "Sitter or babysitter", 11: "Parent's boyfriend/girlfriend", 12: "Teacher", 13: "Coach or leader (e.g. scout or church leader)", 14: "Other"} — Filter: asked only if A.07 = Yes — GO TO A.09
+
+9. A.09: "During the past 6 months, how well have you gotten along with other children such as friends or classmates?" — Single select {15: "Very well, no problems", 16: "Quite well, hardly any problems", 17: "Pretty well, occasional problems", 18: "Not too well, frequent problems", 19: "Not well at all, constant problems"} — GO TO A.10
+
+10. A.10: "During the past 6 months, how well have you gotten along with your mother?" — Single select {20: "Very well, no problems", 21: "Quite well, hardly any problems", 22: "Pretty well, occasional problems", 23: "Not too well, frequent problems", 24: "Not well at all, constant problems", 25: "Don't have a mother or am not in touch with her"} — GO TO A.11
+
+11. A.11: "During the past 6 months, how well have you gotten along with your father?" — Single select {26: "Very well, no problems", 27: "Quite well, hardly any problems", 28: "Pretty well, occasional problems", 29: "Not too well, frequent problems", 30: "Not well at all, constant problems", 31: "Don't have a father or am not in touch with him"} — GO TO A.12
+
+12. A.12: "During the past 6 months, how well have you gotten along with your brothers and sisters?" — Single select {32: "Very well, no problems", 33: "Quite well, hardly any problems", 34: "Pretty well, occasional problems", 35: "Not too well, frequent problems", 36: "Not well at all, constant problems", 37: "Don't have brothers and sisters or am not in touch with them"} — GO TO B.01
+
+---
+
+#### Section B — School (p.167-170) — 17 items
+
+Instruction (p.167): "ABOUT MY SCHOOL AND ME. Please mark only one circle for each statement. Mark your answers like this ❑."
+
+13. B.01: "How do you feel about school?" — Single select {0: "I like school very much", 1: "I like school quite a bit", 2: "I like school a bit", 3: "I don't like school very much", 4: "I hate school"} — GO TO B.02
+
+14. B.02: "How well do you think you are doing in your school work?" — Single select {5: "Very well", 6: "Well", 7: "Average", 8: "Poorly", 9: "Very poorly"} — GO TO B.03
+
+15. B.03: "How important is it to you to have good grades in school?" — Single select {0: "Very important", 1: "Important", 2: "Somewhat important", 3: "Not very important", 4: "Not important at all"} — GO TO B.04
+
+16. B.04: "I like mathematics." — Single select (False→True 5-point) {5: "False", 6: "Mostly false", 7: "Sometimes false\\sometimes true", 8: "Mostly true", 9: "True"} — GO TO B.05
+
+**B.05-B.10 battery** — instruction (p.168): "Read the following statements and choose the answer that best describes how you feel." Shared 5-point frequency scale {"All the time", "Most of the time", "Some of the time", "Rarely", "Never"} (option field codes cycle 0-4 / 5-9 per item; single select).
+
+17. B.05: "I feel safe at school." — Single select (All the time→Never, codes 0-4) — GO TO B.06
+18. B.06: "I feel safe on my way to and from school." — Single select (All the time→Never, codes 5-9) — GO TO B.07
+19. B.07: "Children say nasty and unpleasant things to me at school." — Single select (All the time→Never, codes 0-4) — GO TO B.08
+20. B.08: "I am bullied in school." — Single select (All the time→Never, codes 5-9) — GO TO B.09
+21. B.09: "I am bullied on my way to and from school." — Single select (All the time→Never, codes 0-4) — GO TO B.10
+22. B.10: "I feel like an outsider (or left out of things) at my school." — Single select (All the time→Never, codes 5-9) — GO TO B.11
+
+**ABOUT MY TEACHER AND ME** (p.169)
+
+23. B.11: "When I need extra help, my teacher gives it to me." — Single select {1: "All the time", 2: "Most of the time", 3: "Some of the time", 4: "Rarely", 5: "Never", 6: "Don't need extra help"} — GO TO B.12
+24. B.12: "My teacher treats me fairly." — Single select {7: "All the time", 8: "Most of the time", 9: "Some of the time", 10: "Rarely", 11: "Never"} — GO TO B.13
+
+**ABOUT MY PARENTS AND SCHOOL** (p.169)
+
+25. B.13: "If I have problems at school, my parents are ready to help." — Single select {12: "All the time", 13: "Most of the time", 14: "Some of the time", 15: "Rarely", 16: "Never", 17: "Don't have problems at school"} — GO TO B.14
+26. B.14: "My parents encourage me to do well at school." — Single select (All the time→Never, codes 0-4) — GO TO B.15
+27. B.15: "My parents expect too much of me at school." — Single select (All the time→Never, codes 5-9) — GO TO B.16
+
+**ABOUT MY HOMEWORK** (p.170)
+
+28. B.16: "I have a place at home to do homework or study." — Single select (All the time→Never, codes 0-4) — GO TO B.17
+29. B.17: "When my teacher gives me homework, I do it." — Single select (All the time→Never, codes 5-9) — GO TO C.01
+
+---
+
+#### Section C — About Me (p.171) — 8 items
+
+Instruction (p.171): "Read the following statements and choose the answer that best describes how you feel. Please mark only one circle for each statement. Mark your answers like this ❑."
+
+**C.01 battery (a-h)** — shared 5-point scale (grid columns) {"False", "Mostly false", "Sometimes false/Sometimes true", "Mostly true", "True"} (option field codes cycle 0-4 / 5-9 per row; single select per row).
+
+30. C.01.a: "In general, I like the way I am." — Single select (False→True 5-point, codes 0-4) — GO TO C.01.b
+31. C.01.b: "Overall I have a lot to be proud of." — Single select (False→True 5-point, codes 5-9) — GO TO C.01.c
+32. C.01.c: "A lot of things about me are good." — Single select (False→True 5-point, codes 0-4) — GO TO C.01.d
+33. C.01.d: "When I do something, I do it well." — Single select (False→True 5-point, codes 5-9) — GO TO C.01.e
+34. C.01.e: "I am good looking." — Single select (False→True 5-point, codes 0-4) — GO TO C.01.f
+35. C.01.f: "I have a pleasant looking face." — Single select (False→True 5-point, codes 5-9) — GO TO C.01.g
+36. C.01.g: "Other kids think I am good looking." — Single select (False→True 5-point, codes 0-4) — GO TO C.01.h
+37. C.01.h: "I have a good looking body." — Single select (False→True 5-point, codes 5-9) — GO TO D.01
+
+---
+
+#### Section D — Feelings and Behaviours (p.172-176) — 54 items
+
+Instruction (p.172): "Read the following statements and choose the answer that best describes you. Please mark only one circle for each statement. Mark your answers like this ❑."
+
+**D.01 battery (a-uu, 47 sub-items)** — shared 3-point scale (grid columns) {1: "Never or not true", 2: "Sometimes or somewhat true", 3: "Often or very true"} (option field codes cycle 1-3 / 4-6 / 7-9 per row; single select per row).
+
+38. D.01.a: "I show sympathy to (feel sorry for) someone who has made a mistake" — Single select (3-point) — GO TO D.01.b
+39. D.01.b: "I can't sit still, am restless or hyperactive" — Single select (3-point) — GO TO D.01.c
+40. D.01.c: "I destroy my own things" — Single select (3-point) — GO TO D.01.d
+41. D.01.d: "I will try to help someone who has been hurt" — Single select (3-point) — GO TO D.01.e
+42. D.01.e: "I steal at home" — Single select (3-point) — GO TO D.01.f
+43. D.01.f: "I am unhappy, sad or depressed" — Single select (3-point) — GO TO D.01.g
+44. D.01.g: "I get into many fights" — Single select (3-point) — GO TO D.01.h
+45. D.01.h: "I volunteer to help clear up a mess someone else has made" — Single select (3-point) — GO TO D.01.i
+46. D.01.i: "I am distractible, have trouble sticking to any activity" — Single select (3-point) — GO TO D.01.j
+47. D.01.j: "I try when I am mad at someone, to get others to dislike him/her" — Single select (3-point) — GO TO D.01.k
+48. D.01.k: "I am not as happy as other children" — Single select (3-point) — GO TO D.01.l
+49. D.01.l: "I destroy things belonging to my family or other children" — Single select (3-point) — GO TO D.01.m
+50. D.01.m: "I will try, if there is an argument, to stop it" — Single select (3-point) — GO TO D.01.n
+51. D.01.n: "I fidget" — Single select (3-point) — GO TO D.01.o
+52. D.01.o: "I am disobedient at school" — Single select (3-point) — GO TO D.01.p
+53. D.01.p: "I can't concentrate, can't pay attention" — Single select (3-point) — GO TO D.01.q
+54. D.01.q: "I am too fearful or anxious" — Single select (3-point) — GO TO D.01.r
+55. D.01.r: "When I am mad at someone, I become friends with another as revenge" — Single select (3-point) — GO TO D.01.s
+56. D.01.s: "I am impulsive, act without thinking" — Single select (3-point) — GO TO D.01.t
+57. D.01.t: "I tell lies or cheat" — Single select (3-point) — GO TO D.01.u
+58. D.01.u: "I offer to help other children (friend, brother or sister) who are having difficulty with a task" — Single select (3-point) — GO TO D.01.v
+59. D.01.v: "I am worried" — Single select (3-point) — GO TO D.01.w
+60. D.01.w: "I have difficulty awaiting my turn in games or groups" — Single select (3-point) — GO TO D.01.x
+61. D.01.x: "I assume, when another child accidentally hurts me (such as bumping into me), that the other child meant to do it, and then react with anger and fighting" — Single select (3-point) — GO TO D.01.y
+62. D.01.y: "I tend to do things on my [own] - am rather solitary" — Single select (3-point) — GO TO D.01.z  [source reads "on my your own"; transcription artifact for "on my own"]
+63. D.01.z: "When mad at someone, I say bad things behind the other's back" — Single select (3-point) — GO TO D.01.aa
+64. D.01.aa: "I physically attack people" — Single select (3-point) — GO TO D.01.bb
+65. D.01.bb: "I comfort a child (friend, brother or sister) who is crying or upset" — Single select (3-point) — GO TO D.01.cc
+66. D.01.cc: "I cry a lot" — Single select (3-point) — GO TO D.01.dd
+67. D.01.dd: "I vandalize" — Single select (3-point) — GO TO D.01.ee
+68. D.01.ee: "I give up easily" — Single select (3-point) — GO TO D.01.ff
+69. D.01.ff: "I threaten people" — Single select (3-point) — GO TO D.01.gg
+70. D.01.gg: "I help to pick up objects which another child has dropped (e.g. pencils, books.)" — Single select (3-point) — GO TO D.01.hh
+71. D.01.hh: "I cannot settle to anything for more than a few moments" — Single select (3-point) — GO TO D.01.ii
+72. D.01.ii: "I feel miserable, unhappy, tearful, or distressed" — Single select (3-point) — GO TO D.01.jj
+73. D.01.jj: "I am cruel, bully or am mean to others" — Single select (3-point) — GO TO D.01.kk
+74. D.01.kk: "I stare into space" — Single select (3-point) — GO TO D.01.ll
+75. D.01.ll: "When mad at someone, I say to others: let's not be with him/her" — Single select (3-point) — GO TO D.01.mm
+76. D.01.mm: "I am nervous, highstrung or tense" — Single select (3-point) — GO TO D.01.nn
+77. D.01.nn: "I kick, bite, hit other children" — Single select (3-point) — GO TO D.01.oo
+78. D.01.oo: "I will invite bystanders to join in a game" — Single select (3-point) — GO TO D.01.pp
+79. D.01.pp: "I steal outside the home" — Single select (3-point) — GO TO D.01.qq
+80. D.01.qq: "I am inattentive, have difficulty paying attention to someone" — Single select (3-point) — GO TO D.01.rr
+81. D.01.rr: "I have trouble enjoying myself" — Single select (3-point) — GO TO D.01.ss
+82. D.01.ss: "I help other children (friends, brother or sister) who are feeling sick" — Single select (3-point) — GO TO D.01.tt
+83. D.01.tt: "When mad at someone, I tell the other one's secrets to a third person" — Single select (3-point) — GO TO D.01.uu
+84. D.01.uu: "I take the opportunity to show support for the work of children who can't do things as well as me" — Single select (3-point) — GO TO D.02
+
+**D.02 battery (a-f)** — stem "In the past year, about how many times..." — shared 4-point scale {1: "Never", 2: "Once", 3: "Twice", 4: "More than twice"} (option field codes cycle 1-4 / 5-8 per row; single select per row).
+
+85. D.02.a: "...did you stay out later than your parents said you should?" — Single select (4-point) — GO TO D.02.b
+86. D.02.b: "...did you stay out all night without permission?" — Single select (4-point) — GO TO D.02.c
+87. D.02.c: "...did you skip a day of school without permission?" — Single select (4-point) — GO TO D.02.d
+88. D.02.d: "...did you get drunk?" — Single select (4-point) — GO TO D.02.e
+89. D.02.e: "...were you questioned by the police about anything you might have done such as stealing, damaging property or anything else?" — Single select (4-point) — GO TO D.02.f
+90. D.02.f: "...did you run away from home?" — Single select (4-point) — GO TO D.03
+
+91. D.03: "In the past year were you part of a group that did bad things?" — Yes/No {1: "Yes", 2: "No"} — GO TO E.01
+
+---
+
+#### Section E — My Parent(s) and Me (p.177-178) — 17 items
+
+Instruction (p.177): "Please mark only one circle for each statement. Mark your answers like this ❑."
+
+**E.01 battery (a-q)** — stem "My parents (or step parents or foster parents)..." — shared 4-point scale (grid columns) {1: "Never", 2: "Sometimes", 3: "Often", 4: "Very often"} (option field codes cycle 1-4 / 5-8 per row; single select per row).
+
+92. E.01.a: "...smile at me" — Single select (4-point) — GO TO E.01.b
+93. E.01.b: "...want to know exactly where I am and what I am doing" — Single select (4-point) — GO TO E.01.c
+94. E.01.c: "...soon forget a rule they have made" — Single select (4-point) — GO TO E.01.d
+95. E.01.d: "...praise me" — Single select (4-point) — GO TO E.01.e
+96. E.01.e: "...let me go out any evening I want" — Single select (4-point) — GO TO E.01.f
+97. E.01.f: "...do tell me what time to be home when I go out" — Single select (4-point) — GO TO E.01.g
+98. E.01.g: "...nag me about little things" — Single select (4-point) — GO TO E.01.h
+99. E.01.h: "...tell me what I can watch on TV" — Single select (4-point) — GO TO E.01.i
+100. E.01.i: "...make sure I do my homework" — Single select (4-point) — GO TO E.01.j
+101. E.01.j: "...only keep rules when it suits them" — Single select (4-point) — GO TO E.01.k
+102. E.01.k: "...make sure I know I am appreciated" — Single select (4-point) — GO TO E.01.l
+103. E.01.l: "...threaten punishment more often than they use it" — Single select (4-point) — GO TO E.01.m
+104. E.01.m: "...speak of the good things I do" — Single select (4-point) — GO TO E.01.n
+105. E.01.n: "...find out about my misbehaviour" — Single select (4-point) — GO TO E.01.o
+106. E.01.o: "...enforce a rule or do not enforce a rule depending upon their mood" — Single select (4-point) — GO TO E.01.p
+107. E.01.p: "...hit me or threaten to do so" — Single select (4-point) — GO TO E.01.q
+108. E.01.q: "...seem proud of the things I do" — Single select (4-point) — GO TO F.01
+
+---
+
+#### Section F — Puberty (p.178-179) — 5 items
+
+Instruction (p.178): "Please mark only one circle for each statement. Mark your answers like this ❑." Section routes on **child's sex** (External input EXT-SEX from household roster): F.01 is asked of all; F.02-F.03 are gated "FOR GIRLS ONLY"; F.04-F.05 are gated "FOR BOYS ONLY".
+
+109. F.01: "Would you say that your body hair (\"body hair\" means underarm and pubic hair):" — Single select {5: "has not yet started growing", 6: "has barely started growing", 7: "growth of body hair is definitely underway", 8: "growth of body hair seems completed"} — asked of all children — GO TO F.02 (girls) / F.04 (boys)
+
+**FOR GIRLS ONLY** (filter: EXT-SEX = Female)
+
+110. F.02: "Have your breasts begun to grow?" — Single select {1: "Not yet started growing", 2: "Have barely started growing", 3: "Breast growth is definitely underway", 4: "Breast growth seems completed"} — Filter: girls only — GO TO F.03
+111. F.03: "Have you begun to menstruate (your monthly periods)?" — Yes/No {5: "Yes", 6: "No"} — Filter: girls only — GO TO G.01
+
+**FOR BOYS ONLY** (filter: EXT-SEX = Male)
+
+112. F.04: "Have you noticed a deepening of your voice?" — Single select {1: "Not yet started changing", 2: "Has barely started changing", 3: "Voice is definitely changing", 4: "Voice change seems completed"} — Filter: boys only — GO TO F.05
+113. F.05: "Have you begun to grow hair on your face?" — Single select {5: "Not yet started growing", 6: "Has barely started growing", 7: "Facial hair growth is definitely underway", 8: "Facial hair growth seems completed"} — Filter: boys only — GO TO G.01
+
+---
+
+#### Section G — Smoking, Drinking and Drugs (p.180-183) — 13 items
+
+Intro (p.180): "Not too many young people your age smoke, drink, or use drugs. The following questions are for both those who have or have not tried to smoke, drink or take drugs. Please answer each question. Mark your answers like this ❑ or write in a number."
+
+114. G.01: "Have you ever tried cigarette smoking, even just a few puffs?" — Yes/No {1: "Yes", 2: "No"} — Yes → GO TO G.02; No → answer embedded filter sub-question then GO TO G.02. Embedded sub-question (asked only if No): "If No, which of the following are the most important reasons why you have never tried smoking?" — Multi select {01: "Most of my friends do not smoke", 02: "My parents do not smoke", 03: "I think it might be bad for my health", 04: "I think I might not be able to stop", 05: "It is against the law for me to smoke", 06: "I would get into trouble with my parents or teachers", 07: "I would get into trouble with the police", 08: "I cannot get cigarettes or afford them", 09: "I have other things I enjoy doing", 10: "Some other reason"}
+
+115. G.02: "If you do smoke, how often do you smoke cigarettes?" — Single select {0: "I do not smoke, or only tried once or twice", 1: "Every day", 2: "At least once or twice a week but not every day", 3: "At least once or twice a month but not every week", 4: "A few times a year", 5: "Once or twice a year"} — 0 → GO TO QUESTION G.05; 5 → GO TO QUESTION G.05; 1/2/3/4 → GO TO G.03
+
+116. G.03: "If you have smoked one or more cigarettes every day for at least 7 days in a row, how old were you when you first did so? (Mark one only)" — Single select / Numeric {98: "I have never done this"} OR "I was __ __ years old" (2-digit age) — GO TO G.04
+
+117. G.04: "On the days that you smoke, about how many cigarettes do you usually smoke?" — Single select / Numeric {99: "I do not smoke"} OR "__ __ Number of cigarettes" (2-digit) — GO TO G.05
+
+118. G.05: "How many of your friends smoke?" — Numeric (2-digit, "Friends who smoke"; "If none write 00") — GO TO G.06
+
+119. G.06: "Have you ever drunk alcohol?" — Yes/No {7: "Yes", 8: "No"} — Yes → GO TO G.07; No → GO TO QUESTION G.09
+
+120. G.07: "If you have ever drunk more alcohol than the amount allowed by your parents, how old were you when you first did this? (Mark one only)" — Single select / Numeric {98: "I have never drunk alcohol", 99: "I have only drunk the amount allowed by my parents"} OR "I was __ __ years old" (2-digit age) — GO TO G.08
+
+121. G.08: "If you drink anything alcoholic such as wine, liquor or beer, how often do you do so?" — Single select {0: "I do not drink alcohol, or only tried once or twice", 1: "Every day", 2: "At least once or twice a week but not every day", 3: "At least once or twice a month but not every week", 4: "A few times a year", 5: "Once or twice a year"} — GO TO G.09
+
+122. G.09: "How many of your friends drink alcohol?" — Numeric (2-digit, "Friends who drink alcohol"; "If none write 00") — GO TO G.10
+
+123. G.10: "Have you ever tried drugs or sniffed glue or solvents?" — Yes/No {8: "Yes", 9: "No"} — Yes → GO TO G.11; No → GO TO QUESTION G.13
+
+124. G.11: "If you use the following substances, how often do you ..." — three-part single select battery (asked only if G.10 = Yes):
+    - a. "use marijuana (\"pot\", \"grass\" or \"hash\")" {01: "I do not use marijuana, or only tried once or twice", 02: "Every day", 03: "At least once or twice a week but not every day", 04: "At least once or twice a month but not every week", 05: "A few times a year", 06: "Once or twice a year"}
+    - b. "sniff glue or solvents" {07: "I do not sniff glue or solvents, or only tried once or twice", 08: "Every day", 09: "At least once or twice a week but not every day", 10: "At least once or twice a month but not every week", 11: "A few times a year", 12: "Once or twice a year"}
+    - c. "use other drugs like cocaine, crack, speed, LSD/acid" {13: "I do not use other drugs, or only tried once or twice", 14: "Every day", 15: "At least once or twice a week but not every day", 16: "At least once or twice a month but not every week", 17: "A few times a year", 18: "Once or twice a year"}
+    — GO TO G.12
+
+125. G.12: "If you have used drugs (such as marijuana, glue, solvents or cocaine, etc.) how old were you when you first did so? (Mark one only)" — Single select / Numeric {99: "I have never used drugs"} OR "I was __ __ years old" (2-digit age) — GO TO G.13
+
+126. G.13: "How many of your friends have tried drugs or sniffed glue or solvents?" — Numeric (2-digit, "Friends who have tried drugs or sniffed glue or solvents"; "If none write 00") — GO TO H.01
+
+---
+
+#### Section H — Activities (p.183-184) — 9 items
+
+Instruction (p.183): "Please mark only one circle for each statement. Mark your answers like this ❑."
+
+**H.01 battery (a-g)** — shared 4-point frequency scale (grid columns) {"Never", "Less than once a week", "1 to 3 times a week", "4 or more times a week"} (option field codes cycle 6-9 / 2-5 per row; single select per row).
+
+127. H.01.a: "Outside of school hours, I take part in sports with a coach or an instructor" — Single select (4-point) — GO TO H.01.b
+128. H.01.b: "Outside of school, I play sports or do physical activities WITHOUT a coach or instructor." — Single select (4-point) — GO TO H.01.c
+129. H.01.c: "Outside of school hours, I take part in Art, Dance or Music Groups or Lessons" — Single select (4-point) — GO TO H.01.d
+130. H.01.d: "I take part in Clubs or groups such as Girl Guides or Boy Scouts" — Single select (4-point) — GO TO H.01.e
+131. H.01.e: "I have a job (a paper route, baby sitting, etc.)" — Single select (4-point) — GO TO H.01.f
+132. H.01.f: "I play computer or video games" — Single select (4-point) — GO TO H.01.g
+133. H.01.g: "I watch TV" — Single select (4-point) — GO TO H.02
+
+134. H.02: "On average, about how many hours a day do you watch TV?" — Single select {0: "0 - 1 hour a day", 1: "1 - 2 hours a day", 2: "3 - 4 hours a day", 3: "5 - 6 hours a day", 4: "7 or more hours a day"} — GO TO H.03
+
+135. H.03: "How often do you read for fun (not just for school)" — Single select {4: "Every day", 5: "A few times a week", 6: "Once a week", 7: "A few times a month", 8: "Less than once a month", 9: "Almost never"} — END (closing note p.184: "Thank you for taking part in this survey!!"; child seals booklet in envelope and returns it to the Interviewer)
+
+---
+
+### Appendix C — Teacher's Questionnaire — pages 188-212, 58 questions + 1 external-input entry
+
+Administration: A separate mail-back paper questionnaire sent to the selected child's classroom teacher (not the PMK), collected under the Statistics Act. It requires parental consent to release the teacher's identity and is answered by the teacher, a distinct respondent from the household PMK who answers the main NLSCY instrument. Completion is voluntary; the teacher marks circles and returns it in a business-reply envelope (1-800-307-3382 / 1-800-307-EDUC). Items concern one specific sampled student in the teacher's class, the teacher's class/teaching practices, the school, and the teacher personally. Q58 collects consent to share responses with Human Resources Development Canada. Sections: 1 This Student's Education (p.189), 2 This Student's Behaviour and Absenteeism (p.196), 3 Parent's/Guardian's Involvement (p.199), 4 Your Class and Teaching Practices (p.201), 5 Perceptions of Your School (p.208), 6 Personal Information (p.210).
+
+**Response-code convention:** superscript/leading digits printed beside each circle in the source are the answer codes; they run sequentially and are recorded exactly. For rating batteries the shared scale is stated once and each sub-item lists its own cell codes (left-to-right across the scale).
+
+#### External inputs (Profile Sheet / sample-file prefills, p.188)
+
+E1. EXTERNAL — Teacher's Questionnaire header block (p.188): pre-printed administrative identifiers entered by the survey system from the sample file, not asked of the teacher. Sub-fields: Sample I.D. (17-digit), Child I.D. (2-digit), Child's Age (2-digit), Child's Grade (2-digit), Teacher's/Child's Language (1-digit), Mathematics Test (1-digit flag), Operation Number (7-digit). — source: NLSCY sample/administrative file. Value domain: as printed. Not referenced by any routing gate inside this questionnaire; recorded for completeness so the QML preamble carries the child/teacher linkage and language/math-test context.
+
+---
+
+### Section 1 — This Student's Education — pages 189-195, 23 questions
+
+Section note (p.189, verbatim): "The following sections relate to the educational development of a specific student in your class. Please answer all questions by marking the appropriate circle corresponding with your answer in each section." Lead-in (p.189): "These first few questions ask about this student's grade and educational history."
+
+1. Q1: "Is this student currently in kindergarten or a similar pre-grade one programme (i.e.: Junior Kindergarten, Primary (Nova Scotia), Nursery (Manitoba), Early Childhood Services (Alberta), or First Year of Primary (British Columbia))?" (*Mark one circle only*) — Single select {1: "Yes", 2: "No"} — 1 → **GO TO QUESTION 17**; 2 → GO TO QUESTION 2
+
+2. Q2: "Is this student assigned to a grade?" (*Mark one circle only*) — Single select {3: "Yes", 4: "No, this student is not assigned to a grade"} — 3 → answer follow-up "In what grade is this student?" grade |_|_| (Numeric, 2-digit), then GO TO QUESTION 3; 4 → GO TO QUESTION 3
+
+3. Q3: "Is this student in a split or multi-grade class?" (*Mark one circle only*) — Single select {5: "Yes", 6: "No, the class contains a single grade", 7: "No, the class is ungraded"} — 5 → answer follow-up "What grades are contained in this class?" grade |_|_| to grade |_|_| (Numeric range, 2-digit each), then GO TO QUESTION 4; 6 → GO TO QUESTION 4; 7 → GO TO QUESTION 4
+
+4. Q4: "Has this student ever skipped a grade?" (*Mark one circle only*) — Single select {1: "Yes", 2: "No", 3: "Don't know"} — GO TO QUESTION 5
+
+5. Q5: "Is this student currently repeating his or her grade?" (*Mark one circle only*) — Single select {4: "Yes", 5: "No"} — GO TO QUESTION 6
+
+6. Q6: "Has this student previously repeated a grade(s), been retained, or not been promoted to a new grade for any reason?" (*Mark one circle only*) — Single select {6: "Yes", 7: "No", 8: "Don't know"} — GO TO QUESTION 7
+
+Lead-in (p.190, verbatim): "These next questions deal with this student's academic performance."
+
+7. Q7: "How would you rate this student's current academic achievement in *reading*?" (*Mark one circle only*) — Single select {01: "I do not teach reading", 02: "Near the top of the class", 03: "Above the middle of the class, but not at the top", 04: "In the middle of the class", 05: "Below the middle of the class, but above the bottom", 06: "Near the bottom of the class"} — GO TO QUESTION 8
+
+8. Q8: "How would you rate this student's current academic achievement in mathematics?" (*Mark one circle only*) — Single select {07: "I do not teach mathematics", 08: "Near the top of the class", 09: "Above the middle of the class, but not at the top", 10: "In the middle of the class", 11: "Below the middle of the class, but above the bottom", 12: "Near the bottom of the class"} — GO TO QUESTION 9
+
+9. Q9: "How would you rate this student's current academic achievement in *written work* (e.g., spelling and composition)?" (*Mark one circle only*) — Single select {1: "I do not teach spelling or composition", 2: "Near the top of the class", 3: "Above the middle of the class, but not at the top", 4: "In the middle of the class", 5: "Below the middle of the class, but above the bottom", 6: "Near the bottom of the class"} — GO TO QUESTION 10
+
+10. Q10: "How would you rate this student's current academic achievement across all areas of instruction?" (*Mark one circle only*) — Single select {07: "Near the top of the class", 08: "Above the middle of the class, but not at the top", 09: "In the middle of the class", 10: "Below the middle of the class, but above the bottom", 11: "Near the bottom of the class"} — GO TO QUESTION 11
+
+11. Q11: "Looking ahead, how far do you expect this student will go in school? Will he/she..." (*Mark one circle only*) — Single select {1: "Complete primary/elementary school?", 2: "Complete some secondary or high school?", 3: "Graduate from secondary or high school?", 4: "Obtain a community college, technical college, vocational college, business school, or CEGEP certificate or diploma?", 5: "Obtain a university degree?", 6: "Don't know"} — GO TO QUESTION 12
+
+Lead-in (p.191, verbatim): "The next series of questions ask about the amount of instruction this student receives. In order to better understand the amount of instruction which is delivered, it is first necessary to collect information regarding the length of the school's instructional cycle and the length of the school year. By instructional cycle we mean the number of days which make up one complete rotation through all regularly taught topics. For example, some schools run on a four day instructional cycle."
+
+12. Q12: "Overall, how long is one cycle of instruction in this student's homeroom class?" (*Specify the number of days*) — Numeric (2-digit) days — GO TO QUESTION 13
+
+13. Q13: "How long is the normal school year for this school?" (*Specify the number of days*) — Numeric (3-digit) days — GO TO QUESTION 14
+
+14. Q14: "For the most recent full cycle of instruction, please estimate how much class time this student spent on ...." (*Specify the number of minutes per cycle. If this student does not spend time on a particular area indicate this by recording 00000 minutes/cycle*) — Numeric battery, minutes/cycle (5-digit each), field codes as shown — sub-items: a) 01 "Reading and other language arts (e.g. spelling, grammar, composition)"; b) 02 "Second language education"; c) 03 "Mathematics"; d) 04 "Science"; e) 05 "Social Studies"; f) 06 "Environmental Studies"; g) 07 "Music"; h) 08 "Art"; i) 09 "Physical Education"; j) 10 "Learning how to use computers"; k) 11 "Other topics" — GO TO QUESTION 15
+
+15. Q15: "How much class time per cycle does this student spend using a computer?" (*Specify the number of minutes per cycle*) — Numeric (5-digit) minutes/cycle — GO TO QUESTION 16
+
+16. Q16: "Thinking about the most recent full instructional cycle, what is the main language of instruction in this student's class?" (*Mark the circle corresponding to the predominant language of instruction in this student's regular class*) — Single select {1: "French", 2: "English", 3: "An equal combination of French and English", 4: "Other"} — GO TO QUESTION 17
+
+Lead-in (p.193, verbatim): "These next questions deal with this student's social and personal skills."
+
+17. Q17: "Listed below are a number of different social and personal skills which may be demonstrated in your class. Please indicate how often this student demonstrates each of the following." (*Mark the circle corresponding to your answer for each of the following*) — Rating battery, Scale (5-point): "Never", "Rarely", "Sometimes", "Usually", "Always" — sub-items with cell codes (Never/Rarely/Sometimes/Usually/Always): a) "Works cooperatively with other students" 01/02/03/04/05; b) "Plays cooperatively with other students" 06/07/08/09/10; c) "Follows rules" 11/12/13/14/15; d) "Follows instructions" 16/17/18/19/20; e) "Respects the property of others" 21/22/23/24/25; f) "Demonstrates self-control" 26/27/28/29/30; g) "Shows self-confidence" 31/32/33/34/35; h) "Demonstrates respect for adults" 36/37/38/39/40; i) "Demonstrates respect for other children" 41/42/43/44/45; j) "Accepts responsibility for actions" 46/47/48/49/50 — GO TO QUESTION 18
+    (Entry point for kindergarten students routed from Q1=Yes.)
+
+18. Q18: "These statements describe the work habits of students. Please indicate how often this student demonstrates each of these work habits." (*Mark the circle corresponding to your answer for each of the following*) — Rating battery, Scale (5-point): "Never", "Rarely", "Sometimes", "Usually", "Always" — sub-items with cell codes: a) "Listens attentively" 01/02/03/04/05; b) "Follows directions" 06/07/08/09/10; c) "Completes work on time" 11/12/13/14/15; d) "Works independently" 16/17/18/19/20; e) "Takes care of materials" 21/22/23/24/25; f) "Works neatly and carefully" 26/27/28/29/30 — GO TO QUESTION 19
+
+Lead-in (p.194, verbatim): "The following questions ask about this student's academic and educational strengths and weaknesses."
+
+19. Q19: "Does this student receive enhanced or extra instruction at school because of his/her exceptionally advanced intellectual or artistic abilities?" (*Mark one circle only*) — Single select {1: "Yes", 2: "No"} — 1 → GO TO QUESTION 20; 2 → **GO TO QUESTION 21**
+
+20. Q20: "Where does this student receive this enhanced or extra instruction?" (*Mark one circle only*) — Single select {3: "Exclusively within a regular classroom", 4: "Primarily within a regular classroom but with some time spent in a special education class or resource room", 5: "Primarily within a special education class or resource room but with some integration into a regular classroom", 6: "Exclusively within a special education class or resource room within a regular school", 7: "Exclusively within a special school in the school district", 8: "Exclusively within a special residential school", 9: "Other"} — GO TO QUESTION 21
+
+21. Q21: "Does this student receive special education because a physical, emotional, behavioural, or some other problem limits the kind or amount of school work he/she can do?" (*Mark one circle only*) — Single select {1: "Yes", 2: "No"} — 1 → GO TO QUESTION 22; 2 → **GO TO QUESTION 24**
+
+22. Q22: "What type of problem limits this student's ability to do school work in a regular classroom?" (*Mark as many circles as applicable*) — Multi select {01: "A physical disability", 02: "A visual impairment", 03: "A hearing impairment", 04: "A speech impairment", 05: "A learning disability", 06: "An emotional or behavioural problem", 07: "A mental disability or limitation", 08: "Home environment/problems at home", 09: "He/she does not understand the language spoken at school", 10: "Some other type of problem"} — GO TO QUESTION 23
+
+23. Q23: "Where does this student receive this special education?" (*Mark one circle only*) — Single select {1: "Exclusively within a regular classroom", 2: "Primarily within a regular classroom but with some time spent in a special education class or resource room", 3: "Primarily within a special education class or resource room but with some integration into a regular classroom", 4: "Exclusively within a special education class or resource room within a regular school", 5: "Exclusively within a special school in the school district", 6: "Exclusively within a special residential school", 7: "Other"} — GO TO QUESTION 24
+
+---
+
+### Section 2 — This Student's Behaviour and Absenteeism — pages 196-199, 4 questions
+
+Lead-in (p.196, verbatim): "The first two questions in this section ask about absenteeism."
+
+24. Q24: "About how many regular school days has this student been absent since the beginning of school in the fall" (*Specify the number of days absent*) — Numeric (3-digit) days — GO TO QUESTION 25
+
+25. Q25: "Since the beginning of school in the fall about how many times has this student skipped a day of school without permission?" (*Mark one circle only*) — Single select {0: "Never", 1: "Once", 2: "Twice", 3: "More than twice", 4: "Don't know"} — GO TO QUESTION 26
+
+Lead-in (p.196, verbatim): "This next question asks how prepared this student is for school."
+
+26. Q26: "Since the start of school in the fall, how often has this student arrived ...." (*Mark the circle corresponding to your answer for each of the following*) — Rating battery, Scale (5-point): "Never", "Rarely", "Sometimes", "Usually", "Always" — sub-items with cell codes: a) "Without the materials (e.g., notebooks, paper) needed to do his/her schoolwork" 01/02/03/04/05; b) "Inadequately clothed to participate in school related activities (e.g., gym, sports, field trips, recess)" 06/07/08/09/10; c) "Inadequately dressed for the weather conditions (e.g., canvas running shoes in winter)" 11/12/13/14/15; d) "Too tired to do school work" 16/17/18/19/20; e) "Without his/her homework completed" 21/22/23/24/25; f) "Late for school" 26/27/28/29/30 — GO TO QUESTION 27
+
+Lead-in (p.197, verbatim): "This next question asks about this student's behaviour at school."
+
+27. Q27: "Using the answers never or not true, sometimes or somewhat true and often or very true, how often would you say that this student:" (*Mark the circle corresponding to your answer*) — Rating battery, Scale (3-point): "Never or not true", "Sometimes or somewhat true", "Often or very true" — sub-items with cell codes (Never or not true / Sometimes or somewhat true / Often or very true): a) "Shows sympathy to someone who has made a mistake" 001/002/003; b) "Can't sit still, is restless or hyperactive" 004/005/006; c) "Destroys his/her own things" 007/008/009; d) "Will try to help someone who has been hurt" 010/011/012; e) "Steals" 013/014/015; f) "Seems to be unhappy, sad or depressed" 016/017/018; g) "Gets into many fights" 019/020/021; h) "Volunteers to help clear up a mess someone else has made" 022/023/024; i) "Is distractible, has trouble sticking to any activity" 025/026/027; j) "When mad at someone tries to get others to dislike her/him" 028/029/030; k) "Is not as happy as other children" 031/032/033; l) "Destroys things belonging to others" 034/035/036; m) "If there is a quarrel or dispute will try to stop it" 037/038/039; n) "Fidgets" 040/041/042 [OCR: first cell printed "040I" — corrected to code 040; the trailing "I" is a mis-read of the circle glyph "O", per the uniform 3-digit code sequence in this battery]; o) "Is disobedient at school" 043/044/045; p) "Can't concentrate, can't pay attention for long" 046/047/048; q) "Is too fearful or anxious" 049/050/051; r) "When mad at someone, becomes friends with another as revenge" 052/053/054; s) "Is impulsive, acts without thinking" 055/056/057; t) "Tells lies or cheats" 058/059/060; u) "Offers to help other children (friend, brother, or sister) who are having difficulty with a task" 061/062/063; v) "Is worried" 064/065/066; w) "Has difficulty awaiting turn in games or groups" 067/068/069; x) "When another child accidentally hurts her/him (such as by bumping into her or him), assumes that the other child meant to do it and then reacts with anger and fighting" 070/071/072; y) "Tends to do things on his/her own - is rather solitary" 073/074/075; z) "When mad at someone, says bad things behind the other's back" 076/077/078; aa) "Physically attacks people" 079/080/081; bb) "Comforts a child (friend, brother, or sister) who is crying or upset" 082/083/084; cc) "Cries a lot" 085/086/087; dd) "Vandalizes" 088/089/090; ee) "Gives up easily" 091/092/093; ff) "Threatens people" 094/095/096; gg) "Spontaneously helps to pick up objects which another child has dropped (e.g., pencils, books)" 097/098/099; hh) "Cannot settle to anything for more than a few moments" 100/101/102; ii) "Appears miserable, unhappy, tearful or distressed" 103/104/105; jj) "Is cruel, bullies or is mean to others" 106/107/108; kk) "Stares into space" 109/110/111; ll) "When mad at someone, says to others: let's not be with her/him" 112/113/114; mm) "Is nervous, high-strung, or tense" 115/116/117; nn) "Kicks, bites, hits other children" 118/119/120; oo) "Will invite bystanders to join in a game" 121/122/123; pp) "Is inattentive" 124/125/126; qq) "Has trouble enjoying self" 127/128/129; rr) "Helps other children (friends, brother or sister) who are feeling sick" 130/131/132; ss) "When mad at someone, tells the other one's secrets to a third person" 133/134/135; tt) "Takes the opportunity to praise the work of less able children" 136/137/138 — GO TO QUESTION 28
+
+---
+
+### Section 3 — Parent's(s')/Guardian's(s') Involvement in This Student's Education — pages 199-200, 5 questions
+
+Section note (p.199, verbatim): "These next questions concern your impressions of how involved this student's parents/guardians are with his/her education. This information will enable us to determine the situations where parent's(s')/guardian's(s') involvement may have positive or negative impacts on academic achievement and child development."
+
+28. Q28: "Since the beginning of school last fall did a parent/guardian of this student..." (*Mark the circle corresponding to your answer for each of the following*) — Rating battery, Single select per row {Yes, No, Not Applicable} — sub-items with cell codes (Yes/No/Not Applicable): a) "Participate in regularly scheduled parent-teacher conferences (either in person or on the telephone)" 1/2/3; b) "Contact you to discuss this student's academic performance or behaviour" 4/5/6; c) "Return your call to talk about this student's academic performance or behaviour" 7/8/9 — GO TO QUESTION 29
+
+29. Q29: "In your opinion, how involved is/are the parent(s)/guardian(s) in this student's education?" (*Mark one circle only*) — Single select {1: "Very Involved", 2: "Somewhat involved", 3: "Not involved", 4: "Don't know the parent(s)/guardian(s) well enough"} — GO TO QUESTION 30
+
+30. Q30: "In your opinion, how important is school considered to be to this student's parent(s)/guardian(s)?" (*Mark one circle only*) — Single select {5: "Very important", 6: "Somewhat important", 7: "Little importance", 8: "Don't know the parent(s)/guardian(s) well enough"} — GO TO QUESTION 31
+
+31. Q31: "In your opinion, to what extent do the parent(s)/guardian(s) of this student support your teaching efforts?" (*Mark one circle only*) — Single select {1: "Strongly support", 2: "Somewhat support", 3: "Do not support", 4: "Don't know the parent(s)/guardian(s) well enough"} — GO TO QUESTION 32
+
+32. Q32: "How often during the past month has a parent/guardian of this child volunteered in your kindergarten class?" (*Mark one circle only*) — Single select {5: "Not applicable because the child is not in kindergarten", 6: "Never", 7: "Once", 8: "Twice", 9: "More than twice"} — 5 → GO TO QUESTION 33 (no skip printed; continues into Section 4); 6 → **GO TO QUESTION 47**; 7 → **GO TO QUESTION 47**; 8 → **GO TO QUESTION 47**; 9 → **GO TO QUESTION 47**
+    (Filter note: any actual kindergarten-volunteering frequency (codes 6-9) skips the class/teaching-practices block Q33-Q46 and resumes at Q47; only "Not applicable" (code 5) falls through to Q33.)
+
+---
+
+### Section 4 — Your Class and Teaching Practices — pages 201-207, 17 questions
+
+Lead-in (p.201, verbatim): "These first few questions gather information about the students in your class. This information will help us understand how the classroom may affect students' academic and social functioning."
+
+33. Q33: "Currently, how many students are *enrolled* in your class?" (*Specify the number of students*) — Numeric (3-digit) students — GO TO QUESTION 34
+
+34. Q34: "Including those who have not been officially identified as having the following long-term problems, how many students in your class have:" (*Some children may belong to more than one category*) — Numeric battery (3-digit each), students — sub-items: a) "A speech, hearing, vision, mobility or other health impairment that affects their learning?"; b) "An emotional, or behavioural problem?"; c) "A learning problem? (e.g.: a problem with attention, memory, reasoning, reading, writing, spelling, or calculation which interferes with learning)?" — GO TO QUESTION 35
+
+35. Q35: "How many students in your class:" (*Some children may belong to more than one category*) — Numeric battery (3-digit each), students — sub-items: a) "Have a first language other than English or French?"; b) "Have immigrated to Canada within the last year?" — GO TO QUESTION 36
+
+Lead-in (p.201, verbatim): "Now we would like to ask you some questions about the achievement of your class and your teaching practices."
+
+36. Q36: "Compared with other teachers in your school who are teaching the same grade(s), do you feel that your class has ...." (*Mark one circle only*) — Single select {1: "Lower overall academic ability than their classes", 2: "Similar overall academic ability to their classes", 3: "Higher overall academic ability than their classes", 4: "A greater diversity of academic abilities than their classes", 5: "There are no other classes at the same grade(s)"} — GO TO QUESTION 37
+
+37. Q37: "Do you teach reading to your class?" (*Mark one circle only*) — Single select {6: "Yes", 7: "No"} — 6 → GO TO QUESTION 38; 7 → **GO TO QUESTION 39**
+
+38. Q38: "How often do you use each of the following strategies to teach reading to your class?" (*Mark the circle corresponding to your answer for each of the following*) — Rating battery, Scale (5-point): "Never", "Rarely", "Sometimes", "Usually", "Always" — sub-items with cell codes: a) "Teach reading to the class as a whole" 01/02/03/04/05; b) "Divide the class into groups having similar reading abilities" 06/07/08/09/10; c) "Divide the class into groups having a mixture of reading abilities" 11/12/13/14/15; d) "Allow students to form their own reading groups" 16/17/18/19/20; e) "Use individualized instruction plans to teach reading" 21/22/23/24/25; f) "Other" 26/27/28/29/30 — GO TO QUESTION 39
+
+39. Q39: "Do you teach writing (composition) to your class?" (*Mark one circle only*) — Single select {1: "Yes", 2: "No"} — 1 → GO TO QUESTION 40; 2 → **GO TO QUESTION 41**
+
+40. Q40: "How often do you use each of the following strategies to teach writing (composition) to your class?" (*Mark the circle corresponding to your answer for each of the following*) — Rating battery, Scale (5-point): "Never", "Rarely", "Sometimes", "Usually", "Always" — sub-items with cell codes: a) "Teach writing to the class as a whole" 01/02/03/04/05; b) "Divide the class into groups having similar writing abilities" 06/07/08/09/10; c) "Divide the class into groups having a mixture of writing abilities" 11/12/13/14/15; d) "Allow students to form their own writing groups" 16/17/18/19/20; e) "Use individualized instruction plans to teach writing" 21/22/23/24/25; f) "Other" 26/27/28/29/30 — GO TO QUESTION 41
+
+41. Q41: "Do you teach mathematics to your class?" (*Mark one circle only*) — Single select {1: "Yes", 2: "No"} — 1 → GO TO QUESTION 42; 2 → **GO TO QUESTION 43**
+
+42. Q42: "How often do you use each of the following strategies to teach mathematics to your class?" (*Mark the circle corresponding to your answer for each of the following*) — Rating battery, Scale (5-point): "Never", "Rarely", "Sometimes", "Usually", "Always" — sub-items with cell codes: a) "Teach mathematics to the class as a whole" 01/02/03/04/05; b) "Divide the class into groups having similar mathematical abilities" 06/07/08/09/10; c) "Divide the class into groups having a mixture of mathematical abilities" 11/12/13/14/15; d) "Allow students to form their own mathematics groups" 16/17/18/19/20; e) "Use individualized instruction plans to teach mathematics" 21/22/23/24/25; f) "Other" 26/27/28/29/30 — GO TO QUESTION 43
+
+43. Q43: "For the most recent full cycle of instruction, please indicate the number of minutes you spent on the following non-instructional activities." (*Specify the number of minutes per cycle*) — Numeric battery (4-digit each), minutes/cycle, field codes as shown — sub-items: a) 01 "Maintaining order and discipline"; b) 02 "Performing routine tasks (e.g., taking attendance, filling out forms)"; c) 03 "Professional discussions with colleagues"; d) 04 "Supervising children at noon/recess"; e) 05 "Assisting/directing extra-curricular activities"; f) 06 "In discussions with students' parents/guardians" — GO TO QUESTION 44
+
+44. Q44: "How often do you assign your class homework?" (*Do not include students' uncompleted classroom work*) — Single select {1: "Always", 2: "Usually", 3: "Sometimes", 4: "Rarely", 5: "Never"} — 1 → GO TO QUESTION 45; 2 → GO TO QUESTION 45; 3 → GO TO QUESTION 45; 4 → GO TO QUESTION 45; 5 → **GO TO QUESTION 47**
+
+45. Q45: "Approximately how much homework do you assign each day?" (*Specify the number of minutes per day*) — Numeric (3-digit) minutes/day — GO TO QUESTION 46
+
+46. Q46: "How often do you monitor homework in the following ways?" (*Mark the circle corresponding to your answer for each of the following*) — Rating battery, Scale (5-point): "Never", "Rarely", "Sometimes", "Usually", "Always" — sub-items with cell codes: a) "By keeping a record of who turned in assignments" 01/02/03/04/05; b) "By returning assignments with corrections or grades" 06/07/08/09/10; c) "By discussing homework in class" 11/12/13/14/15; d) "By having parent(s)/guardian(s) sign a homework book/note" 16/17/18/19/20; e) "By student's own or their peer's evaluations" 21/22/23/24/25 — GO TO QUESTION 47
+
+47. Q47: "The following statements describe various attributes about yourself and the students in your classroom. Please indicate the extent to which you agree or disagree with each statement." (*Mark the circle corresponding to your answer for each of the following*) — Rating battery, Scale (5-point): "Strongly disagree", "Disagree", "Neither agree nor disagree", "Agree", "Strongly agree" — sub-items with cell codes: a) "Many of the students I teach are not capable of mastering the curriculum at their grade" 01/02/03/04/05; b) "The emphasis in my classroom is on the development of academic skills" 06/07/08/09/10; c) "I have a strong effect on the academic achievement of the students I teach" 11/12/13/14/15; d) "I feel competent in dealing with student's behavioural problems" 16/17/18/19/20; e) "I feel students' success at school is determined mainly by their home environment" 21/22/23/24/25; f) "I have high expectations for the academic success of my students" 26/27/28/29/30; g) "I push students to achieve their full academic potential" 31/32/33/34/35 — GO TO QUESTION 48
+    (Entry point for respondents routed from Q32 codes 6-9 and Q44 code 5.)
+
+Lead-in (p.206, verbatim): "The next question deals with the behaviour of your class."
+
+48. Q48: "Overall, with the exception of a few individual students, the class as a whole ..." (*Mark the circle corresponding to your answer for each of the following*) — Rating battery, Scale (5-point): "Never", "Rarely", "Sometimes", "Usually", "Always" — sub-items with cell codes: a) "Moves smoothly from one classroom activity to another" 01/02/03/04/05; b) "Is easily distracted by the disruptive behaviour of a few" 06/07/08/09/10; c) "Works well together on group activities" 11/12/13/14/15; d) "Misbehaves when I am called to the door or must attend to other interruptions" 16/17/18/19/20 — GO TO QUESTION 49
+
+Lead-in (p.207, verbatim): "This next question asks about the resources present in or available to your class. This information will help us better understand the types of resources that are available to teachers and students across Canada."
+
+49. Q49: "Please rate the extent to which each of the following meets the needs of your class." (*Mark the circle corresponding to your answer for each of the following*) — Rating battery, Scale (5-point): "Does not meet my needs", "Partially meets my needs", "Adequately meets my needs", "Completely meets my needs", "Not applicable" — sub-items with cell codes: a) "Instructional resources (e.g., curriculum documents, books)" 01/02/03/04/05; b) "School supplies (e.g. paper, pencils)" 06/07/08/09/10; c) "Space within the classroom" 11/12/13/14/15; d) "Computers for course instruction" 16/17/18/19/20; e) "Computer software for course instruction" 21/22/23/24/25; f) "Audio-visual resources (e.g. VCR's, film projector)" 26/27/28/29/30; g) "Science equipment" 31/32/33/34/35; h) "Equipment for mathematics instruction" 36/37/38/39/40; i) "Special equipment for handicapped students" 41/42/43/44/45; j) "Library or teacher-librarian" 46/47/48/49/50; k) "Other" 51/52/53/54/55 — GO TO QUESTION 50
+
+---
+
+### Section 5 — Perceptions of Your School — pages 208-210, 2 questions
+
+50. Q50: "Below are a number of statements which describe the social climate of your school. Please indicate how strongly you agree or disagree that each statement is descriptive of your school." (*Mark the circle corresponding to your answer for each of the following*) — Rating battery, Scale (5-point): "Strongly disagree", "Disagree", "Neither agree nor disagree", "Agree", "Strongly agree" — sub-items with cell codes: a) "The administrative, support, and teaching staff work together as a team" 01/02/03/04/05; b) "All staff are involved in decision-making at this school" 06/07/08/09/10; c) "School staff know what is expected of them in terms of their roles and responsibilities" 11/12/13/14/15; d) "Staff clearly understand school policies and procedures" 16/17/18/19/20; e) "Teachers in this school have considerable influence on school policies" 21/22/23/24/25; f) "Teachers have a strong influence on how resources (e.g. money, staff, instructional materials) are allocated at this school" 26/27/28/29/30; g) "Students clearly understand school rules" 31/32/33/34/35; h) "The principal provides support to teachers" 36/37/38/39/40; i) "Teachers receive positive feed-back from the principal" 41/42/43/44/45; j) "The principal gets around the school to talk to staff" 46/47/48/49/50; k) "The principal spends time getting to know students" 51/52/53/54/55; l) "The school provides a positive working environment for teachers" 56/57/58/59/60; m) "The school provides a positive working environment for students" 61/62/63/64/65 — GO TO QUESTION 51
+
+51. Q51: "Please indicate the extent to which you agree with each of these statements regarding the disciplinary policies of your school." (*Mark the circle corresponding to your answer for each of the following*) — Rating battery, Scale (5-point): "Strongly disagree", "Disagree", "Neither agree nor disagree", "Agree", "Strongly agree" — sub-items with cell codes: a) "Teachers in this school have reached a consensus about ways to discipline children who break rules" 01/02/03/04/05; b) "All children who break rules in this school face the same consequences" 06/07/08/09/10; c) "Teachers in this school rarely overlook physical aggression among students" 11/12/13/14/15; d) "Teachers in this school rarely overlook verbal aggression among students" 16/17/18/19/20; e) "Teachers feel there is insufficient support within the school for managing disciplinary problems" 21/22/23/24/25 — GO TO QUESTION 52
+
+---
+
+### Section 6 — Personal Information — pages 210-212, 7 questions
+
+Section note (p.210, verbatim): "Finally, we would like to ask a few questions about yourself and your experiences. Your answers to these questions when combined with the answers of other Canadian teachers will provide a better understanding of Canadian schools."
+
+52. Q52: "Are you..." (*Mark one circle*) — Single select {1: "Female?", 2: "Male?"} — GO TO QUESTION 53
+
+53. Q53: "To which age category do you belong?" (*Mark one circle*) — Single select {3: "20 to 29 years", 4: "30 to 39 years", 5: "40 to 49 years", 6: "50 to 59 years", 7: "60 years or older"} — GO TO QUESTION 54
+
+54. Q54: "How much experience do you have as..." (*Specify the number of years and months of experience; e.g., 1 year and 5 months. Please specify 00 years and 00 months if you have no experience in a particular position*) — Numeric battery, years (2-digit) and months (2-digit) per row, field codes as shown — sub-items: a) 1/2 "a teacher" years/months; b) 3/4 "a teacher at this grade" years/months; c) 5/6 "a teacher at this school" years/months — GO TO QUESTION 55
+
+55. Q55: "Please specify the levels of education you have attained?" (*Mark all that apply*) — Multi select {1: "Some coursework towards a Bachelor's degree", 2: "A teaching certificate, diploma or licence", 3: "A Bachelor's degree", 4: "A Bachelor of Education degree", 5: "Some post-baccalaureate coursework", 6: "A post-baccalaureate diploma or certificate", 7: "Some coursework towards a Master's degree", 8: "A Master's degree", 9: "Some coursework towards a Doctorate", 10: "A Doctorate", 11: "Other"} — GO TO QUESTION 56
+
+56. Q56: "Have you obtained any of the following advanced qualifications in *special education*?" (*Mark all that apply*) — Multi select {12: "One class in, or part of a special education programme", 13: "A special education certificate", 14: "A graduate degree in special education", 15: "None of the above", 16: "Other"} — GO TO QUESTION 57
+
+57. Q57: "Have you obtained any of the following advanced qualifications in *second language education*?" (*Mark all that apply*) — Multi select {17: "One class in, or part of a second language programme", 18: "A certificate in second language education", 19: "A graduate degree in second language education", 20: "None of the above", 21: "Other"} — GO TO QUESTION 58
+
+58. Q58: "Statistics Canada is conducting this survey jointly with another federal department, Human Resources Development Canada. The information collected will be kept confidential and used only for statistical purposes. Do you agree to share the information collected with Human Resources Development Canada?" — Single select {1: "Yes", 2: "No"} — GO TO END (closing p.212: "THANK YOU FOR COMPLETING THIS QUESTIONNAIRE. Do you have any comments about this survey? If so, please use the space below." — open text comment box, no code)
+
+---
+
+**Routing checks (filters) embedded above:** Q1 code 1 → Q17 (skips Q2-16); Q19 code 2 → Q21; Q21 code 2 → Q24; Q32 codes 6-9 → Q47 (skips Q33-46), code 5 → Q33; Q37 code 7 → Q39; Q39 code 2 → Q41; Q41 code 2 → Q43; Q44 code 5 → Q47.
+
+---
+
+### Appendix D — Principal's Questionnaire — pages 213-228, 42 items
+
+Self-administered mail-back questionnaire completed by the selected child's school **principal** (not the interviewer or PMK). Distributed with a business-reply envelope; completion is explicitly voluntary. Responses are marked by filling circles (single-select) or writing counts/percentages in boxes; there is no CATI routing engine, so all skips are printed "GO TO" instructions the principal follows by hand. Question numbers 1–34 run continuously across the five sections and are used here as original IDs (Q1–Q34); section-intro reads and cover/admin fields carry derived `D-*` IDs.
+
+#### Cover / Administrative (p.213) - 3 items
+
+1. D-PRINLANG: EXTERNAL — **Principal's Language** (cover-sheet field `|_|`) - Internal/admin - source: administrative/sample control field recorded on the questionnaire cover, not asked of the respondent - Single character code - not referenced by any routing (identifier only). *(derived ID)*
+2. D-OPNUM: EXTERNAL — **Operation Number** (cover-sheet field `|_|_|_|_|_|_|_|_|`) - Internal/admin - source: sample/administrative control number preprinted or entered on the cover, not asked of the respondent - 8-digit identifier - not referenced by any routing (linkage identifier only). *(derived ID)*
+3. D-COVER: **Instructions.** "The purpose of this survey is to gather information on various school factors which may influence the development and education of children... Under the Statistics Act the information collected in this questionnaire will be kept confidential. Completion of the questionnaire is completely voluntary. However, to ensure that we have a complete picture of all the forces which shape this student's development we strongly encourage you to complete the questionnaire... The telephone number is 1-800-307-EDUC/1-800-307-3382. When you finish this survey / Please place the completed questionnaire in the business reply envelop and mail it to us today... THANK YOU FOR YOUR COOPERATION." - Read (no response). *(derived ID)*
+
+---
+
+#### Section 1 — The Students in Your School (pp. 214-219) - 16 items
+
+4. D-S1-INT: **The following questions relate to various aspects of your school, its policies, and the students attending your school.** Please answer all questions by **marking the appropriate circle** corresponding with your answer in each section. **L: This section of the questionnaire gathers information about students and how they are assigned to classrooms.** - Read (no response). *(derived ID)*
+5. Q1: **Are there students in your school who are enrolled in grade 3 or under? (Please include students enrolled in kindergarten/pre-grade one (junior kindergarten, primary, nursery, early childhood services, or first year of primary))?** *(Mark one circle only)* - Yes/No {1: "Yes", 2: "No"} - 1 (Yes) → GO TO Q2; 2 (No) → **GO TO QUESTION 4** (skips Q2, Q3)
+6. Q2: **Does your school contain sufficient students enrolled in grade 3 or under to form more than one class per grade? (Please include students enrolled in kindergarten/pre-grade one classes (junior kindergarten, primary, nursery, early childhood services, or first year of primary)).** *(Mark one circle only)* - Yes/No {3: "Yes", 4: "No"} - 3 (Yes) → GO TO Q3; 4 (No) → **GO TO QUESTION 4** (skips Q3)
+7. Q3: **In general, how often do you use the following ways to assign students to classrooms for grade 3 and under. (Please include kindergarten/pre-grade 1 classes (junior kindergarten, primary, nursery, early childhood services or first year of primary))?** *(Mark the circle corresponding to your answer for each of the following)* - Matrix/battery, shared scale Single select {Never, Rarely, Sometimes, Usually, Always}; option codes per row (Never→Always): a) Students are grouped together more or less at random {01,02,03,04,05}; b) Students are grouped according to similar ability levels {06,07,08,09,10}; c) Students are grouped so that classes contain a mixture of ability levels {11,12,13,14,15}; d) Students are assigned according to the special expertise of teachers {16,17,18,19,20}; e) Assign students to classes composed of students of similar ages {21,22,23,24,25}; f) Groupings are based on social considerations (e.g., friendships, siblings, rivalries) {26,27,28,29,30}; g) Parents'/guardians' requests are considered when grouping students {31,32,33,34,35}; h) Consider teachers' input when grouping students {36,37,38,39,40} - GO TO Q4
+8. Q4: **Are there students in your school who are enrolled in the middle and later elementary grades (grade 4 and higher)?** *(Mark one circle only)* - Yes/No {1: "Yes", 2: "No"} - 1 (Yes) → GO TO Q5; 2 (No) → **GO TO QUESTION 7** (skips Q5, Q6)
+9. Q5: **Does your school contain sufficient students in the middle and later elementary grades (grade 4 and higher) to form more than one class per grade?** *(Mark one circle only)* - Yes/No {3: "Yes", 4: "No"} - 3 (Yes) → GO TO Q6; 4 (No) → **GO TO QUESTION 7** (skips Q6)
+10. Q6: **In general, how often do you use the following ways to assign students to classrooms for the middle and later elementary grades (grade 4 and higher)?** *(Mark the circle corresponding to your answer for each of the following)* - Matrix/battery, shared scale Single select {Never, Rarely, Sometimes, Usually, Always}; option codes per row (Never→Always): a) Students are grouped together more or less at random {01,02,03,04,05}; b) Students are grouped according to similar ability levels {06,07,08,09,10}; c) Students are grouped so that classes contain a mixture of ability levels {11,12,13,14,15}; d) Students are assigned according to the special expertise of teachers {16,17,18,19,20}; e) Assign students to classes composed of students of similar ages {21,22,23,24,25}; f) Groupings are based on social considerations (e.g., friendships, siblings, rivalries) {26,27,28,29,30}; g) Parents'/guardians' requests are considered when grouping students {31,32,33,34,35}; h) Consider teachers' input when grouping students {36,37,38,39,40} - GO TO Q7
+11. Q7: **How would you describe the economic background of the students attending your school?** *(Specify the percentage of families in each category)* - Numeric (0–100 %), three sub-fields: a) High income (family income above $60,000 per year) `¹|_|_| %`; b) Middle income (family income between $40,000 and $60,000 per year) `²|_|_| %`; c) Low income (family income below $40,000 per year) `³|_|_| %` - Constraint: three percentages should sum to 100 - GO TO Q8
+12. Q8: **As of the first day of school in January 1995, what was the total enrollment of your school?** *(Specify the number of students)* - Numeric `|_|_|_|_| students` (0–9999) - GO TO Q9
+13. Q9: **Including those who have not been officially identified as having the following long-term problems, how many students attending your school have:** *(Some students may belong to more than one category)* - Numeric (per sub-field, 0–999 students): a) A speech, hearing, vision, mobility or other health impairment that affects their learning? `¹|_|_|_|`; b) An emotional, or behavioural problem? `²|_|_|_|`; c) A learning problem (i.e.: a problem with attention, memory, reasoning, reading, writing, spelling, or calculation which interferes with learning)? `³|_|_|_|` - GO TO Q10
+14. Q10: **How many students attending your school:** *(Some students may belong to more than one category)* - Numeric (per sub-field, 0–999 students): a) Have a first language other than English or French? `⁴|_|_|_|`; b) Have immigrated to Canada within the last year? `⁵|_|_|_|`; c) Are from a rural or farm setting? `⁶|_|_|_|` - GO TO Q11
+15. Q11: **Excluding students registering for the first time at the start of your school year, how many students have registered as new students during the course of the school year?** *(Specify the number of students)* - Numeric `|_|_|_|_| students` (0–9999) - GO TO Q12
+16. Q12: **Excluding students who must leave your school to attend a higher grade, how many students have left this school during the course of the school year?** *(Specify the number of students)* - Numeric `|_|_|_|_| students` (0–9999) - GO TO Q13
+17. Q13: **What is the average absenteeism rate at your school this year? Please only include students that are absent for a full school day.** *(Mark one circle only)* - Single select {01: "Less than 1 %", 02: "1 to 5 %", 03: "6 to 10 %", 04: "11 to 15%", 05: "16 to 20%", 06: "More than 20%", 07: "Don't know"} - GO TO Q14
+18. Q14: **Approximately, what percentage of students are chronically late for school? By chronically late we mean that a student is late for the start of school two or more times each week.** *(Mark one circle only)* - Single select {08: "Less than 1 %", 09: "1 to 5 %", 10: "6 to 10 %", 11: "11 to 15%", 12: "16 to 20%", 13: "More than 20%", 14: "Don't know"} - GO TO Q15
+19. Q15: **Listed below are a number of different disciplinary problems that may occur in a school. How often do you have to discipline students because of ...** *(Mark the circle corresponding to your answer for each of the following)* - Matrix/battery, shared scale Single select {Never, Rarely, Sometimes, Usually, Always}; option codes per row (Never→Always): a) Verbal conflicts among students {01,02,03,04,05}; b) Physical conflicts among students {06,07,08,09,10}; c) Vandalism of school property {11,12,13,14,15}; d) Theft of student belongings {16,17,18,19,20}; e) Theft of staff belongings {21,22,23,24,25}; f) Smoking on school property {26,27,28,29,30}; g) Use of drugs on school property {31,32,33,34,35}; h) Verbal abuse of a staff member {36,37,38,39,40}; i) Physical assault of a staff member {41,42,43,44,45}; j) Harassment of certain students by groups of students {46,47,48,49,50}; k) Conflicts among students of differing racial or ethnic backgrounds {51,52,53,54,55}; l) Students possessing weapons (e.g., pocket knife, gun) {56,57,58,59,60} - GO TO Q16 (Section 2)
+
+---
+
+#### Section 2 — Parents'/Guardians' Involvement in Your School (pp. 220-221) - 5 items
+
+20. D-S2-INT: **SECTION 2 PARENTS'/GUARDIANS' INVOLVEMENT IN YOUR SCHOOL. L: These next questions ask about parents'/guardians' involvement in your school.** - Read (no response). *(derived ID)*
+21. Q16: **What proportion of parents/guardians volunteer to help with ...** *(Specify the proportion of parents/guardians for each category)* - Matrix/battery, shared scale Single select {1 to 5%, 6 to 10%, 11 to 15%, 16 to 20%, 21% or more, Not applicable}; option codes per row (1-5%→Not applicable): a) School events (e.g., sports, plays) {01,02,03,04,05,06}; b) Fund raising activities {07,08,09,10,11,12}; c) Field trips {13,14,15,16,17,18}; d) Classroom activities {19,20,21,22,23,24}; e) Supervising children (i.e., at recess or lunch time) {25,26,27,28,29,30}; f) The parent-school association/home and school liaison committee/parent advisory committee {31,32,33,34,35,36} - GO TO Q17
+22. Q17: **In your opinion, how strongly do parents/guardians support the efforts of the school's staff?** *(Mark one circle only)* - Single select {01: "Strongly support the efforts of the school's staff", 02: "Support the efforts of the school's staff", 03: "Support some of the efforts of the school's staff", 04: "Oppose the efforts of the school's staff", 05: "Strongly oppose the efforts of the school's staff", 06: "I don't know the parents/guardians well enough"} - GO TO Q18
+23. Q18: **How active is the parent-school association, home and school liaison committee, or parent advisory committee in your school?** *(Mark one circle only)* - Single select {07: "Very active", 08: "Active", 09: "Somewhat active", 10: "Not very active", 11: "Not at all active", 12: "There is no parent-school association/home and school liaison committee/parent advisory committee"} - 07–11 → GO TO Q19; **12 → GO TO SECTION 3** (verbatim: "There is no parent-school association/home and school liaison committee/parent advisory committee ----> GO TO SECTION 3"; skips Q19)
+24. Q19: **How much influence does the parent-school association, home and school liaison committee, or parent advisory committee have on school policies or practices?** *(Mark one circle only)* - Single select {13: "A strong influence", 14: "A considerable influence", 15: "Some influence", 16: "A little influence", 17: "No influence"} - GO TO Q20 (Section 3)
+
+---
+
+#### Section 3 — Characteristics of Your School (pp. 221-225) - 10 items
+
+25. D-S3-INT: **SECTION 3 CHARACTERISTICS OF YOUR SCHOOL. L: Questions in this section collect information on a variety of features of your school such as its enrollment, the range of grades taught, and the resources which are available to the school.** - Read (no response). *(derived ID)*
+26. Q20: **What is the range of grades taught in your school (e.g., Junior kindergarten to grade 8)? For schools containing junior kindergarten and kindergarten/pre-grade one classes please use "JK" to indicate junior kindergarten and "KN" to indicate kindergarten.** *(Specify the grades)* - Text (grade range): `grade |__| to grade |__|` - GO TO Q21
+27. Q21: **How many of the following positions are staffed in your school?** *(Specify in full-time equivalent units: e.g., 1.0, or 1.5 full-time equivalent units. Please use 00.00 to indicate that the position is not staffed)* - Numeric (FTE, `|__|.|__|` per sub-field): a) Principal `¹`; b) Vice-principals/assistant principals `²`; c) Classroom teachers `³`; d) Teaching assistants/student assistants/teacher's aides `⁴`; e) Librarians `⁵`; f) Resource teachers (e.g. special education teachers, educational therapists, music teachers, etc.) `⁶`; g) Physical educators for special needs students `⁷`; h) Guidance counsellors `⁸`; i) Secretaries, custodians, and other non-certified, non-teaching staff `⁹` - GO TO Q22
+28. Q22: **Including special education, physical education, and itinerant/part-time teachers, how many teachers did you have in your school on January 1, 1995?** *(Specify the total number of teachers)* - Numeric `|__|__|__| teachers` (0–999) - GO TO Q23
+29. Q23: **How many teachers in your school are *not* assigned a specific homeroom class (e.g., librarians, music teachers, physical education teachers, etc.)?** *(Specify the number of teachers)* - Numeric `|__|__|__| teachers` (0–999) - GO TO Q24
+30. Q24: **Excluding teachers, how many other paid staff (e.g., teacher's aides/student assistants/teaching assistants) provide direct instructional assistance in students' classrooms?** *(Specify the number of staff. Please use 000 to indicate that there are no such staff)* - Numeric `|__|__|__| staff` (0–999) - GO TO Q25
+31. Q25: **How many volunteers (e.g., co-op students, parents/guardians) are working directly with students on a regular basis?** *(Specify the number of volunteers. If none please write "00")* - Numeric `|__|__| volunteers` (0–99) - GO TO Q26
+32. Q26: **How many of the teachers and teaching assistants/student assistants/teacher's aides at your school have:** *(Some teachers may belong to more than one category. If none please write "0")* - Numeric (per sub-field, `|__|` teachers): a) A first language other than English or French? `¹`; b) A speech, hearing, visual, mobility or other health impairment? `²` - GO TO Q27
+33. Q27: **Listed below are several types of support services available to some schools. Please indicate whether the service is available to your school, and if it is, how often has the service been used in your school *during a typical week*. (For example, a community health nurse who spends one full day and one half day each week at your school would be recorded as 1.50 full-time days/week)** - Matrix/battery: per row an Availability Yes/No plus a conditional numeric follow-up. Availability codes {No, Yes}: a) School psychologist {01,02}; b) Psychiatrist {03,04}; c) Speech and language therapist {05,06}; d) Audiologist {07,08}; e) Occupational therapist {09,10}; f) Physical therapist {11,12}; g) Social worker {13,14}; h) Community health nurse {15,16}; i) Instructor in Aboriginal Peoples' culture {17,18}; j) Instructor in culture awareness {19,20}; k) Police officer {21,22}; l) Other (Specify) `______` {23,24}. Constraint/embedded routing: **Yes --> fill `|__|.|__| full-time days/week`** for that row; No → leave the days field blank (skip follow-up). Row l) also has a text specify field. - GO TO Q28
+34. Q28: **Below are a number of different resources which may be available to your school. Please rate the extent to which each attribute *currently* meets the needs of your school.** *(Mark the circle corresponding to your answer for each of the following)* - Matrix/battery, shared scale Single select {Does not meet my school's needs, Partially meets my school's needs, Adequately meets my school's needs, Completely meets my school's needs, Not applicable}; option codes per row (Does not meet→Not applicable): a) Instructional resources (e.g., curriculum documents, books) {01,02,03,04,05}; b) School supplies (e.g. paper, pencils) {06,07,08,09,10}; c) Instructional space (e.g., classroom size) {11,12,13,14,15}; d) Computers for course instruction {16,17,18,19,20}; e) Computer software for course instruction {21,22,23,24,25}; f) Library materials {26,27,28,29,30}; g) Audio-visual resources (e.g. VCR's, film projector) {31,32,33,34,35}; h) School buildings {36,37,38,39,40}; i) School grounds {41,42,43,44,45}; j) Heating and lighting {46,47,48,49,50}; k) Science equipment {51,52,53,54,55}; l) Equipment for mathematics instruction (e.g., counting blocks, calculators) {56,57,58,59,60}; m) Budget for consumables {61,62,63,64,65}; n) Special equipment for handicapped students {66,67,68,69,70}; o) Gymnasium {71,72,73,74,75}; p) Gym equipment (e.g., mats, balls) {76,77,78,79,80}; q) Outdoor play equipment {81,82,83,84,85}; r) Other (Specify) `______` {86,87,88,89,90} - GO TO Q29 (Section 4)
+
+---
+
+#### Section 4 — Perceptions of Your School (pp. 225-226) - 2 items
+
+35. D-S4-INT: **SECTION 4 PERCEPTIONS OF YOUR SCHOOL. L: These questions ask how you feel about your school as a place to work and study.** - Read (no response). *(derived ID)*
+36. Q29: **Below are a number of statements which describe different aspects of schooling. Please indicate how strongly you agree or disagree with each of the following statements.** *(Mark the circle corresponding to your answer for each of the following)* - Matrix/battery, shared scale Single select {Strongly disagree, Disagree, Neither agree nor disagree, Agree, Strongly agree}; option codes per row (Strongly disagree→Strongly agree): a) I find my professional role satisfying {01,02,03,04,05}; b) If I had to do it again, I would remain a teacher rather than become a principal {06,07,08,09,10}; c) I feel good about continuing my career in this school district {11,12,13,14,15}; d) I feel competent to deal with students' behavioural problems {16,17,18,19,20}; e) I have a considerable influence on my school's policies {21,22,23,24,25}; f) I have little influence on how money is allocated for school resources {26,27,28,29,30}; g) The emphasis in my school is on the development of academic skills {31,32,33,34,35}; h) I have high expectations for the academic success of students attending this school {36,37,38,39,40}; i) I try to ensure that students are pushed to achieve their full academic potential {41,42,43,44,45}; j) I feel students' success at school is determined mainly by their home environments {46,47,48,49,50} - GO TO Q30 (Section 5)
+
+---
+
+#### Section 5 — Personal Information (pp. 227-228) - 6 items
+
+37. D-S5-INT: **SECTION 5 PERSONAL INFORMATION. L: Finally, we would like to ask a few questions about yourself and your experiences. Your answers to these questions when combined with the answers of other Canadian principals will provide a better understanding of Canadian schools.** - Read (no response). *(derived ID)*
+38. Q30: **Are you...** *(Mark one circle)* - Single select {1: "Female?", 2: "Male?"} - GO TO Q31
+39. Q31: **To which age category do you belong?** *(Mark one circle)* - Single select {3: "20 to 29 years", 4: "30 to 39 years", 5: "40 to 49 years", 6: "50 to 59 years", 7: "60 years or older"} - GO TO Q32
+40. Q32: **How much experience do you have as...** *(Specify the number of years and months of experience; e.g., 1 year and 5 months. Please specify 00 years and 00 months if you have no experience in a particular position)* - Numeric (years `|__|` + months `|__|` per sub-field): a) a principal {years ₀₁, months ₀₂}; b) a principal at this school {₀₃, ₀₄}; c) a vice-principal {₀₅, ₀₆}; d) a vice-principal at this school {₀₇, ₀₈}; e) a teacher {₀₉, ₁₀}; f) a teacher at this school {₁₁, ₁₂} - GO TO Q33
+41. Q33: **Please specify the levels of education you have attained.** *(Mark all that apply)* - Multi select {1: "Some coursework towards a Bachelor's degree", 2: "A teaching certificate, diploma or licence", 3: "A Bachelor's degree", 4: "A Bachelor of Education degree", 5: "Some post-baccalaureate coursework", 6: "A post-baccalaureate diploma or certificate", 7: "Some coursework towards a Master's degree", 8: "A Master's degree", 9: "Some coursework towards a Doctorate", 10: "A Doctorate", 11: "Other (Specify) ______"} - GO TO Q34
+42. Q34: **Statistics Canada is conducting this survey jointly with another federal department, Human Resources Development Canada. The information collected will be kept confidential and used only for statistical purposes. Do you agree to share the information collected with Human Resources Development Canada?** - Yes/No {1: "Yes", 2: "No"} - GO TO END. *End text:* "THANK YOU FOR COMPLETING THIS QUESTIONNAIRE. Do you have any comments about this survey? If so, please use the space below. WHEN YOU FINISH THIS SURVEY... Please place the completed questionnaire in the self-addressed business reply envelope and mail it to us today..." (open comment box; not a coded item)
+
+---
+
+### Appendix E — NPHS Questions (TWOWK / UTIL) — pages 229-233, 24 items
+
+*Administration note:* These are additional National Population Health Survey (NPHS) items asked **only during the integrated NLSC/NPHS collection** (November 1994 and March 1995); their data are **not** part of the NLSC file (p.230). All items are asked by the PMK about the selected child using proxy phrasing ("your/...'s", "did ...", "have/has ..."). Whether this appendix is asked at all is gated by the data-collection-period flag (External input below), the same period concept that selects KCON-Q1A vs KCON-Q1B in Appendix F.
+
+*(Fragment-local numbering; renumber on assembly to continue after Appendix D.)*
+
+1. EXTERNAL — NPHS-COLLECTION-PERIOD: *"THE FOLLOWING ADDITIONAL NPHS QUESTIONS ARE ASKED ONLY DURING THE INTEGRATED NLSC/NPHS COLLECTION, WHEN DATA FOR BOTH THE NLSC AND THE NPHS ARE BEING COLLECTED, I.E. IN NOVEMBER 1994 AND MARCH 1995. THE DATA FROM THESE QUESTIONS WILL NOT BE PART OF THE NLSC FILE."* (p.230, verbatim) - External input: data-collection-period flag set by the survey system, not asked of the respondent - domain: {integrated NLSC+NPHS period (Nov 1994 / Mar 1995), NLSC-only period (Dec 1994 / Feb 1995)} - referenced by: entire Appendix E (asked only in the integrated period); also drives KCON-Q1A vs KCON-Q1B in Appendix F (p.235)
+
+**Household Record Variables (p.230)**
+
+2. HHLD-Q4: Is there a pet in this household? - Y/N: YES; NO ---> GO TO HHLD-Q6
+3. HHLD-Q5: What kind of pet? (Do not read list. Mark all that apply.) - Checkbox: DOG; CAT; OTHER ---> GO TO HHLD-Q6
+4. HHLD-Q5a: Does this pet or do any of these pets live mainly indoors? - Y/N: YES; NO
+
+*(Note: HHLD-Q6 is a GOTO target referenced here but not defined within Appendix E — it belongs to the main Household Record Variables section. GOTO preserved verbatim.)*
+
+**General Questionnaire — Two-Week Disability (p.230-231)**
+
+5. TWOWK-INT: **The first few questions ask about your/...'s health during the past 14 days.** - Intro
+6. TWOWK-Q1: It is important for you to refer to the 14-day period from (2 weeks ago) to (YESTERDAY). During that period, did ... stay in bed at all because of illness or injury including any nights spent as a patient in a hospital? - Y/N: YES; NO (GO TO TWOWK-Q3)
+7. TWOWK-Q2: How many days did ... stay in bed for all or most of the day? - Numeric: DAYS (ENTER <0> IF LESS THAN A DAY.) (IF = 14 DAYS GO TO TWOWK-Q5)
+8. TWOWK-Q3: (Not counting days spent in bed) During those 14 days, were there any days that ... cut down on things you/he/she normally do/does because of illness or injury? - Y/N: YES; NO (GO TO TWOWK-Q5)
+9. TWOWK-Q4: How many days did ... cut down on things for all or most of the day? - Numeric: DAYS (ENTER <0> IF LESS THAN A DAY.)
+10. TWOWK-Q5: Do(es) ... have a regular medical doctor? - Y/N: YES; NO
+
+**General Questionnaire — Health Care Utilization (p.231-233)**
+
+11. UTIL-INT: **Now I'd like to ask about your/...'s contacts with health professionals during the past 12 months.** - Intro
+12. UTIL-Q1: In the past 12 months, have/has ... been a patient overnight in a hospital, nursing home or convalescent home? - Y/N: YES; NO (GO TO UTIL-Q2)
+13. UTIL-Q1a: For how many nights in the past 12 months? - Numeric: NIGHTS
+14. UTIL-Q2: (Not counting when ... were/was an overnight patient) In the past 12 months, have/has ... seen or talked on the telephone with [fill category] about your/his/her physical, emotional or mental health: - Numeric (contact count per category, sub-items a-j): a) General practitioner or family physician; b) Eye specialist (such as an ophthalmologist or optometrist); c) Other medical doctor (such as surgeon, allergist, gynaecologist, psychiatrist, etc.); d) A nurse for care or advice; e) Dentist or orthodontist; f) Chiropractor; g) Physiotherapist; h) Social worker or counsellor; i) Psychologist; j) Speech, audiology or occupational therapist
+15. UTIL-C2: *FOR EACH RESPONSE >0 IN a), c), or d), ASK UTIL-Q3.* - Check (routing) *(no original ID in source; interviewer directive appearing between UTIL-Q2 and UTIL-Q3, p.231 — labelled UTIL-C2 for reference)*
+16. UTIL-Q3: Where did the most recent contact take place? (READ LIST. MARK ONE ONLY.) - Radio: Walk-in clinic; Outpatient clinic in hospital; Hospital emergency room; Health professional's office; Community health centre /CLSC; At home; Telephone consultation only; Other (specify_________________________)
+17. UTIL-Q4: People may also use alternative health care services. In the past 12 months, have/has ... seen or talked to an alternative health care provider such as an acupuncturist, naturopath, homeopath or massage therapist about your/his/her physical, emotional or mental health? - Y/N: YES; NO (GO TO UTIL-Q6)
+18. UTIL-Q5: Who did ... see or talk to? (DO NOT READ LIST. MARK ALL THAT APPLY.) - Checkbox: MASSAGE THERAPIST; ACUPUNCTURIST; HOMEOPATH OR NATUROPATH; FELDENKRAIS OR ALEXANDER TEACHER; RELAXATION THERAPIST; BIOFEEDBACK TEACHER; ROLFER; HERBALIST; REFLEXOLOGIST; SPIRITUAL HEALER; RELIGIOUS HEALER; SELF HELP GROUP (SUCH AS AA, CANCER THERAPY, ETC.); OTHER (SPECIFY ____________________)
+19. UTIL-Q6: During the past 12 months, was there ever a time when you/he/she needed health care or advice but did not receive it? - Y/N: YES; NO (GO TO UTIL-C9)
+20. UTIL-Q7: Thinking of the most recent time, why did ... not get care? - Text (open-ended)
+21. UTIL-Q8: Again, thinking of the most recent time, what was the type of care that was needed? Was it for: (DO NOT READ LIST. MARK ALL THAT APPLY.) - Checkbox: TREATMENT OF A PHYSICAL HEALTH PROBLEM; TREATMENT OF AN EMOTIONAL OR MENTAL HEALTH PROBLEM; A REGULAR CHECK-UP (OR FOR REGULAR PRE-NATAL CARE); CARE OF AN INJURY; ANY OTHER REASON (SPECIFY_____________)
+22. UTIL-C9: *IF AGE < 18 THEN GO TO NEXT SECTION.* - Check (routing)
+23. UTIL-Q9: Home care services are health care or homemaker services received at home, with the cost being entirely or partially covered by government. Examples are: nursing care; help with bathing; help around the home; physiotherapy; counselling; and meal delivery. Have/Has ... received any home care services in the past 12 months? - Y/N: YES; NO (GO TO NEXT SECTION)
+24. UTIL-Q10: What type of services have/has ... received? - Text (Specify______________________)
+
+---
+
+### Appendix F — Administrative Information (KCON / TCH / OBS / PPVT) — pages 234-244, 43 items
+
+*Administration note:* End-of-interview administrative modules completed after the substantive questionnaire. It contains the Data-Sharing Agreement/contact-tracing consent (KCON, PMK-answered), the Teacher-consent module (TCH, PMK-answered, for children in school), interviewer neighbourhood **observations** (OBS, completed by the interviewer, not asked of the respondent), and the interviewer's ratings of the **Peabody (PPVT) vocabulary-test administration** (PPVT, interviewer-completed). Note that DK/REFUSAL code values differ by module: KCON and OBS use 8=DON'T KNOW / 9=REFUSAL; TCH uses 7=DON'T KNOW / 8=REFUSAL; PPVT uses 7=DON'T KNOW / 8=REFUSAL — preserved verbatim below.
+
+*(Fragment-local numbering; renumber on assembly to continue after Appendix E.)*
+
+**Data-Sharing Agreement — KCON (p.235-236)**
+
+1. EXTERNAL — KCON-COLLECTION-PERIOD: *"KCON-Q1A WILL BE ASKED DURING PERIODS WHEN DATA FOR BOTH THE NATIONAL POPULATION HEALTH SURVEY AND THE NATIONAL LONGITUDINAL SURVEY OF CHILDREN ARE BEING COLLECTED I.E. IN NOVEMBER 1994 AND MARCH 1995. KCON-Q1B WILL BE ASKED WHEN DATA FOR ONLY THE NATIONAL LONGITUDINAL SURVEY OF CHILDREN ARE BEING COLLECTED I.E. IN DECEMBER 1994 AND FEBRUARY 1995."* (p.235, verbatim) - External input: data-collection-period flag set by the survey system, not asked of the respondent - domain: {NPHS+NLSC joint period (Nov 1994 / Mar 1995) → ask KCON-Q1A; NLSC-only period (Dec 1994 / Feb 1995) → ask KCON-Q1B} - referenced by: KCON-Q1A, KCON-Q1B (mutually exclusive by period); same flag gates all of Appendix E
+
+2. KCON-Q1A: To avoid duplication, Statistics Canada intends to share the information from this survey with provincial ministries of health, Health Canada and Human Resources Development Canada. These organizations have undertaken to keep this information confidential and use it only for statistical purposes. Do you agree to share the information you have provided, including any that may be provided by your child(ren)? *(ASKED ONLY IN NPHS+NLSC JOINT PERIOD — see External input above)* - Radio: 1=YES; 2=NO; 8=DON'T KNOW; 9=REFUSAL *(NOTE: THIS QUESTION MAY BE ASKED OF MORE THAN ONE PERSON. WHEN FINISHED (FOR THE FIRST VISIT OR PHONE CALL), THE NEXT QUESTION WILL BE KCON-I2. IF THE INTERVIEW IS COMPLETED IN MORE THAN ONE VISIT OR PHONE CALL, THIS QUESTION WILL REAPPEAR IF REQUIRED, AS THE LAST ITEM FOR THE RESPONDENT.)*
+3. KCON-Q1B: Statistics Canada is conducting this survey jointly with another federal department, Human Resources Development Canada. The information collected will be kept confidential and used only for statistical purposes. Do you agree to share the information collected, including any that may be provided by your child(ren), with Human Resources Development Canada? *(ASKED ONLY IN NLSC-ONLY PERIOD — see External input above)* - Radio: 1=YES; 2=NO; 8=DON'T KNOW; 9=REFUSAL *(NOTE: THIS QUESTION MAY BE ASKED OF MORE THAN ONE PERSON. WHEN FINISHED (FOR THE FIRST VISIT OR PHONE CALL), THE NEXT QUESTION WILL BE KCON-I2. IF THE INTERVIEW IS COMPLETED IN MORE THAN ONE VISIT OR PHONE CALL, THIS QUESTION WILL REAPPEAR IF REQUIRED, AS THE LAST ITEM FOR THE RESPONDENT.)*
+4. KCON-I2: **In case you move or change telephone numbers, it would be helpful if you could provide the name, address and telephone number of someone, such as a friend or relative, who could help us to contact you.** - Intro
+5. KCON-Q2A: I want to emphasize that Statistics Canada will contact this person only if you move, and then only to obtain your new address or telephone number. (ENTER FIRST AND LAST NAME OF CONTACT) - Text (NAME OF CONTACT): DON'T KNOW ---> GO TO NEXT SECTION; REFUSAL ---> GO TO NEXT SECTION
+6. KCON-Q2B: ENTER ADDRESS OF CONTACT - Text (ADDRESS OF CONTACT): DON'T KNOW ---> GO TO KCON-Q2C; REFUSAL ---> GO TO NEXT SECTION *(OCR: source prints target as "CON-Q2C"; canonical form is KCON-Q2C — corrected)*
+7. KCON-Q2C: ENTER PHONE NUMBER OF CONTACT (AREA CODE, PREFIX AND SUFFIX) - Numeric (10-digit TELEPHONE NUMBER): DON'T KNOW (no GOTO — proceeds); REFUSAL (no GOTO — proceeds)
+8. KCON-Q3A: In case we can't reach that person, we would like to ask for the name, address and telephone number of another person that we could contact. (ENTER FIRST AND LAST NAME OF CONTACT) - Text (NAME OF CONTACT): DON'T KNOW ---> GO TO NEXT SECTION; REFUSAL ---> GO TO NEXT SECTION
+9. KCON-Q3B: ENTER ADDRESS OF CONTACT - Text (ADDRESS OF CONTACT): DON'T KNOW ---> GO TO KCON-Q3C; REFUSAL ---> GO TO NEXT SECTION *(OCR: source prints target as "CON-Q3C"; canonical form is KCON-Q3C — corrected)*
+10. KCON-Q3C: ENTER PHONE NUMBER OF CONTACT (AREA CODE, PREFIX AND SUFFIX) - Numeric (10-digit TELEPHONE NUMBER): DON'T KNOW (no GOTO — proceeds); REFUSAL (no GOTO — proceeds)
+
+**Teacher Contact Information — TCH (p.237-238)**
+
+*(Module note, verbatim: THIS MODULE IS DONE FOLLOWING THE DATA SHARING AGREEMENT, AND ONLY IF ALL COMPONENTS ARE COMPLETED. IT IS DONE FOR ANY SELECTED CHILDREN WHO ATTENDED SCHOOL IN THE PAST 12 MONTHS. THERE MAY BE UP TO 4 CHILDREN IN A HOUSEHOLD FOR WHOM A TEACHER CONSENT FORM IS REQUIRED.)*
+
+11. TCH-C1: *IF IN SCHOOL, GO TO TCH-Q1. OTHERWISE ---> GO TO NEXT SECTION* - Check (routing)
+12. TCH-Q1: Do you agree that ...'s teacher may be contacted and asked to complete a questionnaire regarding ...? - Radio: 1=YES; 2=NO ---> GO TO NEXT SECTION; 7=DON'T KNOW ---> GO TO NEXT SECTION; 8=REFUSAL ---> GO TO NEXT SECTION
+13. TCH-C2: *IF IN GRADE 2 OR OVER, GO TO TCH-I3. OTHERWISE ---> GO TO TCH-Q2* - Check (routing) *(OCR: source prints target as "TCH-13"; canonical form is TCH-I3, the interviewer fill-in item on p.238 — corrected)*
+14. TCH-Q2: Do you agree that ...'s teacher may give ... a brief test of math skills? - Radio: 1=YES; 2=NO; 7=DON'T KNOW; 8=REFUSAL
+15. TCH-I3: *INTERVIEWER: FILL IN THE FOLLOWING ITEMS ON THE CONSENT FORM, AND COMPLETE ALL OTHER REQUESTED INFORMATION.* - Interviewer instruction (admin data entry on the teacher consent form): SAMPLE-ID; PERSON#; FIRST NAME; LAST NAME
+
+**Neighbourhood Observation by Interviewer — OBS (p.239-240)**
+
+*(All OBS items are completed by the interviewer as observations, not asked of the respondent.)*
+
+16. OBS-Q1: How would you rate the volume of traffic on the street or road? - Radio: 1=VERY LIGHT; 2=LIGHT; 3=MODERATE; 4=HEAVY; 5=VERY HEAVY; 8=DON'T KNOW; 9=REFUSAL
+17. OBS-Q2: Is there garbage, litter, or broken glass in the street or road, on the sidewalks, or in yards? - Radio: 1=ALMOST NONE; 2=YES, BUT NOT A LOT; 3=YES, QUITE A BIT; 4=YES, ALMOST EVERYWHERE; 8=DON'T KNOW; 9=REFUSAL
+18. OBS-Q4: Are people loitering, congregating or hanging out? - Radio: 1=YES; 2=NO; 8=DON'T KNOW; 9=REFUSAL *(Note: source skips from OBS-Q2 to OBS-Q4 — no OBS-Q3 appears in the document.)*
+19. OBS-Q5: Are any persons arguing, shouting, fighting or otherwise behaving in hostile or threatening ways? - Radio: 1=NO PERSONS OBSERVED; 2=NO, NONE BEHAVING IN HOSTILE OR THREATENING WAYS; 3=YES SOME OBSERVED; 8=DON'T KNOW; 9=REFUSAL
+20. OBS-Q6: Are drunken or otherwise intoxicated persons visible? - Radio: 1=YES; 2=NO; 8=DON'T KNOW; 9=REFUSAL
+21. OBS-Q7: Based on street level frontage, how would you characterize land use on this block/road? - Radio: 01=PRIMARILY RESIDENTIAL; 02=PRIMARILY COMMERCIAL; 03=MIXED RESIDENTIAL AND COMMERCIAL USE; 04=PRIMARILY INDUSTRIAL, WAREHOUSE, MANUFACTURING; 05=PRIMARILY VACANT HOUSES; 06=PRIMARILY VACANT LOTS OR OPEN SPACE; 07=PRIMARILY SERVICES OR INSTITUTIONAL, E.G., SCHOOLS, CHURCHES, HOSPITALS; 08=PRIMARILY PARK, PLAYGROUND; 09=PRIMARILY RURAL, RESIDENTIAL; 10=PRIMARILY RURAL, FARM; 11=OTHER; 98=DON'T KNOW; 99=REFUSAL
+22. OBS-Q8: How would you rate the general condition of most of the buildings, on the block/or within 100 yards of the respondents house? - Radio: 1=BADLY DETERIORATED; 2=POOR CONDITION WITH PEELING PAINT AND NEED OF REPAIR; 3=FAIR CONDITION; 4=WELL KEPT WITH GOOD REPAIR AND EXTERIOR SURFACE; 8=DON'T KNOW; 9=REFUSAL
+23. OBS-Q9: Did you first contact this dwelling by phone or in person? - Radio: 1=BY PHONE; 2=IN PERSON; 8=DON'T KNOW; 9=REFUSAL
+
+**Peabody (PPVT) Assessment — interviewer ratings of the test administration (p.241-244)**
+
+*(All PPVT items are completed by the interviewer about how the Peabody vocabulary test went for the selected child.)*
+
+24. PPVT-I1: **This is the Peabody Assessment for ....** - Intro
+25. PPVT-Q1: During the Peabody, how was ...'s: Attitude towards being tested? - Scale (1-5): 1=POOR; 3=AVERAGE; 5=EXCELLENT; 7=DON'T KNOW; 8=REFUSAL
+26. PPVT-Q2: Rapport with you? - Scale (1-5): 1=POOR; 3=AVERAGE; 5=EXCELLENT; 7=DON'T KNOW; 8=REFUSAL
+27. PPVT-Q3: Perseverance/persistence? - Scale (1-5): 1=POOR; 3=AVERAGE; 5=EXCELLENT; 7=DON'T KNOW; 8=REFUSAL
+28. PPVT-Q4: Cooperation? - Scale (1-5): 1=POOR; 3=AVERAGE; 5=EXCELLENT; 7=DON'T KNOW; 8=REFUSAL *(OCR: source prints a stray duplicate "1 Poor" line before the full 1-5 scale on p.242 — scale read as 1=POOR ... 5=EXCELLENT to match sibling items.)*
+29. PPVT-Q5: Motivation/interest? - Scale (1-5): 1=POOR; 3=AVERAGE; 5=EXCELLENT; 7=DON'T KNOW; 8=REFUSAL
+30. PPVT-Q6: During the Peabody, were there any problems with ...'s: Visual sharpness? - Radio: 1=YES; 2=NO ---> GO TO PPVT-Q7; 7=DON'T KNOW; 8=REFUSAL
+31. PPVT-Q6A: Specify the problems with ...'s visual sharpness. - Text
+32. PPVT-Q7: Hearing? - Radio: 1=YES; 2=NO ---> GO TO PPVT-Q8; 7=DON'T KNOW; 8=REFUSAL
+33. PPVT-Q7A: Specify the problems with ...'s hearing. - Text
+34. PPVT-Q8: During the Peabody, were there any problems with ...'s state of health? - Radio: 1=YES; 2=NO ---> GO TO PPVT-Q9; 7=DON'T KNOW; 8=REFUSAL
+35. PPVT-Q8A: Specify the problems with ...'s state of health. - Text
+36. PPVT-Q9: How shy or anxious was ... at the end of the Peabody? - Scale (1-5): 1=NOT AT ALL SHY OR ANXIOUS/SOCIABLE AND FRIENDLY; 5=EXTREMELY SHY/QUIET/WITHDRAWN; 7=DON'T KNOW; 8=REFUSAL
+37. PPVT-Q10: During the Peabody with ...., was the following an interference: Noise level? - Scale (1-5): 1=INTERFERING; 5=NOT INTERFERING; 7=DON'T KNOW; 8=REFUSAL
+38. PPVT-Q11: Interruptions? - Scale (1-5): 1=INTERFERING; 5=NOT INTERFERING; 7=DON'T KNOW; 8=REFUSAL
+39. PPVT-Q12: Distractions? - Scale (1-5): 1=INTERFERING; 5=NOT INTERFERING; 7=DON'T KNOW; 8=REFUSAL
+40. PPVT-Q13: Light? - Scale (1-5): 1=INTERFERING; 5=NOT INTERFERING; 7=DON'T KNOW; 8=REFUSAL
+41. PPVT-Q14: Temperature? - Scale (1-5): 1=INTERFERING; 5=NOT INTERFERING; 7=DON'T KNOW; 8=REFUSAL
+42. PPVT-Q15: Presence of others? - Scale (1-5): 1=INTERFERING; 5=NOT INTERFERING; 7=DON'T KNOW; 8=REFUSAL
+43. PPVT-Q16: Please enter any general comments not covered above for the Peabody with .... - Text

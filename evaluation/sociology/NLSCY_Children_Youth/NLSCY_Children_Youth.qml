@@ -7,36 +7,26 @@ questionnaire:
     # dependency graph, variables written by an earlier block are visible
     # to every later block without any extern declaration.
     # =====================================================================
-    child_age = 0           # age of the selected child (0-11)
-    respondent_sex = 0      # 1=Male, 2=Female
+    # Age, biology, PMK role, parent/sibling status are asked directly and
+    # referenced via their question outcomes (q_respondent_age, q_child_age,
+    # q_child_age_months, q_bio_relationship, q_pickresp, q_is_parent,
+    # q_has_siblings), so no cross-section aliases are declared for them.
     marital_status = 0      # 1=Married, 2=Common-law, 3=Partner, 4=Single, 5=Widowed, 6=Separated, 7=Divorced
-    respondent_age = 0  # respondent's age from demographics section
-    is_parent = 0       # 1=respondent is the parent, 0=otherwise
     has_gaps = 0
     has_income = 0              # 1=household has any income source, 0=none
     source_count = 0            # count of income sources selected
     multiple_sources = 0        # 1=more than one source selected
     household_income_known = 0  # bracket estimation fallback
     personal_income_known = 0
-    is_pmk = 0                    # 1=Person Most Knowledgeable about child
-    is_bio_mother_young_child = 0 # 1=biological mother of child under 2
     cesd_score = 0                # CES-D Depression Scale score
     relationship_to_child = 0   # 1=Birth parent .. 9=Unrelated, used in Parenting/Custody
-    child_age_months = 0    # age of child in months (0-143)
-    is_bio_mother = 0       # 1=respondent is biological mother
-    is_bio_father = 0       # 1=respondent is biological father
-    province = 0        # from Contact/Household: province code
     in_school = 0       # 0=not in school, 1=in school
     school_grade = 0    # consolidated grade value (0=not in school, 16=ungraded)
-    has_siblings = 0    # 1 if child has brothers/sisters in household
-    is_pmk_or_spouse = 0       # 1=PMK or PMK's spouse/partner, 0=other
-    parents_together = 0
     parents_separated = 0
     parent_died = 0
     parents_were_married = 0
     mother_new_union = 0
     father_new_union = 0
-    child_lived_with_respondent = 0
     custody_type = 0
     parents_lived_together_ever = 0
 
@@ -126,23 +116,30 @@ questionnaire:
         - id: q_child_age
           kind: Question
           title: "What is the age of the selected child?"
-          postcondition:
-            - predicate: q_child_age.outcome <= 11
-              hint: "The NLSCY covers children aged 0 to 11."
-          codeBlock: |
-            child_age = q_child_age.outcome
           input:
             control: Editbox
             min: 0
             max: 11
             right: "years"
 
+        # DEMO-Q4 (months): Child's age in months, derived from date of birth.
+        # The source collects date of birth (DEMO-Q4); the young-child modules
+        # (temperament, motor/social development, prenatal/birth) route on the
+        # child's age in months. Modeled as a separate admin Editbox because QML
+        # has no date input from which to derive months.
+        - id: q_child_age_months
+          kind: Question
+          title: "What is the age of the selected child, in months?"
+          input:
+            control: Editbox
+            min: 0
+            max: 143
+            right: "months"
+
         # DEMO-Q5: Sex of respondent
         - id: q_demo_q5
           kind: Question
           title: "Enter or confirm the respondent's sex."
-          codeBlock: |
-            respondent_sex = q_demo_q5.outcome
           input:
             control: Radio
             labels:
@@ -270,6 +267,38 @@ questionnaire:
               2: "Spouse/partner of PMK"
               3: "Other household member"
 
+        # Respondent-child relationship flags. The source derives these from the
+        # household roster (DEMO-Q7/Q8, collected externally) together with the
+        # date of birth. Modeled here as explicit admin questions so the
+        # downstream parenting/biology/sibling routing has a producer.
+        - id: q_is_parent
+          kind: Question
+          title: "Is the respondent a parent of the selected child?"
+          input:
+            control: Radio
+            labels:
+              1: "Yes"
+              2: "No"
+
+        - id: q_bio_relationship
+          kind: Question
+          title: "What is the respondent's biological relationship to the selected child?"
+          input:
+            control: Radio
+            labels:
+              1: "Biological mother"
+              2: "Biological father"
+              3: "Neither / other"
+
+        - id: q_has_siblings
+          kind: Question
+          title: "Does the selected child have any brothers or sisters living in the household?"
+          input:
+            control: Radio
+            labels:
+              1: "Yes"
+              2: "No"
+
     # =========================================================================
     # BLOCK 5: ADMINISTRATION
     # =========================================================================
@@ -326,13 +355,13 @@ questionnaire:
     # =========================================================================
     # RESTR-CINT: IF AGE<12, GO TO NEXT SECTION
     # "AGE" refers to the respondent's age (General Questionnaire for HH members 12+)
-    # Modeled as block-level precondition: respondent_age >= 12
+    # Modeled as block-level precondition: q_respondent_age.outcome >= 12
     # =========================================================================
     - id: b_restriction
       kind: Group
       title: "Restriction of Activities"
       precondition:
-        - predicate: respondent_age >= 12
+        - predicate: q_respondent_age.outcome >= 12
       items:
         # RESTR-INT: Introduction
         - id: q_restr_int
@@ -364,14 +393,14 @@ questionnaire:
     # =========================================================================
     # CHRON-CINT: IF AGE<12 OR RESPONDENT IS NOT THE PARENT,
     #             GO TO NEXT SECTION
-    # Modeled as block-level precondition: respondent_age >= 12 AND is_parent == 1
+    # Modeled as block-level precondition: q_respondent_age.outcome >= 12 AND q_is_parent.outcome == 1
     # =========================================================================
     - id: b_chronic
       kind: Group
       title: "Chronic Conditions"
       precondition:
-        - predicate: respondent_age >= 12
-        - predicate: is_parent == 1
+        - predicate: q_respondent_age.outcome >= 12
+        - predicate: q_is_parent.outcome == 1
       items:
         # CHRON-INT: Introduction
         - id: q_chron_int
@@ -775,7 +804,7 @@ questionnaire:
       kind: Group
       title: "Education"
       precondition:
-        - predicate: respondent_age >= 12
+        - predicate: q_respondent_age.outcome >= 12
       items:
         # EDUC-Q1: Years of elementary and high school completed
         - id: q_educ_q1
@@ -803,7 +832,7 @@ questionnaire:
           title: "Have you graduated from high school?"
           precondition:
             - predicate: q_educ_q1.outcome != 0
-            - predicate: respondent_age >= 15
+            - predicate: q_respondent_age.outcome >= 15
           input:
             control: Radio
             labels:
@@ -817,7 +846,7 @@ questionnaire:
           title: "Have you ever attended any other kind of school such as a university, community college, business school, trade or vocational school, CEGEP or other post-secondary institution?"
           precondition:
             - predicate: q_educ_q1.outcome != 0
-            - predicate: respondent_age >= 15
+            - predicate: q_respondent_age.outcome >= 15
           input:
             control: Radio
             labels:
@@ -831,7 +860,7 @@ questionnaire:
           title: "What is the highest level of education that you have attained?"
           precondition:
             - predicate: q_educ_q1.outcome != 0
-            - predicate: respondent_age >= 15
+            - predicate: q_respondent_age.outcome >= 15
             - predicate: q_educ_q3.outcome == 1
           input:
             control: Dropdown
@@ -855,8 +884,8 @@ questionnaire:
           title: "Are you currently attending a school, college or university?"
           precondition:
             - predicate: q_educ_q1.outcome != 0
-            - predicate: respondent_age >= 15
-            - predicate: respondent_age < 65
+            - predicate: q_respondent_age.outcome >= 15
+            - predicate: q_respondent_age.outcome < 65
           input:
             control: Radio
             labels:
@@ -870,8 +899,8 @@ questionnaire:
           title: "Are you enrolled as a full-time or part-time student?"
           precondition:
             - predicate: q_educ_q1.outcome != 0
-            - predicate: respondent_age >= 15
-            - predicate: respondent_age < 65
+            - predicate: q_respondent_age.outcome >= 15
+            - predicate: q_respondent_age.outcome < 65
             - predicate: q_educ_q5.outcome == 1
           input:
             control: Radio
@@ -886,7 +915,7 @@ questionnaire:
     # BLOCK 1: MAIN ACTIVITY AND EMPLOYMENT GATE
     # =========================================================================
     # LFS-C1: IF NOT PARENT, GO TO NEXT SECTION
-    # Entire section is gated by is_parent == 1.
+    # Entire section is gated by q_is_parent.outcome == 1.
     #
     # LFS-Q1: Main activity classification
     # LFS-I2: Employment intro
@@ -898,7 +927,7 @@ questionnaire:
       kind: Group
       title: "Main Activity"
       precondition:
-        - predicate: is_parent == 1
+        - predicate: q_is_parent.outcome == 1
       items:
         # LFS-Q1: Current main activity
         - id: q_lfs_q1
@@ -960,7 +989,7 @@ questionnaire:
       kind: Group
       title: "Employment Details"
       precondition:
-        - predicate: is_parent == 1
+        - predicate: q_is_parent.outcome == 1
         - predicate: q_lfs_q1.outcome in [2, 3] or q_lfs_q2.outcome == 1
       items:
         # LFS-Q3: Employer name
@@ -1137,7 +1166,7 @@ questionnaire:
       kind: Group
       title: "Wage Details"
       precondition:
-        - predicate: is_parent == 1
+        - predicate: q_is_parent.outcome == 1
         - predicate: q_lfs_q1.outcome in [2, 3] or q_lfs_q2.outcome == 1
         - predicate: q_lfs_q16.outcome == 1
       items:
@@ -1240,7 +1269,7 @@ questionnaire:
       kind: Group
       title: "Employment Gaps"
       precondition:
-        - predicate: is_parent == 1
+        - predicate: q_is_parent.outcome == 1
       items:
         # LFS-C17: Calendar gap check
         # Modeled as a question since the original check references external
@@ -1644,13 +1673,14 @@ questionnaire:
     # =========================================================================
     # CHLT-C8: IF biological mother of child under 2, AND non-proxy
     #          → maternal questions; OTHERWISE → CES-D
-    # Modeled as block precondition: is_bio_mother_young_child == 1
+    # Modeled as block precondition: biological mother of a child under 2.
     # =========================================================================
     - id: b_maternal
       kind: Group
       title: "Maternal History"
       precondition:
-        - predicate: is_bio_mother_young_child == 1
+        - predicate: q_bio_relationship.outcome == 1
+        - predicate: q_child_age_months.outcome < 24
       items:
         # CHLT-Q8: Number of pregnancies
         - id: q_chlt_q8
@@ -1689,13 +1719,13 @@ questionnaire:
     # BLOCK 4: CES-D DEPRESSION SCALE (CHLT-Q12A to CHLT-Q12L)
     # =========================================================================
     # CHLT-C12: IF respondent is PMK → CES-D; OTHERWISE → next section
-    # Modeled as block precondition: is_pmk == 1
+    # Modeled as block precondition: q_pickresp.outcome == 1
     # =========================================================================
     - id: b_cesd
       kind: Group
       title: "CES-D Depression Scale"
       precondition:
-        - predicate: is_pmk == 1
+        - predicate: q_pickresp.outcome == 1
       items:
         # CHLT-I12: Introduction
         - id: q_chlt_i12
@@ -2103,7 +2133,7 @@ questionnaire:
           kind: Question
           title: "In your opinion, how physically active is the child compared to other children the same age and sex?"
           precondition:
-            - predicate: child_age >= 2
+            - predicate: q_child_age.outcome >= 2
           input:
             control: Radio
             labels:
@@ -2125,7 +2155,7 @@ questionnaire:
       kind: Group
       title: "Vision"
       precondition:
-        - predicate: child_age >= 4
+        - predicate: q_child_age.outcome >= 4
       items:
         # HLT-I6: Introduction to day-to-day health questions
         - id: q_hlt_i6
@@ -2138,7 +2168,7 @@ questionnaire:
           kind: Question
           title: "Is he/she usually able to see well enough to read ordinary newsprint without glasses or contact lenses?"
           precondition:
-            - predicate: child_age >= 6
+            - predicate: q_child_age.outcome >= 6
           input:
             control: Radio
             labels:
@@ -2153,7 +2183,7 @@ questionnaire:
           kind: Question
           title: "Is he/she usually able to see clearly, and without distortion, the words in a story book without glasses or contact lenses?"
           precondition:
-            - predicate: child_age >= 4 and child_age <= 5
+            - predicate: q_child_age.outcome >= 4 and q_child_age.outcome <= 5
           input:
             control: Radio
             labels:
@@ -2169,7 +2199,7 @@ questionnaire:
           kind: Question
           title: "Is he/she usually able to see well enough to read ordinary newsprint with glasses or contact lenses?"
           precondition:
-            - predicate: child_age >= 6
+            - predicate: q_child_age.outcome >= 6
             - predicate: q_hlt_q6.outcome == 2 or q_hlt_q6.outcome == 8
           input:
             control: Radio
@@ -2187,7 +2217,7 @@ questionnaire:
           kind: Question
           title: "Is he/she usually able to see clearly, and without distortion, the words in a story book with glasses or contact lenses?"
           precondition:
-            - predicate: child_age >= 4 and child_age <= 5
+            - predicate: q_child_age.outcome >= 4 and q_child_age.outcome <= 5
             - predicate: q_hlt_q6a.outcome == 2 or q_hlt_q6a.outcome == 8
           input:
             control: Radio
@@ -2205,7 +2235,7 @@ questionnaire:
           kind: Question
           title: "Is he/she able to see at all?"
           precondition:
-            - predicate: (child_age >= 6 and q_hlt_q7.outcome in [2, 3, 8]) or (child_age >= 4 and child_age <= 5 and q_hlt_q7a.outcome in [2, 3, 8])
+            - predicate: (q_child_age.outcome >= 6 and q_hlt_q7.outcome in [2, 3, 8]) or (q_child_age.outcome >= 4 and q_child_age.outcome <= 5 and q_hlt_q7a.outcome in [2, 3, 8])
           input:
             control: Radio
             labels:
@@ -2221,7 +2251,7 @@ questionnaire:
           kind: Question
           title: "Is he/she able to see well enough to recognize a friend on the other side of the street without glasses or contact lenses?"
           precondition:
-            - predicate: (child_age >= 6 and (q_hlt_q6.outcome == 1 or q_hlt_q7.outcome == 1)) or (child_age >= 4 and child_age <= 5 and (q_hlt_q6a.outcome == 1 or q_hlt_q7a.outcome == 1)) or q_hlt_q8.outcome == 1
+            - predicate: (q_child_age.outcome >= 6 and (q_hlt_q6.outcome == 1 or q_hlt_q7.outcome == 1)) or (q_child_age.outcome >= 4 and q_child_age.outcome <= 5 and (q_hlt_q6a.outcome == 1 or q_hlt_q7a.outcome == 1)) or q_hlt_q8.outcome == 1
           input:
             control: Radio
             labels:
@@ -2258,7 +2288,7 @@ questionnaire:
       kind: Group
       title: "Hearing"
       precondition:
-        - predicate: child_age >= 4
+        - predicate: q_child_age.outcome >= 4
       items:
         # HLT-Q11: Hearing in group without aid
         # YES(1)->Q16, NO(2)->Q12, DK(8)->Q12, REF(9)->Q16
@@ -2347,7 +2377,7 @@ questionnaire:
       kind: Group
       title: "Speech"
       precondition:
-        - predicate: child_age >= 4
+        - predicate: q_child_age.outcome >= 4
       items:
         # HLT-Q16: Understood by strangers
         # YES(1)->C20(mobility), NO(2)->Q17, DK(8)->Q18, REF(9)->C20
@@ -2421,7 +2451,7 @@ questionnaire:
       kind: Group
       title: "Getting Around"
       precondition:
-        - predicate: child_age >= 4
+        - predicate: q_child_age.outcome >= 4
       items:
         # HLT-Q20: Walk around neighbourhood (age 6+)
         # YES(1)->Q27, NO(2)->Q21, DK(8)->Q21, REF(9)->Q27
@@ -2429,7 +2459,7 @@ questionnaire:
           kind: Question
           title: "Is the child usually able to walk around the neighbourhood without difficulty and without mechanical support such as braces, a cane or crutches?"
           precondition:
-            - predicate: child_age >= 6
+            - predicate: q_child_age.outcome >= 6
           input:
             control: Radio
             labels:
@@ -2444,7 +2474,7 @@ questionnaire:
           kind: Question
           title: "Is he/she usually able to walk without difficulty and without mechanical support such as braces, a cane or crutches?"
           precondition:
-            - predicate: child_age >= 4 and child_age <= 5
+            - predicate: q_child_age.outcome >= 4 and q_child_age.outcome <= 5
           input:
             control: Radio
             labels:
@@ -2460,7 +2490,7 @@ questionnaire:
           kind: Question
           title: "Is he/she able to walk at all?"
           precondition:
-            - predicate: (child_age >= 6 and q_hlt_q20.outcome in [2, 8]) or (child_age >= 4 and child_age <= 5 and q_hlt_q20a.outcome in [2, 8])
+            - predicate: (q_child_age.outcome >= 6 and q_hlt_q20.outcome in [2, 8]) or (q_child_age.outcome >= 4 and q_child_age.outcome <= 5 and q_hlt_q20a.outcome in [2, 8])
           input:
             control: Radio
             labels:
@@ -2476,7 +2506,7 @@ questionnaire:
           kind: Question
           title: "Does he/she require mechanical support such as braces, a cane or crutches to be able to walk around the neighbourhood?"
           precondition:
-            - predicate: child_age >= 6
+            - predicate: q_child_age.outcome >= 6
             - predicate: q_hlt_q21.outcome == 1
           input:
             control: Radio
@@ -2493,7 +2523,7 @@ questionnaire:
           kind: Question
           title: "Does he/she require mechanical support such as braces, a cane or crutches to be able to walk?"
           precondition:
-            - predicate: child_age >= 4 and child_age <= 5
+            - predicate: q_child_age.outcome >= 4 and q_child_age.outcome <= 5
             - predicate: q_hlt_q21.outcome == 1
           input:
             control: Radio
@@ -2510,7 +2540,7 @@ questionnaire:
           kind: Question
           title: "Does he/she require the help of another person to be able to walk?"
           precondition:
-            - predicate: (child_age >= 6 and q_hlt_q22.outcome in [1, 2, 8]) or (child_age >= 4 and child_age <= 5 and q_hlt_q22a.outcome in [1, 2, 8])
+            - predicate: (q_child_age.outcome >= 6 and q_hlt_q22.outcome in [1, 2, 8]) or (q_child_age.outcome >= 4 and q_child_age.outcome <= 5 and q_hlt_q22a.outcome in [1, 2, 8])
           input:
             control: Radio
             labels:
@@ -2579,7 +2609,7 @@ questionnaire:
       kind: Group
       title: "Hands and Fingers"
       precondition:
-        - predicate: child_age >= 4
+        - predicate: q_child_age.outcome >= 4
       items:
         # HLT-Q27: Grasp and handle small objects
         # YES(1)->Q31, NO(2)->Q28, DK(8)->Q31, REF(9)->Q31
@@ -2651,7 +2681,7 @@ questionnaire:
       kind: Group
       title: "Cognition and Feelings"
       precondition:
-        - predicate: child_age >= 4
+        - predicate: q_child_age.outcome >= 4
       items:
         # HLT-Q31: Happiness / interest in life
         - id: q_hlt_q31
@@ -2707,7 +2737,7 @@ questionnaire:
       kind: Group
       title: "Pain and Discomfort"
       precondition:
-        - predicate: child_age >= 4
+        - predicate: q_child_age.outcome >= 4
       items:
         # HLT-Q34: Usually free of pain?
         # YES(1)->I37, NO(2)->Q35, DK(8)->I37, REF(9)->I37
@@ -2984,7 +3014,7 @@ questionnaire:
           kind: Question
           title: "In the following questions long-term conditions refer to conditions that have lasted or are expected to last 6 months or more. Does the child have any of the following long-term conditions that have been diagnosed by a health professional?"
           precondition:
-            - predicate: child_age <= 5
+            - predicate: q_child_age.outcome <= 5
           input:
             control: Checkbox
             labels:
@@ -3003,7 +3033,7 @@ questionnaire:
           kind: Question
           title: "In the following questions long-term conditions refer to conditions that have lasted or are expected to last 6 months or more. Does the child have any of the following long-term conditions that have been diagnosed by a health professional?"
           precondition:
-            - predicate: child_age >= 6
+            - predicate: q_child_age.outcome >= 6
           input:
             control: Checkbox
             labels:
@@ -3042,7 +3072,7 @@ questionnaire:
       kind: Group
       title: "Infections"
       precondition:
-        - predicate: child_age <= 3
+        - predicate: q_child_age.outcome <= 3
       items:
         # HLT-Q46: Nose/throat infections frequency
         - id: q_hlt_q46
@@ -3199,7 +3229,7 @@ questionnaire:
       kind: Group
       title: "Stressful Events"
       precondition:
-        - predicate: child_age >= 4
+        - predicate: q_child_age.outcome >= 4
       items:
         # HLT-Q52A: Experienced stressful event?
         # YES(1)->Q52B, NO(2)->next section
@@ -3254,9 +3284,9 @@ questionnaire:
       kind: Group
       title: "Prenatal Conditions and Care"
       precondition:
-        - predicate: child_age <= 3
-        - predicate: is_bio_mother == 1
-        - predicate: child_age_months <= 23
+        - predicate: q_child_age.outcome <= 3
+        - predicate: q_bio_relationship.outcome == 1
+        - predicate: q_child_age_months.outcome <= 23
       items:
         # MED-Q1A/Q1B/Q1C: Pregnancy complications
         - id: qg_med_q1
@@ -3417,8 +3447,8 @@ questionnaire:
       kind: Group
       title: "Birth Details"
       precondition:
-        - predicate: child_age <= 3
-        - predicate: is_bio_mother == 1 or is_bio_father == 1
+        - predicate: q_child_age.outcome <= 3
+        - predicate: q_bio_relationship.outcome == 1 or q_bio_relationship.outcome == 2
       items:
         # MED-Q12A: Born before or after due date
         - id: q_med_q12a
@@ -3486,9 +3516,9 @@ questionnaire:
       kind: Group
       title: "Delivery Details"
       precondition:
-        - predicate: child_age <= 3
-        - predicate: is_bio_mother == 1 or is_bio_father == 1
-        - predicate: child_age_months <= 11
+        - predicate: q_child_age.outcome <= 3
+        - predicate: q_bio_relationship.outcome == 1 or q_bio_relationship.outcome == 2
+        - predicate: q_child_age_months.outcome <= 11
       items:
         # MED-Q16: Delivery method
         - id: q_med_q16
@@ -3534,9 +3564,9 @@ questionnaire:
       kind: Group
       title: "Neonatal Care"
       precondition:
-        - predicate: child_age <= 3
-        - predicate: is_bio_mother == 1 or is_bio_father == 1
-        - predicate: child_age_months <= 23
+        - predicate: q_child_age.outcome <= 3
+        - predicate: q_bio_relationship.outcome == 1 or q_bio_relationship.outcome == 2
+        - predicate: q_child_age_months.outcome <= 23
       items:
         # MED-Q21A: Special medical care after birth
         - id: q_med_q21a
@@ -3597,9 +3627,9 @@ questionnaire:
       kind: Group
       title: "Postnatal Complications"
       precondition:
-        - predicate: child_age <= 3
-        - predicate: is_bio_mother == 1
-        - predicate: child_age_months <= 11
+        - predicate: q_child_age.outcome <= 3
+        - predicate: q_bio_relationship.outcome == 1
+        - predicate: q_child_age_months.outcome <= 11
       items:
         # MED-Q23A: Postpartum haemorrhage
         - id: q_med_q23a
@@ -3680,9 +3710,9 @@ questionnaire:
       kind: Group
       title: "Breastfeeding"
       precondition:
-        - predicate: child_age <= 3
-        - predicate: is_bio_mother == 1 or is_bio_father == 1
-        - predicate: child_age_months <= 23
+        - predicate: q_child_age.outcome <= 3
+        - predicate: q_bio_relationship.outcome == 1 or q_bio_relationship.outcome == 2
+        - predicate: q_child_age_months.outcome <= 23
       items:
         # MED-Q25: Currently breast-feeding
         - id: q_med_q25
@@ -3761,8 +3791,8 @@ questionnaire:
       kind: Group
       title: "Temperament"
       precondition:
-        - predicate: child_age_months >= 3
-        - predicate: child_age_months <= 47
+        - predicate: q_child_age_months.outcome >= 3
+        - predicate: q_child_age_months.outcome <= 47
       items:
         # TMP-I1: Introduction
         - id: q_tmp_i1
@@ -3789,15 +3819,15 @@ questionnaire:
       kind: Group
       title: "Predictability and Routines"
       precondition:
-        - predicate: child_age_months >= 3
-        - predicate: child_age_months <= 47
+        - predicate: q_child_age_months.outcome >= 3
+        - predicate: q_child_age_months.outcome <= 47
       items:
         # TMP-Q2: Sleep predictability (age < 12 months)
         - id: q_tmp_q2
           kind: Question
           title: "How easy or difficult is it for you to predict when he/she will go to sleep and wake up?"
           precondition:
-            - predicate: child_age_months < 12
+            - predicate: q_child_age_months.outcome < 12
           input:
             control: Slider
             min: 1
@@ -3810,7 +3840,7 @@ questionnaire:
           kind: Question
           title: "How consistent is he/she in sticking with his/her sleeping routine?"
           precondition:
-            - predicate: child_age_months >= 12
+            - predicate: q_child_age_months.outcome >= 12
           input:
             control: Slider
             min: 1
@@ -3823,7 +3853,7 @@ questionnaire:
           kind: Question
           title: "How easy or difficult is it for you to predict when he/she will become hungry?"
           precondition:
-            - predicate: child_age_months < 12
+            - predicate: q_child_age_months.outcome < 12
           input:
             control: Slider
             min: 1
@@ -3836,7 +3866,7 @@ questionnaire:
           kind: Question
           title: "How consistent is he/she in sticking with his/her eating routine?"
           precondition:
-            - predicate: child_age_months >= 12
+            - predicate: q_child_age_months.outcome >= 12
           input:
             control: Slider
             min: 1
@@ -3855,15 +3885,15 @@ questionnaire:
       kind: Group
       title: "Fussiness and Crying"
       precondition:
-        - predicate: child_age_months >= 3
-        - predicate: child_age_months <= 47
+        - predicate: q_child_age_months.outcome >= 3
+        - predicate: q_child_age_months.outcome <= 47
       items:
         # TMP-Q4: Knowing what's bothering (age < 36 months)
         - id: q_tmp_q4
           kind: Question
           title: "How easy or difficult is it for you to know what's bothering him/her when he/she cries or fusses?"
           precondition:
-            - predicate: child_age_months < 36
+            - predicate: q_child_age_months.outcome < 36
           input:
             control: Slider
             min: 1
@@ -3876,7 +3906,7 @@ questionnaire:
           kind: Question
           title: "How easy or difficult is it for you to know what's bothering him/her when he/she is irritable?"
           precondition:
-            - predicate: child_age_months >= 36
+            - predicate: q_child_age_months.outcome >= 36
           input:
             control: Slider
             min: 1
@@ -3889,7 +3919,7 @@ questionnaire:
           kind: Question
           title: "How many times per day, on average, does your child get fussy and irritable - for either short or long periods of time?"
           precondition:
-            - predicate: child_age_months < 36
+            - predicate: q_child_age_months.outcome < 36
           input:
             control: Dropdown
             labels:
@@ -3906,7 +3936,7 @@ questionnaire:
           kind: Question
           title: "How many times per day on average does your child get cranky and irritable - for either short or long periods of time?"
           precondition:
-            - predicate: child_age_months >= 36
+            - predicate: q_child_age_months.outcome >= 36
           input:
             control: Dropdown
             labels:
@@ -3923,7 +3953,7 @@ questionnaire:
           kind: Question
           title: "How much does he/she cry and fuss in general?"
           precondition:
-            - predicate: child_age_months < 36
+            - predicate: q_child_age_months.outcome < 36
           input:
             control: Slider
             min: 1
@@ -3936,7 +3966,7 @@ questionnaire:
           kind: Question
           title: "How much does he/she cry, fuss or whine in general?"
           precondition:
-            - predicate: child_age_months >= 36
+            - predicate: q_child_age_months.outcome >= 36
           input:
             control: Slider
             min: 1
@@ -3960,7 +3990,7 @@ questionnaire:
           kind: Question
           title: "When he/she gets upset (e.g., before feeding, during diapering, etc.), how vigorously or loudly does he/she cry and fuss?"
           precondition:
-            - predicate: child_age_months < 12
+            - predicate: q_child_age_months.outcome < 12
           input:
             control: Slider
             min: 1
@@ -3973,8 +4003,8 @@ questionnaire:
           kind: Question
           title: "When he/she gets upset, how vigorously or loudly does he/she cry and fuss?"
           precondition:
-            - predicate: child_age_months >= 12
-            - predicate: child_age_months <= 35
+            - predicate: q_child_age_months.outcome >= 12
+            - predicate: q_child_age_months.outcome <= 35
           input:
             control: Slider
             min: 1
@@ -3987,7 +4017,7 @@ questionnaire:
           kind: Question
           title: "When he/she gets upset, how vigorously or loudly does he/she cry and whine?"
           precondition:
-            - predicate: child_age_months >= 36
+            - predicate: q_child_age_months.outcome >= 36
           input:
             control: Slider
             min: 1
@@ -4005,15 +4035,15 @@ questionnaire:
       kind: Group
       title: "Daily Care Reactions"
       precondition:
-        - predicate: child_age_months >= 3
-        - predicate: child_age_months <= 47
+        - predicate: q_child_age_months.outcome >= 3
+        - predicate: q_child_age_months.outcome <= 47
       items:
         # TMP-Q9: Reaction to dressing (age < 12 months)
         - id: q_tmp_q9
           kind: Question
           title: "How does he/she react when you are dressing him/her?"
           precondition:
-            - predicate: child_age_months < 12
+            - predicate: q_child_age_months.outcome < 12
           input:
             control: Slider
             min: 1
@@ -4026,7 +4056,7 @@ questionnaire:
           kind: Question
           title: "How does he/she react during hairwashing?"
           precondition:
-            - predicate: child_age_months >= 12
+            - predicate: q_child_age_months.outcome >= 12
           input:
             control: Slider
             min: 1
@@ -4055,15 +4085,15 @@ questionnaire:
       kind: Group
       title: "Mood and Sociability"
       precondition:
-        - predicate: child_age_months >= 3
-        - predicate: child_age_months <= 47
+        - predicate: q_child_age_months.outcome >= 3
+        - predicate: q_child_age_months.outcome <= 47
       items:
         # TMP-Q11: Smiling and happy sounds (age < 36 months)
         - id: q_tmp_q11
           kind: Question
           title: "How much does he/she smile and make happy sounds?"
           precondition:
-            - predicate: child_age_months < 36
+            - predicate: q_child_age_months.outcome < 36
           input:
             control: Slider
             min: 1
@@ -4076,7 +4106,7 @@ questionnaire:
           kind: Question
           title: "How much does he/she smile and laugh?"
           precondition:
-            - predicate: child_age_months >= 36
+            - predicate: q_child_age_months.outcome >= 36
           input:
             control: Slider
             min: 1
@@ -4100,8 +4130,8 @@ questionnaire:
           kind: Question
           title: "How much does he/she enjoy playing little games with you?"
           precondition:
-            - predicate: child_age_months >= 6
-            - predicate: child_age_months <= 11
+            - predicate: q_child_age_months.outcome >= 6
+            - predicate: q_child_age_months.outcome <= 11
           input:
             control: Slider
             min: 1
@@ -4114,7 +4144,7 @@ questionnaire:
           kind: Question
           title: "How much does he/she enjoy playing with you?"
           precondition:
-            - predicate: child_age_months >= 12
+            - predicate: q_child_age_months.outcome >= 12
           input:
             control: Slider
             min: 1
@@ -4127,7 +4157,7 @@ questionnaire:
           kind: Question
           title: "How much does he/she want to be held?"
           precondition:
-            - predicate: child_age_months < 36
+            - predicate: q_child_age_months.outcome < 36
           input:
             control: Slider
             min: 1
@@ -4140,7 +4170,7 @@ questionnaire:
           kind: Question
           title: "How much does he/she want to be cuddled?"
           precondition:
-            - predicate: child_age_months >= 36
+            - predicate: q_child_age_months.outcome >= 36
           input:
             control: Slider
             min: 1
@@ -4170,15 +4200,15 @@ questionnaire:
       kind: Group
       title: "Predictability and Mood Changes"
       precondition:
-        - predicate: child_age_months >= 3
-        - predicate: child_age_months <= 47
+        - predicate: q_child_age_months.outcome >= 3
+        - predicate: q_child_age_months.outcome <= 47
       items:
         # TMP-Q16: Diaper prediction (age 3-11 months only)
         - id: q_tmp_q16
           kind: Question
           title: "How easy is it for you to predict when he/she will need a diaper change?"
           precondition:
-            - predicate: child_age_months < 12
+            - predicate: q_child_age_months.outcome < 12
           input:
             control: Slider
             min: 1
@@ -4191,7 +4221,7 @@ questionnaire:
           kind: Question
           title: "How changeable is your child's mood?"
           precondition:
-            - predicate: child_age_months >= 12
+            - predicate: q_child_age_months.outcome >= 12
           input:
             control: Slider
             min: 1
@@ -4215,7 +4245,7 @@ questionnaire:
           kind: Question
           title: "On the average, how much attention does he/she require, other than for caregiving (feeding, bathing, diaper changes, etc.)?"
           precondition:
-            - predicate: child_age_months < 36
+            - predicate: q_child_age_months.outcome < 36
           input:
             control: Slider
             min: 1
@@ -4228,7 +4258,7 @@ questionnaire:
           kind: Question
           title: "On the average, how much attention does he/she require, other than for caregiving (bathing, eating, etc.)?"
           precondition:
-            - predicate: child_age_months >= 36
+            - predicate: q_child_age_months.outcome >= 36
           input:
             control: Slider
             min: 1
@@ -4258,16 +4288,16 @@ questionnaire:
       kind: Group
       title: "Confinement and Cuddling"
       precondition:
-        - predicate: child_age_months >= 3
-        - predicate: child_age_months <= 47
+        - predicate: q_child_age_months.outcome >= 3
+        - predicate: q_child_age_months.outcome <= 47
       items:
         # TMP-Q21: Confinement reaction (age 12-23 months)
         - id: q_tmp_q21
           kind: Question
           title: "How does he/she react to being confined (as in a carseat, infant seat, playpen, etc.)?"
           precondition:
-            - predicate: child_age_months >= 12
-            - predicate: child_age_months <= 23
+            - predicate: q_child_age_months.outcome >= 12
+            - predicate: q_child_age_months.outcome <= 23
           input:
             control: Slider
             min: 1
@@ -4280,8 +4310,8 @@ questionnaire:
           kind: Question
           title: "How does he/she react to being confined (as in a carseat, bedroom, crib, etc.)?"
           precondition:
-            - predicate: child_age_months >= 24
-            - predicate: child_age_months <= 35
+            - predicate: q_child_age_months.outcome >= 24
+            - predicate: q_child_age_months.outcome <= 35
           input:
             control: Slider
             min: 1
@@ -4294,7 +4324,7 @@ questionnaire:
           kind: Question
           title: "How does he/she react to being confined (as in a boosterseat, seatbelt, bedroom, bed, etc.)?"
           precondition:
-            - predicate: child_age_months >= 36
+            - predicate: q_child_age_months.outcome >= 36
           input:
             control: Slider
             min: 1
@@ -4307,7 +4337,7 @@ questionnaire:
           kind: Question
           title: "How much does he/she cuddle and snuggle when held?"
           precondition:
-            - predicate: child_age_months < 12
+            - predicate: q_child_age_months.outcome < 12
           input:
             control: Slider
             min: 1
@@ -4320,7 +4350,7 @@ questionnaire:
           kind: Question
           title: "How much does he/she cuddle and snuggle when close to you?"
           precondition:
-            - predicate: child_age_months >= 12
+            - predicate: q_child_age_months.outcome >= 12
           input:
             control: Slider
             min: 1
@@ -4341,15 +4371,15 @@ questionnaire:
       kind: Group
       title: "Novelty Responses"
       precondition:
-        - predicate: child_age_months >= 3
-        - predicate: child_age_months <= 47
+        - predicate: q_child_age_months.outcome >= 3
+        - predicate: q_child_age_months.outcome <= 47
       items:
         # TMP-Q23: First bath response (age 3-11 months)
         - id: q_tmp_q23
           kind: Question
           title: "How did he/she respond to his/her first bath?"
           precondition:
-            - predicate: child_age_months < 12
+            - predicate: q_child_age_months.outcome < 12
           input:
             control: Slider
             min: 1
@@ -4362,7 +4392,7 @@ questionnaire:
           kind: Question
           title: "How does he/she typically respond to new playthings?"
           precondition:
-            - predicate: child_age_months >= 12
+            - predicate: q_child_age_months.outcome >= 12
           input:
             control: Slider
             min: 1
@@ -4375,8 +4405,8 @@ questionnaire:
           kind: Question
           title: "How did he/she respond to his/her first solid food?"
           precondition:
-            - predicate: child_age_months >= 6
-            - predicate: child_age_months <= 11
+            - predicate: q_child_age_months.outcome >= 6
+            - predicate: q_child_age_months.outcome <= 11
           input:
             control: Slider
             min: 1
@@ -4389,7 +4419,7 @@ questionnaire:
           kind: Question
           title: "How does he/she typically respond to new foods?"
           precondition:
-            - predicate: child_age_months >= 12
+            - predicate: q_child_age_months.outcome >= 12
           input:
             control: Slider
             min: 1
@@ -4424,7 +4454,7 @@ questionnaire:
           kind: Question
           title: "How well does he/she adapt to things (such as baths, new people and new places) eventually?"
           precondition:
-            - predicate: child_age_months < 12
+            - predicate: q_child_age_months.outcome < 12
           input:
             control: Slider
             min: 1
@@ -4437,7 +4467,7 @@ questionnaire:
           kind: Question
           title: "How well does he/she adapt to new experiences (such as new playthings, new foods, new persons, etc.) eventually?"
           precondition:
-            - predicate: child_age_months >= 12
+            - predicate: q_child_age_months.outcome >= 12
           input:
             control: Slider
             min: 1
@@ -4456,8 +4486,8 @@ questionnaire:
       kind: Group
       title: "Persistence and Compliance"
       precondition:
-        - predicate: child_age_months >= 12
-        - predicate: child_age_months <= 47
+        - predicate: q_child_age_months.outcome >= 12
+        - predicate: q_child_age_months.outcome <= 47
       items:
         # TMP-Q28: Ease of taking places (age >= 12 months)
         - id: q_tmp_q28
@@ -4486,7 +4516,7 @@ questionnaire:
           kind: Question
           title: "Does he/she continue to go someplace even when you told him/her something like 'stop', 'come here', or 'no-no'?"
           precondition:
-            - predicate: child_age_months < 36
+            - predicate: q_child_age_months.outcome < 36
           input:
             control: Slider
             min: 1
@@ -4499,7 +4529,7 @@ questionnaire:
           kind: Question
           title: "Does he/she continue to go someplace even when you told him/her something like 'stop', 'come here', or 'please don't'?"
           precondition:
-            - predicate: child_age_months >= 36
+            - predicate: q_child_age_months.outcome >= 36
           input:
             control: Slider
             min: 1
@@ -4538,8 +4568,8 @@ questionnaire:
       kind: Group
       title: "Overall Difficulty"
       precondition:
-        - predicate: child_age_months >= 3
-        - predicate: child_age_months <= 47
+        - predicate: q_child_age_months.outcome >= 3
+        - predicate: q_child_age_months.outcome <= 47
       items:
         # TMP-Q33: Overall difficulty rating
         - id: q_tmp_q33
@@ -4568,7 +4598,7 @@ questionnaire:
       kind: Group
       title: "School Grade and Attendance"
       precondition:
-        - predicate: child_age >= 4
+        - predicate: q_child_age.outcome >= 4
       items:
         # EDU-I1: Introduction
         - id: q_edu_intro
@@ -4651,7 +4681,7 @@ questionnaire:
       kind: Group
       title: "Grade Skipping and Repeating"
       precondition:
-        - predicate: child_age >= 4
+        - predicate: q_child_age.outcome >= 4
         - predicate: in_school == 1
         - predicate: q_edu_q1.outcome != 17
       items:
@@ -4736,7 +4766,7 @@ questionnaire:
       kind: Group
       title: "School Type and Changes"
       precondition:
-        - predicate: child_age >= 4
+        - predicate: q_child_age.outcome >= 4
         - predicate: in_school == 1
       items:
         # EDU-Q8: School type
@@ -4814,7 +4844,7 @@ questionnaire:
       kind: Group
       title: "Language and Absences"
       precondition:
-        - predicate: child_age >= 4
+        - predicate: q_child_age.outcome >= 4
         - predicate: in_school == 1
       items:
         # EDU-Q12A: Language of instruction
@@ -4835,7 +4865,7 @@ questionnaire:
           kind: Question
           title: "What language does the child speak most often at home? (Mark all that apply.)"
           precondition:
-            - predicate: child_age <= 5
+            - predicate: q_child_age.outcome <= 5
           input:
             control: Checkbox
             labels:
@@ -4865,7 +4895,7 @@ questionnaire:
       kind: Group
       title: "Academic Performance"
       precondition:
-        - predicate: child_age >= 4
+        - predicate: q_child_age.outcome >= 4
         - predicate: in_school == 1
         - predicate: school_grade >= 4
         - predicate: school_grade <= 16
@@ -4898,7 +4928,7 @@ questionnaire:
       kind: Group
       title: "Tutoring"
       precondition:
-        - predicate: child_age >= 4
+        - predicate: q_child_age.outcome >= 4
         - predicate: in_school == 1
       items:
         # EDU-Q15A: Received tutoring
@@ -4936,7 +4966,7 @@ questionnaire:
       kind: Group
       title: "School Attitudes and Expectations"
       precondition:
-        - predicate: child_age >= 4
+        - predicate: q_child_age.outcome >= 4
         - predicate: in_school == 1
       items:
         # EDU-Q16: School contact about behaviour
@@ -4969,7 +4999,7 @@ questionnaire:
           kind: Question
           title: "How important is it to you that the child have good grades in school?"
           precondition:
-            - predicate: child_age >= 8
+            - predicate: q_child_age.outcome >= 8
           input:
             control: Radio
             labels:
@@ -5004,7 +5034,7 @@ questionnaire:
       kind: Group
       title: "School Descriptors"
       precondition:
-        - predicate: child_age >= 4
+        - predicate: q_child_age.outcome >= 4
         - predicate: in_school == 1
         - predicate: school_grade >= 4
         - predicate: school_grade <= 16
@@ -5040,7 +5070,7 @@ questionnaire:
       kind: Group
       title: "Special Education"
       precondition:
-        - predicate: child_age >= 4
+        - predicate: q_child_age.outcome >= 4
         - predicate: in_school == 1
       items:
         # EDU-Q20: Special education
@@ -5077,7 +5107,7 @@ questionnaire:
       kind: Group
       title: "Infant Reading"
       precondition:
-        - predicate: child_age_months <= 23
+        - predicate: q_child_age_months.outcome <= 23
       items:
         # LIT-Q1: Read/show books to baby
         # NO/DK/Refusal -> skip to Activities section (exit this section)
@@ -5131,8 +5161,8 @@ questionnaire:
       kind: Group
       title: "Early Childhood Reading Habits"
       precondition:
-        - predicate: child_age >= 2
-        - predicate: child_age <= 4
+        - predicate: q_child_age.outcome >= 2
+        - predicate: q_child_age.outcome <= 4
       items:
         # LIT-Q4: Looking at books on own (age 2-4)
         - id: q_lit_q4
@@ -5176,8 +5206,8 @@ questionnaire:
       kind: Group
       title: "Reading Aloud History"
       precondition:
-        - predicate: child_age >= 2
-        - predicate: child_age <= 5
+        - predicate: q_child_age.outcome >= 2
+        - predicate: q_child_age.outcome <= 5
       items:
         # LIT-Q6A: Ever read aloud regularly (age 2-5)
         # NO -> skip to Q8; DK -> skip to C9 routing
@@ -5216,7 +5246,7 @@ questionnaire:
       kind: Group
       title: "Current Reading Frequency"
       precondition:
-        - predicate: child_age >= 2
+        - predicate: q_child_age.outcome >= 2
       items:
         # LIT-Q7: Reading frequency (age 2-4, Q6A=YES)
         # From C7A: age < 5 -> Q7 (only reached if Q6A was answered YES)
@@ -5224,7 +5254,7 @@ questionnaire:
           kind: Question
           title: "Currently, how often do you or another adult read to him/her? (Also include if he/she reads or pretends to read to adult.)"
           precondition:
-            - predicate: child_age >= 2 and child_age <= 4
+            - predicate: q_child_age.outcome >= 2 and q_child_age.outcome <= 4
             - predicate: q_lit_q6a.outcome == 1
           input:
             control: Dropdown
@@ -5244,7 +5274,7 @@ questionnaire:
           kind: Question
           title: "Currently, how often do you or another adult read aloud to him/her or listen to him/her read or attempt to read aloud?"
           precondition:
-            - predicate: child_age >= 5 and child_age <= 7
+            - predicate: q_child_age.outcome >= 5 and q_child_age.outcome <= 7
           input:
             control: Dropdown
             labels:
@@ -5263,7 +5293,7 @@ questionnaire:
           kind: Question
           title: "Currently, how often do you or another adult read aloud to him/her or listen to him/her read?"
           precondition:
-            - predicate: child_age >= 8 and child_age <= 11
+            - predicate: q_child_age.outcome >= 8 and q_child_age.outcome <= 11
           input:
             control: Dropdown
             labels:
@@ -5289,8 +5319,8 @@ questionnaire:
       kind: Group
       title: "Writing Help"
       precondition:
-        - predicate: child_age >= 2
-        - predicate: child_age <= 5
+        - predicate: q_child_age.outcome >= 2
+        - predicate: q_child_age.outcome <= 5
       items:
         # LIT-Q8: Help/encourage writing (age 2-5)
         - id: q_lit_q8
@@ -5319,8 +5349,8 @@ questionnaire:
       kind: Group
       title: "Homework"
       precondition:
-        - predicate: child_age >= 6
-        - predicate: child_age <= 11
+        - predicate: q_child_age.outcome >= 6
+        - predicate: q_child_age.outcome <= 11
       items:
         # LIT-Q9: Homework frequency (age 6-11)
         # NEVER/DK -> skip Q10A-Q11, go to C12A
@@ -5382,8 +5412,8 @@ questionnaire:
       kind: Group
       title: "Independent Reading and Library Use"
       precondition:
-        - predicate: child_age >= 5
-        - predicate: child_age <= 11
+        - predicate: q_child_age.outcome >= 5
+        - predicate: q_child_age.outcome <= 11
       items:
         # LIT-Q12: Independent reading (age 5-6)
         # Younger phrasing for children who may not yet read independently
@@ -5391,7 +5421,7 @@ questionnaire:
           kind: Question
           title: "How often does the child look at books or try to read on his/her own?"
           precondition:
-            - predicate: child_age >= 5 and child_age <= 6
+            - predicate: q_child_age.outcome >= 5 and q_child_age.outcome <= 6
           input:
             control: Dropdown
             labels:
@@ -5410,7 +5440,7 @@ questionnaire:
           kind: Question
           title: "How often does the child read for pleasure?"
           precondition:
-            - predicate: child_age >= 7 and child_age <= 11
+            - predicate: q_child_age.outcome >= 7 and q_child_age.outcome <= 11
           input:
             control: Dropdown
             labels:
@@ -5462,7 +5492,7 @@ questionnaire:
     # BLOCK 1: EARLY CHILDHOOD PROGRAMS (ACT-I1, ACT-Q1, ACT-Q2A, ACT-Q2B)
     # =========================================================================
     # ACT-I1: Intro for all ages
-    # ACT-C1: IF AGE > 5 → skip to Q3A. Modeled as precondition child_age <= 5
+    # ACT-C1: IF AGE > 5 → skip to Q3A. Modeled as precondition q_child_age.outcome <= 5
     # ACT-Q1: Early childhood programs (age 0-5 only)
     # ACT-Q2A/Q2B: Program details (only if Q1 = YES)
     # =========================================================================
@@ -5481,7 +5511,7 @@ questionnaire:
           kind: Question
           title: "Does he/she currently attend any nursery school, play group or other early childhood program or activity? (Please do not include child care programs or time spent in elementary school.)"
           precondition:
-            - predicate: child_age <= 5
+            - predicate: q_child_age.outcome <= 5
           input:
             control: Switch
             off: "No"
@@ -5492,7 +5522,7 @@ questionnaire:
           kind: Question
           title: "What type(s) of programs or activities? (Mark all that apply.)"
           precondition:
-            - predicate: child_age <= 5
+            - predicate: q_child_age.outcome <= 5
             - predicate: q_act_q1.outcome == 1
           input:
             control: Checkbox
@@ -5510,7 +5540,7 @@ questionnaire:
           kind: Question
           title: "For about how many hours a week does he/she attend these in total?"
           precondition:
-            - predicate: child_age <= 5
+            - predicate: q_child_age.outcome <= 5
             - predicate: q_act_q1.outcome == 1
           input:
             control: Editbox
@@ -5522,7 +5552,7 @@ questionnaire:
     # BLOCK 2: ACTIVITY FREQUENCY (ACT-Q3A through ACT-Q3E)
     # =========================================================================
     # ACT-C3: IF AGE < 4 → skip to behaviour section. Modeled as
-    #         precondition child_age >= 4 on this block.
+    #         precondition q_child_age.outcome >= 4 on this block.
     # ACT-Q3A-Q3C: Activity frequency questions (age 4+)
     # ACT-C3D: Age-variant club question (Q3D1/Q3D2/Q3D3)
     # ACT-Q3E: Computer/video games (age 4+)
@@ -5531,7 +5561,7 @@ questionnaire:
       kind: Group
       title: "Activities - Activity Frequency"
       precondition:
-        - predicate: child_age >= 4
+        - predicate: q_child_age.outcome >= 4
       items:
         # ACT-Q3A: Sports with coaching/instruction
         - id: q_act_q3a
@@ -5578,7 +5608,7 @@ questionnaire:
           kind: Question
           title: "How often has the child taken part in any clubs, groups or community programs with leadership, such as Beavers, Sparks or church groups?"
           precondition:
-            - predicate: child_age >= 4 and child_age <= 5
+            - predicate: q_child_age.outcome >= 4 and q_child_age.outcome <= 5
           input:
             control: Radio
             labels:
@@ -5593,7 +5623,7 @@ questionnaire:
           kind: Question
           title: "How often has the child taken part in any clubs, groups or community programs with leadership, such as Brownies, Cubs or church groups?"
           precondition:
-            - predicate: child_age >= 6 and child_age <= 9
+            - predicate: q_child_age.outcome >= 6 and q_child_age.outcome <= 9
           input:
             control: Radio
             labels:
@@ -5608,7 +5638,7 @@ questionnaire:
           kind: Question
           title: "How often has the child taken part in any clubs, groups or community programs with leadership, such as Boys and Girls Clubs, Scouts, Guides or church groups?"
           precondition:
-            - predicate: child_age >= 10 and child_age <= 11
+            - predicate: q_child_age.outcome >= 10 and q_child_age.outcome <= 11
           input:
             control: Radio
             labels:
@@ -5643,7 +5673,7 @@ questionnaire:
       kind: Group
       title: "Activities - TV and Play"
       precondition:
-        - predicate: child_age >= 4
+        - predicate: q_child_age.outcome >= 4
       items:
         # ACT-Q4A: TV days per week
         - id: q_act_q4a
@@ -5689,8 +5719,8 @@ questionnaire:
       kind: Group
       title: "Activities - Chores"
       precondition:
-        - predicate: child_age >= 10
-        - predicate: child_age <= 11
+        - predicate: q_child_age.outcome >= 10
+        - predicate: q_child_age.outcome <= 11
       items:
         # ACT-Q6A-Q6F: Chores frequency (6 sub-questions, same scale)
         - id: qg_act_q6
@@ -5725,7 +5755,7 @@ questionnaire:
       kind: Group
       title: "Activities - Camps"
       precondition:
-        - predicate: child_age >= 6
+        - predicate: q_child_age.outcome >= 6
       items:
         # ACT-Q7A: Overnight camp
         - id: q_act_q7a
@@ -5782,7 +5812,7 @@ questionnaire:
       kind: Group
       title: "Sleep Patterns"
       precondition:
-        - predicate: child_age <= 3
+        - predicate: q_child_age.outcome <= 3
       items:
         # BEH-Q1: Trouble falling asleep
         - id: q_beh_q1
@@ -5846,7 +5876,7 @@ questionnaire:
       kind: Group
       title: "Infant Feeding Reactions"
       precondition:
-        - predicate: child_age >= 1 and child_age <= 3
+        - predicate: q_child_age.outcome >= 1 and q_child_age.outcome <= 3
       items:
         # BEH-Q5: Reaction to new foods
         - id: q_beh_q5
@@ -5868,7 +5898,7 @@ questionnaire:
       kind: Group
       title: "Infant Feeding Difficulty"
       precondition:
-        - predicate: child_age == 0
+        - predicate: q_child_age.outcome == 0
       items:
         # BEH-Q5A: How often difficult to feed
         - id: q_beh_q5a
@@ -5886,7 +5916,7 @@ questionnaire:
     # =========================================================================
     # BLOCK 4: CHILD BEHAVIOUR AGE 4-11 (Q6A-Q6UU)
     # =========================================================================
-    # BEH-I6A: Intro. Precondition: child_age >= 4
+    # BEH-I6A: Intro. Precondition: q_child_age.outcome >= 4
     # BEH-Q6A through BEH-Q6UU: 47 behaviour items on 3-point scale
     # All items share the same scale so modeled as one QuestionGroup.
     # Index mapping:
@@ -5942,7 +5972,7 @@ questionnaire:
       kind: Group
       title: "Child Behaviour Assessment (Age 4-11)"
       precondition:
-        - predicate: child_age >= 4
+        - predicate: q_child_age.outcome >= 4
       items:
         # BEH-I6A: Intro
         - id: q_beh_i6a
@@ -6020,7 +6050,7 @@ questionnaire:
       kind: Group
       title: "Delinquent Behaviours (Age 10-11)"
       precondition:
-        - predicate: child_age >= 10
+        - predicate: q_child_age.outcome >= 10
       items:
         # BEH-I7A: Intro
         - id: q_beh_i7a
@@ -6063,7 +6093,7 @@ questionnaire:
     # =========================================================================
     # BLOCK 6: TODDLER BEHAVIOUR (Age 2-3)
     # =========================================================================
-    # BEH-I8A: Intro. Precondition: child_age >= 2 and child_age <= 3
+    # BEH-I8A: Intro. Precondition: q_child_age.outcome >= 2 and q_child_age.outcome <= 3
     # BEH-Q8B through BEH-Q8UU: 33 items on 3-point scale
     # Index mapping:
     #   [0]  Q8B   - Can't sit still, restless, hyperactive
@@ -6105,7 +6135,7 @@ questionnaire:
       kind: Group
       title: "Toddler Behaviour Assessment (Age 2-3)"
       precondition:
-        - predicate: child_age >= 2 and child_age <= 3
+        - predicate: q_child_age.outcome >= 2 and q_child_age.outcome <= 3
       items:
         # BEH-I8A: Intro
         - id: q_beh_i8a
@@ -6167,7 +6197,7 @@ questionnaire:
     # MSD-C1: IF AGE > 3 YEARS → skip entire section
     # MSD-I1: Introduction
     # MSD-Q1 through Q48: Developmental milestone questions
-    # Age-band routing via preconditions on child_age_months:
+    # Age-band routing via preconditions on q_child_age_months.outcome:
     #   0-3m:  Q1-Q15    → exit at C16
     #   4-6m:  Q8-Q22    → exit at C23
     #   7-9m:  Q12-Q26   → exit at C27
@@ -6181,7 +6211,7 @@ questionnaire:
       kind: Group
       title: "Motor and Social Development"
       precondition:
-        - predicate: child_age <= 3
+        - predicate: q_child_age.outcome <= 3
       items:
         # MSD-I1: Introduction
         - id: q_msd_intro
@@ -6272,7 +6302,7 @@ questionnaire:
           kind: Question
           title: "When lying on his/her back and being pulled up to a sitting position, did this child ever hold his/her head stiffly so that it did not hang back as he/she was pulled up?"
           precondition:
-            - predicate: child_age_months >= 4
+            - predicate: q_child_age_months.outcome >= 4
           input:
             control: Switch
             off: "No"
@@ -6283,7 +6313,7 @@ questionnaire:
           kind: Question
           title: "Has he/she ever laughed out loud without being tickled or touched?"
           precondition:
-            - predicate: child_age_months >= 4
+            - predicate: q_child_age_months.outcome >= 4
           input:
             control: Switch
             off: "No"
@@ -6294,7 +6324,7 @@ questionnaire:
           kind: Question
           title: "Has he/she ever held in one hand a moderate size object such as a block or a rattle?"
           precondition:
-            - predicate: child_age_months >= 4
+            - predicate: q_child_age_months.outcome >= 4
           input:
             control: Switch
             off: "No"
@@ -6305,7 +6335,7 @@ questionnaire:
           kind: Question
           title: "Has he/she ever rolled over on his/her own on purpose?"
           precondition:
-            - predicate: child_age_months >= 4
+            - predicate: q_child_age_months.outcome >= 4
           input:
             control: Switch
             off: "No"
@@ -6320,7 +6350,7 @@ questionnaire:
           kind: Question
           title: "Has this child ever seemed to enjoy looking in the mirror at him/herself?"
           precondition:
-            - predicate: child_age_months >= 7
+            - predicate: q_child_age_months.outcome >= 7
           input:
             control: Switch
             off: "No"
@@ -6331,7 +6361,7 @@ questionnaire:
           kind: Question
           title: "Has he/she ever been pulled from a sitting to a standing position and supported his/her own weight with legs stretched out?"
           precondition:
-            - predicate: child_age_months >= 7
+            - predicate: q_child_age_months.outcome >= 7
           input:
             control: Switch
             off: "No"
@@ -6342,7 +6372,7 @@ questionnaire:
           kind: Question
           title: "Has he/she ever looked around with his/her eyes for a toy which was lost or not nearby?"
           precondition:
-            - predicate: child_age_months >= 7
+            - predicate: q_child_age_months.outcome >= 7
           input:
             control: Switch
             off: "No"
@@ -6353,7 +6383,7 @@ questionnaire:
           kind: Question
           title: "Has he/she ever sat alone with no help except for leaning forward on his/her hands or with just a little help from someone else?"
           precondition:
-            - predicate: child_age_months >= 7
+            - predicate: q_child_age_months.outcome >= 7
           input:
             control: Switch
             off: "No"
@@ -6361,7 +6391,7 @@ questionnaire:
 
         # -----------------------------------------------------------------
         # MSD-C16: IF AGE 0-3 MONTHS → exit to Relationships
-        # Modeled as: Q16+ requires child_age_months >= 4
+        # Modeled as: Q16+ requires q_child_age_months.outcome >= 4
         # -----------------------------------------------------------------
 
         # MSD-Q16
@@ -6369,7 +6399,7 @@ questionnaire:
           kind: Question
           title: "Has he/she ever sat for 10 minutes without any support at all?"
           precondition:
-            - predicate: child_age_months >= 4
+            - predicate: q_child_age_months.outcome >= 4
           input:
             control: Switch
             off: "No"
@@ -6380,7 +6410,7 @@ questionnaire:
           kind: Question
           title: "Has he/she ever pulled him/herself to a standing position without help from another person?"
           precondition:
-            - predicate: child_age_months >= 4
+            - predicate: q_child_age_months.outcome >= 4
           input:
             control: Switch
             off: "No"
@@ -6395,7 +6425,7 @@ questionnaire:
           kind: Question
           title: "Has this child ever crawled when left lying on his/her stomach?"
           precondition:
-            - predicate: child_age_months >= 10
+            - predicate: q_child_age_months.outcome >= 10
           input:
             control: Switch
             off: "No"
@@ -6406,7 +6436,7 @@ questionnaire:
           kind: Question
           title: "Has he/she ever said any recognizable words such as \"mama\" or \"dada\"?"
           precondition:
-            - predicate: child_age_months >= 10
+            - predicate: q_child_age_months.outcome >= 10
           input:
             control: Switch
             off: "No"
@@ -6417,7 +6447,7 @@ questionnaire:
           kind: Question
           title: "Has he/she ever picked up small objects such as raisins or cookie crumbs, using only his/her thumb and first finger?"
           precondition:
-            - predicate: child_age_months >= 10
+            - predicate: q_child_age_months.outcome >= 10
           input:
             control: Switch
             off: "No"
@@ -6428,7 +6458,7 @@ questionnaire:
           kind: Question
           title: "Has he/she ever walked at least 2 steps with one hand held or holding on to something?"
           precondition:
-            - predicate: child_age_months >= 10
+            - predicate: q_child_age_months.outcome >= 10
           input:
             control: Switch
             off: "No"
@@ -6439,7 +6469,7 @@ questionnaire:
         # But Q22 also appears in 4-6m band (Q8-Q22). Let me re-check:
         #   4-6m: Q8-Q22 → Q22 first appears at 4m
         # So Q22 minimum is 4 months, not 13. Q22 spans bands 4-6m through
-        # 13-15m. Already covered by C16 gate (child_age_months >= 4).
+        # 13-15m. Already covered by C16 gate (q_child_age_months.outcome >= 4).
         # -----------------------------------------------------------------
 
         # MSD-Q22
@@ -6447,7 +6477,7 @@ questionnaire:
           kind: Question
           title: "Has this child ever waved good-bye without help from another person?"
           precondition:
-            - predicate: child_age_months >= 4
+            - predicate: q_child_age_months.outcome >= 4
           input:
             control: Switch
             off: "No"
@@ -6455,7 +6485,7 @@ questionnaire:
 
         # -----------------------------------------------------------------
         # MSD-C23: IF AGE 4-6 MONTHS → exit to Relationships
-        # Modeled as: Q23+ requires child_age_months >= 7
+        # Modeled as: Q23+ requires q_child_age_months.outcome >= 7
         # -----------------------------------------------------------------
 
         # MSD-Q23
@@ -6463,7 +6493,7 @@ questionnaire:
           kind: Question
           title: "Has he/she ever shown by his/her behavior that he/she knows the names of common objects when somebody else names them out loud?"
           precondition:
-            - predicate: child_age_months >= 7
+            - predicate: q_child_age_months.outcome >= 7
           input:
             control: Switch
             off: "No"
@@ -6474,7 +6504,7 @@ questionnaire:
           kind: Question
           title: "Has he/she ever shown that he/she wanted something by pointing, pulling, or making pleasant sounds rather than crying or whining?"
           precondition:
-            - predicate: child_age_months >= 7
+            - predicate: q_child_age_months.outcome >= 7
           input:
             control: Switch
             off: "No"
@@ -6485,7 +6515,7 @@ questionnaire:
           kind: Question
           title: "Has he/she ever stood alone on his/her feet for 10 seconds or more without holding on to anything or another person?"
           precondition:
-            - predicate: child_age_months >= 7
+            - predicate: q_child_age_months.outcome >= 7
           input:
             control: Switch
             off: "No"
@@ -6496,7 +6526,7 @@ questionnaire:
           kind: Question
           title: "Has this child ever walked at least 2 steps without holding on to anything or another person?"
           precondition:
-            - predicate: child_age_months >= 7
+            - predicate: q_child_age_months.outcome >= 7
           input:
             control: Switch
             off: "No"
@@ -6504,7 +6534,7 @@ questionnaire:
 
         # -----------------------------------------------------------------
         # MSD-C27: IF AGE 7-9 MONTHS → exit to Relationships
-        # Modeled as: Q27+ requires child_age_months >= 10
+        # Modeled as: Q27+ requires q_child_age_months.outcome >= 10
         # -----------------------------------------------------------------
 
         # MSD-Q27
@@ -6512,7 +6542,7 @@ questionnaire:
           kind: Question
           title: "Has he/she ever crawled up at least 2 stairs or steps?"
           precondition:
-            - predicate: child_age_months >= 10
+            - predicate: q_child_age_months.outcome >= 10
           input:
             control: Switch
             off: "No"
@@ -6523,7 +6553,7 @@ questionnaire:
           kind: Question
           title: "Has he/she said 2 recognizable words besides \"mama\" or \"dada\"?"
           precondition:
-            - predicate: child_age_months >= 10
+            - predicate: q_child_age_months.outcome >= 10
           input:
             control: Switch
             off: "No"
@@ -6551,7 +6581,7 @@ questionnaire:
           kind: Question
           title: "Has this child ever run?"
           precondition:
-            - predicate: child_age_months >= 10
+            - predicate: q_child_age_months.outcome >= 10
           input:
             control: Switch
             off: "No"
@@ -6562,7 +6592,7 @@ questionnaire:
           kind: Question
           title: "Has he/she ever said the name of a familiar object, such as a ball?"
           precondition:
-            - predicate: child_age_months >= 10
+            - predicate: q_child_age_months.outcome >= 10
           input:
             control: Switch
             off: "No"
@@ -6573,7 +6603,7 @@ questionnaire:
           kind: Question
           title: "Has he/she ever made a line with a crayon or pencil?"
           precondition:
-            - predicate: child_age_months >= 10
+            - predicate: q_child_age_months.outcome >= 10
           input:
             control: Switch
             off: "No"
@@ -6584,7 +6614,7 @@ questionnaire:
           kind: Question
           title: "Did he/she ever walk up at least 2 stairs with one hand held or holding the railing?"
           precondition:
-            - predicate: child_age_months >= 10
+            - predicate: q_child_age_months.outcome >= 10
           input:
             control: Switch
             off: "No"
@@ -6592,7 +6622,7 @@ questionnaire:
 
         # -----------------------------------------------------------------
         # MSD-C33: IF AGE 10-12 MONTHS → exit to Relationships
-        # Modeled as: Q33+ requires child_age_months >= 13
+        # Modeled as: Q33+ requires q_child_age_months.outcome >= 13
         # -----------------------------------------------------------------
 
         # MSD-Q33
@@ -6600,7 +6630,7 @@ questionnaire:
           kind: Question
           title: "Has he/she ever fed him/herself with a spoon or fork without spilling much?"
           precondition:
-            - predicate: child_age_months >= 13
+            - predicate: q_child_age_months.outcome >= 13
           input:
             control: Switch
             off: "No"
@@ -6617,7 +6647,7 @@ questionnaire:
           kind: Question
           title: "Has this child ever let someone know, without crying, that wearing wet or soiled pants or diapers bothered him/her?"
           precondition:
-            - predicate: child_age_months >= 13
+            - predicate: q_child_age_months.outcome >= 13
           input:
             control: Switch
             off: "No"
@@ -6628,7 +6658,7 @@ questionnaire:
           kind: Question
           title: "Has he/she ever spoken a partial sentence of 3 words or more?"
           precondition:
-            - predicate: child_age_months >= 13
+            - predicate: q_child_age_months.outcome >= 13
           input:
             control: Switch
             off: "No"
@@ -6639,7 +6669,7 @@ questionnaire:
           kind: Question
           title: "Has he/she ever walked up stairs by him/herself without holding on to a rail?"
           precondition:
-            - predicate: child_age_months >= 13
+            - predicate: q_child_age_months.outcome >= 13
           input:
             control: Switch
             off: "No"
@@ -6647,7 +6677,7 @@ questionnaire:
 
         # -----------------------------------------------------------------
         # MSD-C37: IF AGE 13-15 MONTHS → exit to Relationships
-        # Modeled as: Q37+ requires child_age_months >= 16
+        # Modeled as: Q37+ requires q_child_age_months.outcome >= 16
         # -----------------------------------------------------------------
 
         # MSD-Q37
@@ -6655,7 +6685,7 @@ questionnaire:
           kind: Question
           title: "Has he/she ever washed and dried his/her hands without any help except for turning the water on and off?"
           precondition:
-            - predicate: child_age_months >= 16
+            - predicate: q_child_age_months.outcome >= 16
           input:
             control: Switch
             off: "No"
@@ -6666,7 +6696,7 @@ questionnaire:
           kind: Question
           title: "Has he/she ever counted 3 objects correctly?"
           precondition:
-            - predicate: child_age_months >= 16
+            - predicate: q_child_age_months.outcome >= 16
           input:
             control: Switch
             off: "No"
@@ -6677,7 +6707,7 @@ questionnaire:
           kind: Question
           title: "Has he/she ever gone to the toilet alone?"
           precondition:
-            - predicate: child_age_months >= 16
+            - predicate: q_child_age_months.outcome >= 16
           input:
             control: Switch
             off: "No"
@@ -6688,7 +6718,7 @@ questionnaire:
           kind: Question
           title: "Has he/she ever walked upstairs by him/herself with no help, stepping on each step with only one foot?"
           precondition:
-            - predicate: child_age_months >= 16
+            - predicate: q_child_age_months.outcome >= 16
           input:
             control: Switch
             off: "No"
@@ -6696,7 +6726,7 @@ questionnaire:
 
         # -----------------------------------------------------------------
         # MSD-C41: IF AGE 16-18 MONTHS → exit to Relationships
-        # Modeled as: Q41+ requires child_age_months >= 19
+        # Modeled as: Q41+ requires q_child_age_months.outcome >= 19
         # -----------------------------------------------------------------
 
         # MSD-Q41
@@ -6704,7 +6734,7 @@ questionnaire:
           kind: Question
           title: "Does he/she know his/her own age and sex?"
           precondition:
-            - predicate: child_age_months >= 19
+            - predicate: q_child_age_months.outcome >= 19
           input:
             control: Switch
             off: "No"
@@ -6715,7 +6745,7 @@ questionnaire:
           kind: Question
           title: "Has he/she ever said the names of at least 4 colors?"
           precondition:
-            - predicate: child_age_months >= 19
+            - predicate: q_child_age_months.outcome >= 19
           input:
             control: Switch
             off: "No"
@@ -6726,7 +6756,7 @@ questionnaire:
           kind: Question
           title: "Has he/she ever pedaled a tricycle at least 10 feet?"
           precondition:
-            - predicate: child_age_months >= 19
+            - predicate: q_child_age_months.outcome >= 19
           input:
             control: Switch
             off: "No"
@@ -6734,7 +6764,7 @@ questionnaire:
 
         # -----------------------------------------------------------------
         # MSD-C44: IF AGE 19-21 MONTHS → exit to Relationships
-        # Modeled as: Q44+ requires child_age_months >= 22
+        # Modeled as: Q44+ requires q_child_age_months.outcome >= 22
         # -----------------------------------------------------------------
 
         # MSD-Q44
@@ -6742,7 +6772,7 @@ questionnaire:
           kind: Question
           title: "Has he/she ever done a somersault without help from anybody?"
           precondition:
-            - predicate: child_age_months >= 22
+            - predicate: q_child_age_months.outcome >= 22
           input:
             control: Switch
             off: "No"
@@ -6753,7 +6783,7 @@ questionnaire:
           kind: Question
           title: "Has he/she ever dressed him/herself without any help except for tying shoes and buttoning the backs of dresses?"
           precondition:
-            - predicate: child_age_months >= 22
+            - predicate: q_child_age_months.outcome >= 22
           input:
             control: Switch
             off: "No"
@@ -6764,7 +6794,7 @@ questionnaire:
           kind: Question
           title: "Has he/she ever said his/her first and last name together without someone's help? (Nickname may be used for first name.)"
           precondition:
-            - predicate: child_age_months >= 22
+            - predicate: q_child_age_months.outcome >= 22
           input:
             control: Switch
             off: "No"
@@ -6775,7 +6805,7 @@ questionnaire:
           kind: Question
           title: "Has he/she ever counted out loud up to 10?"
           precondition:
-            - predicate: child_age_months >= 22
+            - predicate: q_child_age_months.outcome >= 22
           input:
             control: Switch
             off: "No"
@@ -6786,7 +6816,7 @@ questionnaire:
           kind: Question
           title: "Has he/she ever drawn a picture of a man or woman with at least 2 parts of the body besides a head?"
           precondition:
-            - predicate: child_age_months >= 22
+            - predicate: q_child_age_months.outcome >= 22
           input:
             control: Switch
             off: "No"
@@ -6799,12 +6829,12 @@ questionnaire:
     # BLOCK 1: FRIENDSHIPS (REL-I1, REL-Q1 through REL-Q5)
     # =========================================================================
     # REL-C1: IF AGE < 4 → skip entire section. Modeled as block-level
-    #         precondition child_age >= 4.
+    #         precondition q_child_age.outcome >= 4.
     # REL-I1: Introduction (all age 4+)
     # REL-Q1: Days with friends (all age 4+)
-    # REL-C2: IF AGE < 6 → skip to Q6. Q2 has precondition child_age >= 6.
+    # REL-C2: IF AGE < 6 → skip to Q6. Q2 has precondition q_child_age.outcome >= 6.
     # REL-Q2: Close friends count. If NONE → skip Q3-Q5.
-    # REL-C3/C4: IF AGE < 8 → skip to Q6. Q3-Q5 have precondition child_age >= 8.
+    # REL-C3/C4: IF AGE < 8 → skip to Q6. Q3-Q5 have precondition q_child_age.outcome >= 8.
     # REL-Q3: Friends known by name
     # REL-Q4: Making new friends
     # REL-Q5: Friends in trouble
@@ -6813,7 +6843,7 @@ questionnaire:
       kind: Group
       title: "Relationships - Friendships"
       precondition:
-        - predicate: child_age >= 4
+        - predicate: q_child_age.outcome >= 4
       items:
         # REL-I1: Introduction
         - id: q_rel_intro
@@ -6840,7 +6870,7 @@ questionnaire:
           kind: Question
           title: "About how many close friends does he/she have?"
           precondition:
-            - predicate: child_age >= 6
+            - predicate: q_child_age.outcome >= 6
           input:
             control: Radio
             labels:
@@ -6856,7 +6886,7 @@ questionnaire:
           kind: Question
           title: "How many of his/her close friends do you know by sight and by first and last name?"
           precondition:
-            - predicate: child_age >= 8
+            - predicate: q_child_age.outcome >= 8
             - predicate: q_rel_q2.outcome != 1
           input:
             control: Radio
@@ -6873,7 +6903,7 @@ questionnaire:
           kind: Question
           title: "When it comes to meeting new children and making new friends, is he/she:"
           precondition:
-            - predicate: child_age >= 8
+            - predicate: q_child_age.outcome >= 8
             - predicate: q_rel_q2.outcome != 1
           input:
             control: Radio
@@ -6887,7 +6917,7 @@ questionnaire:
           kind: Question
           title: "How often does he/she hang around with kids you think are frequently in trouble?"
           precondition:
-            - predicate: child_age >= 8
+            - predicate: q_child_age.outcome >= 8
             - predicate: q_rel_q2.outcome != 1
           input:
             control: Radio
@@ -6901,14 +6931,14 @@ questionnaire:
     # BLOCK 2: GETTING ALONG (REL-Q6 through REL-Q9)
     # =========================================================================
     # Q6-Q8: Getting along with others (all age 4+, same 5-point scale)
-    # REL-C9: IF no siblings → skip Q9. Modeled with has_siblings == 1.
+    # REL-C9: IF no siblings → skip Q9. Modeled with q_has_siblings.outcome == 1.
     # REL-Q9: Getting along with siblings (same scale, conditional)
     # =========================================================================
     - id: b_rel_getting_along
       kind: Group
       title: "Relationships - Getting Along"
       precondition:
-        - predicate: child_age >= 4
+        - predicate: q_child_age.outcome >= 4
       items:
         # REL-Q6, Q7, Q8: Getting along with peers, teachers, parents
         - id: qg_rel_getting_along
@@ -6934,7 +6964,7 @@ questionnaire:
           kind: Question
           title: "During the past 6 months, how well has the child gotten along with his/her brother(s)/sister(s)?"
           precondition:
-            - predicate: has_siblings == 1
+            - predicate: q_has_siblings.outcome == 1
           input:
             control: Radio
             labels:
@@ -6953,7 +6983,7 @@ questionnaire:
     # =========================================================================
     # PAR-C1: IF foster parent → skip entire section.
     #         IF PMK or PMK's spouse → show; OTHERWISE → skip.
-    # Modeled as block precondition on is_pmk_or_spouse and not foster.
+    # Modeled as block precondition: PMK or PMK spouse/partner (not foster).
     # PAR-I1: Intro
     # PAR-Q1-Q6: 6 positive interaction items (5-point frequency)
     # PAR-C7: IF age < 3 → Q7A; ELSE → Q7. Mutually exclusive variants.
@@ -6962,7 +6992,7 @@ questionnaire:
       kind: Group
       title: "Parenting - Positive Interaction"
       precondition:
-        - predicate: is_pmk_or_spouse == 1
+        - predicate: q_pickresp.outcome in [1, 2]
         - predicate: relationship_to_child != 4
       items:
         # PAR-I1: Intro
@@ -7003,7 +7033,7 @@ questionnaire:
           kind: Question
           title: "How often do you play sports, hobbies or games with him/her?"
           precondition:
-            - predicate: child_age >= 3
+            - predicate: q_child_age.outcome >= 3
           input:
             control: Radio
             labels:
@@ -7018,7 +7048,7 @@ questionnaire:
           kind: Question
           title: "How often do you play games with him/her?"
           precondition:
-            - predicate: child_age < 3
+            - predicate: q_child_age.outcome < 3
           input:
             control: Radio
             labels:
@@ -7032,7 +7062,7 @@ questionnaire:
     # BLOCK 2: DISCIPLINE EFFECTIVENESS (PAR-Q8 through PAR-Q18)
     # =========================================================================
     # PAR-C8: IF age < 2 → skip to custody section. Modeled as block
-    #         precondition child_age >= 2.
+    #         precondition q_child_age.outcome >= 2.
     # PAR-I8A: Intro
     # PAR-Q8-Q18: 11 discipline items (5-point proportion scale)
     # =========================================================================
@@ -7040,9 +7070,9 @@ questionnaire:
       kind: Group
       title: "Parenting - Discipline Effectiveness"
       precondition:
-        - predicate: is_pmk_or_spouse == 1
+        - predicate: q_pickresp.outcome in [1, 2]
         - predicate: relationship_to_child != 4
-        - predicate: child_age >= 2
+        - predicate: q_child_age.outcome >= 2
       items:
         # PAR-I8A: Intro
         - id: q_par_discipline_intro
@@ -7097,9 +7127,9 @@ questionnaire:
       kind: Group
       title: "Parenting - Reactions to Rule-Breaking"
       precondition:
-        - predicate: is_pmk_or_spouse == 1
+        - predicate: q_pickresp.outcome in [1, 2]
         - predicate: relationship_to_child != 4
-        - predicate: child_age >= 2
+        - predicate: q_child_age.outcome >= 2
       items:
         # PAR-I19A: Intro
         - id: q_par_reactions_intro
@@ -7150,9 +7180,9 @@ questionnaire:
       kind: Group
       title: "Parenting - Food Security and Exposure"
       precondition:
-        - predicate: is_pmk_or_spouse == 1
+        - predicate: q_pickresp.outcome in [1, 2]
         - predicate: relationship_to_child != 4
-        - predicate: child_age >= 2
+        - predicate: q_child_age.outcome >= 2
       items:
         # PAR-I26A: Intro
         - id: q_par_food_intro
@@ -7262,9 +7292,6 @@ questionnaire:
             labels:
               1: "Yes"
               2: "No"
-          codeBlock: |
-            if q_cus_q1a.outcome == 1:
-                child_lived_with_respondent = 1
 
         # CUS-Q1B: Age started living with respondent
         # Shown only when child did NOT live with respondent at birth
@@ -7396,9 +7423,6 @@ questionnaire:
             labels:
               1: "Yes"
               2: "No"
-          codeBlock: |
-            if q_cus_q2.outcome == 1:
-                parents_together = 1
 
         # CUS-Q3A: Type of union at birth
         # Only if parents WERE together
@@ -8989,7 +9013,7 @@ questionnaire:
           kind: Question
           title: "Care in a before or after school program?"
           precondition:
-            - predicate: child_age >= 4
+            - predicate: q_child_age.outcome >= 4
           input:
             control: Switch
             off: "No"
@@ -8999,7 +9023,7 @@ questionnaire:
           kind: Question
           title: "For about how many hours per week is that? (Before/after school program)"
           precondition:
-            - predicate: child_age >= 4
+            - predicate: q_child_age.outcome >= 4
             - predicate: q_car_q1h.outcome == 1
           input:
             control: Editbox
@@ -9013,7 +9037,7 @@ questionnaire:
           kind: Question
           title: "Is the child in his/her own care (e.g. before/after school)?"
           precondition:
-            - predicate: child_age >= 6
+            - predicate: q_child_age.outcome >= 6
           input:
             control: Switch
             off: "No"
@@ -9023,7 +9047,7 @@ questionnaire:
           kind: Question
           title: "For about how many hours per week is that? (Self-care)"
           precondition:
-            - predicate: child_age >= 6
+            - predicate: q_child_age.outcome >= 6
             - predicate: q_car_q1i.outcome == 1
           input:
             control: Editbox
@@ -9088,7 +9112,7 @@ questionnaire:
           kind: Question
           title: "During the past 6 months, how well has he/she gotten along with his/her main child care provider?"
           precondition:
-            - predicate: child_age <= 5
+            - predicate: q_child_age.outcome <= 5
           input:
             control: Radio
             labels:
@@ -9153,7 +9177,7 @@ questionnaire:
       title: "Previous Child Care"
       precondition:
         - predicate: q_car_q1a.outcome == 0
-        - predicate: child_age >= 1
+        - predicate: q_child_age.outcome >= 1
       items:
         # CAR-Q6: Ever used child care
         - id: q_car_q6
@@ -9177,7 +9201,7 @@ questionnaire:
       kind: Group
       title: "Overall Child Care Changes"
       precondition:
-        - predicate: (q_car_q1a.outcome == 1 and child_age >= 1) or (q_car_q1a.outcome == 0 and child_age >= 1 and q_car_q6.outcome == 1)
+        - predicate: (q_car_q1a.outcome == 1 and q_child_age.outcome >= 1) or (q_car_q1a.outcome == 0 and q_child_age.outcome >= 1 and q_car_q6.outcome == 1)
       items:
         # CAR-Q7: Total changes overall
         - id: q_car_q7
@@ -9194,7 +9218,7 @@ questionnaire:
           kind: Question
           title: "Last summer while this child was not in school, what type of child care arrangement did you use while you (and your spouse/partner) were at work/studying? (Mark all that apply.)"
           precondition:
-            - predicate: child_age >= 6
+            - predicate: q_child_age.outcome >= 6
           input:
             control: Checkbox
             labels:
@@ -9207,3 +9231,3791 @@ questionnaire:
               64: "Child in own care"
               128: "Structured summer program"
               256: "Other"
+
+    # =========================================================================
+    # APPENDICES (source pp. 161-244) — converted 2026-07-19.
+    # Appendix B (Informed Consent Form, pp. 185-187) is procedural: its
+    # consent OUTCOME enters as q_adm_consent_selfreport below.
+    # =========================================================================
+    # =========================================================================
+    # APPENDIX ADMINISTRATION (external inputs for Appendices A, C, D, E, F)
+    # =========================================================================
+    # The appendix instruments depend on values the main interview does not
+    # collect: the selected child's sex (household roster), the informed-consent
+    # outcome (Appendix B form), whether the teacher/principal mail-back forms
+    # were administered and returned, and the data-collection period that gates
+    # the NPHS integration (Appendix E; KCON-Q1A vs Q1B on p.235).
+    # Modeled as admin questions per the External-input convention (Pattern 10)
+    # until first-class external inputs exist (askalot-io/askalot#171).
+    # =========================================================================
+    - id: b_appendix_admin
+      kind: Group
+      title: "Appendix Administration (administrative)"
+      items:
+        # EXTERNAL — child's sex from the household roster (App. A Section F gates)
+        - id: q_adm_child_sex
+          kind: Question
+          title: "ADMIN: Sex of the selected child (from household roster)."
+          input:
+            control: Radio
+            labels:
+              1: "Male"
+              2: "Female"
+
+        # EXTERNAL — Appendix B informed-consent outcome (gates the App. A booklet)
+        - id: q_adm_consent_selfreport
+          kind: Question
+          title: "ADMIN: Was informed consent (Appendix B) given for the 10-11 year old self-report booklet?"
+          precondition:
+            - predicate: q_child_age.outcome >= 10
+          input:
+            control: Switch
+            "off": "No"
+            "on": "Yes"
+
+        # EXTERNAL — Teacher's Questionnaire administered and returned (App. C)
+        - id: q_adm_teacher_form
+          kind: Question
+          title: "ADMIN: Was the Teacher's Questionnaire (Appendix C) administered and returned?"
+          precondition:
+            - predicate: q_edu_q1.outcome >= 2
+          input:
+            control: Switch
+            "off": "No"
+            "on": "Yes"
+
+        # EXTERNAL — Principal's Questionnaire administered and returned (App. D)
+        - id: q_adm_principal_form
+          kind: Question
+          title: "ADMIN: Was the Principal's Questionnaire (Appendix D) administered and returned?"
+          precondition:
+            - predicate: q_edu_q1.outcome >= 2
+          input:
+            control: Switch
+            "off": "No"
+            "on": "Yes"
+
+        # EXTERNAL — data-collection period (source p.230/p.235: integrated
+        # NLSC+NPHS in Nov 1994 / Mar 1995; NLSC-only in Dec 1994 / Feb 1995).
+        # Gates Appendix E entirely and selects KCON-Q1A vs KCON-Q1B.
+        - id: q_adm_collection_period
+          kind: Question
+          title: "ADMIN: Which data-collection period is this interview in?"
+          input:
+            control: Radio
+            labels:
+              1: "Integrated NLSC + NPHS collection (Nov 1994 / Mar 1995)"
+              2: "NLSC-only collection (Dec 1994 / Feb 1995)"
+
+    # =========================================================================
+    # APPENDIX A — Questionnaire for 10-11 Year Olds (self-report booklet)
+    # Source: NLSCY inventory Appendix A, pages 162-184, 135 items.
+    # Self-administered by the selected child; almost all items are Likert/scale
+    # batteries with no skip routing. Every block is gated by the hoisted
+    # eligibility+consent gate (child aged 10-11 AND Appendix B consent given).
+    # External inputs (not asked in this booklet): q_child_age (roster),
+    # q_adm_child_sex (roster, Section F gates), q_adm_consent_selfreport (App. B).
+    # =========================================================================
+
+    # =========================================================================
+    # SECTION A — Friends and Family (p.164-166) — 12 items
+    # A.01-A.04 share a 5-point False->True scale but are numbered individually
+    # in the source, so kept as standalone Questions (not a QuestionGroup).
+    # Skip: A.07=Yes -> A.08 (relationships); A.09 asked of all per source.
+    # =========================================================================
+    - id: b_sr_friends
+      kind: Group
+      title: "About My Friends and Family"
+      precondition:
+        - predicate: q_child_age.outcome >= 10
+        - predicate: q_adm_consent_selfreport.outcome == 1
+      items:
+        # A.01
+        - id: q_sr_a01
+          kind: Question
+          title: "I have a lot of friends."
+          input:
+            control: Radio
+            labels:
+              1: "False"
+              2: "Mostly false"
+              3: "Sometimes false / Sometimes true"
+              4: "Mostly true"
+              5: "True"
+
+        # A.02
+        - id: q_sr_a02
+          kind: Question
+          title: "I get along with kids easily."
+          input:
+            control: Radio
+            labels:
+              1: "False"
+              2: "Mostly false"
+              3: "Sometimes false / Sometimes true"
+              4: "Mostly true"
+              5: "True"
+
+        # A.03
+        - id: q_sr_a03
+          kind: Question
+          title: "Other kids want me to be their friend."
+          input:
+            control: Radio
+            labels:
+              1: "False"
+              2: "Mostly false"
+              3: "Sometimes false / Sometimes true"
+              4: "Mostly true"
+              5: "True"
+
+        # A.04
+        - id: q_sr_a04
+          kind: Question
+          title: "Most other kids like me."
+          input:
+            control: Radio
+            labels:
+              1: "False"
+              2: "Mostly false"
+              3: "Sometimes false / Sometimes true"
+              4: "Mostly true"
+              5: "True"
+
+        # A.05 — 6 options -> Dropdown
+        - id: q_sr_a05
+          kind: Question
+          title: "About how many days a week do you do things with friends outside of school hours?"
+          input:
+            control: Dropdown
+            labels:
+              0: "Never"
+              1: "Less than once a week"
+              2: "1 day a week"
+              3: "2-3 days a week"
+              4: "4-5 days a week"
+              5: "6-7 days a week"
+
+        # A.06 — 2-digit count; "If none write 00"
+        - id: q_sr_a06
+          kind: Question
+          title: "How many close friends do you have?"
+          input:
+            control: Editbox
+            min: 0
+            max: 99
+            right: "close friends"
+
+        # A.07 — Yes/No screener for A.08
+        - id: q_sr_a07
+          kind: Question
+          title: "Other than your friends, do you have anyone else in particular you can talk to about yourself or your problems?"
+          input:
+            control: Switch
+            "off": "No"
+            "on": "Yes"
+
+        # A.08 — multi-select; asked only if A.07 = Yes (Switch on -> outcome 1)
+        - id: q_sr_a08
+          kind: Question
+          title: "What is their relationship to you? (Mark everyone you feel you can talk to about yourself or your problems)"
+          precondition:
+            - predicate: q_sr_a07.outcome == 1
+          input:
+            control: Checkbox
+            labels:
+              1: "Mother"
+              2: "Father"
+              4: "Stepmother"
+              8: "Stepfather"
+              16: "Brother"
+              32: "Sister"
+              64: "Grandparents"
+              128: "Other relatives"
+              256: "A friend of the family"
+              512: "Sitter or babysitter"
+              1024: "Parent's boyfriend/girlfriend"
+              2048: "Teacher"
+              4096: "Coach or leader (e.g. scout or church leader)"
+              8192: "Other"
+
+        # A.09 — asked of all (ungated per source)
+        - id: q_sr_a09
+          kind: Question
+          title: "During the past 6 months, how well have you gotten along with other children such as friends or classmates?"
+          input:
+            control: Radio
+            labels:
+              1: "Very well, no problems"
+              2: "Quite well, hardly any problems"
+              3: "Pretty well, occasional problems"
+              4: "Not too well, frequent problems"
+              5: "Not well at all, constant problems"
+
+        # A.10 — 6 options -> Dropdown
+        - id: q_sr_a10
+          kind: Question
+          title: "During the past 6 months, how well have you gotten along with your mother?"
+          input:
+            control: Dropdown
+            labels:
+              1: "Very well, no problems"
+              2: "Quite well, hardly any problems"
+              3: "Pretty well, occasional problems"
+              4: "Not too well, frequent problems"
+              5: "Not well at all, constant problems"
+              6: "Don't have a mother or am not in touch with her"
+
+        # A.11 — 6 options -> Dropdown
+        - id: q_sr_a11
+          kind: Question
+          title: "During the past 6 months, how well have you gotten along with your father?"
+          input:
+            control: Dropdown
+            labels:
+              1: "Very well, no problems"
+              2: "Quite well, hardly any problems"
+              3: "Pretty well, occasional problems"
+              4: "Not too well, frequent problems"
+              5: "Not well at all, constant problems"
+              6: "Don't have a father or am not in touch with him"
+
+        # A.12 — 6 options -> Dropdown
+        - id: q_sr_a12
+          kind: Question
+          title: "During the past 6 months, how well have you gotten along with your brothers and sisters?"
+          input:
+            control: Dropdown
+            labels:
+              1: "Very well, no problems"
+              2: "Quite well, hardly any problems"
+              3: "Pretty well, occasional problems"
+              4: "Not too well, frequent problems"
+              5: "Not well at all, constant problems"
+              6: "Don't have brothers and sisters or am not in touch with them"
+
+    # =========================================================================
+    # SECTION B — School (p.167-170) — 17 items
+    # B.04-B.10 and B.14-B.17 share scales but are individually numbered in the
+    # source; kept as standalone Questions per the item-id scheme. No skips.
+    # =========================================================================
+    - id: b_sr_school
+      kind: Group
+      title: "About My School and Me"
+      precondition:
+        - predicate: q_child_age.outcome >= 10
+        - predicate: q_adm_consent_selfreport.outcome == 1
+      items:
+        # B.01
+        - id: q_sr_b01
+          kind: Question
+          title: "How do you feel about school?"
+          input:
+            control: Radio
+            labels:
+              1: "I like school very much"
+              2: "I like school quite a bit"
+              3: "I like school a bit"
+              4: "I don't like school very much"
+              5: "I hate school"
+
+        # B.02
+        - id: q_sr_b02
+          kind: Question
+          title: "How well do you think you are doing in your school work?"
+          input:
+            control: Radio
+            labels:
+              1: "Very well"
+              2: "Well"
+              3: "Average"
+              4: "Poorly"
+              5: "Very poorly"
+
+        # B.03
+        - id: q_sr_b03
+          kind: Question
+          title: "How important is it to you to have good grades in school?"
+          input:
+            control: Radio
+            labels:
+              1: "Very important"
+              2: "Important"
+              3: "Somewhat important"
+              4: "Not very important"
+              5: "Not important at all"
+
+        # B.04 — False->True 5-point
+        - id: q_sr_b04
+          kind: Question
+          title: "I like mathematics."
+          input:
+            control: Radio
+            labels:
+              1: "False"
+              2: "Mostly false"
+              3: "Sometimes false / Sometimes true"
+              4: "Mostly true"
+              5: "True"
+
+        # B.05 — All the time->Never frequency
+        - id: q_sr_b05
+          kind: Question
+          title: "I feel safe at school."
+          input:
+            control: Radio
+            labels:
+              1: "All the time"
+              2: "Most of the time"
+              3: "Some of the time"
+              4: "Rarely"
+              5: "Never"
+
+        # B.06
+        - id: q_sr_b06
+          kind: Question
+          title: "I feel safe on my way to and from school."
+          input:
+            control: Radio
+            labels:
+              1: "All the time"
+              2: "Most of the time"
+              3: "Some of the time"
+              4: "Rarely"
+              5: "Never"
+
+        # B.07
+        - id: q_sr_b07
+          kind: Question
+          title: "Children say nasty and unpleasant things to me at school."
+          input:
+            control: Radio
+            labels:
+              1: "All the time"
+              2: "Most of the time"
+              3: "Some of the time"
+              4: "Rarely"
+              5: "Never"
+
+        # B.08
+        - id: q_sr_b08
+          kind: Question
+          title: "I am bullied in school."
+          input:
+            control: Radio
+            labels:
+              1: "All the time"
+              2: "Most of the time"
+              3: "Some of the time"
+              4: "Rarely"
+              5: "Never"
+
+        # B.09
+        - id: q_sr_b09
+          kind: Question
+          title: "I am bullied on my way to and from school."
+          input:
+            control: Radio
+            labels:
+              1: "All the time"
+              2: "Most of the time"
+              3: "Some of the time"
+              4: "Rarely"
+              5: "Never"
+
+        # B.10
+        - id: q_sr_b10
+          kind: Question
+          title: "I feel like an outsider (or left out of things) at my school."
+          input:
+            control: Radio
+            labels:
+              1: "All the time"
+              2: "Most of the time"
+              3: "Some of the time"
+              4: "Rarely"
+              5: "Never"
+
+        # B.11 — 6 options -> Dropdown (adds "Don't need extra help")
+        - id: q_sr_b11
+          kind: Question
+          title: "When I need extra help, my teacher gives it to me."
+          input:
+            control: Dropdown
+            labels:
+              1: "All the time"
+              2: "Most of the time"
+              3: "Some of the time"
+              4: "Rarely"
+              5: "Never"
+              6: "Don't need extra help"
+
+        # B.12
+        - id: q_sr_b12
+          kind: Question
+          title: "My teacher treats me fairly."
+          input:
+            control: Radio
+            labels:
+              1: "All the time"
+              2: "Most of the time"
+              3: "Some of the time"
+              4: "Rarely"
+              5: "Never"
+
+        # B.13 — 6 options -> Dropdown (adds "Don't have problems at school")
+        - id: q_sr_b13
+          kind: Question
+          title: "If I have problems at school, my parents are ready to help."
+          input:
+            control: Dropdown
+            labels:
+              1: "All the time"
+              2: "Most of the time"
+              3: "Some of the time"
+              4: "Rarely"
+              5: "Never"
+              6: "Don't have problems at school"
+
+        # B.14
+        - id: q_sr_b14
+          kind: Question
+          title: "My parents encourage me to do well at school."
+          input:
+            control: Radio
+            labels:
+              1: "All the time"
+              2: "Most of the time"
+              3: "Some of the time"
+              4: "Rarely"
+              5: "Never"
+
+        # B.15
+        - id: q_sr_b15
+          kind: Question
+          title: "My parents expect too much of me at school."
+          input:
+            control: Radio
+            labels:
+              1: "All the time"
+              2: "Most of the time"
+              3: "Some of the time"
+              4: "Rarely"
+              5: "Never"
+
+        # B.16
+        - id: q_sr_b16
+          kind: Question
+          title: "I have a place at home to do homework or study."
+          input:
+            control: Radio
+            labels:
+              1: "All the time"
+              2: "Most of the time"
+              3: "Some of the time"
+              4: "Rarely"
+              5: "Never"
+
+        # B.17
+        - id: q_sr_b17
+          kind: Question
+          title: "When my teacher gives me homework, I do it."
+          input:
+            control: Radio
+            labels:
+              1: "All the time"
+              2: "Most of the time"
+              3: "Some of the time"
+              4: "Rarely"
+              5: "Never"
+
+    # =========================================================================
+    # SECTION C — About Me (p.171) — 8 items
+    # C.01 a-h is an explicit grid battery -> single QuestionGroup, shared
+    # 5-point False->True Radio scale.
+    # =========================================================================
+    - id: b_sr_aboutme
+      kind: Group
+      title: "About Me"
+      precondition:
+        - predicate: q_child_age.outcome >= 10
+        - predicate: q_adm_consent_selfreport.outcome == 1
+      items:
+        - id: qg_sr_c01
+          kind: QuestionGroup
+          title: "Read the following statements and choose the answer that best describes how you feel."
+          questions:
+            - "In general, I like the way I am."
+            - "Overall I have a lot to be proud of."
+            - "A lot of things about me are good."
+            - "When I do something, I do it well."
+            - "I am good looking."
+            - "I have a pleasant looking face."
+            - "Other kids think I am good looking."
+            - "I have a good looking body."
+          input:
+            control: Radio
+            labels:
+              1: "False"
+              2: "Mostly false"
+              3: "Sometimes false / Sometimes true"
+              4: "Mostly true"
+              5: "True"
+
+    # =========================================================================
+    # SECTION D — Feelings and Behaviours (p.172-176) — 54 items
+    # D.01 a-uu (47) -> QuestionGroup, shared 3-point scale.
+    # D.02 a-f (6) -> QuestionGroup, shared 4-point scale ("In the past year...").
+    # D.03 -> standalone Yes/No Question.
+    # =========================================================================
+    - id: b_sr_feelings
+      kind: Group
+      title: "Feelings and Behaviours"
+      precondition:
+        - predicate: q_child_age.outcome >= 10
+        - predicate: q_adm_consent_selfreport.outcome == 1
+      items:
+        # D.01 a-uu (47 sub-items)
+        - id: qg_sr_d01
+          kind: QuestionGroup
+          title: "Read the following statements and choose the answer that best describes you."
+          questions:
+            - "I show sympathy to (feel sorry for) someone who has made a mistake"
+            - "I can't sit still, am restless or hyperactive"
+            - "I destroy my own things"
+            - "I will try to help someone who has been hurt"
+            - "I steal at home"
+            - "I am unhappy, sad or depressed"
+            - "I get into many fights"
+            - "I volunteer to help clear up a mess someone else has made"
+            - "I am distractible, have trouble sticking to any activity"
+            - "I try when I am mad at someone, to get others to dislike him/her"
+            - "I am not as happy as other children"
+            - "I destroy things belonging to my family or other children"
+            - "I will try, if there is an argument, to stop it"
+            - "I fidget"
+            - "I am disobedient at school"
+            - "I can't concentrate, can't pay attention"
+            - "I am too fearful or anxious"
+            - "When I am mad at someone, I become friends with another as revenge"
+            - "I am impulsive, act without thinking"
+            - "I tell lies or cheat"
+            - "I offer to help other children (friend, brother or sister) who are having difficulty with a task"
+            - "I am worried"
+            - "I have difficulty awaiting my turn in games or groups"
+            - "I assume, when another child accidentally hurts me (such as bumping into me), that the other child meant to do it, and then react with anger and fighting"
+            - "I tend to do things on my own - am rather solitary"
+            - "When mad at someone, I say bad things behind the other's back"
+            - "I physically attack people"
+            - "I comfort a child (friend, brother or sister) who is crying or upset"
+            - "I cry a lot"
+            - "I vandalize"
+            - "I give up easily"
+            - "I threaten people"
+            - "I help to pick up objects which another child has dropped (e.g. pencils, books.)"
+            - "I cannot settle to anything for more than a few moments"
+            - "I feel miserable, unhappy, tearful, or distressed"
+            - "I am cruel, bully or am mean to others"
+            - "I stare into space"
+            - "When mad at someone, I say to others: let's not be with him/her"
+            - "I am nervous, highstrung or tense"
+            - "I kick, bite, hit other children"
+            - "I will invite bystanders to join in a game"
+            - "I steal outside the home"
+            - "I am inattentive, have difficulty paying attention to someone"
+            - "I have trouble enjoying myself"
+            - "I help other children (friends, brother or sister) who are feeling sick"
+            - "When mad at someone, I tell the other one's secrets to a third person"
+            - "I take the opportunity to show support for the work of children who can't do things as well as me"
+          input:
+            control: Radio
+            labels:
+              1: "Never or not true"
+              2: "Sometimes or somewhat true"
+              3: "Often or very true"
+
+        # D.02 a-f (6 sub-items)
+        - id: qg_sr_d02
+          kind: QuestionGroup
+          title: "In the past year, about how many times..."
+          questions:
+            - "...did you stay out later than your parents said you should?"
+            - "...did you stay out all night without permission?"
+            - "...did you skip a day of school without permission?"
+            - "...did you get drunk?"
+            - "...were you questioned by the police about anything you might have done such as stealing, damaging property or anything else?"
+            - "...did you run away from home?"
+          input:
+            control: Radio
+            labels:
+              1: "Never"
+              2: "Once"
+              3: "Twice"
+              4: "More than twice"
+
+        # D.03 — standalone Yes/No
+        - id: q_sr_d03
+          kind: Question
+          title: "In the past year were you part of a group that did bad things?"
+          input:
+            control: Radio
+            labels:
+              1: "Yes"
+              2: "No"
+
+    # =========================================================================
+    # SECTION E — My Parent(s) and Me (p.177-178) — 17 items
+    # E.01 a-q -> single QuestionGroup, shared 4-point scale. Stem carried in
+    # the group title.
+    # =========================================================================
+    - id: b_sr_parents
+      kind: Group
+      title: "My Parent(s) and Me"
+      precondition:
+        - predicate: q_child_age.outcome >= 10
+        - predicate: q_adm_consent_selfreport.outcome == 1
+      items:
+        - id: qg_sr_e01
+          kind: QuestionGroup
+          title: "My parents (or step parents or foster parents)..."
+          questions:
+            - "...smile at me"
+            - "...want to know exactly where I am and what I am doing"
+            - "...soon forget a rule they have made"
+            - "...praise me"
+            - "...let me go out any evening I want"
+            - "...do tell me what time to be home when I go out"
+            - "...nag me about little things"
+            - "...tell me what I can watch on TV"
+            - "...make sure I do my homework"
+            - "...only keep rules when it suits them"
+            - "...make sure I know I am appreciated"
+            - "...threaten punishment more often than they use it"
+            - "...speak of the good things I do"
+            - "...find out about my misbehaviour"
+            - "...enforce a rule or do not enforce a rule depending upon their mood"
+            - "...hit me or threaten to do so"
+            - "...seem proud of the things I do"
+          input:
+            control: Radio
+            labels:
+              1: "Never"
+              2: "Sometimes"
+              3: "Often"
+              4: "Very often"
+
+    # =========================================================================
+    # SECTION F — Puberty (p.178-179) — 5 items
+    # Routes on child's sex (external input q_adm_child_sex: 1=Male, 2=Female).
+    # F.01 asked of all; F.02/F.03 girls-only (sex==2); F.04/F.05 boys-only
+    # (sex==1). Item preconditions carry the sex residual on top of the block gate.
+    # =========================================================================
+    - id: b_sr_puberty
+      kind: Group
+      title: "Puberty"
+      precondition:
+        - predicate: q_child_age.outcome >= 10
+        - predicate: q_adm_consent_selfreport.outcome == 1
+      items:
+        # F.01 — all children
+        - id: q_sr_f01
+          kind: Question
+          title: "Would you say that your body hair (\"body hair\" means underarm and pubic hair):"
+          input:
+            control: Radio
+            labels:
+              1: "has not yet started growing"
+              2: "has barely started growing"
+              3: "growth of body hair is definitely underway"
+              4: "growth of body hair seems completed"
+
+        # F.02 — girls only
+        - id: q_sr_f02
+          kind: Question
+          title: "Have your breasts begun to grow?"
+          precondition:
+            - predicate: q_adm_child_sex.outcome == 2
+          input:
+            control: Radio
+            labels:
+              1: "Not yet started growing"
+              2: "Have barely started growing"
+              3: "Breast growth is definitely underway"
+              4: "Breast growth seems completed"
+
+        # F.03 — girls only
+        - id: q_sr_f03
+          kind: Question
+          title: "Have you begun to menstruate (your monthly periods)?"
+          precondition:
+            - predicate: q_adm_child_sex.outcome == 2
+          input:
+            control: Radio
+            labels:
+              1: "Yes"
+              2: "No"
+
+        # F.04 — boys only
+        - id: q_sr_f04
+          kind: Question
+          title: "Have you noticed a deepening of your voice?"
+          precondition:
+            - predicate: q_adm_child_sex.outcome == 1
+          input:
+            control: Radio
+            labels:
+              1: "Not yet started changing"
+              2: "Has barely started changing"
+              3: "Voice is definitely changing"
+              4: "Voice change seems completed"
+
+        # F.05 — boys only
+        - id: q_sr_f05
+          kind: Question
+          title: "Have you begun to grow hair on your face?"
+          precondition:
+            - predicate: q_adm_child_sex.outcome == 1
+          input:
+            control: Radio
+            labels:
+              1: "Not yet started growing"
+              2: "Has barely started growing"
+              3: "Facial hair growth is definitely underway"
+              4: "Facial hair growth seems completed"
+
+    # =========================================================================
+    # SECTION G — Smoking, Drinking and Drugs (p.180-183) — 13 items + 1 embedded
+    # Skips: G.01=No -> answer embedded "reasons never tried" checkbox (q_sr_g01a);
+    # G.02 in {1,2,3,4} -> G.03/G.04 (0 or 5 skip to G.05);
+    # G.06=No -> skip G.07/G.08; G.10=No -> skip G.11/G.12.
+    # Mined postcondition: screener-consistency between G.01 (ever tried) and
+    # G.02 (how often). Age-first-X items (G.03/G.07/G.12) are write-ins with
+    # sentinel escapes -> modeled as Editbox age; escape sentinels omitted per
+    # skill ("do not transcribe CATI sentinel edits"); no temporal postcondition
+    # (see summary).
+    # =========================================================================
+    - id: b_sr_substances
+      kind: Group
+      title: "Smoking, Drinking and Drugs"
+      precondition:
+        - predicate: q_child_age.outcome >= 10
+        - predicate: q_adm_consent_selfreport.outcome == 1
+      items:
+        # G.01
+        - id: q_sr_g01
+          kind: Question
+          title: "Have you ever tried cigarette smoking, even just a few puffs?"
+          input:
+            control: Radio
+            labels:
+              1: "Yes"
+              2: "No"
+
+        # G.01 embedded filter — asked only if G.01 = No
+        - id: q_sr_g01a
+          kind: Question
+          title: "If No, which of the following are the most important reasons why you have never tried smoking?"
+          precondition:
+            - predicate: q_sr_g01.outcome == 2
+          input:
+            control: Checkbox
+            labels:
+              1: "Most of my friends do not smoke"
+              2: "My parents do not smoke"
+              4: "I think it might be bad for my health"
+              8: "I think I might not be able to stop"
+              16: "It is against the law for me to smoke"
+              32: "I would get into trouble with my parents or teachers"
+              64: "I would get into trouble with the police"
+              128: "I cannot get cigarettes or afford them"
+              256: "I have other things I enjoy doing"
+              512: "Some other reason"
+
+        # G.02 — asked of all; 6 options -> Dropdown
+        # Screener-consistency: never tried (G.01=No) => must not smoke (code 0).
+        - id: q_sr_g02
+          kind: Question
+          title: "If you do smoke, how often do you smoke cigarettes?"
+          postcondition:
+            - predicate: q_sr_g01.outcome == 1 or q_sr_g02.outcome == 0
+              hint: "You said you have never tried cigarette smoking, so how often you smoke must be 'I do not smoke, or only tried once or twice'."
+          input:
+            control: Dropdown
+            labels:
+              0: "I do not smoke, or only tried once or twice"
+              1: "Every day"
+              2: "At least once or twice a week but not every day"
+              3: "At least once or twice a month but not every week"
+              4: "A few times a year"
+              5: "Once or twice a year"
+
+        # G.03 — regular smokers only (G.02 in 1-4). Age write-in; escape 98 omitted.
+        - id: q_sr_g03
+          kind: Question
+          title: "If you have smoked one or more cigarettes every day for at least 7 days in a row, how old were you when you first did so?"
+          precondition:
+            - predicate: q_sr_g02.outcome >= 1
+            - predicate: q_sr_g02.outcome <= 4
+          input:
+            control: Editbox
+            min: 0
+            max: 11
+            right: "years old"
+
+        # G.04 — regular smokers only. Count write-in; escape 99 omitted.
+        - id: q_sr_g04
+          kind: Question
+          title: "On the days that you smoke, about how many cigarettes do you usually smoke?"
+          precondition:
+            - predicate: q_sr_g02.outcome >= 1
+            - predicate: q_sr_g02.outcome <= 4
+          input:
+            control: Editbox
+            min: 0
+            max: 99
+            right: "cigarettes"
+
+        # G.05 — asked of all; 2-digit count, "If none write 00"
+        - id: q_sr_g05
+          kind: Question
+          title: "How many of your friends smoke?"
+          input:
+            control: Editbox
+            min: 0
+            max: 99
+            right: "friends who smoke"
+
+        # G.06
+        - id: q_sr_g06
+          kind: Question
+          title: "Have you ever drunk alcohol?"
+          input:
+            control: Radio
+            labels:
+              1: "Yes"
+              2: "No"
+
+        # G.07 — drinkers only (G.06=Yes). Age write-in; escapes 98/99 omitted.
+        - id: q_sr_g07
+          kind: Question
+          title: "If you have ever drunk more alcohol than the amount allowed by your parents, how old were you when you first did this?"
+          precondition:
+            - predicate: q_sr_g06.outcome == 1
+          input:
+            control: Editbox
+            min: 0
+            max: 11
+            right: "years old"
+
+        # G.08 — drinkers only; 6 options -> Dropdown
+        - id: q_sr_g08
+          kind: Question
+          title: "If you drink anything alcoholic such as wine, liquor or beer, how often do you do so?"
+          precondition:
+            - predicate: q_sr_g06.outcome == 1
+          input:
+            control: Dropdown
+            labels:
+              0: "I do not drink alcohol, or only tried once or twice"
+              1: "Every day"
+              2: "At least once or twice a week but not every day"
+              3: "At least once or twice a month but not every week"
+              4: "A few times a year"
+              5: "Once or twice a year"
+
+        # G.09 — asked of all; 2-digit count, "If none write 00"
+        - id: q_sr_g09
+          kind: Question
+          title: "How many of your friends drink alcohol?"
+          input:
+            control: Editbox
+            min: 0
+            max: 99
+            right: "friends who drink alcohol"
+
+        # G.10
+        - id: q_sr_g10
+          kind: Question
+          title: "Have you ever tried drugs or sniffed glue or solvents?"
+          input:
+            control: Radio
+            labels:
+              1: "Yes"
+              2: "No"
+
+        # G.11 — three-part frequency battery -> QuestionGroup (G.10=Yes only).
+        # Source prints a per-substance first option ("I do not use marijuana...",
+        # "I do not sniff glue...", "I do not use other drugs..."); generalized to
+        # one shared scale label with the substance carried in each question text.
+        - id: qg_sr_g11
+          kind: QuestionGroup
+          title: "If you use the following substances, how often do you..."
+          precondition:
+            - predicate: q_sr_g10.outcome == 1
+          questions:
+            - "...use marijuana (\"pot\", \"grass\" or \"hash\")?"
+            - "...sniff glue or solvents?"
+            - "...use other drugs like cocaine, crack, speed, LSD/acid?"
+          input:
+            control: Radio
+            labels:
+              1: "I do not use it, or only tried once or twice"
+              2: "Every day"
+              3: "At least once or twice a week but not every day"
+              4: "At least once or twice a month but not every week"
+              5: "A few times a year"
+              6: "Once or twice a year"
+
+        # G.12 — drug users only (G.10=Yes). Age write-in; escape 99 omitted.
+        - id: q_sr_g12
+          kind: Question
+          title: "If you have used drugs (such as marijuana, glue, solvents or cocaine, etc.) how old were you when you first did so?"
+          precondition:
+            - predicate: q_sr_g10.outcome == 1
+          input:
+            control: Editbox
+            min: 0
+            max: 11
+            right: "years old"
+
+        # G.13 — asked of all; 2-digit count, "If none write 00"
+        - id: q_sr_g13
+          kind: Question
+          title: "How many of your friends have tried drugs or sniffed glue or solvents?"
+          input:
+            control: Editbox
+            min: 0
+            max: 99
+            right: "friends"
+
+    # =========================================================================
+    # SECTION H — Activities (p.183-184) — 9 items
+    # H.01 a-g -> QuestionGroup, shared 4-point frequency scale.
+    # H.02 (5 opts) and H.03 (6 opts -> Dropdown) standalone.
+    # =========================================================================
+    - id: b_sr_activities
+      kind: Group
+      title: "Activities"
+      precondition:
+        - predicate: q_child_age.outcome >= 10
+        - predicate: q_adm_consent_selfreport.outcome == 1
+      items:
+        # H.01 a-g
+        - id: qg_sr_h01
+          kind: QuestionGroup
+          title: "How often do you take part in each of the following?"
+          questions:
+            - "Outside of school hours, I take part in sports with a coach or an instructor"
+            - "Outside of school, I play sports or do physical activities WITHOUT a coach or instructor."
+            - "Outside of school hours, I take part in Art, Dance or Music Groups or Lessons"
+            - "I take part in Clubs or groups such as Girl Guides or Boy Scouts"
+            - "I have a job (a paper route, baby sitting, etc.)"
+            - "I play computer or video games"
+            - "I watch TV"
+          input:
+            control: Radio
+            labels:
+              1: "Never"
+              2: "Less than once a week"
+              3: "1 to 3 times a week"
+              4: "4 or more times a week"
+
+        # H.02 — 5 options
+        - id: q_sr_h02
+          kind: Question
+          title: "On average, about how many hours a day do you watch TV?"
+          input:
+            control: Radio
+            labels:
+              1: "0 - 1 hour a day"
+              2: "1 - 2 hours a day"
+              3: "3 - 4 hours a day"
+              4: "5 - 6 hours a day"
+              5: "7 or more hours a day"
+
+        # H.03 — 6 options -> Dropdown
+        - id: q_sr_h03
+          kind: Question
+          title: "How often do you read for fun (not just for school)?"
+          input:
+            control: Dropdown
+            labels:
+              1: "Every day"
+              2: "A few times a week"
+              3: "Once a week"
+              4: "A few times a month"
+              5: "Less than once a month"
+              6: "Almost never"
+
+    # =========================================================================
+    # APPENDIX C — TEACHER'S QUESTIONNAIRE (source pp.188-212, 58 questions)
+    # =========================================================================
+    # Mail-back paper instrument answered by the selected child's classroom
+    # teacher (a distinct respondent from the household PMK). Every block is
+    # hoisted onto the shared gate q_adm_teacher_form.outcome == 1 (the admin
+    # item in b_appendix_admin, itself gated on the child being in school via
+    # q_edu_q1.outcome >= 2, so the school-enrolment gate is NOT re-added here).
+    #
+    # Single-select questions preserve the source response codes as label keys
+    # (the inventory records them exactly and the printed skip filters branch on
+    # them), so every routing precondition below matches the inventory codes
+    # verbatim. Rating batteries are modeled as QuestionGroups sharing one Radio
+    # scale: the per-row cell codes printed in the source (01/02/03/04/05,
+    # 06-10, ...) collapse to the shared 1..N position codes — the answer
+    # semantics are preserved, the per-row field codes are not. Multi-select
+    # questions are re-encoded to power-of-2 bitmasks (source sequential codes
+    # not preserved, per QML Checkbox rules).
+    # =========================================================================
+
+    # -------------------------------------------------------------------------
+    # SECTION 1 — This Student's Education (source pp.189-195, Q1-Q23)
+    # Filter: Q1 == 1 (kindergarten) skips Q2-Q16, resumes at Q17 -> Q2-Q16
+    #         carry residual q_tq_q1.outcome == 2.
+    # -------------------------------------------------------------------------
+    - id: b_tq_s1_education
+      kind: Group
+      title: "Teacher's Questionnaire — Section 1: This Student's Education"
+      precondition:
+        - predicate: q_adm_teacher_form.outcome == 1
+      items:
+        - id: q_tq_intro
+          kind: Comment
+          title: "The following sections relate to the educational development of a specific student in your class. Please answer all questions by marking the appropriate circle corresponding with your answer in each section. These first few questions ask about this student's grade and educational history."
+
+        - id: q_tq_q1
+          kind: Question
+          title: "Is this student currently in kindergarten or a similar pre-grade one programme (i.e.: Junior Kindergarten, Primary (Nova Scotia), Nursery (Manitoba), Early Childhood Services (Alberta), or First Year of Primary (British Columbia))?"
+          input:
+            control: Radio
+            labels:
+              1: "Yes"
+              2: "No"
+
+        # Q1 == 1 -> GO TO Q17. Q2-Q16 gated on q_tq_q1.outcome == 2.
+        - id: q_tq_q2
+          kind: Question
+          title: "Is this student assigned to a grade?"
+          precondition:
+            - predicate: q_tq_q1.outcome == 2
+          input:
+            control: Radio
+            labels:
+              3: "Yes"
+              4: "No, this student is not assigned to a grade"
+
+        # Follow-up numeric to Q2 (source: "In what grade is this student?", 2-digit)
+        - id: q_tq_q2_grade
+          kind: Question
+          title: "In what grade is this student?"
+          precondition:
+            - predicate: q_tq_q1.outcome == 2
+            - predicate: q_tq_q2.outcome == 3
+          input:
+            control: Editbox
+            min: 0
+            max: 99
+
+        - id: q_tq_q3
+          kind: Question
+          title: "Is this student in a split or multi-grade class?"
+          precondition:
+            - predicate: q_tq_q1.outcome == 2
+          input:
+            control: Radio
+            labels:
+              5: "Yes"
+              6: "No, the class contains a single grade"
+              7: "No, the class is ungraded"
+
+        # Follow-up range to Q3 (source: "What grades are contained in this class?"
+        # grade |_|_| to grade |_|_|). Split into low/high; MINED temporal-ordering
+        # constraint: high grade >= low grade (postcondition on the later item).
+        - id: q_tq_q3_grade_low
+          kind: Question
+          title: "What is the lowest grade contained in this class?"
+          precondition:
+            - predicate: q_tq_q1.outcome == 2
+            - predicate: q_tq_q3.outcome == 5
+          input:
+            control: Editbox
+            min: 0
+            max: 99
+
+        - id: q_tq_q3_grade_high
+          kind: Question
+          title: "What is the highest grade contained in this class?"
+          precondition:
+            - predicate: q_tq_q1.outcome == 2
+            - predicate: q_tq_q3.outcome == 5
+          postcondition:
+            - predicate: q_tq_q3_grade_high.outcome >= q_tq_q3_grade_low.outcome
+              hint: "The highest grade in the class cannot be lower than the lowest grade."
+          input:
+            control: Editbox
+            min: 0
+            max: 99
+
+        - id: q_tq_q4
+          kind: Question
+          title: "Has this student ever skipped a grade?"
+          precondition:
+            - predicate: q_tq_q1.outcome == 2
+          input:
+            control: Radio
+            labels:
+              1: "Yes"
+              2: "No"
+              3: "Don't know"
+
+        - id: q_tq_q5
+          kind: Question
+          title: "Is this student currently repeating his or her grade?"
+          precondition:
+            - predicate: q_tq_q1.outcome == 2
+          input:
+            control: Radio
+            labels:
+              4: "Yes"
+              5: "No"
+
+        - id: q_tq_q6
+          kind: Question
+          title: "Has this student previously repeated a grade(s), been retained, or not been promoted to a new grade for any reason?"
+          precondition:
+            - predicate: q_tq_q1.outcome == 2
+          input:
+            control: Radio
+            labels:
+              6: "Yes"
+              7: "No"
+              8: "Don't know"
+
+        - id: q_tq_q7
+          kind: Question
+          title: "How would you rate this student's current academic achievement in reading?"
+          precondition:
+            - predicate: q_tq_q1.outcome == 2
+          input:
+            control: Dropdown
+            labels:
+              1: "I do not teach reading"
+              2: "Near the top of the class"
+              3: "Above the middle of the class, but not at the top"
+              4: "In the middle of the class"
+              5: "Below the middle of the class, but above the bottom"
+              6: "Near the bottom of the class"
+
+        - id: q_tq_q8
+          kind: Question
+          title: "How would you rate this student's current academic achievement in mathematics?"
+          precondition:
+            - predicate: q_tq_q1.outcome == 2
+          input:
+            control: Dropdown
+            labels:
+              7: "I do not teach mathematics"
+              8: "Near the top of the class"
+              9: "Above the middle of the class, but not at the top"
+              10: "In the middle of the class"
+              11: "Below the middle of the class, but above the bottom"
+              12: "Near the bottom of the class"
+
+        - id: q_tq_q9
+          kind: Question
+          title: "How would you rate this student's current academic achievement in written work (e.g., spelling and composition)?"
+          precondition:
+            - predicate: q_tq_q1.outcome == 2
+          input:
+            control: Dropdown
+            labels:
+              1: "I do not teach spelling or composition"
+              2: "Near the top of the class"
+              3: "Above the middle of the class, but not at the top"
+              4: "In the middle of the class"
+              5: "Below the middle of the class, but above the bottom"
+              6: "Near the bottom of the class"
+
+        - id: q_tq_q10
+          kind: Question
+          title: "How would you rate this student's current academic achievement across all areas of instruction?"
+          precondition:
+            - predicate: q_tq_q1.outcome == 2
+          input:
+            control: Radio
+            labels:
+              7: "Near the top of the class"
+              8: "Above the middle of the class, but not at the top"
+              9: "In the middle of the class"
+              10: "Below the middle of the class, but above the bottom"
+              11: "Near the bottom of the class"
+
+        - id: q_tq_q11
+          kind: Question
+          title: "Looking ahead, how far do you expect this student will go in school? Will he/she..."
+          precondition:
+            - predicate: q_tq_q1.outcome == 2
+          input:
+            control: Dropdown
+            labels:
+              1: "Complete primary/elementary school?"
+              2: "Complete some secondary or high school?"
+              3: "Graduate from secondary or high school?"
+              4: "Obtain a community college, technical college, vocational college, business school, or CEGEP certificate or diploma?"
+              5: "Obtain a university degree?"
+              6: "Don't know"
+
+        - id: q_tq_q12
+          kind: Question
+          title: "Overall, how long is one cycle of instruction in this student's homeroom class? (Specify the number of days.)"
+          precondition:
+            - predicate: q_tq_q1.outcome == 2
+          input:
+            control: Editbox
+            min: 1
+            max: 99
+            right: "days"
+
+        - id: q_tq_q13
+          kind: Question
+          title: "How long is the normal school year for this school? (Specify the number of days.)"
+          precondition:
+            - predicate: q_tq_q1.outcome == 2
+          input:
+            control: Editbox
+            min: 1
+            max: 366
+            right: "days"
+
+        # Q14: numeric battery, minutes/cycle per instructional area (00000 if none).
+        - id: qg_tq_q14
+          kind: QuestionGroup
+          title: "For the most recent full cycle of instruction, please estimate how much class time this student spent on each of the following. (Number of minutes per cycle; record 00000 if none.)"
+          precondition:
+            - predicate: q_tq_q1.outcome == 2
+          questions:
+            - "Reading and other language arts (e.g. spelling, grammar, composition)"
+            - "Second language education"
+            - "Mathematics"
+            - "Science"
+            - "Social Studies"
+            - "Environmental Studies"
+            - "Music"
+            - "Art"
+            - "Physical Education"
+            - "Learning how to use computers"
+            - "Other topics"
+          input:
+            control: Editbox
+            min: 0
+            max: 99999
+            right: "minutes/cycle"
+
+        - id: q_tq_q15
+          kind: Question
+          title: "How much class time per cycle does this student spend using a computer? (Specify the number of minutes per cycle.)"
+          precondition:
+            - predicate: q_tq_q1.outcome == 2
+          input:
+            control: Editbox
+            min: 0
+            max: 99999
+            right: "minutes/cycle"
+
+        - id: q_tq_q16
+          kind: Question
+          title: "Thinking about the most recent full instructional cycle, what is the main language of instruction in this student's class?"
+          precondition:
+            - predicate: q_tq_q1.outcome == 2
+          input:
+            control: Radio
+            labels:
+              1: "French"
+              2: "English"
+              3: "An equal combination of French and English"
+              4: "Other"
+
+        # Q17: entry point for kindergarten students (Q1 == 1) — no residual.
+        - id: qg_tq_q17
+          kind: QuestionGroup
+          title: "Listed below are a number of different social and personal skills which may be demonstrated in your class. Please indicate how often this student demonstrates each of the following."
+          questions:
+            - "Works cooperatively with other students"
+            - "Plays cooperatively with other students"
+            - "Follows rules"
+            - "Follows instructions"
+            - "Respects the property of others"
+            - "Demonstrates self-control"
+            - "Shows self-confidence"
+            - "Demonstrates respect for adults"
+            - "Demonstrates respect for other children"
+            - "Accepts responsibility for actions"
+          input:
+            control: Radio
+            labels:
+              1: "Never"
+              2: "Rarely"
+              3: "Sometimes"
+              4: "Usually"
+              5: "Always"
+
+        - id: qg_tq_q18
+          kind: QuestionGroup
+          title: "These statements describe the work habits of students. Please indicate how often this student demonstrates each of these work habits."
+          questions:
+            - "Listens attentively"
+            - "Follows directions"
+            - "Completes work on time"
+            - "Works independently"
+            - "Takes care of materials"
+            - "Works neatly and carefully"
+          input:
+            control: Radio
+            labels:
+              1: "Never"
+              2: "Rarely"
+              3: "Sometimes"
+              4: "Usually"
+              5: "Always"
+
+        - id: q_tq_q19
+          kind: Question
+          title: "Does this student receive enhanced or extra instruction at school because of his/her exceptionally advanced intellectual or artistic abilities?"
+          input:
+            control: Radio
+            labels:
+              1: "Yes"
+              2: "No"
+
+        # Q19 == 2 -> GO TO Q21. Q20 gated on q_tq_q19.outcome == 1.
+        - id: q_tq_q20
+          kind: Question
+          title: "Where does this student receive this enhanced or extra instruction?"
+          precondition:
+            - predicate: q_tq_q19.outcome == 1
+          input:
+            control: Dropdown
+            labels:
+              3: "Exclusively within a regular classroom"
+              4: "Primarily within a regular classroom but with some time spent in a special education class or resource room"
+              5: "Primarily within a special education class or resource room but with some integration into a regular classroom"
+              6: "Exclusively within a special education class or resource room within a regular school"
+              7: "Exclusively within a special school in the school district"
+              8: "Exclusively within a special residential school"
+              9: "Other"
+
+        - id: q_tq_q21
+          kind: Question
+          title: "Does this student receive special education because a physical, emotional, behavioural, or some other problem limits the kind or amount of school work he/she can do?"
+          input:
+            control: Radio
+            labels:
+              1: "Yes"
+              2: "No"
+
+        # Q21 == 2 -> GO TO Q24. Q22-Q23 gated on q_tq_q21.outcome == 1.
+        # Q22: multi-select re-encoded to power-of-2 bitmask (source codes 01-10).
+        - id: q_tq_q22
+          kind: Question
+          title: "What type of problem limits this student's ability to do school work in a regular classroom? (Mark as many as applicable.)"
+          precondition:
+            - predicate: q_tq_q21.outcome == 1
+          input:
+            control: Checkbox
+            labels:
+              1: "A physical disability"
+              2: "A visual impairment"
+              4: "A hearing impairment"
+              8: "A speech impairment"
+              16: "A learning disability"
+              32: "An emotional or behavioural problem"
+              64: "A mental disability or limitation"
+              128: "Home environment/problems at home"
+              256: "He/she does not understand the language spoken at school"
+              512: "Some other type of problem"
+
+        - id: q_tq_q23
+          kind: Question
+          title: "Where does this student receive this special education?"
+          precondition:
+            - predicate: q_tq_q21.outcome == 1
+          input:
+            control: Dropdown
+            labels:
+              1: "Exclusively within a regular classroom"
+              2: "Primarily within a regular classroom but with some time spent in a special education class or resource room"
+              3: "Primarily within a special education class or resource room but with some integration into a regular classroom"
+              4: "Exclusively within a special education class or resource room within a regular school"
+              5: "Exclusively within a special school in the school district"
+              6: "Exclusively within a special residential school"
+              7: "Other"
+
+    # -------------------------------------------------------------------------
+    # SECTION 2 — This Student's Behaviour and Absenteeism (source pp.196-199, Q24-Q27)
+    # No skip filters in this section.
+    # -------------------------------------------------------------------------
+    - id: b_tq_s2_behaviour
+      kind: Group
+      title: "Teacher's Questionnaire — Section 2: This Student's Behaviour and Absenteeism"
+      precondition:
+        - predicate: q_adm_teacher_form.outcome == 1
+      items:
+        - id: q_tq_q24
+          kind: Question
+          title: "About how many regular school days has this student been absent since the beginning of school in the fall? (Specify the number of days absent.)"
+          input:
+            control: Editbox
+            min: 0
+            max: 999
+            right: "days"
+
+        - id: q_tq_q25
+          kind: Question
+          title: "Since the beginning of school in the fall about how many times has this student skipped a day of school without permission?"
+          input:
+            control: Radio
+            labels:
+              0: "Never"
+              1: "Once"
+              2: "Twice"
+              3: "More than twice"
+              4: "Don't know"
+
+        - id: qg_tq_q26
+          kind: QuestionGroup
+          title: "Since the start of school in the fall, how often has this student arrived..."
+          questions:
+            - "Without the materials (e.g., notebooks, paper) needed to do his/her schoolwork"
+            - "Inadequately clothed to participate in school related activities (e.g., gym, sports, field trips, recess)"
+            - "Inadequately dressed for the weather conditions (e.g., canvas running shoes in winter)"
+            - "Too tired to do school work"
+            - "Without his/her homework completed"
+            - "Late for school"
+          input:
+            control: Radio
+            labels:
+              1: "Never"
+              2: "Rarely"
+              3: "Sometimes"
+              4: "Usually"
+              5: "Always"
+
+        # Q27: 46-item behaviour battery (a-tt), shared 3-point scale.
+        - id: qg_tq_q27
+          kind: QuestionGroup
+          title: "Using the answers never or not true, sometimes or somewhat true and often or very true, how often would you say that this student:"
+          questions:
+            - "Shows sympathy to someone who has made a mistake"
+            - "Can't sit still, is restless or hyperactive"
+            - "Destroys his/her own things"
+            - "Will try to help someone who has been hurt"
+            - "Steals"
+            - "Seems to be unhappy, sad or depressed"
+            - "Gets into many fights"
+            - "Volunteers to help clear up a mess someone else has made"
+            - "Is distractible, has trouble sticking to any activity"
+            - "When mad at someone tries to get others to dislike her/him"
+            - "Is not as happy as other children"
+            - "Destroys things belonging to others"
+            - "If there is a quarrel or dispute will try to stop it"
+            - "Fidgets"
+            - "Is disobedient at school"
+            - "Can't concentrate, can't pay attention for long"
+            - "Is too fearful or anxious"
+            - "When mad at someone, becomes friends with another as revenge"
+            - "Is impulsive, acts without thinking"
+            - "Tells lies or cheats"
+            - "Offers to help other children (friend, brother, or sister) who are having difficulty with a task"
+            - "Is worried"
+            - "Has difficulty awaiting turn in games or groups"
+            - "When another child accidentally hurts her/him (such as by bumping into her or him), assumes that the other child meant to do it and then reacts with anger and fighting"
+            - "Tends to do things on his/her own - is rather solitary"
+            - "When mad at someone, says bad things behind the other's back"
+            - "Physically attacks people"
+            - "Comforts a child (friend, brother, or sister) who is crying or upset"
+            - "Cries a lot"
+            - "Vandalizes"
+            - "Gives up easily"
+            - "Threatens people"
+            - "Spontaneously helps to pick up objects which another child has dropped (e.g., pencils, books)"
+            - "Cannot settle to anything for more than a few moments"
+            - "Appears miserable, unhappy, tearful or distressed"
+            - "Is cruel, bullies or is mean to others"
+            - "Stares into space"
+            - "When mad at someone, says to others: let's not be with her/him"
+            - "Is nervous, high-strung, or tense"
+            - "Kicks, bites, hits other children"
+            - "Will invite bystanders to join in a game"
+            - "Is inattentive"
+            - "Has trouble enjoying self"
+            - "Helps other children (friends, brother or sister) who are feeling sick"
+            - "When mad at someone, tells the other one's secrets to a third person"
+            - "Takes the opportunity to praise the work of less able children"
+          input:
+            control: Radio
+            labels:
+              1: "Never or not true"
+              2: "Sometimes or somewhat true"
+              3: "Often or very true"
+
+    # -------------------------------------------------------------------------
+    # SECTION 3 — Parent's/Guardian's Involvement (source pp.199-200, Q28-Q32)
+    # Q32 gates Section 4: only code 5 ("not applicable") falls through to Q33;
+    # any actual frequency (codes 6-9) skips Q33-Q46 straight to Q47.
+    # -------------------------------------------------------------------------
+    - id: b_tq_s3_parents
+      kind: Group
+      title: "Teacher's Questionnaire — Section 3: Parent's/Guardian's Involvement"
+      precondition:
+        - predicate: q_adm_teacher_form.outcome == 1
+      items:
+        - id: qg_tq_q28
+          kind: QuestionGroup
+          title: "Since the beginning of school last fall did a parent/guardian of this student..."
+          questions:
+            - "Participate in regularly scheduled parent-teacher conferences (either in person or on the telephone)"
+            - "Contact you to discuss this student's academic performance or behaviour"
+            - "Return your call to talk about this student's academic performance or behaviour"
+          input:
+            control: Radio
+            labels:
+              1: "Yes"
+              2: "No"
+              3: "Not Applicable"
+
+        - id: q_tq_q29
+          kind: Question
+          title: "In your opinion, how involved is/are the parent(s)/guardian(s) in this student's education?"
+          input:
+            control: Radio
+            labels:
+              1: "Very Involved"
+              2: "Somewhat involved"
+              3: "Not involved"
+              4: "Don't know the parent(s)/guardian(s) well enough"
+
+        - id: q_tq_q30
+          kind: Question
+          title: "In your opinion, how important is school considered to be to this student's parent(s)/guardian(s)?"
+          input:
+            control: Radio
+            labels:
+              5: "Very important"
+              6: "Somewhat important"
+              7: "Little importance"
+              8: "Don't know the parent(s)/guardian(s) well enough"
+
+        - id: q_tq_q31
+          kind: Question
+          title: "In your opinion, to what extent do the parent(s)/guardian(s) of this student support your teaching efforts?"
+          input:
+            control: Radio
+            labels:
+              1: "Strongly support"
+              2: "Somewhat support"
+              3: "Do not support"
+              4: "Don't know the parent(s)/guardian(s) well enough"
+
+        - id: q_tq_q32
+          kind: Question
+          title: "How often during the past month has a parent/guardian of this child volunteered in your kindergarten class?"
+          input:
+            control: Radio
+            labels:
+              5: "Not applicable because the child is not in kindergarten"
+              6: "Never"
+              7: "Once"
+              8: "Twice"
+              9: "More than twice"
+
+    # -------------------------------------------------------------------------
+    # SECTION 4 — Your Class and Teaching Practices (source pp.201-207, Q33-Q49)
+    # Q33-Q46 are gated on q_tq_q32.outcome == 5 (only "not applicable" reaches
+    # them; codes 6-9 skip to Q47). Q47-Q49 are the resume point and are NOT
+    # gated on Q32 (only the shared block gate). Nested residuals:
+    #   Q38 <- Q37==6, Q40 <- Q39==1, Q42 <- Q41==1, Q45/Q46 <- Q44!=5.
+    # -------------------------------------------------------------------------
+    - id: b_tq_s4_class
+      kind: Group
+      title: "Teacher's Questionnaire — Section 4: Your Class and Teaching Practices"
+      precondition:
+        - predicate: q_adm_teacher_form.outcome == 1
+      items:
+        - id: q_tq_q33
+          kind: Question
+          title: "Currently, how many students are enrolled in your class? (Specify the number of students.)"
+          precondition:
+            - predicate: q_tq_q32.outcome == 5
+          input:
+            control: Editbox
+            min: 1
+            max: 999
+            right: "students"
+
+        # Q34: MINED counts-vs-capacity — each category count cannot exceed the
+        # class enrolment (Q33). Modeled as scalar Questions (not a QuestionGroup)
+        # so the postconditions stay in this validator's statically-verified
+        # subset: it rejects subscript/comprehension postconditions over
+        # QuestionGroup outcomes (falls back to runtime-only). "Some children may
+        # belong to more than one category," so the counts are NOT summed against
+        # Q33 — only each individual count <= Q33.
+        - id: q_tq_q34a
+          kind: Question
+          title: "Including those who have not been officially identified, how many students in your class have a speech, hearing, vision, mobility or other health impairment that affects their learning?"
+          precondition:
+            - predicate: q_tq_q32.outcome == 5
+          postcondition:
+            - predicate: q_tq_q34a.outcome <= q_tq_q33.outcome
+              hint: "The number of students with a health impairment cannot exceed the number enrolled in your class (Q33)."
+          input:
+            control: Editbox
+            min: 0
+            max: 999
+            right: "students"
+
+        - id: q_tq_q34b
+          kind: Question
+          title: "Including those who have not been officially identified, how many students in your class have an emotional, or behavioural problem?"
+          precondition:
+            - predicate: q_tq_q32.outcome == 5
+          postcondition:
+            - predicate: q_tq_q34b.outcome <= q_tq_q33.outcome
+              hint: "The number of students with an emotional/behavioural problem cannot exceed the number enrolled in your class (Q33)."
+          input:
+            control: Editbox
+            min: 0
+            max: 999
+            right: "students"
+
+        - id: q_tq_q34c
+          kind: Question
+          title: "Including those who have not been officially identified, how many students in your class have a learning problem? (e.g.: a problem with attention, memory, reasoning, reading, writing, spelling, or calculation which interferes with learning)"
+          precondition:
+            - predicate: q_tq_q32.outcome == 5
+          postcondition:
+            - predicate: q_tq_q34c.outcome <= q_tq_q33.outcome
+              hint: "The number of students with a learning problem cannot exceed the number enrolled in your class (Q33)."
+          input:
+            control: Editbox
+            min: 0
+            max: 999
+            right: "students"
+
+        # Q35: MINED counts-vs-capacity — each count <= class enrolment (Q33).
+        # Scalar Questions, same rationale as Q34.
+        - id: q_tq_q35a
+          kind: Question
+          title: "How many students in your class have a first language other than English or French?"
+          precondition:
+            - predicate: q_tq_q32.outcome == 5
+          postcondition:
+            - predicate: q_tq_q35a.outcome <= q_tq_q33.outcome
+              hint: "The number of students with another first language cannot exceed the number enrolled in your class (Q33)."
+          input:
+            control: Editbox
+            min: 0
+            max: 999
+            right: "students"
+
+        - id: q_tq_q35b
+          kind: Question
+          title: "How many students in your class have immigrated to Canada within the last year?"
+          precondition:
+            - predicate: q_tq_q32.outcome == 5
+          postcondition:
+            - predicate: q_tq_q35b.outcome <= q_tq_q33.outcome
+              hint: "The number of students who immigrated within the last year cannot exceed the number enrolled in your class (Q33)."
+          input:
+            control: Editbox
+            min: 0
+            max: 999
+            right: "students"
+
+        - id: q_tq_q36
+          kind: Question
+          title: "Compared with other teachers in your school who are teaching the same grade(s), do you feel that your class has..."
+          precondition:
+            - predicate: q_tq_q32.outcome == 5
+          input:
+            control: Radio
+            labels:
+              1: "Lower overall academic ability than their classes"
+              2: "Similar overall academic ability to their classes"
+              3: "Higher overall academic ability than their classes"
+              4: "A greater diversity of academic abilities than their classes"
+              5: "There are no other classes at the same grade(s)"
+
+        - id: q_tq_q37
+          kind: Question
+          title: "Do you teach reading to your class?"
+          precondition:
+            - predicate: q_tq_q32.outcome == 5
+          input:
+            control: Radio
+            labels:
+              6: "Yes"
+              7: "No"
+
+        # Q37 == 7 -> GO TO Q39. Q38 gated on Q37 == 6 (in addition to Q32 == 5).
+        - id: qg_tq_q38
+          kind: QuestionGroup
+          title: "How often do you use each of the following strategies to teach reading to your class?"
+          precondition:
+            - predicate: q_tq_q32.outcome == 5
+            - predicate: q_tq_q37.outcome == 6
+          questions:
+            - "Teach reading to the class as a whole"
+            - "Divide the class into groups having similar reading abilities"
+            - "Divide the class into groups having a mixture of reading abilities"
+            - "Allow students to form their own reading groups"
+            - "Use individualized instruction plans to teach reading"
+            - "Other"
+          input:
+            control: Radio
+            labels:
+              1: "Never"
+              2: "Rarely"
+              3: "Sometimes"
+              4: "Usually"
+              5: "Always"
+
+        - id: q_tq_q39
+          kind: Question
+          title: "Do you teach writing (composition) to your class?"
+          precondition:
+            - predicate: q_tq_q32.outcome == 5
+          input:
+            control: Radio
+            labels:
+              1: "Yes"
+              2: "No"
+
+        # Q39 == 2 -> GO TO Q41. Q40 gated on Q39 == 1.
+        - id: qg_tq_q40
+          kind: QuestionGroup
+          title: "How often do you use each of the following strategies to teach writing (composition) to your class?"
+          precondition:
+            - predicate: q_tq_q32.outcome == 5
+            - predicate: q_tq_q39.outcome == 1
+          questions:
+            - "Teach writing to the class as a whole"
+            - "Divide the class into groups having similar writing abilities"
+            - "Divide the class into groups having a mixture of writing abilities"
+            - "Allow students to form their own writing groups"
+            - "Use individualized instruction plans to teach writing"
+            - "Other"
+          input:
+            control: Radio
+            labels:
+              1: "Never"
+              2: "Rarely"
+              3: "Sometimes"
+              4: "Usually"
+              5: "Always"
+
+        - id: q_tq_q41
+          kind: Question
+          title: "Do you teach mathematics to your class?"
+          precondition:
+            - predicate: q_tq_q32.outcome == 5
+          input:
+            control: Radio
+            labels:
+              1: "Yes"
+              2: "No"
+
+        # Q41 == 2 -> GO TO Q43. Q42 gated on Q41 == 1.
+        - id: qg_tq_q42
+          kind: QuestionGroup
+          title: "How often do you use each of the following strategies to teach mathematics to your class?"
+          precondition:
+            - predicate: q_tq_q32.outcome == 5
+            - predicate: q_tq_q41.outcome == 1
+          questions:
+            - "Teach mathematics to the class as a whole"
+            - "Divide the class into groups having similar mathematical abilities"
+            - "Divide the class into groups having a mixture of mathematical abilities"
+            - "Allow students to form their own mathematics groups"
+            - "Use individualized instruction plans to teach mathematics"
+            - "Other"
+          input:
+            control: Radio
+            labels:
+              1: "Never"
+              2: "Rarely"
+              3: "Sometimes"
+              4: "Usually"
+              5: "Always"
+
+        # Q43: numeric battery, minutes/cycle on non-instructional activities.
+        - id: qg_tq_q43
+          kind: QuestionGroup
+          title: "For the most recent full cycle of instruction, please indicate the number of minutes you spent on the following non-instructional activities."
+          precondition:
+            - predicate: q_tq_q32.outcome == 5
+          questions:
+            - "Maintaining order and discipline"
+            - "Performing routine tasks (e.g., taking attendance, filling out forms)"
+            - "Professional discussions with colleagues"
+            - "Supervising children at noon/recess"
+            - "Assisting/directing extra-curricular activities"
+            - "In discussions with students' parents/guardians"
+          input:
+            control: Editbox
+            min: 0
+            max: 9999
+            right: "minutes/cycle"
+
+        - id: q_tq_q44
+          kind: Question
+          title: "How often do you assign your class homework? (Do not include students' uncompleted classroom work.)"
+          precondition:
+            - predicate: q_tq_q32.outcome == 5
+          input:
+            control: Radio
+            labels:
+              1: "Always"
+              2: "Usually"
+              3: "Sometimes"
+              4: "Rarely"
+              5: "Never"
+
+        # Q44 == 5 (Never) -> GO TO Q47. Q45/Q46 gated on Q44 != 5.
+        - id: q_tq_q45
+          kind: Question
+          title: "Approximately how much homework do you assign each day? (Specify the number of minutes per day.)"
+          precondition:
+            - predicate: q_tq_q32.outcome == 5
+            - predicate: q_tq_q44.outcome != 5
+          input:
+            control: Editbox
+            min: 0
+            max: 999
+            right: "minutes/day"
+
+        - id: qg_tq_q46
+          kind: QuestionGroup
+          title: "How often do you monitor homework in the following ways?"
+          precondition:
+            - predicate: q_tq_q32.outcome == 5
+            - predicate: q_tq_q44.outcome != 5
+          questions:
+            - "By keeping a record of who turned in assignments"
+            - "By returning assignments with corrections or grades"
+            - "By discussing homework in class"
+            - "By having parent(s)/guardian(s) sign a homework book/note"
+            - "By student's own or their peer's evaluations"
+          input:
+            control: Radio
+            labels:
+              1: "Never"
+              2: "Rarely"
+              3: "Sometimes"
+              4: "Usually"
+              5: "Always"
+
+        # Q47: resume point for respondents routed from Q32 codes 6-9 and Q44
+        # code 5 — NOT gated on Q32 (block gate only).
+        - id: qg_tq_q47
+          kind: QuestionGroup
+          title: "The following statements describe various attributes about yourself and the students in your classroom. Please indicate the extent to which you agree or disagree with each statement."
+          questions:
+            - "Many of the students I teach are not capable of mastering the curriculum at their grade"
+            - "The emphasis in my classroom is on the development of academic skills"
+            - "I have a strong effect on the academic achievement of the students I teach"
+            - "I feel competent in dealing with student's behavioural problems"
+            - "I feel students' success at school is determined mainly by their home environment"
+            - "I have high expectations for the academic success of my students"
+            - "I push students to achieve their full academic potential"
+          input:
+            control: Radio
+            labels:
+              1: "Strongly disagree"
+              2: "Disagree"
+              3: "Neither agree nor disagree"
+              4: "Agree"
+              5: "Strongly agree"
+
+        - id: qg_tq_q48
+          kind: QuestionGroup
+          title: "Overall, with the exception of a few individual students, the class as a whole..."
+          questions:
+            - "Moves smoothly from one classroom activity to another"
+            - "Is easily distracted by the disruptive behaviour of a few"
+            - "Works well together on group activities"
+            - "Misbehaves when I am called to the door or must attend to other interruptions"
+          input:
+            control: Radio
+            labels:
+              1: "Never"
+              2: "Rarely"
+              3: "Sometimes"
+              4: "Usually"
+              5: "Always"
+
+        - id: qg_tq_q49
+          kind: QuestionGroup
+          title: "Please rate the extent to which each of the following meets the needs of your class."
+          questions:
+            - "Instructional resources (e.g., curriculum documents, books)"
+            - "School supplies (e.g. paper, pencils)"
+            - "Space within the classroom"
+            - "Computers for course instruction"
+            - "Computer software for course instruction"
+            - "Audio-visual resources (e.g. VCR's, film projector)"
+            - "Science equipment"
+            - "Equipment for mathematics instruction"
+            - "Special equipment for handicapped students"
+            - "Library or teacher-librarian"
+            - "Other"
+          input:
+            control: Radio
+            labels:
+              1: "Does not meet my needs"
+              2: "Partially meets my needs"
+              3: "Adequately meets my needs"
+              4: "Completely meets my needs"
+              5: "Not applicable"
+
+    # -------------------------------------------------------------------------
+    # SECTION 5 — Perceptions of Your School (source pp.208-210, Q50-Q51)
+    # No skip filters.
+    # -------------------------------------------------------------------------
+    - id: b_tq_s5_school
+      kind: Group
+      title: "Teacher's Questionnaire — Section 5: Perceptions of Your School"
+      precondition:
+        - predicate: q_adm_teacher_form.outcome == 1
+      items:
+        - id: qg_tq_q50
+          kind: QuestionGroup
+          title: "Below are a number of statements which describe the social climate of your school. Please indicate how strongly you agree or disagree that each statement is descriptive of your school."
+          questions:
+            - "The administrative, support, and teaching staff work together as a team"
+            - "All staff are involved in decision-making at this school"
+            - "School staff know what is expected of them in terms of their roles and responsibilities"
+            - "Staff clearly understand school policies and procedures"
+            - "Teachers in this school have considerable influence on school policies"
+            - "Teachers have a strong influence on how resources (e.g. money, staff, instructional materials) are allocated at this school"
+            - "Students clearly understand school rules"
+            - "The principal provides support to teachers"
+            - "Teachers receive positive feed-back from the principal"
+            - "The principal gets around the school to talk to staff"
+            - "The principal spends time getting to know students"
+            - "The school provides a positive working environment for teachers"
+            - "The school provides a positive working environment for students"
+          input:
+            control: Radio
+            labels:
+              1: "Strongly disagree"
+              2: "Disagree"
+              3: "Neither agree nor disagree"
+              4: "Agree"
+              5: "Strongly agree"
+
+        - id: qg_tq_q51
+          kind: QuestionGroup
+          title: "Please indicate the extent to which you agree with each of these statements regarding the disciplinary policies of your school."
+          questions:
+            - "Teachers in this school have reached a consensus about ways to discipline children who break rules"
+            - "All children who break rules in this school face the same consequences"
+            - "Teachers in this school rarely overlook physical aggression among students"
+            - "Teachers in this school rarely overlook verbal aggression among students"
+            - "Teachers feel there is insufficient support within the school for managing disciplinary problems"
+          input:
+            control: Radio
+            labels:
+              1: "Strongly disagree"
+              2: "Disagree"
+              3: "Neither agree nor disagree"
+              4: "Agree"
+              5: "Strongly agree"
+
+    # -------------------------------------------------------------------------
+    # SECTION 6 — Personal Information (source pp.210-212, Q52-Q58)
+    # No skip filters.
+    # -------------------------------------------------------------------------
+    - id: b_tq_s6_personal
+      kind: Group
+      title: "Teacher's Questionnaire — Section 6: Personal Information"
+      precondition:
+        - predicate: q_adm_teacher_form.outcome == 1
+      items:
+        - id: q_tq_q52
+          kind: Question
+          title: "Are you..."
+          input:
+            control: Radio
+            labels:
+              1: "Female?"
+              2: "Male?"
+
+        - id: q_tq_q53
+          kind: Question
+          title: "To which age category do you belong?"
+          input:
+            control: Radio
+            labels:
+              3: "20 to 29 years"
+              4: "30 to 39 years"
+              5: "40 to 49 years"
+              6: "50 to 59 years"
+              7: "60 years or older"
+
+        # Q54: years/months of experience for three roles. Modeled as scalar
+        # Questions (not a QuestionGroup) so the ordering postconditions stay
+        # statically verified (this validator rejects subscript postconditions).
+        # MINED temporal-ordering — experience at this grade and at this school
+        # cannot exceed total teaching experience (compared in total months =
+        # years*12 + months). Total-teacher fields (ty, tm) are ordered first so
+        # they are available to the consumer postconditions on the later items.
+        - id: q_tq_q54_ty
+          kind: Question
+          title: "How much experience do you have as a teacher? (Number of years.)"
+          input:
+            control: Editbox
+            min: 0
+            max: 99
+            right: "years"
+
+        - id: q_tq_q54_tm
+          kind: Question
+          title: "How much experience do you have as a teacher? (Additional number of months.)"
+          input:
+            control: Editbox
+            min: 0
+            max: 99
+            right: "months"
+
+        - id: q_tq_q54_gy
+          kind: Question
+          title: "How much experience do you have as a teacher at this grade? (Number of years.)"
+          input:
+            control: Editbox
+            min: 0
+            max: 99
+            right: "years"
+
+        - id: q_tq_q54_gm
+          kind: Question
+          title: "How much experience do you have as a teacher at this grade? (Additional number of months.)"
+          postcondition:
+            - predicate: q_tq_q54_gy.outcome * 12 + q_tq_q54_gm.outcome <= q_tq_q54_ty.outcome * 12 + q_tq_q54_tm.outcome
+              hint: "Experience teaching at this grade cannot exceed your total teaching experience."
+          input:
+            control: Editbox
+            min: 0
+            max: 99
+            right: "months"
+
+        - id: q_tq_q54_sy
+          kind: Question
+          title: "How much experience do you have as a teacher at this school? (Number of years.)"
+          input:
+            control: Editbox
+            min: 0
+            max: 99
+            right: "years"
+
+        - id: q_tq_q54_sm
+          kind: Question
+          title: "How much experience do you have as a teacher at this school? (Additional number of months.)"
+          postcondition:
+            - predicate: q_tq_q54_sy.outcome * 12 + q_tq_q54_sm.outcome <= q_tq_q54_ty.outcome * 12 + q_tq_q54_tm.outcome
+              hint: "Experience teaching at this school cannot exceed your total teaching experience."
+          input:
+            control: Editbox
+            min: 0
+            max: 99
+            right: "months"
+
+        # Q55: multi-select re-encoded to power-of-2 bitmask (source codes 1-11).
+        - id: q_tq_q55
+          kind: Question
+          title: "Please specify the levels of education you have attained? (Mark all that apply.)"
+          input:
+            control: Checkbox
+            labels:
+              1: "Some coursework towards a Bachelor's degree"
+              2: "A teaching certificate, diploma or licence"
+              4: "A Bachelor's degree"
+              8: "A Bachelor of Education degree"
+              16: "Some post-baccalaureate coursework"
+              32: "A post-baccalaureate diploma or certificate"
+              64: "Some coursework towards a Master's degree"
+              128: "A Master's degree"
+              256: "Some coursework towards a Doctorate"
+              512: "A Doctorate"
+              1024: "Other"
+
+        # Q56: multi-select bitmask (source codes 12-16). MINED none-exclusivity
+        # ("None of the above" bit 8 cannot combine with a substantive option)
+        # is OMITTED: this validator models a Checkbox outcome as a single
+        # selected key rather than a bitmask sum, so the constraint is vacuous
+        # in-model (classifies TAUTOLOGICAL) and cannot be statically verified.
+        # Enforcement is deferred to post-collection cleaning.
+        - id: q_tq_q56
+          kind: Question
+          title: "Have you obtained any of the following advanced qualifications in special education? (Mark all that apply.)"
+          input:
+            control: Checkbox
+            labels:
+              1: "One class in, or part of a special education programme"
+              2: "A special education certificate"
+              4: "A graduate degree in special education"
+              8: "None of the above"
+              16: "Other"
+
+        # Q57: multi-select bitmask (source codes 17-21). MINED none-exclusivity
+        # OMITTED for the same reason as Q56 (Checkbox modeled single-select).
+        - id: q_tq_q57
+          kind: Question
+          title: "Have you obtained any of the following advanced qualifications in second language education? (Mark all that apply.)"
+          input:
+            control: Checkbox
+            labels:
+              1: "One class in, or part of a second language programme"
+              2: "A certificate in second language education"
+              4: "A graduate degree in second language education"
+              8: "None of the above"
+              16: "Other"
+
+        - id: q_tq_q58
+          kind: Question
+          title: "Statistics Canada is conducting this survey jointly with another federal department, Human Resources Development Canada. The information collected will be kept confidential and used only for statistical purposes. Do you agree to share the information collected with Human Resources Development Canada?"
+          input:
+            control: Radio
+            labels:
+              1: "Yes"
+              2: "No"
+
+        # Closing open-comment box (source p.212). Textarea outcome is a string,
+        # ignored by Z3 and never referenced in any predicate.
+        - id: q_tq_comments
+          kind: Question
+          title: "THANK YOU FOR COMPLETING THIS QUESTIONNAIRE. Do you have any comments about this survey? If so, please use the space below."
+          input:
+            control: Textarea
+            placeholder: "Comments (optional)..."
+            maxLength: 2000
+
+    # =========================================================================
+    # APPENDIX D — PRINCIPAL'S QUESTIONNAIRE (source pp.213-228, Q1-Q34)
+    # =========================================================================
+    # Self-administered mail-back form completed by the selected child's school
+    # PRINCIPAL. All routing in the source is printed "GO TO" text (no CATI
+    # engine); converted here to preconditions/postconditions.
+    #
+    # Hoisted gate: the Principal's Questionnaire is only present when the
+    # mail-back form was administered and returned, so every block below carries
+    # the block-level precondition `q_adm_principal_form.outcome == 1`
+    # (q_adm_principal_form lives in the shared b_appendix_admin block).
+    #
+    # Cover external identifiers — represented as NOTHING in the QML:
+    #   D-PRINLANG (Principal's Language, cover field) and D-OPNUM (8-digit
+    #   Operation Number) are administrative/linkage identifiers on the cover
+    #   sheet, referenced by no routing. Per the External-input convention they
+    #   are omitted entirely (no items, no variables); recorded in the inventory
+    #   Cover/Administrative section as external identifiers.
+    # =========================================================================
+
+    # =========================================================================
+    # SECTION 1 — THE STUDENTS IN YOUR SCHOOL (source pp.214-219)
+    # Q1-Q15. Classroom-assignment screeners (Q1-Q6), enrolment/composition
+    # counts (Q7-Q12), attendance (Q13-Q14), discipline battery (Q15).
+    # =========================================================================
+    - id: b_pq_s1_students
+      kind: Group
+      title: "Principal's Questionnaire — The Students in Your School"
+      precondition:
+        - predicate: q_adm_principal_form.outcome == 1
+      items:
+        # D-COVER: voluntary-participation / mail-back instruction (Read)
+        - id: q_pq_cover
+          kind: Comment
+          title: "The purpose of this survey is to gather information on various school factors which may influence the development and education of children. Under the Statistics Act the information collected will be kept confidential. Completion of the questionnaire is completely voluntary. When you finish, please place the completed questionnaire in the business reply envelope and mail it to us today. THANK YOU FOR YOUR COOPERATION."
+
+        # D-S1-INT: section instruction (Read) — carries a real "how to answer" instruction
+        - id: q_pq_s1_int
+          kind: Comment
+          title: "The following questions relate to various aspects of your school, its policies, and the students attending your school. Please answer all questions by marking the appropriate circle corresponding with your answer in each section. This section gathers information about students and how they are assigned to classrooms."
+
+        # Q1: any students enrolled in grade 3 or under?
+        - id: q_pq_q1
+          kind: Question
+          title: "Are there students in your school who are enrolled in grade 3 or under? (Please include students enrolled in kindergarten/pre-grade one: junior kindergarten, primary, nursery, early childhood services, or first year of primary.)"
+          input:
+            control: Radio
+            labels:
+              1: "Yes"
+              2: "No"
+
+        # Q2: enough grade-3-and-under students for more than one class per grade?
+        # Source: Q1==No -> GO TO Q4 (skips Q2, Q3). Gate Q2 on Q1==Yes.
+        - id: q_pq_q2
+          kind: Question
+          title: "Does your school contain sufficient students enrolled in grade 3 or under to form more than one class per grade? (Please include kindergarten/pre-grade one classes: junior kindergarten, primary, nursery, early childhood services, or first year of primary.)"
+          precondition:
+            - predicate: q_pq_q1.outcome == 1
+          input:
+            control: Radio
+            labels:
+              3: "Yes"
+              4: "No"
+
+        # Q3: grade-3-and-under classroom-assignment battery (8 rows, shared scale)
+        # Source: Q2==No -> GO TO Q4 (skips Q3). Gate Q3 on Q1==Yes AND Q2==Yes.
+        - id: qg_pq_q3
+          kind: QuestionGroup
+          title: "In general, how often do you use the following ways to assign students to classrooms for grade 3 and under? (Please include kindergarten/pre-grade 1 classes.)"
+          precondition:
+            - predicate: q_pq_q1.outcome == 1
+            - predicate: q_pq_q2.outcome == 3
+          questions:
+            - "(a) Students are grouped together more or less at random"
+            - "(b) Students are grouped according to similar ability levels"
+            - "(c) Students are grouped so that classes contain a mixture of ability levels"
+            - "(d) Students are assigned according to the special expertise of teachers"
+            - "(e) Assign students to classes composed of students of similar ages"
+            - "(f) Groupings are based on social considerations (e.g., friendships, siblings, rivalries)"
+            - "(g) Parents'/guardians' requests are considered when grouping students"
+            - "(h) Consider teachers' input when grouping students"
+          input:
+            control: Radio
+            labels:
+              1: "Never"
+              2: "Rarely"
+              3: "Sometimes"
+              4: "Usually"
+              5: "Always"
+
+        # Q4: any students in grade 4 and higher?
+        - id: q_pq_q4
+          kind: Question
+          title: "Are there students in your school who are enrolled in the middle and later elementary grades (grade 4 and higher)?"
+          input:
+            control: Radio
+            labels:
+              1: "Yes"
+              2: "No"
+
+        # Q5: enough grade-4-and-higher students for more than one class per grade?
+        # Source: Q4==No -> GO TO Q7 (skips Q5, Q6). Gate Q5 on Q4==Yes.
+        - id: q_pq_q5
+          kind: Question
+          title: "Does your school contain sufficient students in the middle and later elementary grades (grade 4 and higher) to form more than one class per grade?"
+          precondition:
+            - predicate: q_pq_q4.outcome == 1
+          input:
+            control: Radio
+            labels:
+              3: "Yes"
+              4: "No"
+
+        # Q6: grade-4-and-higher classroom-assignment battery (8 rows, shared scale)
+        # Source: Q5==No -> GO TO Q7 (skips Q6). Gate Q6 on Q4==Yes AND Q5==Yes.
+        - id: qg_pq_q6
+          kind: QuestionGroup
+          title: "In general, how often do you use the following ways to assign students to classrooms for the middle and later elementary grades (grade 4 and higher)?"
+          precondition:
+            - predicate: q_pq_q4.outcome == 1
+            - predicate: q_pq_q5.outcome == 3
+          questions:
+            - "(a) Students are grouped together more or less at random"
+            - "(b) Students are grouped according to similar ability levels"
+            - "(c) Students are grouped so that classes contain a mixture of ability levels"
+            - "(d) Students are assigned according to the special expertise of teachers"
+            - "(e) Assign students to classes composed of students of similar ages"
+            - "(f) Groupings are based on social considerations (e.g., friendships, siblings, rivalries)"
+            - "(g) Parents'/guardians' requests are considered when grouping students"
+            - "(h) Consider teachers' input when grouping students"
+          input:
+            control: Radio
+            labels:
+              1: "Never"
+              2: "Rarely"
+              3: "Sometimes"
+              4: "Usually"
+              5: "Always"
+
+        # Q7: economic-background percentages — MINED physical-budget constraint:
+        #     the three income-band percentages must sum to 100.
+        # Q7 modeled as three scalar Questions (not a QuestionGroup): the static
+        # builder does not lower QuestionGroup outcome subscripts, so the mined
+        # sum-to-100 physical-budget constraint would be runtime-only. Scalars
+        # keep it inside the verified envelope (classifies CONSTRAINING).
+        - id: q_pq_q7a
+          kind: Question
+          title: "Economic background of students — (a) High income (family income above $60,000 per year): percentage of families."
+          input:
+            control: Editbox
+            min: 0
+            max: 100
+            right: "%"
+        - id: q_pq_q7b
+          kind: Question
+          title: "Economic background of students — (b) Middle income (family income between $40,000 and $60,000 per year): percentage of families."
+          input:
+            control: Editbox
+            min: 0
+            max: 100
+            right: "%"
+        - id: q_pq_q7c
+          kind: Question
+          title: "Economic background of students — (c) Low income (family income below $40,000 per year): percentage of families."
+          postcondition:
+            - predicate: q_pq_q7a.outcome + q_pq_q7b.outcome + q_pq_q7c.outcome == 100
+              hint: "The three economic-background percentages (high, middle, low income) must add up to exactly 100%."
+          input:
+            control: Editbox
+            min: 0
+            max: 100
+            right: "%"
+
+        # Q8: total enrollment as of first school day, January 1995
+        - id: q_pq_q8
+          kind: Question
+          title: "As of the first day of school in January 1995, what was the total enrollment of your school? (Specify the number of students.)"
+          input:
+            control: Editbox
+            min: 0
+            max: 9999
+            right: "students"
+
+        # Q9: students with long-term problems — MINED counts-vs-capacity:
+        #     each category count cannot exceed total enrollment (Q8).
+        #     ("Some students may belong to more than one category", so the three
+        #     counts may overlap and are NOT required to sum to anything.)
+        # Q9/Q10 modeled as scalar Questions (not QuestionGroups): the static
+        # builder does not lower QuestionGroup outcome subscripts, so the mined
+        # counts-vs-capacity constraints (each count <= Q8 total enrollment)
+        # would be runtime-only. Scalars keep them statically CONSTRAINING.
+        # ("Some students may belong to more than one category", so the counts
+        # may overlap and are NOT required to sum to anything.)
+        - id: q_pq_q9a
+          kind: Question
+          title: "Including those not officially identified, how many students attending your school have (a) a speech, hearing, vision, mobility or other health impairment that affects their learning?"
+          postcondition:
+            - predicate: q_pq_q9a.outcome <= q_pq_q8.outcome
+              hint: "The count of students with a health impairment cannot exceed the school's total enrollment (Q8)."
+          input:
+            control: Editbox
+            min: 0
+            max: 999
+            right: "students"
+        - id: q_pq_q9b
+          kind: Question
+          title: "Including those not officially identified, how many students attending your school have (b) an emotional, or behavioural problem?"
+          postcondition:
+            - predicate: q_pq_q9b.outcome <= q_pq_q8.outcome
+              hint: "The count of students with an emotional or behavioural problem cannot exceed the school's total enrollment (Q8)."
+          input:
+            control: Editbox
+            min: 0
+            max: 999
+            right: "students"
+        - id: q_pq_q9c
+          kind: Question
+          title: "Including those not officially identified, how many students attending your school have (c) a learning problem (a problem with attention, memory, reasoning, reading, writing, spelling, or calculation which interferes with learning)?"
+          postcondition:
+            - predicate: q_pq_q9c.outcome <= q_pq_q8.outcome
+              hint: "The count of students with a learning problem cannot exceed the school's total enrollment (Q8)."
+          input:
+            control: Editbox
+            min: 0
+            max: 999
+            right: "students"
+
+        # Q10: students by background — MINED counts-vs-capacity: each <= Q8.
+        - id: q_pq_q10a
+          kind: Question
+          title: "How many students attending your school (a) have a first language other than English or French?"
+          postcondition:
+            - predicate: q_pq_q10a.outcome <= q_pq_q8.outcome
+              hint: "The count of students by first language cannot exceed the school's total enrollment (Q8)."
+          input:
+            control: Editbox
+            min: 0
+            max: 999
+            right: "students"
+        - id: q_pq_q10b
+          kind: Question
+          title: "How many students attending your school (b) have immigrated to Canada within the last year?"
+          postcondition:
+            - predicate: q_pq_q10b.outcome <= q_pq_q8.outcome
+              hint: "The count of recently immigrated students cannot exceed the school's total enrollment (Q8)."
+          input:
+            control: Editbox
+            min: 0
+            max: 999
+            right: "students"
+        - id: q_pq_q10c
+          kind: Question
+          title: "How many students attending your school (c) are from a rural or farm setting?"
+          postcondition:
+            - predicate: q_pq_q10c.outcome <= q_pq_q8.outcome
+              hint: "The count of students from a rural or farm setting cannot exceed the school's total enrollment (Q8)."
+          input:
+            control: Editbox
+            min: 0
+            max: 999
+            right: "students"
+
+        # Q11: new students registered mid-year
+        # No cross-item constraint: mid-year registrations are a flow, not
+        # bounded by the January enrollment snapshot (Q8).
+        - id: q_pq_q11
+          kind: Question
+          title: "Excluding students registering for the first time at the start of your school year, how many students have registered as new students during the course of the school year? (Specify the number of students.)"
+          input:
+            control: Editbox
+            min: 0
+            max: 9999
+            right: "students"
+
+        # Q12: students who left mid-year (flow; not bounded by Q8 snapshot)
+        - id: q_pq_q12
+          kind: Question
+          title: "Excluding students who must leave your school to attend a higher grade, how many students have left this school during the course of the school year? (Specify the number of students.)"
+          input:
+            control: Editbox
+            min: 0
+            max: 9999
+            right: "students"
+
+        # Q13: average absenteeism rate (7 options -> Dropdown; source codes 01-07)
+        - id: q_pq_q13
+          kind: Question
+          title: "What is the average absenteeism rate at your school this year? Please only include students that are absent for a full school day."
+          input:
+            control: Dropdown
+            labels:
+              1: "Less than 1 %"
+              2: "1 to 5 %"
+              3: "6 to 10 %"
+              4: "11 to 15 %"
+              5: "16 to 20 %"
+              6: "More than 20 %"
+              7: "Don't know"
+
+        # Q14: chronic lateness (7 options -> Dropdown; source codes 08-14)
+        - id: q_pq_q14
+          kind: Question
+          title: "Approximately, what percentage of students are chronically late for school? By chronically late we mean that a student is late for the start of school two or more times each week."
+          input:
+            control: Dropdown
+            labels:
+              8: "Less than 1 %"
+              9: "1 to 5 %"
+              10: "6 to 10 %"
+              11: "11 to 15 %"
+              12: "16 to 20 %"
+              13: "More than 20 %"
+              14: "Don't know"
+
+        # Q15: disciplinary-problem frequency battery (12 rows, shared scale)
+        - id: qg_pq_q15
+          kind: QuestionGroup
+          title: "Listed below are a number of different disciplinary problems that may occur in a school. How often do you have to discipline students because of ..."
+          questions:
+            - "(a) Verbal conflicts among students"
+            - "(b) Physical conflicts among students"
+            - "(c) Vandalism of school property"
+            - "(d) Theft of student belongings"
+            - "(e) Theft of staff belongings"
+            - "(f) Smoking on school property"
+            - "(g) Use of drugs on school property"
+            - "(h) Verbal abuse of a staff member"
+            - "(i) Physical assault of a staff member"
+            - "(j) Harassment of certain students by groups of students"
+            - "(k) Conflicts among students of differing racial or ethnic backgrounds"
+            - "(l) Students possessing weapons (e.g., pocket knife, gun)"
+          input:
+            control: Radio
+            labels:
+              1: "Never"
+              2: "Rarely"
+              3: "Sometimes"
+              4: "Usually"
+              5: "Always"
+
+    # =========================================================================
+    # SECTION 2 — PARENTS'/GUARDIANS' INVOLVEMENT IN YOUR SCHOOL (source pp.220-221)
+    # Q16-Q19. (Section intro "These next questions ask about parents'/guardians'
+    # involvement in your school" is a topic label, not an instruction — carried
+    # in this header comment rather than as a Comment item.)
+    # =========================================================================
+    - id: b_pq_s2_parents
+      kind: Group
+      title: "Principal's Questionnaire — Parents'/Guardians' Involvement in Your School"
+      precondition:
+        - predicate: q_adm_principal_form.outcome == 1
+      items:
+        # Q16: parent/guardian volunteering battery (6 rows, shared proportion scale)
+        - id: qg_pq_q16
+          kind: QuestionGroup
+          title: "What proportion of parents/guardians volunteer to help with ..."
+          questions:
+            - "(a) School events (e.g., sports, plays)"
+            - "(b) Fund raising activities"
+            - "(c) Field trips"
+            - "(d) Classroom activities"
+            - "(e) Supervising children (i.e., at recess or lunch time)"
+            - "(f) The parent-school association/home and school liaison committee/parent advisory committee"
+          input:
+            control: Radio
+            labels:
+              1: "1 to 5 %"
+              2: "6 to 10 %"
+              3: "11 to 15 %"
+              4: "16 to 20 %"
+              5: "21 % or more"
+              6: "Not applicable"
+
+        # Q17: perceived parent/guardian support (6 options -> Dropdown; codes 01-06)
+        - id: q_pq_q17
+          kind: Question
+          title: "In your opinion, how strongly do parents/guardians support the efforts of the school's staff?"
+          input:
+            control: Dropdown
+            labels:
+              1: "Strongly support the efforts of the school's staff"
+              2: "Support the efforts of the school's staff"
+              3: "Support some of the efforts of the school's staff"
+              4: "Oppose the efforts of the school's staff"
+              5: "Strongly oppose the efforts of the school's staff"
+              6: "I don't know the parents/guardians well enough"
+
+        # Q18: activity of the parent-school association (6 options -> Dropdown;
+        #      source codes 07-12; code 12 = "there is no association").
+        - id: q_pq_q18
+          kind: Question
+          title: "How active is the parent-school association, home and school liaison committee, or parent advisory committee in your school?"
+          input:
+            control: Dropdown
+            labels:
+              7: "Very active"
+              8: "Active"
+              9: "Somewhat active"
+              10: "Not very active"
+              11: "Not at all active"
+              12: "There is no parent-school association/home and school liaison committee/parent advisory committee"
+
+        # Q19: influence of the association
+        # Source: Q18 code 12 (no association) -> GO TO SECTION 3 (skips Q19).
+        # Gate Q19 on Q18 != 12 (source code 12 preserved verbatim above).
+        - id: q_pq_q19
+          kind: Question
+          title: "How much influence does the parent-school association, home and school liaison committee, or parent advisory committee have on school policies or practices?"
+          precondition:
+            - predicate: q_pq_q18.outcome != 12
+          input:
+            control: Radio
+            labels:
+              13: "A strong influence"
+              14: "A considerable influence"
+              15: "Some influence"
+              16: "A little influence"
+              17: "No influence"
+
+    # =========================================================================
+    # SECTION 3 — CHARACTERISTICS OF YOUR SCHOOL (source pp.221-225)
+    # Q20-Q28. Grade range, staffing (FTE + headcounts), support-service
+    # availability + usage battery (Q27), resource-adequacy battery (Q28).
+    # =========================================================================
+    - id: b_pq_s3_school
+      kind: Group
+      title: "Principal's Questionnaire — Characteristics of Your School"
+      precondition:
+        - predicate: q_adm_principal_form.outcome == 1
+      items:
+        # Q20: range of grades taught (free text: "grade __ to grade __")
+        - id: q_pq_q20
+          kind: Question
+          title: "What is the range of grades taught in your school (e.g., Junior kindergarten to grade 8)? Use \"JK\" for junior kindergarten and \"KN\" for kindergarten/pre-grade one. Specify the grades, e.g. grade ___ to grade ___."
+          input:
+            control: Textarea
+            placeholder: "e.g. grade JK to grade 8"
+            maxLength: 100
+
+        # Q21: staffing in full-time-equivalent units (9 positions).
+        # NOTE: source records FTE with two decimals (e.g. 1.50); QML Editbox is
+        # integer, so fractional FTE precision is not represented (bounds 0-99).
+        - id: qg_pq_q21
+          kind: QuestionGroup
+          title: "How many of the following positions are staffed in your school? (Specify in full-time equivalent units, e.g. 1.0 or 1.5. Use 00.00 to indicate the position is not staffed.)"
+          questions:
+            - "(a) Principal"
+            - "(b) Vice-principals/assistant principals"
+            - "(c) Classroom teachers"
+            - "(d) Teaching assistants/student assistants/teacher's aides"
+            - "(e) Librarians"
+            - "(f) Resource teachers (e.g. special education teachers, educational therapists, music teachers)"
+            - "(g) Physical educators for special needs students"
+            - "(h) Guidance counsellors"
+            - "(i) Secretaries, custodians, and other non-certified, non-teaching staff"
+          input:
+            control: Editbox
+            min: 0
+            max: 99
+            right: "FTE"
+
+        # Q22: total number of teachers on January 1, 1995 (headcount)
+        - id: q_pq_q22
+          kind: Question
+          title: "Including special education, physical education, and itinerant/part-time teachers, how many teachers did you have in your school on January 1, 1995? (Specify the total number of teachers.)"
+          input:
+            control: Editbox
+            min: 0
+            max: 999
+            right: "teachers"
+
+        # Q23: teachers without a homeroom — MINED part-whole: a subset of the
+        #      total teacher headcount, so it cannot exceed Q22.
+        - id: q_pq_q23
+          kind: Question
+          title: "How many teachers in your school are not assigned a specific homeroom class (e.g., librarians, music teachers, physical education teachers)? (Specify the number of teachers.)"
+          postcondition:
+            - predicate: q_pq_q23.outcome <= q_pq_q22.outcome
+              hint: "Teachers without a homeroom (Q23) cannot exceed your total number of teachers (Q22)."
+          input:
+            control: Editbox
+            min: 0
+            max: 999
+            right: "teachers"
+
+        # Q24: other paid instructional-assistance staff (distinct population)
+        - id: q_pq_q24
+          kind: Question
+          title: "Excluding teachers, how many other paid staff (e.g., teacher's aides/student assistants/teaching assistants) provide direct instructional assistance in students' classrooms? (Use 000 for none.)"
+          input:
+            control: Editbox
+            min: 0
+            max: 999
+            right: "staff"
+
+        # Q25: volunteers working directly with students
+        - id: q_pq_q25
+          kind: Question
+          title: "How many volunteers (e.g., co-op students, parents/guardians) are working directly with students on a regular basis? (If none, write 00.)"
+          input:
+            control: Editbox
+            min: 0
+            max: 99
+            right: "volunteers"
+
+        # Q26: staff characteristics (2 counts).
+        # No cross-item bound: the population is teachers AND teaching assistants,
+        # which is not the same as Q22 (teachers only), so neither count is
+        # cleanly bounded by any single earlier item.
+        - id: qg_pq_q26
+          kind: QuestionGroup
+          title: "How many of the teachers and teaching assistants/student assistants/teacher's aides at your school have: (Some may belong to more than one category. If none, write 0.)"
+          questions:
+            - "(a) A first language other than English or French?"
+            - "(b) A speech, hearing, visual, mobility or other health impairment?"
+          input:
+            control: Editbox
+            min: 0
+            max: 99
+            right: "staff"
+
+        # Q27: support services — availability + typical-week usage.
+        # The source is a per-row battery: each service has an availability
+        # Yes/No, and ONLY IF available a "full-time days/week" figure is filled.
+        # A QuestionGroup precondition gates the whole group, not individual
+        # rows, so per-row conditional display is not expressible. Modeled as two
+        # paired 12-row batteries (availability + days), with the per-row
+        # conditional recovered as a MINED screener-consistency postcondition:
+        # if a service is not available, its days figure must be 0.
+        # NOTE: source days are fractional (e.g. 1.50 days/week); integer Editbox
+        # (0-7) loses the fractional part. Row (l) "Other (Specify)" free text is
+        # not separately modeled.
+        - id: qg_pq_q27_avail
+          kind: QuestionGroup
+          title: "Listed below are several types of support services available to some schools. Please indicate whether each service is available to your school."
+          questions:
+            - "(a) School psychologist"
+            - "(b) Psychiatrist"
+            - "(c) Speech and language therapist"
+            - "(d) Audiologist"
+            - "(e) Occupational therapist"
+            - "(f) Physical therapist"
+            - "(g) Social worker"
+            - "(h) Community health nurse"
+            - "(i) Instructor in Aboriginal Peoples' culture"
+            - "(j) Instructor in culture awareness"
+            - "(k) Police officer"
+            - "(l) Other (Specify)"
+          input:
+            control: Radio
+            labels:
+              1: "No"
+              2: "Yes"
+
+        # KNOWN RESIDUAL WARNING (documented): the screener-consistency
+        # postcondition below uses QuestionGroup outcome subscripts, which the
+        # static builder does not lower — it classifies TAUTOLOGICAL (statically
+        # skipped) but IS enforced at runtime. Kept as a QuestionGroup because
+        # scalarizing 12 availability + 12 usage rows would cost 24 items for
+        # one constraint. Revisit when QG subscript lowering lands upstream
+        # (askalot-io/askalot#165).
+        - id: qg_pq_q27_days
+          kind: QuestionGroup
+          title: "For each service that is available, how often has it been used in your school during a typical week? (e.g., one full day + one half day = 1.50 full-time days/week. Leave 0 for services not available to your school.)"
+          questions:
+            - "(a) School psychologist"
+            - "(b) Psychiatrist"
+            - "(c) Speech and language therapist"
+            - "(d) Audiologist"
+            - "(e) Occupational therapist"
+            - "(f) Physical therapist"
+            - "(g) Social worker"
+            - "(h) Community health nurse"
+            - "(i) Instructor in Aboriginal Peoples' culture"
+            - "(j) Instructor in culture awareness"
+            - "(k) Police officer"
+            - "(l) Other (Specify)"
+          postcondition:
+            - predicate: all([qg_pq_q27_avail.outcome[i] == 2 or qg_pq_q27_days.outcome[i] == 0 for i in range(12)])
+              hint: "A support service that is not available (answered No in the availability list) must have 0 days/week of use."
+          input:
+            control: Editbox
+            min: 0
+            max: 7
+            right: "days/week"
+
+        # Q28: resource-adequacy rating battery (18 rows, shared scale).
+        # Row (r) "Other (Specify)" free text is not separately modeled.
+        - id: qg_pq_q28
+          kind: QuestionGroup
+          title: "Below are a number of different resources which may be available to your school. Please rate the extent to which each attribute currently meets the needs of your school."
+          questions:
+            - "(a) Instructional resources (e.g., curriculum documents, books)"
+            - "(b) School supplies (e.g., paper, pencils)"
+            - "(c) Instructional space (e.g., classroom size)"
+            - "(d) Computers for course instruction"
+            - "(e) Computer software for course instruction"
+            - "(f) Library materials"
+            - "(g) Audio-visual resources (e.g., VCRs, film projector)"
+            - "(h) School buildings"
+            - "(i) School grounds"
+            - "(j) Heating and lighting"
+            - "(k) Science equipment"
+            - "(l) Equipment for mathematics instruction (e.g., counting blocks, calculators)"
+            - "(m) Budget for consumables"
+            - "(n) Special equipment for handicapped students"
+            - "(o) Gymnasium"
+            - "(p) Gym equipment (e.g., mats, balls)"
+            - "(q) Outdoor play equipment"
+            - "(r) Other (Specify)"
+          input:
+            control: Radio
+            labels:
+              1: "Does not meet my school's needs"
+              2: "Partially meets my school's needs"
+              3: "Adequately meets my school's needs"
+              4: "Completely meets my school's needs"
+              5: "Not applicable"
+
+    # =========================================================================
+    # SECTION 4 — PERCEPTIONS OF YOUR SCHOOL (source pp.225-226)
+    # Q29. Purely subjective agree/disagree battery — no objective cross-item
+    # constraints (attitudes have no "correct" relationship).
+    # =========================================================================
+    - id: b_pq_s4_perceptions
+      kind: Group
+      title: "Principal's Questionnaire — Perceptions of Your School"
+      precondition:
+        - predicate: q_adm_principal_form.outcome == 1
+      items:
+        # Q29: agreement battery (10 rows, shared 5-point agree/disagree scale)
+        - id: qg_pq_q29
+          kind: QuestionGroup
+          title: "Below are a number of statements which describe different aspects of schooling. Please indicate how strongly you agree or disagree with each of the following statements."
+          questions:
+            - "(a) I find my professional role satisfying"
+            - "(b) If I had to do it again, I would remain a teacher rather than become a principal"
+            - "(c) I feel good about continuing my career in this school district"
+            - "(d) I feel competent to deal with students' behavioural problems"
+            - "(e) I have a considerable influence on my school's policies"
+            - "(f) I have little influence on how money is allocated for school resources"
+            - "(g) The emphasis in my school is on the development of academic skills"
+            - "(h) I have high expectations for the academic success of students attending this school"
+            - "(i) I try to ensure that students are pushed to achieve their full academic potential"
+            - "(j) I feel students' success at school is determined mainly by their home environments"
+          input:
+            control: Radio
+            labels:
+              1: "Strongly disagree"
+              2: "Disagree"
+              3: "Neither agree nor disagree"
+              4: "Agree"
+              5: "Strongly agree"
+
+    # =========================================================================
+    # SECTION 5 — PERSONAL INFORMATION (source pp.227-228)
+    # Q30-Q34. Principal demographics, experience, education, data-sharing consent.
+    # =========================================================================
+    - id: b_pq_s5_personal
+      kind: Group
+      title: "Principal's Questionnaire — Personal Information"
+      precondition:
+        - predicate: q_adm_principal_form.outcome == 1
+      items:
+        # Q30: sex
+        - id: q_pq_q30
+          kind: Question
+          title: "Are you..."
+          input:
+            control: Radio
+            labels:
+              1: "Female"
+              2: "Male"
+
+        # Q31: age category (5 options; source codes 3-7)
+        - id: q_pq_q31
+          kind: Question
+          title: "To which age category do you belong?"
+          input:
+            control: Radio
+            labels:
+              3: "20 to 29 years"
+              4: "30 to 39 years"
+              5: "40 to 49 years"
+              6: "50 to 59 years"
+              7: "60 years or older"
+
+        # Q32: experience in years + months across 6 role/location pairs.
+        # Modeled as two paired 6-row batteries (years, months). MINED
+        # max/part-whole: experience "at this school" in a role cannot exceed
+        # total experience in that same role. Compared in total months
+        # (years*12 + months) on the last-produced item (the months battery):
+        #   (b) principal-at-this-school <= (a) principal
+        #   (d) vice-principal-at-this-school <= (c) vice-principal
+        #   (f) teacher-at-this-school <= (e) teacher
+        # Q32 modeled as scalar year/month pairs per role (not QuestionGroups):
+        # the static builder does not lower QuestionGroup outcome subscripts,
+        # so the mined at-this-school <= total-experience constraints would be
+        # runtime-only. Scalars keep them statically CONSTRAINING (same
+        # treatment as Teacher's Questionnaire Q54). "Specify 00 if you have
+        # no experience in a particular position."
+        - id: q_pq_q32a_y
+          kind: Question
+          title: "Experience as a principal — years."
+          input: { control: Editbox, min: 0, max: 60, right: "years" }
+        - id: q_pq_q32a_m
+          kind: Question
+          title: "Experience as a principal — months."
+          input: { control: Editbox, min: 0, max: 11, right: "months" }
+        - id: q_pq_q32b_y
+          kind: Question
+          title: "Experience as a principal at this school — years."
+          input: { control: Editbox, min: 0, max: 60, right: "years" }
+        - id: q_pq_q32b_m
+          kind: Question
+          title: "Experience as a principal at this school — months."
+          postcondition:
+            - predicate: q_pq_q32b_y.outcome * 12 + q_pq_q32b_m.outcome <= q_pq_q32a_y.outcome * 12 + q_pq_q32a_m.outcome
+              hint: "Experience as a principal at this school cannot exceed your total experience as a principal."
+          input: { control: Editbox, min: 0, max: 11, right: "months" }
+        - id: q_pq_q32c_y
+          kind: Question
+          title: "Experience as a vice-principal — years."
+          input: { control: Editbox, min: 0, max: 60, right: "years" }
+        - id: q_pq_q32c_m
+          kind: Question
+          title: "Experience as a vice-principal — months."
+          input: { control: Editbox, min: 0, max: 11, right: "months" }
+        - id: q_pq_q32d_y
+          kind: Question
+          title: "Experience as a vice-principal at this school — years."
+          input: { control: Editbox, min: 0, max: 60, right: "years" }
+        - id: q_pq_q32d_m
+          kind: Question
+          title: "Experience as a vice-principal at this school — months."
+          postcondition:
+            - predicate: q_pq_q32d_y.outcome * 12 + q_pq_q32d_m.outcome <= q_pq_q32c_y.outcome * 12 + q_pq_q32c_m.outcome
+              hint: "Experience as a vice-principal at this school cannot exceed your total experience as a vice-principal."
+          input: { control: Editbox, min: 0, max: 11, right: "months" }
+        - id: q_pq_q32e_y
+          kind: Question
+          title: "Experience as a teacher — years."
+          input: { control: Editbox, min: 0, max: 60, right: "years" }
+        - id: q_pq_q32e_m
+          kind: Question
+          title: "Experience as a teacher — months."
+          input: { control: Editbox, min: 0, max: 11, right: "months" }
+        - id: q_pq_q32f_y
+          kind: Question
+          title: "Experience as a teacher at this school — years."
+          input: { control: Editbox, min: 0, max: 60, right: "years" }
+        - id: q_pq_q32f_m
+          kind: Question
+          title: "Experience as a teacher at this school — months."
+          postcondition:
+            - predicate: q_pq_q32f_y.outcome * 12 + q_pq_q32f_m.outcome <= q_pq_q32e_y.outcome * 12 + q_pq_q32e_m.outcome
+              hint: "Experience as a teacher at this school cannot exceed your total experience as a teacher."
+          input: { control: Editbox, min: 0, max: 11, right: "months" }
+
+        # Q33: levels of education attained (Mark all that apply -> Checkbox,
+        #      power-of-2 keys). Option 11 "Other (Specify)" free text not modeled.
+        - id: q_pq_q33
+          kind: Question
+          title: "Please specify the levels of education you have attained. (Mark all that apply.)"
+          input:
+            control: Checkbox
+            labels:
+              1: "Some coursework towards a Bachelor's degree"
+              2: "A teaching certificate, diploma or licence"
+              4: "A Bachelor's degree"
+              8: "A Bachelor of Education degree"
+              16: "Some post-baccalaureate coursework"
+              32: "A post-baccalaureate diploma or certificate"
+              64: "Some coursework towards a Master's degree"
+              128: "A Master's degree"
+              256: "Some coursework towards a Doctorate"
+              512: "A Doctorate"
+              1024: "Other (Specify)"
+
+        # Q34: HRDC data-sharing consent (end of questionnaire)
+        - id: q_pq_q34
+          kind: Question
+          title: "Statistics Canada is conducting this survey jointly with Human Resources Development Canada. The information collected will be kept confidential and used only for statistical purposes. Do you agree to share the information collected with Human Resources Development Canada?"
+          input:
+            control: Radio
+            labels:
+              1: "Yes"
+              2: "No"
+
+    # =========================================================================
+    # APPENDIX E — NPHS QUESTIONS (TWOWK / UTIL) — source pages 229-233
+    # =========================================================================
+    # These are additional National Population Health Survey items asked ONLY
+    # during the integrated NLSC/NPHS collection (Nov 1994 / Mar 1995). The
+    # whole appendix is gated by the data-collection-period flag, modeled as the
+    # admin item q_adm_collection_period (1 = integrated NLSC+NPHS period). That
+    # gate is HOISTED to every Appendix E block precondition; items keep only
+    # their item-specific routing residuals. All items are asked by the PMK
+    # about the selected child (proxy phrasing).
+    # =========================================================================
+
+    # -------------------------------------------------------------------------
+    # BLOCK E1: NPHS HOUSEHOLD RECORD VARIABLES (HHLD-Q4/Q5/Q5a) — p.230
+    # Item ids prefixed q_nphs_hhld_* to avoid collision with the main-body
+    # Household Record Variables section.
+    # -------------------------------------------------------------------------
+    - id: b_nphs_hhld
+      kind: Group
+      title: "NPHS Household Record Variables"
+      precondition:
+        - predicate: q_adm_collection_period.outcome == 1
+          hint: "Asked only during the integrated NLSC/NPHS collection period."
+      items:
+        # HHLD-Q4: Pet in household? NO ---> GO TO HHLD-Q6 (skips Q5/Q5a).
+        - id: q_nphs_hhld_q4
+          kind: Question
+          title: "Is there a pet in this household?"
+          input:
+            control: Radio
+            labels:
+              1: "Yes"
+              2: "No"
+
+        # HHLD-Q5: Kind of pet (mark all that apply). Shown only if Q4=Yes.
+        # Source appends "---> GO TO HHLD-Q6" to this item; treated as the
+        # continuation after the pet sub-questions (HHLD-Q6 lives in the main
+        # body and is NOT created here).
+        - id: q_nphs_hhld_q5
+          kind: Question
+          title: "What kind of pet? (Do not read list. Mark all that apply.)"
+          precondition:
+            - predicate: q_nphs_hhld_q4.outcome == 1
+          input:
+            control: Checkbox
+            labels:
+              1: "Dog"
+              2: "Cat"
+              4: "Other"
+
+        # HHLD-Q5a: Pet(s) live mainly indoors? Shown only if Q4=Yes.
+        - id: q_nphs_hhld_q5a
+          kind: Question
+          title: "Does this pet or do any of these pets live mainly indoors?"
+          precondition:
+            - predicate: q_nphs_hhld_q4.outcome == 1
+          input:
+            control: Radio
+            labels:
+              1: "Yes"
+              2: "No"
+
+        # END OF PET PATH: HHLD-Q6 (dwelling / household continuation) is a GOTO
+        # target in the MAIN-BODY Household Record Variables section — not
+        # created in this appendix. All paths (Q4=No, or after Q5/Q5a) resume there.
+        - id: q_nphs_hhld_end
+          kind: Comment
+          title: "(Routing note: after these NPHS pet items, the interview resumes at HHLD-Q6 in the main Household Record Variables section.)"
+
+    # -------------------------------------------------------------------------
+    # BLOCK E2: TWO-WEEK DISABILITY (TWOWK-INT, Q1-Q5) — p.230-231
+    # 14-day recall window. GOTO conversions:
+    #   Q1 No ---> Q3            => Q2 gated on Q1=Yes
+    #   Q2 = 14 ---> Q5          => Q3/Q4 gated on NOT(Q1=Yes AND Q2=14)
+    #   Q3 No ---> Q5            => Q4 gated on Q3=Yes
+    #   Q5 reached by all paths  => Q5 unconditional (block gate only)
+    # -------------------------------------------------------------------------
+    - id: b_nphs_twowk
+      kind: Group
+      title: "NPHS Two-Week Disability"
+      precondition:
+        - predicate: q_adm_collection_period.outcome == 1
+          hint: "Asked only during the integrated NLSC/NPHS collection period."
+      items:
+        # TWOWK-INT
+        - id: q_twowk_int
+          kind: Comment
+          title: "The first few questions ask about the child's health during the past 14 days. Please refer to the 14-day period from two weeks ago to yesterday."
+
+        # TWOWK-Q1: stayed in bed at all? NO ---> GO TO TWOWK-Q3.
+        - id: q_twowk_q1
+          kind: Question
+          title: "During that 14-day period, did the child stay in bed at all because of illness or injury, including any nights spent as a patient in a hospital?"
+          input:
+            control: Radio
+            labels:
+              1: "Yes"
+              2: "No"
+
+        # TWOWK-Q2: days in bed (0 = less than a day). Shown only if Q1=Yes.
+        # IF = 14 DAYS ---> GO TO TWOWK-Q5 (handled by Q3/Q4 preconditions).
+        - id: q_twowk_q2
+          kind: Question
+          title: "How many days did the child stay in bed for all or most of the day? (Enter 0 if less than a day.)"
+          precondition:
+            - predicate: q_twowk_q1.outcome == 1
+          input:
+            control: Editbox
+            min: 0
+            max: 14
+            right: "days"
+
+        # TWOWK-Q3: any cut-down days (NOT counting bed days)? NO ---> GO TO Q5.
+        # Reached when: Q1=No (skip-in from Q1), OR Q1=Yes AND Q2<14 (Q2=14 skips to Q5).
+        - id: q_twowk_q3
+          kind: Question
+          title: "Not counting days spent in bed, during those 14 days were there any days that the child cut down on things they normally do because of illness or injury?"
+          precondition:
+            - predicate: q_twowk_q1.outcome == 2 or (q_twowk_q1.outcome == 1 and q_twowk_q2.outcome < 14)
+          input:
+            control: Radio
+            labels:
+              1: "Yes"
+              2: "No"
+
+        # TWOWK-Q4: cut-down days (0 = less than a day). Shown only if Q3=Yes.
+        # POSTCONDITION (part-whole): bed days (Q2) and cut-down days (Q4) are
+        # mutually exclusive subsets of the same 14-day window (Q3 asks
+        # explicitly "Not counting days spent in bed"), so their sum cannot
+        # exceed 14. When Q1=No, Q2 is unanswered (0) and this reduces to the
+        # Editbox domain — no false violation.
+        - id: q_twowk_q4
+          kind: Question
+          title: "How many days did the child cut down on things for all or most of the day? (Enter 0 if less than a day.)"
+          precondition:
+            - predicate: q_twowk_q3.outcome == 1
+          postcondition:
+            - predicate: q_twowk_q2.outcome + q_twowk_q4.outcome <= 14
+              hint: "Bed days plus cut-down days cannot exceed the 14-day window (they are separate days)."
+          input:
+            control: Editbox
+            min: 0
+            max: 14
+            right: "days"
+
+        # TWOWK-Q5: regular medical doctor? Reached by every path (block gate only).
+        - id: q_twowk_q5
+          kind: Question
+          title: "Does the child have a regular medical doctor?"
+          input:
+            control: Radio
+            labels:
+              1: "Yes"
+              2: "No"
+
+    # -------------------------------------------------------------------------
+    # BLOCK E3: HEALTH CARE UTILIZATION (UTIL-INT, Q1-Q10) — p.231-233
+    # GOTO conversions:
+    #   Q1 No ---> Q2                        => Q1a gated on Q1=Yes
+    #   UTIL-C2: response >0 in a), c) or d) => Q3 gated on those counts
+    #   Q4 No ---> Q6                        => Q5 gated on Q4=Yes
+    #   Q6 No ---> UTIL-C9                    => Q7/Q8 gated on Q6=Yes
+    #   UTIL-C9: IF AGE < 18 ---> NEXT SEC.  => see note on q_util_q9
+    #   Q9 No ---> NEXT SECTION              => Q10 gated on Q9=Yes
+    # -------------------------------------------------------------------------
+    - id: b_nphs_util
+      kind: Group
+      title: "NPHS Health Care Utilization"
+      precondition:
+        - predicate: q_adm_collection_period.outcome == 1
+          hint: "Asked only during the integrated NLSC/NPHS collection period."
+      items:
+        # UTIL-INT
+        - id: q_util_int
+          kind: Comment
+          title: "Now I'd like to ask about the child's contacts with health professionals during the past 12 months."
+
+        # UTIL-Q1: overnight patient in past 12 months? NO ---> GO TO UTIL-Q2.
+        - id: q_util_q1
+          kind: Question
+          title: "In the past 12 months, has the child been a patient overnight in a hospital, nursing home or convalescent home?"
+          input:
+            control: Radio
+            labels:
+              1: "Yes"
+              2: "No"
+
+        # UTIL-Q1a: number of nights. Shown only if Q1=Yes.
+        # Screener consistency (Q1=Yes => at least one night) is enforced
+        # structurally by this precondition plus min: 1 — no separate
+        # postcondition (it would be tautological).
+        - id: q_util_q1a
+          kind: Question
+          title: "For how many nights in the past 12 months?"
+          precondition:
+            - predicate: q_util_q1.outcome == 1
+          input:
+            control: Editbox
+            min: 1
+            max: 365
+            right: "nights"
+
+        # UTIL-Q2: contact counts by professional category (a-j). Asked of all
+        # (UTIL-Q1 No routes here too). Indices: a=0, b=1, c=2, d=3, e=4, f=5,
+        # g=6, h=7, i=8, j=9.
+        - id: qg_util_q2
+          kind: QuestionGroup
+          title: "Not counting overnight-patient stays, in the past 12 months how many times has the child seen or talked on the telephone with each of the following about their physical, emotional or mental health?"
+          questions:
+            - "(a) General practitioner or family physician"
+            - "(b) Eye specialist (ophthalmologist or optometrist)"
+            - "(c) Other medical doctor (surgeon, allergist, gynaecologist, psychiatrist, etc.)"
+            - "(d) A nurse for care or advice"
+            - "(e) Dentist or orthodontist"
+            - "(f) Chiropractor"
+            - "(g) Physiotherapist"
+            - "(h) Social worker or counsellor"
+            - "(i) Psychologist"
+            - "(j) Speech, audiology or occupational therapist"
+          input:
+            control: Editbox
+            min: 0
+            max: 365
+            right: "contacts"
+
+        # UTIL-Q3: location of most recent contact. UTIL-C2 routing: asked only
+        # if there was >0 contact in category a), c) or d).
+        - id: q_util_q3
+          kind: Question
+          title: "Where did the most recent contact take place? (Read list. Mark one only.)"
+          precondition:
+            - predicate: qg_util_q2.outcome[0] > 0 or qg_util_q2.outcome[2] > 0 or qg_util_q2.outcome[3] > 0
+          input:
+            control: Dropdown
+            labels:
+              1: "Walk-in clinic"
+              2: "Outpatient clinic in hospital"
+              3: "Hospital emergency room"
+              4: "Health professional's office"
+              5: "Community health centre / CLSC"
+              6: "At home"
+              7: "Telephone consultation only"
+              8: "Other"
+
+        # UTIL-Q4: used alternative health care? NO ---> GO TO UTIL-Q6.
+        - id: q_util_q4
+          kind: Question
+          title: "In the past 12 months, has the child seen or talked to an alternative health care provider such as an acupuncturist, naturopath, homeopath or massage therapist about their physical, emotional or mental health?"
+          input:
+            control: Radio
+            labels:
+              1: "Yes"
+              2: "No"
+
+        # UTIL-Q5: which alternative providers (mark all that apply). If Q4=Yes.
+        - id: q_util_q5
+          kind: Question
+          title: "Who did the child see or talk to? (Do not read list. Mark all that apply.)"
+          precondition:
+            - predicate: q_util_q4.outcome == 1
+          input:
+            control: Checkbox
+            labels:
+              1: "Massage therapist"
+              2: "Acupuncturist"
+              4: "Homeopath or naturopath"
+              8: "Feldenkrais or Alexander teacher"
+              16: "Relaxation therapist"
+              32: "Biofeedback teacher"
+              64: "Rolfer"
+              128: "Herbalist"
+              256: "Reflexologist"
+              512: "Spiritual healer"
+              1024: "Religious healer"
+              2048: "Self-help group (such as AA, cancer therapy, etc.)"
+              4096: "Other"
+
+        # UTIL-Q6: needed care but did not receive it? NO ---> GO TO UTIL-C9.
+        # Reached by all paths (Q4 No routes to Q6; Q5 path continues to Q6).
+        - id: q_util_q6
+          kind: Question
+          title: "During the past 12 months, was there ever a time when the child needed health care or advice but did not receive it?"
+          input:
+            control: Radio
+            labels:
+              1: "Yes"
+              2: "No"
+
+        # UTIL-Q7: why not received (open-ended). Shown only if Q6=Yes.
+        - id: q_util_q7
+          kind: Question
+          title: "Thinking of the most recent time, why did the child not get care?"
+          precondition:
+            - predicate: q_util_q6.outcome == 1
+          input:
+            control: Textarea
+
+        # UTIL-Q8: type of care needed (mark all that apply). Shown only if Q6=Yes.
+        - id: q_util_q8
+          kind: Question
+          title: "Again, thinking of the most recent time, what was the type of care that was needed? (Do not read list. Mark all that apply.)"
+          precondition:
+            - predicate: q_util_q6.outcome == 1
+          input:
+            control: Checkbox
+            labels:
+              1: "Treatment of a physical health problem"
+              2: "Treatment of an emotional or mental health problem"
+              4: "A regular check-up (or regular pre-natal care)"
+              8: "Care of an injury"
+              16: "Any other reason"
+
+        # UTIL-C9 / UTIL-Q9-Q10: the NPHS adult home-care module — NOT MODELED.
+        # UTIL-C9 routes "IF AGE < 18 THEN GO TO NEXT SECTION." The "..." in
+        # UTIL-Q9/Q10 refers to the SELECTED CHILD, whose age domain in this
+        # instrument is 0-11 (q_child_age, Editbox min 0 max 11). The child's
+        # age is therefore ALWAYS < 18: UTIL-C9 always routes past the module
+        # and UTIL-Q9/Q10 (home-care receipt + service types) can never be
+        # administered in the child questionnaire. Including them would create
+        # provably-unreachable items (gate q_child_age.outcome >= 18 is
+        # unsatisfiable over [0,11]), so they are omitted here; the analysis
+        # report records the finding that the NPHS adult home-care module is
+        # inapplicable dead routing in the child context (source p.232-233).
+
+    # =========================================================================
+    # APPENDIX F — ADMINISTRATIVE INFORMATION (KCON / TCH / OBS / PPVT) — p.234-244
+    # =========================================================================
+    # End-of-interview administrative modules. DK/REFUSAL code values differ by
+    # module (preserved from source): KCON and OBS use 8=DK / 9=REFUSAL; TCH and
+    # PPVT use 7=DK / 8=REFUSAL.
+    # =========================================================================
+
+    # -------------------------------------------------------------------------
+    # BLOCK F1: DATA-SHARING AGREEMENT — KCON (p.235-236)
+    # No block gate (asked of all). KCON-Q1A vs KCON-Q1B selected by the
+    # data-collection period (q_adm_collection_period: 1 = joint NPHS+NLSC ->
+    # Q1A; 2 = NLSC-only -> Q1B).
+    # DK/REFUSAL ---> NEXT SECTION routing on the contact-tracing text items
+    # (Q2A-Q3C) is NOT modeled as preconditions: QML Textarea controls carry no
+    # DK/REF code, and the main-body house convention (see SAF-Q2/Q3) treats
+    # such refusal-to-continue as a CATI administration concern, leaving
+    # downstream contact fields ungated in straightforward sequential flow.
+    # -------------------------------------------------------------------------
+    - id: b_kcon
+      kind: Group
+      title: "Data-Sharing Agreement (KCON)"
+      items:
+        # KCON-Q1A: asked only in the joint NPHS+NLSC period.
+        - id: q_kcon_q1a
+          kind: Question
+          title: "To avoid duplication, Statistics Canada intends to share the information from this survey with provincial ministries of health, Health Canada and Human Resources Development Canada, who will keep it confidential and use it only for statistical purposes. Do you agree to share the information you have provided, including any provided by your child(ren)?"
+          precondition:
+            - predicate: q_adm_collection_period.outcome == 1
+          input:
+            control: Radio
+            labels:
+              1: "Yes"
+              2: "No"
+              8: "Don't know"
+              9: "Refusal"
+
+        # KCON-Q1B: asked only in the NLSC-only period.
+        - id: q_kcon_q1b
+          kind: Question
+          title: "Statistics Canada is conducting this survey jointly with Human Resources Development Canada. The information collected will be kept confidential and used only for statistical purposes. Do you agree to share the information collected, including any provided by your child(ren), with Human Resources Development Canada?"
+          precondition:
+            - predicate: q_adm_collection_period.outcome == 2
+          input:
+            control: Radio
+            labels:
+              1: "Yes"
+              2: "No"
+              8: "Don't know"
+              9: "Refusal"
+
+        # KCON-I2
+        - id: q_kcon_i2
+          kind: Comment
+          title: "In case you move or change telephone numbers, it would be helpful if you could provide the name, address and telephone number of someone, such as a friend or relative, who could help us to contact you."
+
+        # KCON-Q2A: first contact — name.
+        - id: q_kcon_q2a
+          kind: Question
+          title: "Statistics Canada will contact this person only if you move, and then only to obtain your new address or telephone number. Enter the first and last name of the contact."
+          input:
+            control: Textarea
+
+        # KCON-Q2B: first contact — address.
+        - id: q_kcon_q2b
+          kind: Question
+          title: "Enter the address of the contact."
+          input:
+            control: Textarea
+
+        # KCON-Q2C: first contact — phone number.
+        - id: q_kcon_q2c
+          kind: Question
+          title: "Enter the phone number of the contact (area code, prefix and suffix)."
+          input:
+            control: Textarea
+
+        # KCON-Q3A: second contact — name.
+        - id: q_kcon_q3a
+          kind: Question
+          title: "In case we can't reach that person, please provide the name, address and telephone number of another person we could contact. Enter the first and last name of the contact."
+          input:
+            control: Textarea
+
+        # KCON-Q3B: second contact — address.
+        - id: q_kcon_q3b
+          kind: Question
+          title: "Enter the address of the contact."
+          input:
+            control: Textarea
+
+        # KCON-Q3C: second contact — phone number.
+        - id: q_kcon_q3c
+          kind: Question
+          title: "Enter the phone number of the contact (area code, prefix and suffix)."
+          input:
+            control: Textarea
+
+    # -------------------------------------------------------------------------
+    # BLOCK F2: TEACHER CONSENT — TCH (p.237-238)
+    # TCH-C1: done only for a child who attended school -> block precondition
+    #   q_edu_q1.outcome >= 2 (q_edu_q1: 1 = "Not in school"; >=2 = in school).
+    # TCH-Q1 consent: 1=YES continues; 2=NO / 7=DK / 8=REFUSAL ---> NEXT SECTION
+    #   => Q2 and I3 gated on Q1=Yes.
+    # TCH-C2 grade mapping (verified q_edu_q1 labels):
+    #   1=Not in school, 2=Junior Kindergarten, 3=Kindergarten/Primary,
+    #   4=Grade 1, 5=Grade 2, 6=Grade 3, ... 15=Grade 12, 16=OAC/Grade 13,
+    #   17=Ungraded.
+    #   "IN GRADE 2 OR OVER" ---> GO TO I3 (skip Q2)  => outcomes 5..16.
+    #   OTHERWISE ---> ask Q2                          => outcomes 2,3,4 (below
+    #   Grade 2) plus 17 (Ungraded, which has no numeric grade — routed to the
+    #   "otherwise/ask Q2" branch, flagged below).
+    # -------------------------------------------------------------------------
+    - id: b_tch_consent
+      kind: Group
+      title: "Teacher Consent (TCH)"
+      precondition:
+        - predicate: q_edu_q1.outcome >= 2
+          hint: "Asked only for a selected child who attended school in the past 12 months."
+      items:
+        # TCH-Q1: teacher-contact consent.
+        - id: q_tch_q1
+          kind: Question
+          title: "Do you agree that the child's teacher may be contacted and asked to complete a questionnaire regarding the child?"
+          input:
+            control: Radio
+            labels:
+              1: "Yes"
+              2: "No"
+              7: "Don't know"
+              8: "Refusal"
+
+        # TCH-Q2: math-test consent. Asked only if consent given (Q1=Yes) AND the
+        # child is BELOW Grade 2 (outcomes 2,3,4) OR Ungraded (17); Grade 2+
+        # children (5..16) skip to TCH-I3.
+        - id: q_tch_q2
+          kind: Question
+          title: "Do you agree that the child's teacher may give the child a brief test of math skills?"
+          precondition:
+            - predicate: q_tch_q1.outcome == 1
+            - predicate: q_edu_q1.outcome <= 4 or q_edu_q1.outcome == 17
+          input:
+            control: Radio
+            labels:
+              1: "Yes"
+              2: "No"
+              7: "Don't know"
+              8: "Refusal"
+
+        # TCH-I3: interviewer fill-in on the consent form. Reached by both grade
+        # branches once consent is given (Q1=Yes).
+        - id: q_tch_i3
+          kind: Comment
+          title: "Interviewer: fill in the following items on the teacher consent form and complete all other requested information — sample ID, person number, first name, last name."
+          precondition:
+            - predicate: q_tch_q1.outcome == 1
+
+    # -------------------------------------------------------------------------
+    # BLOCK F3: NEIGHBOURHOOD OBSERVATION — OBS (p.239-240)
+    # Completed by the interviewer, not asked of the respondent. Unconditional.
+    # Source has no OBS-Q3 (skips Q2 -> Q4); the gap is preserved. OBS uses
+    # 8=DK / 9=REFUSAL (Q7 uses 98/99), preserved as interviewer codes.
+    # -------------------------------------------------------------------------
+    - id: b_obs
+      kind: Group
+      title: "Neighbourhood Observation (OBS)"
+      items:
+        # OBS-Q1
+        - id: q_obs_q1
+          kind: Question
+          title: "How would you rate the volume of traffic on the street or road?"
+          input:
+            control: Dropdown
+            labels:
+              1: "Very light"
+              2: "Light"
+              3: "Moderate"
+              4: "Heavy"
+              5: "Very heavy"
+              8: "Don't know"
+              9: "Refusal"
+
+        # OBS-Q2
+        - id: q_obs_q2
+          kind: Question
+          title: "Is there garbage, litter, or broken glass in the street or road, on the sidewalks, or in yards?"
+          input:
+            control: Dropdown
+            labels:
+              1: "Almost none"
+              2: "Yes, but not a lot"
+              3: "Yes, quite a bit"
+              4: "Yes, almost everywhere"
+              8: "Don't know"
+              9: "Refusal"
+
+        # OBS-Q4 (no OBS-Q3 in source — gap preserved).
+        - id: q_obs_q4
+          kind: Question
+          title: "Are people loitering, congregating or hanging out?"
+          input:
+            control: Radio
+            labels:
+              1: "Yes"
+              2: "No"
+              8: "Don't know"
+              9: "Refusal"
+
+        # OBS-Q5
+        - id: q_obs_q5
+          kind: Question
+          title: "Are any persons arguing, shouting, fighting or otherwise behaving in hostile or threatening ways?"
+          input:
+            control: Radio
+            labels:
+              1: "No persons observed"
+              2: "No, none behaving in hostile or threatening ways"
+              3: "Yes, some observed"
+              8: "Don't know"
+              9: "Refusal"
+
+        # OBS-Q6
+        - id: q_obs_q6
+          kind: Question
+          title: "Are drunken or otherwise intoxicated persons visible?"
+          input:
+            control: Radio
+            labels:
+              1: "Yes"
+              2: "No"
+              8: "Don't know"
+              9: "Refusal"
+
+        # OBS-Q7 (land use; source codes 01-11, 98=DK, 99=REFUSAL).
+        - id: q_obs_q7
+          kind: Question
+          title: "Based on street-level frontage, how would you characterize land use on this block/road?"
+          input:
+            control: Dropdown
+            labels:
+              1: "Primarily residential"
+              2: "Primarily commercial"
+              3: "Mixed residential and commercial use"
+              4: "Primarily industrial, warehouse, manufacturing"
+              5: "Primarily vacant houses"
+              6: "Primarily vacant lots or open space"
+              7: "Primarily services or institutional (schools, churches, hospitals)"
+              8: "Primarily park, playground"
+              9: "Primarily rural, residential"
+              10: "Primarily rural, farm"
+              11: "Other"
+              98: "Don't know"
+              99: "Refusal"
+
+        # OBS-Q8
+        - id: q_obs_q8
+          kind: Question
+          title: "How would you rate the general condition of most of the buildings on the block or within 100 yards of the respondent's house?"
+          input:
+            control: Dropdown
+            labels:
+              1: "Badly deteriorated"
+              2: "Poor condition, peeling paint and in need of repair"
+              3: "Fair condition"
+              4: "Well kept, good repair and exterior surface"
+              8: "Don't know"
+              9: "Refusal"
+
+        # OBS-Q9
+        - id: q_obs_q9
+          kind: Question
+          title: "Did you first contact this dwelling by phone or in person?"
+          input:
+            control: Radio
+            labels:
+              1: "By phone"
+              2: "In person"
+              8: "Don't know"
+              9: "Refusal"
+
+    # -------------------------------------------------------------------------
+    # BLOCK F4: PEABODY (PPVT) TEST-ADMINISTRATION RATINGS (p.241-244)
+    # Interviewer's ratings of how the Peabody (PPVT-R) vocabulary test went.
+    # AGE GATE: the inventory PPVT note does NOT state an administration age;
+    # the PPVT-R in NLSCY Cycle 1 is administered to 4-5 year olds (contract +
+    # known NLSCY Cycle 1 design; 4-5 is a distinct age tier throughout the main
+    # body). Gated on q_child_age.outcome in [4,5]. FLAGGED as an assumption
+    # because the inventory itself carries no explicit age routing here.
+    # DK/REFUSAL codes (7/8) on the 1-5 rating scales cannot be represented on a
+    # Slider and are OMITTED per the main-body convention for rating batteries
+    # (see b_social_support); the interviewer must choose 1-5. On the Yes/No
+    # problem items (Q6/Q7/Q8) the 7=DK / 8=REFUSAL codes are retained.
+    # Skip conversions: Q6 No->Q7, Q7 No->Q8, Q8 No->Q9 => the specify items
+    # Q6A/Q7A/Q8A are gated on their parent = Yes.
+    # -------------------------------------------------------------------------
+    - id: b_ppvt
+      kind: Group
+      title: "Peabody (PPVT) Administration Ratings"
+      precondition:
+        - predicate: q_child_age.outcome >= 4 and q_child_age.outcome <= 5
+          hint: "The Peabody vocabulary test is administered to 4-5 year olds."
+      items:
+        # PPVT-I1
+        - id: q_ppvt_i1
+          kind: Comment
+          title: "This is the Peabody Assessment for the child."
+
+        # PPVT-Q1: attitude (1=Poor ... 5=Excellent)
+        - id: q_ppvt_q1
+          kind: Question
+          title: "During the Peabody, how was the child's attitude towards being tested?"
+          input:
+            control: Slider
+            min: 1
+            max: 5
+            left: "1 = Poor"
+            right: "5 = Excellent"
+
+        # PPVT-Q2: rapport
+        - id: q_ppvt_q2
+          kind: Question
+          title: "During the Peabody, how was the child's rapport with you?"
+          input:
+            control: Slider
+            min: 1
+            max: 5
+            left: "1 = Poor"
+            right: "5 = Excellent"
+
+        # PPVT-Q3: perseverance/persistence
+        - id: q_ppvt_q3
+          kind: Question
+          title: "During the Peabody, how was the child's perseverance/persistence?"
+          input:
+            control: Slider
+            min: 1
+            max: 5
+            left: "1 = Poor"
+            right: "5 = Excellent"
+
+        # PPVT-Q4: cooperation
+        - id: q_ppvt_q4
+          kind: Question
+          title: "During the Peabody, how was the child's cooperation?"
+          input:
+            control: Slider
+            min: 1
+            max: 5
+            left: "1 = Poor"
+            right: "5 = Excellent"
+
+        # PPVT-Q5: motivation/interest
+        - id: q_ppvt_q5
+          kind: Question
+          title: "During the Peabody, how was the child's motivation/interest?"
+          input:
+            control: Slider
+            min: 1
+            max: 5
+            left: "1 = Poor"
+            right: "5 = Excellent"
+
+        # PPVT-Q6: problems with visual sharpness? NO ---> GO TO Q7.
+        - id: q_ppvt_q6
+          kind: Question
+          title: "During the Peabody, were there any problems with the child's visual sharpness?"
+          input:
+            control: Radio
+            labels:
+              1: "Yes"
+              2: "No"
+              7: "Don't know"
+              8: "Refusal"
+
+        # PPVT-Q6A: specify (only if Q6=Yes).
+        - id: q_ppvt_q6a
+          kind: Question
+          title: "Specify the problems with the child's visual sharpness."
+          precondition:
+            - predicate: q_ppvt_q6.outcome == 1
+          input:
+            control: Textarea
+
+        # PPVT-Q7: problems with hearing? NO ---> GO TO Q8.
+        - id: q_ppvt_q7
+          kind: Question
+          title: "During the Peabody, were there any problems with the child's hearing?"
+          input:
+            control: Radio
+            labels:
+              1: "Yes"
+              2: "No"
+              7: "Don't know"
+              8: "Refusal"
+
+        # PPVT-Q7A: specify (only if Q7=Yes).
+        - id: q_ppvt_q7a
+          kind: Question
+          title: "Specify the problems with the child's hearing."
+          precondition:
+            - predicate: q_ppvt_q7.outcome == 1
+          input:
+            control: Textarea
+
+        # PPVT-Q8: problems with state of health? NO ---> GO TO Q9.
+        - id: q_ppvt_q8
+          kind: Question
+          title: "During the Peabody, were there any problems with the child's state of health?"
+          input:
+            control: Radio
+            labels:
+              1: "Yes"
+              2: "No"
+              7: "Don't know"
+              8: "Refusal"
+
+        # PPVT-Q8A: specify (only if Q8=Yes).
+        - id: q_ppvt_q8a
+          kind: Question
+          title: "Specify the problems with the child's state of health."
+          precondition:
+            - predicate: q_ppvt_q8.outcome == 1
+          input:
+            control: Textarea
+
+        # PPVT-Q9: shyness/anxiety at end (different anchors).
+        - id: q_ppvt_q9
+          kind: Question
+          title: "How shy or anxious was the child at the end of the Peabody?"
+          input:
+            control: Slider
+            min: 1
+            max: 5
+            left: "1 = Not at all shy/anxious (sociable and friendly)"
+            right: "5 = Extremely shy/quiet/withdrawn"
+
+        # PPVT-Q10: noise level interference
+        - id: q_ppvt_q10
+          kind: Question
+          title: "During the Peabody, was the noise level an interference?"
+          input:
+            control: Slider
+            min: 1
+            max: 5
+            left: "1 = Interfering"
+            right: "5 = Not interfering"
+
+        # PPVT-Q11: interruptions
+        - id: q_ppvt_q11
+          kind: Question
+          title: "During the Peabody, were interruptions an interference?"
+          input:
+            control: Slider
+            min: 1
+            max: 5
+            left: "1 = Interfering"
+            right: "5 = Not interfering"
+
+        # PPVT-Q12: distractions
+        - id: q_ppvt_q12
+          kind: Question
+          title: "During the Peabody, were distractions an interference?"
+          input:
+            control: Slider
+            min: 1
+            max: 5
+            left: "1 = Interfering"
+            right: "5 = Not interfering"
+
+        # PPVT-Q13: light
+        - id: q_ppvt_q13
+          kind: Question
+          title: "During the Peabody, was light an interference?"
+          input:
+            control: Slider
+            min: 1
+            max: 5
+            left: "1 = Interfering"
+            right: "5 = Not interfering"
+
+        # PPVT-Q14: temperature
+        - id: q_ppvt_q14
+          kind: Question
+          title: "During the Peabody, was temperature an interference?"
+          input:
+            control: Slider
+            min: 1
+            max: 5
+            left: "1 = Interfering"
+            right: "5 = Not interfering"
+
+        # PPVT-Q15: presence of others
+        - id: q_ppvt_q15
+          kind: Question
+          title: "During the Peabody, was the presence of others an interference?"
+          input:
+            control: Slider
+            min: 1
+            max: 5
+            left: "1 = Interfering"
+            right: "5 = Not interfering"
+
+        # PPVT-Q16: general comments.
+        - id: q_ppvt_q16
+          kind: Question
+          title: "Please enter any general comments not covered above for the Peabody with the child."
+          input:
+            control: Textarea

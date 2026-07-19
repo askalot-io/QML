@@ -1,87 +1,71 @@
 # NLSCY Cycle 1 (1994-95): Declarative Conversion Analysis
 
-**Source:** Statistics Canada / Human Resources Development Canada, National Longitudinal Survey of Children -- Survey Instruments for 1994-95 Data Collection, Cycle 1, Catalogue No. 89F0077XIE, February 1995, 161 pages
-**QML Files:** `evaluation/statcan-questionnaires/NLSCY_Children_Youth/` (23 section files)
-**Date:** 2026-03-28
+**Source:** Statistics Canada / Human Resources Development Canada, National Longitudinal Survey of Children — Survey Instruments for 1994-95 Data Collection, Cycle 1, Catalogue No. 89F0077XIE, February 1995, 244 pages (main questionnaire pp. 3-161 + Appendices A-F pp. 161-244)
+**QML File:** `evaluation/sociology/NLSCY_Children_Youth/NLSCY_Children_Youth.qml` (single consolidated file, qmlVersion 2.0)
+**Date:** 2026-07-19 (supersedes the 2026-03-28 report, which covered a retired 23-file layout and the main questionnaire only)
 
 ## Objective
 
-Transform the NLSCY CAPI questionnaire (161 pages, ~843 question nodes across 24 sections, GOTO-based age-tiered routing for children aged 0-11) into a declarative QML representation consisting of 23 standalone section files, then run the Z3-based formal validator to detect structural problems hidden in the imperative version.
+Transform the full NLSCY CAPI questionnaire package — the 161-page main instrument (GOTO-based, age-tiered routing for children aged 0-11) **plus its five question-bearing appendices** (child self-report booklet, Teacher's and Principal's mail-back questionnaires, NPHS health module, and administrative KCON/OBS/PPVT sections) — into one declarative QML file, then run the Z3-based formal validator to detect structural problems hidden in the imperative version.
 
 ## Methodology
 
-1. **PDF preprocessing**: Extracted text with `pdftotext -layout -nodiag`. Section boundaries identified via heading patterns (HHLD, RESTR, CHRON, SOCIO, EDUC, LFS, INCOM, CHLT, FNC, SAF, SUP, DVS, HLT, MED, TMP, EDU, LIT, ACT, BEH, MSD, REL, PAR, CUS, CAR) and question ID prefixes.
-2. **Question inventory**: 843 nodes catalogued across 24 sections with full routing annotations. Judgement agent verified coverage: 24/24 sections, 0 missing items, all ~933 GOTO references accounted for. Status: READY FOR QML.
-3. **Declarative QML conversion**: Per-section standalone QML files generated using parallel subagents. Each section file is independently validatable with its own `qmlVersion` and `codeInit`. Cross-section variables (child_age, respondent_age, is_parent, etc.) declared in each file's `codeInit` as read-from-prior-section annotations.
-4. **Formal validation**: Z3 SMT solver run on all 23 section files independently. All sections pass all four validation levels (per-item classification, global satisfiability, cycle detection, path-based reachability).
+1. **PDF preprocessing**: canonical text intermediate `NLSCY_Children_Youth_text.md` produced by the `askalot-inventory` preprocessor (Claude Sonnet vision on AWS Bedrock, page-parallel extraction). Page-coverage audit (2026-07-19): all 244 pages present, no extraction loss.
+2. **Question inventory**: 849 main-body entries across 24 sections plus ~303 appendix entries across 5 appendices, with full routing annotations, a Scope table (Appendix B — the Informed Consent Form — recorded OUT as a procedural signature document), and dedicated **External-input entries** (child sex from the household roster, consent outcome, NPHS/KCON data-collection-period flag). Judgement-verified coverage per section.
+3. **Declarative QML conversion**: single consolidated file; the survey's sections and appendices are ordered blocks sharing one `codeInit` scope and one dependency graph. Questionnaire-external values are materialized as admin questions (`b_appendix_admin`, plus the age/PMK/relationship admin items in the main body) pending first-class external-input support (askalot-io/askalot#171).
+4. **Formal validation**: full four-level hierarchy (per-item classification + lint channel, global satisfiability, cycle detection, path-based accumulated reachability) via `validate_qml.py`. Exit code 0.
+5. **History**: the 2026-06 QML 2.0 consolidation dropped extern wiring (9 frozen variables, 188 statically-dead items) — repaired 2026-07-19 by rewiring gates to producing questions/admin items. The appendices, absent from both the original inventory and QML (a recurrence of the historically documented appendix loss), were inventoried and converted 2026-07-19. Both defect classes are conversion-side, not source defects.
 
 ## Survey Architecture Overview
 
-The NLSCY Cycle 1 questionnaire has four major parts and uses **child age** (0-11 years) as the primary routing variable, with **child age in months** (0-47) for the Motor and Social Development and Temperament sections.
+The package has five major parts. **Child age** (0-11 years) is the primary routing variable, with **child age in months** (0-47) for Motor/Social Development and Temperament, and separate-respondent instruments in the appendices.
 
-### Part 1: Household Record (pp. 3-8)
+### Part 1-4: Main questionnaire (pp. 3-161)
 
-| Section | Pages | Items | Purpose |
-|---------|-------|-------|---------|
-| Contact & Household (CONT/DEMO/HHLD) | 3-8 | 23 | Contact intro, demographics, dwelling, household roster |
+| Part | Sections | Pages* | Purpose |
+|------|----------|-------|---------|
+| Household Record | CONT/DEMO/HHLD | 6-9 | Contact, demographics, dwelling, roster |
+| General Questionnaire (adults 15+) | RESTR (11), CHRON (13), SOCIO (14-16), EDUC (17-18), LFS (19-23), INCOM (24-26) | 11-26 | Health limitations, conditions, socio-demographics, education, employment, income |
+| Parent Questionnaire (PMK/spouse) + Administration | H05 (27), CHLT (30-33), FNC (34-35), SAF (36-38), SUP (39-40) | 27-40 | Administration, adult health incl. CES-D, family functioning (FAD-12), neighbourhood, social support |
+| Children's Questionnaire | DVS (42), HLT (43-50), PAR (51-53), CUS (54-70), LIT (76-78), ACT (79-82), BEH (83-90), MSD (91-95), REL (96-98), TMP (101-107), EDU (108-124), MED (135-141), CAR (155-160) | 42-160 | Child health, parenting, custody, literacy, activities, behaviour, development, relationships, temperament, education, medical/biological, child care |
 
-### Part 2: General Questionnaire (adults 15+, pp. 9-26)
+\* Pages are canonical `--- page N ---` markers of the vision extraction (1:1 with PDF
+pages). The Children's Questionnaire sections are **interleaved** in the source in the
+order shown — not the reading order a printed TOC suggests. The 2026-03 report's page
+map did not match this order; all citations below were re-anchored by question ID
+against the canonical extraction (2026-07-19 judgement pass).
 
-| Section | Pages | Items | Purpose |
-|---------|-------|-------|---------|
-| Restriction of Activities (RESTR) | 9-10 | 3 | Health limitations (respondent age 12+) |
-| Chronic Conditions (CHRON) | 11-12 | 6 | Long-term conditions (parent only, age 12+) |
-| Socio-demographics (SOCIO) | 12-14 | 10 | Country of birth, ethnicity, language, religion |
-| Education (EDUC) | 15-16 | 8 | Schooling, degrees (age 12+) |
-| Labour Force (LFS) | 17-21 | 31 | Employment, hours, earnings (parents only) |
-| Income (INCOM) | 22-24 | 6 | Household and personal income |
+### Part 5: Appendices (pp. 161-244)
 
-### Part 3: Parent Questionnaire (PMK and/or spouse, pp. 27-40)
+| Appendix | Blocks | Pages | Items | Respondent | Gating |
+|----------|--------|-------|-------|-----------|--------|
+| A: 10-11 year old self-report | 8 `b_sr_*` | 162-184 | 135 | the child | child age 10-11 + informed consent (admin) |
+| B: Informed Consent Form | — | 185-187 | 0 | — | OUT of scope (procedural); consent outcome = `q_adm_consent_selfreport` |
+| C: Teacher's Questionnaire | 6 `b_tq_*` | 188-212 | 58 | child's teacher (mail-back) | child in school + form returned (admin) |
+| D: Principal's Questionnaire | 5 `b_pq_*` | 213-228 | 42 | school principal (mail-back) | child in school + form returned (admin) |
+| E: NPHS Questions (TWOWK/UTIL) | 3 `b_nphs_*` | 229-233 | 22 | PMK about child | integrated NLSC+NPHS collection period (admin) |
+| F: Administrative (KCON/TCH/OBS/PPVT) | 4 blocks | 234-244 | ~41 | PMK / interviewer | KCON period-variant selection; PPVT ages 4-5 |
 
-| Section | Pages | Items | Purpose |
-|---------|-------|-------|---------|
-| Adult Health (CHLT) | 29-32 | 26 | Health, smoking, alcohol, maternal history, CES-D depression |
-| Family Functioning (FNC) | 33-34 | 17 | McMaster FAD-12 family assessment |
-| Neighbourhood (SAF) | 35-37 | 21 | Safety, social cohesion, problems |
-| Social Support (SUP) | 38-40 | 12 | Personal support, professional help |
-
-### Part 4: Children's Questionnaire (pp. 43-161)
-
-| Section | Pages | Items | Age Range | Purpose |
-|---------|-------|-------|-----------|---------|
-| Child Demographics (DVS) | 43 | 3 | All | Relationship, sibling verification |
-| Health (HLT) | 44-60 | 85 | All (tiered) | Vision, hearing, speech, mobility, pain, injuries, conditions |
-| Medical/Biological (MED) | 61-67 | 42 | 0-3 | Prenatal, birth, postnatal, breastfeeding |
-| Temperament (TMP) | 68-83 | 68 | 3-47 months | ICQ temperament scale (age-variant pairs) |
-| Education (EDU) | 84-100 | 62 | 4+ | Grade, performance, school quality (province-specific) |
-| Literacy (LIT) | 101-104 | 25 | All (tiered) | Reading, writing, homework |
-| Activities (ACT) | 105-108 | 28 | All (tiered) | Sports, clubs, TV, chores |
-| Behaviour (BEH) | 109-116 | 99 | All (tiered) | Sleep, prosocial, hyperactivity, emotional, conduct |
-| Motor/Social Dev (MSD) | 117-121 | 57 | 0-47 months | Developmental milestones (sliding window) |
-| Relationships (REL) | 122-124 | 15 | 4+ | Friends, teachers, parents, siblings |
-| Parenting (PAR) | 125-129 | 38 | All (tiered) | Praise, discipline, food security, media exposure |
-| Custody (CUS) | 130-155 | 118 | All | Family history, separation, custody, contact |
-| Child Care (CAR) | 156-161 | 38 | All (tiered) | Care arrangements, changes, summer care |
-
-**Total inventory:** 843 nodes across 24 sections. **QML items:** 536 (compression via QuestionGroups for battery items), expanding to ~687 with sub-question accounting.
+**Totals:** 141 blocks, 786 items (main 540 + appendices ~246 after QuestionGroup compression and justified omissions).
 
 ## Semantic Equivalence
 
 | Metric | Count |
 |--------|-------|
-| Source questions (substantive) | ~686 |
-| QML items (expanded) | ~687 |
-| Matched | ~677 |
-| Justified omissions | 10 |
+| Inventory entries (main + appendices) | 849 + ~303 |
+| QML items | 786 (batteries compressed into QuestionGroups) |
+| Appendix entries matched | all, per independent fidelity judgement (2026-07-19: five appendices CONFIRMED, zero unjustified missing) |
+| Justified omissions | see below |
 
-### Justified Omissions (10 items)
+### Justified Omissions
 
 | Category | Items | Reason |
 |----------|-------|--------|
-| Dynamic roster loop | DEMO-Q1 through DEMO-Q3 person-loop | Household roster construction requiring N-person iterative loops; QML models the roster summary, not the per-person iteration |
-| Procedural/admin | H05-P1 (interview mode), H05-P2 (interview language) | Interviewer metadata duplicating CONT-Q2 and HHLD-Q8 |
-| CAPI system fields | DEMO-Q7 (family ID code), HHLD-Q6 (dwelling observation), HHLD-Q7 (information source), PICKRESP (PMK selection) | System-internal fields with no respondent-facing question |
-| Section-complete checks | FNC-C1, SAF-C1, SUP-C1 | "If this section has been completed for another household member, skip" -- runtime state not expressible in declarative model |
+| Dynamic roster loop | DEMO-Q1..Q3 person-loop | Household roster construction requires N-person iteration; QML models the roster summary |
+| Procedural/admin | H05-P1/P2, Appendix B consent form, Appendix D/C cover identifiers (D-PRINLANG, D-OPNUM, sample-ID header block) | Interviewer metadata / signature form / pre-printed identifiers referenced by no routing |
+| Section-complete checks | FNC-C1, SAF-C1, SUP-C1 | "Completed for another household member" — runtime state |
+| Provably-unreachable module | UTIL-Q9/Q10 (NPHS adult home-care) | UTIL-C9 gates on age ≥ 18; the selected child is 0-11, so the module can never be administered (see P8) |
+| Free-text specify fields | Q27(l)/Q28(r)/Q33 "Other (specify)" (Principal), KCON contact name/address DK/REF codes | Coded capture is primary; Textarea carries no DK/REF code (see P7) |
 
 ## Validator Results
 
@@ -89,237 +73,149 @@ The NLSCY Cycle 1 questionnaire has four major parts and uses **child age** (0-1
 
 | Metric | Value |
 |--------|-------|
-| Total items | 536 |
-| Total blocks | 112 |
-| Preconditions | 477 |
-| Postconditions | 2 |
-| Variables (SSA) | 52 |
-| Dependencies | 573 |
+| Items | 786 |
+| Blocks | 141 |
+| Items with preconditions | 380 (491 predicate lists incl. block-level and multi-predicate items) |
+| Items with postconditions | 23 |
+| Variables (SSA) | 18 |
+| Dependencies | 1,520 |
 | Cycles | **0** |
-| Global Status | **SAT** (all 23 sections) |
-| Dead Code | **0** |
-| Issues | **0** |
+| Global Status | **SAT** |
+| Dead Code (accumulated reachability) | **0** |
+| Errors | **0** (exit code 0) |
 
 ### Z3 Item Classifications
 
 | Classification | Count | Meaning |
 |----------------|-------|---------|
-| Precondition ALWAYS | 62 | Items shown regardless of child age or respondent type |
-| Precondition CONDITIONAL | 474 | Items gated by age, respondent type, or prior responses |
-| Precondition NEVER | 0 | No dead code detected |
-| Postcondition TAUTOLOGICAL | 2 | Postcondition always true when item is reached |
-| Postcondition CONSTRAINING | 0 | No active filtering postconditions |
+| Precondition ALWAYS | 83 | Unconditional entry points (intros, universal items, admin block) |
+| Precondition CONDITIONAL | 703 | Gated by age, respondent type, admin flags, or prior answers — all confirmed reachable |
+| Precondition NEVER | 0 | No dead code |
+| Postcondition CONSTRAINING | 22 | Statically verified relational checks |
+| Postcondition TAUTOLOGICAL | 1 | Documented static gap (see Conversion Integrity) |
 | Postcondition INFEASIBLE | 0 | No impossible validation rules |
 
-**Interpretation**: The 62 ALWAYS items are unconditional entry points in each section -- introductions, universal health questions (HLT-Q1 through Q4), child demographics, and items with no age or respondent gates. All 474 CONDITIONAL items have at least one valid path confirmed by the path-based reachability check. The 2 TAUTOLOGICAL postconditions indicate input constraints that duplicate control-level domain restrictions.
+### Conversion Integrity (Lint Channel)
 
-### Per-Section Validation
+| Check | Result |
+|-------|--------|
+| undefined_name (fail-open gates) | 0 |
+| unreachable_item from frozen variables | 0 (188 in the pre-repair file — conversion defect, fixed 2026-07-19) |
+| write_only_variable / pass_through_alias | 0 |
+| duplicate_input_bound | 0 |
+| tautological_postcondition | 1 (documented, below) |
 
-| Section | Items | Blocks | Pre | Post | Vars | Deps | Cycles | Status |
-|---------|-------|--------|-----|------|------|------|--------|--------|
-| 01_contact_household | 19 | 5 | 1 | 1 | 3 | 1 | 0 | VALID |
-| 02_general_health | 7 | 2 | 7 | 0 | 2 | 2 | 0 | VALID |
-| 03_socio_demographics | 15 | 5 | 9 | 0 | 0 | 7 | 0 | VALID |
-| 04_education_adult | 6 | 1 | 6 | 0 | 1 | 7 | 0 | VALID |
-| 05_labour_force | 26 | 4 | 26 | 0 | 2 | 57 | 0 | VALID |
-| 06_income | 9 | 3 | 8 | 0 | 5 | 13 | 0 | VALID |
-| 07_adult_health | 13 | 4 | 9 | 1 | 3 | 6 | 0 | VALID |
-| 08_family_functioning | 3 | 1 | 1 | 0 | 1 | 0 | 0 | VALID |
-| 09_neighbourhood | 7 | 1 | 0 | 0 | 0 | 0 | 0 | VALID |
-| 10_social_support | 3 | 1 | 0 | 0 | 0 | 0 | 0 | VALID |
-| 11_child_demographics | 3 | 1 | 0 | 0 | 1 | 0 | 0 | VALID |
-| 12_child_health | 65 | 16 | 54 | 0 | 1 | 47 | 0 | VALID |
-| 13_medical_biological | 35 | 6 | 35 | 0 | 4 | 18 | 0 | VALID |
-| 14_temperament | 53 | 10 | 53 | 0 | 2 | 0 | 0 | VALID |
-| 15_education_child | 26 | 9 | 26 | 0 | 4 | 29 | 0 | VALID |
-| 16_literacy | 19 | 8 | 18 | 0 | 2 | 6 | 0 | VALID |
-| 17_activities | 19 | 5 | 18 | 0 | 1 | 5 | 0 | VALID |
-| 18_behaviour | 13 | 6 | 13 | 0 | 1 | 0 | 0 | VALID |
-| 19_motor_social_development | 49 | 1 | 49 | 0 | 2 | 0 | 0 | VALID |
-| 20_relationships | 8 | 2 | 8 | 0 | 2 | 3 | 0 | VALID |
-| 21_parenting | 14 | 4 | 14 | 0 | 3 | 2 | 0 | VALID |
-| 22_custody | 93 | 13 | 93 | 0 | 11 | 326 | 0 | VALID |
-| 23_child_care | 31 | 6 | 29 | 0 | 1 | 44 | 0 | VALID |
+The single warning is the screener-consistency postcondition on `qg_pq_q27_days` (Principal Q27: a support service answered "not available" must show 0 days/week of use). It uses QuestionGroup outcome subscripts, which the static builder does not lower — the rule **is enforced at runtime** but is outside the static envelope (upstream: askalot-io/askalot#165). All other originally-QuestionGroup constraints (Q7, Q9, Q10, Q32) were scalarized so their checks classify CONSTRAINING.
 
-### Key Structural Finding: No Dependency Cycles
+### Postcondition Audit
 
-The NLSCY questionnaire has **no dependency cycles** because the primary routing variable (`child_age`) is set once at the beginning and is never modified by downstream items. The age-tiered routing is strictly one-directional: age determines which sections and questions to show, but no downstream answer modifies the age variable. This contrasts with questionnaires like the LFS where the PATH variable creates feedback loops.
+| Region | Postcondition items | Constraining | Mined patterns | No-constraint justification |
+|--------|--------------------:|-------------:|----------------|------------------------------|
+| Main body (24 sections) | 1 (`q_chlt_q9`, adult-health consistency) | 1 | source edit | remainder: attitude/temperament/behaviour batteries (subjective) + CATI sentinel edits not transcribed |
+| App. A self-report | 1 (`q_sr_g02`) | 1 | screener-consistency (never-smoked → frequency 0) | Likert batteries subjective; write-in age items carry sentinel escapes |
+| App. C Teacher | 8 (grade-range, class counts, experience) | 8 | counts-vs-capacity (Q34/Q35 ≤ Q33 enrolment), temporal-ordering (Q54 at-school ≤ total, grade high ≥ low) | rating batteries subjective |
+| App. D Principal | 12 (11 + 1 runtime-only) | 11 | physical-budget (Q7 percentages == 100), counts-vs-capacity (Q9/Q10 ≤ Q8 enrolment; Q23 ≤ Q22 teachers), temporal-ordering (Q32 at-school ≤ total), screener-consistency (Q27, runtime-only) | perception batteries subjective; mid-year flows Q11/Q12 not bounded by the January snapshot (documented in-file) |
+| App. E NPHS | 1 (`q_twowk_q4`) | 1 | part-whole (bed days + cut-down days ≤ 14-day window; exclusive per TWOWK-Q3 wording) | utilization counts unrelated |
+| App. F | 0 | 0 | — | consent/contact admin, interviewer observations, PPVT ratings (subjective) |
+| **Total** | **23** | **22** | | |
 
-## Section Files
-
-| # | File | Block(s) | Items | Variables Read | Variables Written |
-|---|------|----------|-------|----------------|-------------------|
-| 01 | `01_contact_household.qml` | 5 | 19 | -- | child_age, respondent_sex, marital_status |
-| 02 | `02_general_health.qml` | 2 | 7 | respondent_age, is_parent | -- |
-| 03 | `03_socio_demographics.qml` | 5 | 15 | -- | -- |
-| 04 | `04_education_adult.qml` | 1 | 6 | respondent_age | -- |
-| 05 | `05_labour_force.qml` | 4 | 26 | is_parent | has_gaps |
-| 06 | `06_income.qml` | 3 | 9 | -- | household_income_known, personal_income_known |
-| 07 | `07_adult_health.qml` | 4 | 13 | is_pmk, is_bio_mother_young_child | cesd_score |
-| 08 | `08_family_functioning.qml` | 1 | 3 | marital_status | -- |
-| 09 | `09_neighbourhood.qml` | 1 | 7 | -- | -- |
-| 10 | `10_social_support.qml` | 1 | 3 | -- | -- |
-| 11 | `11_child_demographics.qml` | 1 | 3 | -- | relationship_to_child |
-| 12 | `12_child_health.qml` | 16 | 65 | child_age | -- |
-| 13 | `13_medical_biological.qml` | 6 | 35 | child_age, child_age_months, is_bio_mother, is_bio_father | -- |
-| 14 | `14_temperament.qml` | 10 | 53 | child_age, child_age_months | -- |
-| 15 | `15_education_child.qml` | 9 | 26 | child_age, province | in_school, school_grade |
-| 16 | `16_literacy.qml` | 8 | 19 | child_age, child_age_months | -- |
-| 17 | `17_activities.qml` | 5 | 19 | child_age | -- |
-| 18 | `18_behaviour.qml` | 6 | 13 | child_age | -- |
-| 19 | `19_motor_social_development.qml` | 1 | 49 | child_age, child_age_months | -- |
-| 20 | `20_relationships.qml` | 2 | 8 | child_age, has_siblings | -- |
-| 21 | `21_parenting.qml` | 4 | 14 | relationship_to_child, is_pmk_or_spouse, child_age | -- |
-| 22 | `22_custody.qml` | 13 | 93 | relationship_to_child, child_age | parents_together, parents_separated, parent_died, parents_were_married, mother_new_union, father_new_union, child_lived_with_respondent, custody_type, parents_lived_together_ever |
-| 23 | `23_child_care.qml` | 6 | 31 | child_age | -- |
+22 constraining postconditions across 786 items (2.8%). Note the distribution: **21 of 22 live in the appendices**, and of those, all but two were *mined* from implied relationships (enrolment bounds, experience arithmetic, percentage budgets) rather than transcribed from explicit edits — the original instruments carry almost no machine-checkable consistency rules (the paper-era pattern of deferring consistency to post-collection cleaning).
 
 ## Problems in the Original Questionnaire (Exposed by Declarative Conversion)
 
 ### P1: Ambiguous Age-Reference Scope in General Questionnaire Gates
 
 **Severity:** MEDIUM
-**PDF evidence:** p. 9 (RESTR-CINT: "IF AGE<12, GO TO NEXT SECTION"), p. 11 (CHRON-CINT: "IF AGE<12 OR RESPONDENT IS NOT THE PARENT GO TO NEXT SECTION")
+**PDF evidence:** p. 11 (RESTR-CINT: "IF AGE<12, GO TO NEXT SECTION"), p. 13 (CHRON-CINT: "IF AGE<12 OR RESPONDENT IS NOT THE PARENT GO TO NEXT SECTION")
 
-**Problem:** RESTR-CINT and CHRON-CINT say "IF AGE<12" but do not specify whose age. In the NLSCY context -- where surveyed children are aged 0-11 and household respondents are 15+ -- these gates refer to the respondent's age (household members are screened for the General Questionnaire, which covers adults). But the child age variable is also present in the CAPI environment, and the phrase "IF AGE<12" is ambiguous when two age variables coexist.
-
-**In the imperative version:** The CAPI system implicitly resolves this by knowing which person's record is currently active. The routing instruction is interpreted by the system, not by the interviewer.
-
-**In the declarative version:** The QML requires an explicit variable reference. The conversion must choose `respondent_age >= 12` rather than `child_age >= 12`. This choice is not self-evident from the source text alone; it requires knowledge of the survey's administration design. The ambiguity is invisible in the imperative format because the system resolves it automatically.
+**Problem:** "IF AGE<12" does not specify whose age. In the NLSCY context — surveyed children aged 0-11, household respondents 15+ — these gates refer to the *respondent's* age, but the child-age variable coexists in the CAPI environment, so the phrase is ambiguous on paper. The imperative system resolves it implicitly via the active person record; the declarative model must choose an explicit variable (`q_respondent_age.outcome >= 12`), a choice not derivable from the source text alone.
 
 ### P2: Province-Specific Question Proliferation in Education (Child)
 
 **Severity:** LOW
-**PDF evidence:** pp. 84-100 (EDU section: Q1, Q1A-Q1E for grade level; Q5, Q5A-Q5E for skipped grade; Q7, Q7A-Q7E for repeated grade)
+**PDF evidence:** pp. 108-124 (EDU: province routing EDU-C1A p. 108, grade variants Q1/Q1A-Q1E from p. 109, plus Q5/Q5A-Q5E and Q7/Q7A-Q7E variants)
 
-**Problem:** The Education (Child) section maintains **6 province-specific variants** of three questions:
+**Problem:** 18 near-identical province variants of three grade questions, differing only in provincial grade naming. Physical page separation hides the duplication in the imperative version; mutually exclusive province preconditions make it structurally explicit in QML. Three parameterized questions with display-label lookup would suffice.
 
-| Question | Variants | Reason |
-|----------|----------|--------|
-| Current grade | Q1, Q1A-Q1E | Different naming: NF "Level 1 Secondary", QC "Secondary I", ON "OAC Grade 13" |
-| Skipped grade | Q5, Q5A-Q5E | Same province-specific names |
-| Repeated grade | Q7, Q7A-Q7E | Same province-specific names |
-
-This creates **18 near-identical question variants** that differ only in grade naming conventions across Canadian provinces. The underlying data is the same -- an ordinal grade number. A single parameterized question with province-appropriate display labels would eliminate the structural redundancy entirely.
-
-**In the imperative version:** Each province variant lives on a separate page, and the GOTO routing sends the interviewer to the correct page based on province. The duplication is hidden by physical page separation.
-
-**In the declarative version:** The QML models these with mutually exclusive preconditions on a `province` variable, making the 6-way duplication structurally explicit. The Z3 solver confirms all variants are CONDITIONAL with non-overlapping province ranges, but the waste (18 items instead of 3 + a lookup table) is immediately visible.
-
-### P3: Phantom Cross-Section Variables
+### P3: Undeclared Cross-Section and Cross-Instrument State
 
 **Severity:** MEDIUM
-**PDF evidence:** Throughout -- RESTR-CINT references "AGE" (p. 9), LFS-C1 references "NOT PARENT" (p. 17), CHLT-C8 references "FEMALE BIOLOGICAL PARENT" (p. 30), CHLT-C12 references "PERSON MOST KNOWLEDGEABLE" (p. 31), FNC-C2 references "MARRIED, LIVING COMMON-LAW OR LIVING WITH A PARTNER" (p. 33), MSD-C1 references age in months (p. 117), EDU-C1 references child_age (p. 84)
+**PDF evidence:** routing throughout references values no question in the flow collects — respondent/child age (p. 11, p. 43), PMK identity (pp. 9, 11), "FEMALE BIOLOGICAL PARENT" (p. 30), marital status (p. 34), province (p. 108), child age in months (p. 91); in the appendices: child sex for the puberty section (pp. 178-179), informed consent (p. 163), pre-printed cover identifiers (pp. 188, 213), and the data-collection-period flag (pp. 230, 235)
 
-**Problem:** Multiple sections reference variables produced by other sections -- `child_age`, `respondent_age`, `is_parent`, `is_pmk`, `marital_status`, `is_bio_mother_young_child`, `province`, `relationship_to_child`, `child_age_months`, `has_siblings`, `is_pmk_or_spouse`, `is_bio_mother`, `is_bio_father` -- but these are never formally declared in the source questionnaire. The CAPI system maintains implicit state across sections. The system "knows" who the PMK is, what province the household is in, and the child's exact age, but this knowledge exists in the runtime environment, not in the questionnaire text.
-
-**In the imperative version:** The CAPI system resolves variable references against its internal data model. The questionnaire author writes "IF RESPONDENT IS THE FEMALE BIOLOGICAL PARENT" and the system evaluates this against pre-loaded roster data.
-
-**In the declarative version:** Each standalone QML file must declare these cross-section dependencies in its `codeInit`. Across the 23 files, 15+ undocumented cross-section variables had to be reconstructed. This is the single largest source of conversion complexity: the questionnaire has no variable dictionary, no formal data model, and no cross-reference between sections.
+**Problem:** The questionnaire has no variable dictionary and no formal data model — the CAPI runtime "just knows" 15+ values that the routing depends on, and the appendix instruments add externally-sourced state (roster sex, consent outcomes, sampling-period flags). None of this is declared anywhere in the source. In the declarative conversion, every such value had to be reverse-engineered and materialized as an explicit admin/preamble question so that gates stay inside the verified envelope; a first-class external-input construct is the proper fix (askalot-io/askalot#171). This was the single largest source of conversion complexity — and the class of state whose mis-wiring caused the (conversion-side) 2026-06 frozen-variable regression.
 
 ### P4: Extremely Complex Custody Routing
 
-**Severity:** HIGH
-**PDF evidence:** pp. 130-155 (CUS section: 118 items, 25 routing checks, ~326 dependencies)
+**Severity:** MEDIUM (downgraded from HIGH on 2026-07-19 judgement review: the validator proves every custody item reachable, so the issue is verification opacity, not data loss or unreachable content)
+**PDF evidence:** pp. 54-70 (CUS: 91 CUS-Q question items plus 25 CUS-C routing checks)
 
-**Problem:** The CUS section implements a routing tree covering family history from birth through current custody arrangements. The routing depends on a cascade of prior answers across 13 sub-sections:
-
-1. Living arrangement at birth (Q1A-Q1G)
-2. Whether parents were together (Q2-Q2B)
-3. Whether parents were married (Q3)
-4. Death of a parent (Q9A/Q9B)
-5. Separation details (Q10-Q10D)
-6. Custody arrangements (Q11A-Q11F)
-7. Child's living arrangements since separation (Q12-Q14)
-8. Mother's new relationships (Q15-Q17D)
-9. Father's new relationships (Q18-Q20D)
-10. Multiple separations and reunions
-
-Additionally, the questionnaire includes system-level optimization checks -- "IF ELDEST SELECTED CHILD" shortcuts that allow sibling data to be copied rather than re-collected. These efficiency shortcuts conflate routing logic with data management optimization, making the routing tree harder to verify.
-
-**In the imperative version:** The 25 routing checks (CUS-C1A, C1B, C1D, C1E, C3, C4, C6, C8, C10, etc.) are executed sequentially by the CAPI system. Each check is locally simple but the accumulated routing creates 326 inter-item dependencies.
-
-**In the declarative version:** The QML expresses this as 93 items with 93 preconditions and 9 routing variables (parents_together, parents_separated, parent_died, parents_were_married, mother_new_union, father_new_union, child_lived_with_respondent, custody_type, parents_lived_together_ever). The Z3 solver confirms all items are reachable (0 NEVER), but the dependency count (326) is by far the highest of any section -- nearly 60% of all dependencies in the entire questionnaire. The opacity of this routing makes it impossible to verify completeness from the source document alone without running formal analysis.
+**Problem:** The custody section's routing tree spans family history from birth to current arrangements across 13 sub-sections, with "eldest selected child" data-copying shortcuts conflating routing with optimization. In the QML it accounts for by far the largest share of the dependency graph. The Z3 solver confirms every item reachable, but completeness of this routing is impossible to verify from the source document alone — formal analysis is the only practical audit.
 
 ### P5: Missing Explicit Filter Gates in Age-Tiered Sections
 
 **Severity:** MEDIUM
-**PDF evidence:** p. 44 (HLT NOTE with age-tier table), p. 109 (BEH NOTE), p. 117 (MSD age bands), p. 68 (TMP age bands)
+**PDF evidence:** pp. 43-44 (HLT age-tier NOTE and HLT-C6), pp. 101-107 (TMP bands), pp. 83-87 (BEH checks, e.g. BEH-C7A "IF AGE < 10"), pp. 91-95 (MSD sliding bands), p. 79 (ACT-C3 "IF AGE < 4")
 
-**Problem:** The HLT, BEH, MSD, and TMP sections use implicit age-band routing where the "GOTO NEXT SECTION" at band boundaries is the only guard. There are no explicit screener questions -- the CAPI system routes based on pre-loaded age data. A 4-year-old entering the BEH section is routed past the 0-3 battery directly to the 4-9 battery via BEH-C1 ("IF AGE > 3 -> GO TO BEH-I6A"), but this check is a system-internal node, not a question shown to the interviewer.
-
-The Health section is particularly complex, with the NOTE on p. 44 defining four age tiers (0-1, 2-3, 4-5, 6-11), each receiving a different subset of HLT questions. These tiers are enforced entirely through GOTO chains (HLT-C5, HLT-C6, HLT-C6A, HLT-C20, HLT-C22, HLT-C45, HLT-C46, HLT-C52), none of which are visible questions.
-
-**In the imperative version:** The CAPI system silently evaluates age at each check node and routes accordingly. The interviewer sees only the questions appropriate to the child's age.
-
-**In the declarative version:** Every age gate must be injected as an explicit precondition (`child_age >= 4`, `child_age_months >= 22 and child_age_months <= 47`, etc.). The questionnaire has no self-documenting filter mechanism; the declarative version must externally inject the age variable and reconstruct the tier boundaries from the routing instructions.
+**Problem:** HLT, BEH, MSD, and TMP route via silent system-internal age checks at band boundaries; there is no self-documenting filter mechanism. The declarative conversion must reconstruct the tier boundaries as explicit preconditions (including union-of-bands ranges for MSD's overlapping windows).
 
 ### P6: Redundant Administration Items
 
 **Severity:** LOW
-**PDF evidence:** pp. 25-26 (H05-P1: interview mode, H05-P2: interview language), pp. 3-4 (CONT-Q2: language preference), p. 8 (HHLD-Q8: interview language)
+**PDF evidence:** p. 6 (CONT-Q2), p. 9 (HHLD-Q8), p. 27 (H05-P2 "Record language of interview")
 
-**Problem:** H05-P1 (interview mode: telephone/in person) and H05-P2 (interview language) duplicate information already present in the questionnaire. CONT-Q2 asks the respondent's language preference at the start; HHLD-Q8 records the language of interview in the household section. H05-P2 records the same information a third time in the Administration section. Similarly, the interview mode (telephone vs. in person) is implicitly known from the survey design (CAPI means in-person).
-
-These are interviewer metadata fields appearing in separate locations without cross-referencing. There is no routing instruction that says "IF ALREADY RECORDED, SKIP."
-
-**In the declarative version:** These items appear as standalone questions with no precondition linking them to their earlier counterparts. The structural duplication is visible but not flagged by the Z3 solver because the items are independent (no shared postconditions or mutual exclusivity constraints).
+**Problem:** Interview language is recorded in three separate places with no cross-referencing or "if already recorded, skip" instruction. (H05-P1, adjacent on p. 27, records interview *mode* — telephone vs in person — which is separately redundant with the survey's CAPI administration design.)
 
 ### P7: Inconsistent DK/Refusal Routing Across Sections
 
 **Severity:** MEDIUM
-**PDF evidence:** p. 33 (FNC-Q1A: "9=REFUSAL GO TO NEXT SECTION"), p. 38 (SUP-Q1A: "9=REFUSAL GO TO SUP-Q2A"), p. 35 (SAF-Q5A: "9=REFUSAL GO TO NEXT SECTION"), p. 109 (BEH-Q1: "9=REFUSAL GO TO BEH-C5"), p. 130 (CUS throughout), p. 31 (CHLT-Q12A: "9=REFUSAL GO TO CHLT-STOP")
+**PDF evidence:** p. 34 (FNC-Q1A: "9=REFUSAL GO TO NEXT SECTION"), p. 39 (SUP-Q1A: "9=REFUSAL GO TO SUP-Q2A"), pp. 36-38 (SAF-Q5A), pp. 83-84 (BEH-Q1), pp. 32-33 (CHLT-Q12A); appendices: KCON DK/REF → NEXT SECTION (pp. 235-236) vs TCH/PPVT 7/8 codes vs KCON/OBS 8/9 codes (pp. 235-243)
 
-**Problem:** REFUSAL responses are routed inconsistently across sections:
+**Problem:** REFUSAL at a battery's first item sometimes abandons the whole topic (FNC, SAF), sometimes only a sub-topic (SUP, CHLT), with no documented rationale. The appendices add a second inconsistency: DK/REF code *values* differ by module (KCON/OBS use 8/9; TCH/PPVT use 7/8). These hidden skip paths are not expressible as standard QML response codes, so the asymmetry is documented in the inventory rather than formally verified.
 
-| Section | First REFUSAL Point | Effect |
-|---------|---------------------|--------|
-| Family Functioning (FNC) | FNC-Q1A | Skips **entire** 12-item FAD battery + marital satisfaction |
-| Social Support (SUP) | SUP-Q1A | Skips to SUP-Q2A only (preserves professional help subsection) |
-| Neighbourhood (SAF) | SAF-Q5A | Skips **entire** safety/cohesion/problems batteries |
-| Behaviour (BEH) | BEH-Q1 | Skips within section (to next age-appropriate sub-battery) |
-| Adult Health (CHLT) | CHLT-Q12A | Skips CES-D depression scale only |
-| Custody (CUS) | Various | Skips to child care section |
+### P8: Copied NPHS Adult Module Contains Provably Dead Routing
 
-A single REFUSAL at FNC-Q1A (one of 12 family functioning items) causes the entire 12-item battery plus the marital satisfaction question to be skipped, while in SUP a REFUSAL at the first item only skips the personal support sub-battery, preserving the professional help questions. There is no documented rationale for why some sections treat REFUSAL as "abandon this topic entirely" and others treat it as "skip to next sub-topic."
+**Severity:** LOW (2 items) — but a clean specimen of statically-provable dead code
+**PDF evidence:** pp. 232-233 (UTIL-C9: "IF AGE < 18 THEN GO TO NEXT SECTION", followed by UTIL-Q9/Q10 home-care items)
 
-**In the declarative version:** REFUSAL is not a standard QML response code. These hidden skip paths are invisible to the validator, meaning the inconsistent treatment of refusals cannot be formally verified. The asymmetry becomes visible only through manual comparison of GOTO annotations in the inventory.
+**Problem:** Appendix E imports NPHS questions wholesale, including the adult home-care sub-module. Its entry check UTIL-C9 routes past the module whenever the subject is under 18 — and the NLSCY subject is *always* a child aged 0-11, so UTIL-Q9/Q10 can never be administered in this instrument. The module was copied without pruning inapplicable items: the questions carry full text, response options, and routing, yet no respondent can ever reach them. In the imperative version this is invisible (the check silently always fires); in the declarative model the gate `age >= 18` over a domain of [0, 11] is UNSAT — exactly the dead-code class the validator's reachability analysis proves. The QML omits the two items with a source-cited comment rather than shipping intentionally-unreachable content.
+
+### P9: Calendar-Dependent Question Variants Routed on Undeclared Sampling State
+
+**Severity:** LOW
+**PDF evidence:** p. 230 (Appendix E header), p. 235 (KCON-Q1A/Q1B selection note)
+
+**Problem:** Whether Appendix E is administered at all, and which of two differently-worded data-sharing consents (KCON-Q1A vs Q1B) is asked, depends on the data-collection period (integrated NLSC+NPHS in Nov 1994/Mar 1995 vs NLSC-only in Dec 1994/Feb 1995). This period flag is pure sampling-system state: it appears only in capitalized interviewer notes, has no question, no variable name, and no value domain in the instrument. Two consent variants with different legal wording selected by an undeclared external condition is a routing-opacity risk — a field error in period assignment silently administers the wrong consent text. The QML materializes the flag as an explicit admin question so both variants and their mutual exclusivity are formally verified.
 
 ## Cross-Check Fixes (QML Authoring Errors)
 
-| # | Item(s) | Error | Fix | PDF Reference |
-|---|---------|-------|-----|---------------|
-| 1 | RESTR/CHRON blocks | Initially used `child_age >= 12` instead of `respondent_age >= 12` for RESTR-CINT and CHRON-CINT gates | Corrected after judgement agent review to `respondent_age >= 12`; these gates filter adult respondents, not children | pp. 9, 11 |
-| 2 | HLT vision items | HLT-C6A routing direction ambiguity -- NOTE says ages 4-5 get Q6A (storybook), but GOTO sends ages "< 6" to Q6A | Resolved using NOTE interpretation: Q6A for ages 4-5, Q6 for ages 6+ | pp. 44-45 |
-| 3 | MSD sliding window | Each milestone question appeared in multiple overlapping age bands requiring union-of-bands preconditions | Computed minimum and maximum month ranges across all 8 bands for each question | p. 117 |
-| 4 | BEH battery compression | 48 behaviour items (Q6A-Q6UU) all use identical 3-point scale | Compressed into QuestionGroup with 48 sub-questions in a single QML item | pp. 110-114 |
-| 5 | CUS elder-child shortcuts | CUS-C1A/C1B/C1D/C1E "eldest selected child" sibling shortcuts not fully modelable | Simplified to run full custody path for all respondents; noted as limitation since sibling data copying is a runtime optimization | p. 130 |
-| 6 | Province routing (EDU) | 6 province variants per grade question required mutual exclusivity | Modeled with mutually exclusive preconditions on `province` variable | pp. 84-100 |
+These are conversion-side errors caught and corrected — NOT problems in the original.
+
+| # | Item(s) | Error | Fix | Reference |
+|---|---------|-------|-----|-----------|
+| 1 | RESTR/CHRON gates | Initially `child_age >= 12` instead of respondent age | Corrected per P1 resolution | pp. 9, 11 |
+| 2 | HLT-C6A vision routing | NOTE vs GOTO direction ambiguity | Resolved per NOTE (Q6A ages 4-5) | pp. 44-45 |
+| 3 | MSD sliding windows | Overlapping bands | Union-of-bands preconditions | p. 117 |
+| 4 | CUS eldest-child shortcuts | Sibling data-copy optimization unmodelable | Full custody path for all; noted | p. 130 |
+| 5 | 2026-06 consolidation | 9 frozen codeInit variables (respondent_age, is_parent, child_age_months, ...) left 188 items statically unreachable | Rewired to producing questions / admin items; frozen vars deleted (2026-07-19) | — |
+| 6 | Historical appendix loss | Appendices A-F absent from inventory and QML (~163-210 items) | Appendices inventoried (+303 entries) and converted (+30 blocks, +246 items), fidelity-judged CONFIRMED (2026-07-19) | pp. 161-244 |
+| 7 | Principal Q7/Q9/Q10/Q32 | QuestionGroup-subscript postconditions classify TAUTOLOGICAL (static builder does not lower QG subscripts — askalot-io/askalot#165) | Scalarized the constraint-bearing numeric batteries; constraints now CONSTRAINING. Q27 kept as QG with documented runtime-only rule | — |
+| 8 | Teacher Q32 fall-through | Initial reading gated Q33-46 on codes 1-5 | Corrected to code 5 only (domain is {5..9}; 5 is the sole fall-through) | p. 200 |
 
 ## Impact Assessment
 
 | Category | Imperative (PDF) | Declarative (QML) |
 |----------|------------------|-------------------|
-| **Age-reference ambiguity** | CAPI system resolves "IF AGE<12" against current-person context | Must choose explicit variable (`respondent_age` vs `child_age`); ambiguity forced into the open |
-| **Cross-section variables** | CAPI maintains implicit state -- PMK identity, province, child age in months all "just work" | Each of 23 files must declare its dependencies in `codeInit`; 15+ undocumented variables reconstructed |
-| **Custody complexity** | 25 sequential GOTO checks evaluated by system; locally simple | 326 dependencies exposed in dependency graph; verified reachable but opacity confirmed |
-| **Age-tier routing** | Silent GOTO at band boundaries; interviewer sees only relevant questions | Explicit preconditions per item; age tiers become a design artifact visible in the precondition structure |
-| **Province variants (EDU)** | 6 province-specific GOTO paths on separate pages | 6-way precondition branching makes duplication explicit; 18 items where 3 would suffice |
-| **REFUSAL asymmetry** | Each REFUSAL has its own GOTO target; inconsistency spread across 161 pages | Not expressible in QML; asymmetry invisible to formal verification but documented in inventory |
-| **Sliding window (MSD)** | Each age band has single GOTO entry/exit; overlap implicit | Must compute union of all bands per question; overlap made explicit in preconditions |
-| **Section isolation** | Sections appear independent but share implicit state | 23 standalone files make cross-section dependencies structurally visible through `codeInit` declarations |
+| Undeclared runtime state | CAPI resolves 15+ variables + appendix externals implicitly | Every value materialized as an explicit, domain-bounded admin question; gates verified by Z3 (#171 tracks first-class support) |
+| Dead code | UTIL-C9 silently always fires; unreachable module invisible | `age >= 18` over [0,11] is provably UNSAT; module omission documented (P8) |
+| Consistency checks | ~1 machine-checkable edit in 161 pages; consistency deferred to post-collection cleaning | 22 statically-verified constraining postconditions, mostly mined from implied relationships (enrolment bounds, experience arithmetic, percentage budgets) |
+| Separate-respondent instruments | Teacher/principal/child booklets linked only by pre-printed IDs | Explicit administration gates; single dependency graph proves no cross-instrument contradiction |
+| Custody complexity | 25 sequential checks, locally simple | Full dependency graph exposed and verified reachable |
+| Period-variant consents | Undeclared sampling flag selects KCON-Q1A/Q1B | Explicit admin question; variant mutual exclusivity proven (P9) |
 
 ## Conclusion
 
-The Z3 QML validator found the NLSCY Cycle 1 questionnaire to be **structurally valid** across all 23 section files: no dependency cycles (0 cycles), no unreachable items (0 NEVER), no infeasible postconditions (0 INFEASIBLE), and at least one valid completion path (SAT) in every section. The 536-item QML representation across 112 blocks covers the full scope of the 161-page CAPI questionnaire.
+The extended NLSCY conversion — 786 items in 141 blocks covering the full 244-page package including all five question-bearing appendices — passes the complete validation hierarchy: **0 errors, globally SAT, 0 cycles, 0 dead code**, with one documented runtime-only postcondition. An independent fidelity judgement confirmed all five appendices against the inventory with zero unjustified omissions.
 
-The declarative conversion exposed **7 categories of design issues** in the original questionnaire:
+The conversion exposes **9 categories of design issues** in the original: the seven previously confirmed (age-reference ambiguity, province proliferation, undeclared cross-section state, custody opacity, silent age-tier routing, redundant administration items, inconsistent refusal routing — the latter two now with appendix-side evidence) plus two new appendix findings: a **provably-dead imported NPHS adult module** (P8) — the corpus's cleanest specimen of statically-provable dead code in a production instrument — and **calendar-dependent consent variants routed on undeclared sampling state** (P9).
 
-1. **P1 (MEDIUM):** Ambiguous age-reference scope -- "IF AGE<12" is ambiguous when both child age and respondent age coexist; the CAPI system resolves this implicitly but the declarative model cannot
-2. **P2 (LOW):** Province-specific grade questions create 18 variants where 3 parameterized questions would suffice
-3. **P3 (MEDIUM):** 15+ phantom cross-section variables that exist only in the CAPI runtime environment, never formally declared in the questionnaire
-4. **P4 (HIGH):** Custody section routing (326 dependencies, 93 items, 9 routing variables) is too opaque to verify from the source document alone without formal analysis
-5. **P5 (MEDIUM):** Four age-tiered sections (HLT, BEH, MSD, TMP) rely on implicit CAPI age-band routing with no self-documenting filter gates
-6. **P6 (LOW):** Redundant administration items record interview language in three separate locations without cross-referencing
-7. **P7 (MEDIUM):** REFUSAL routing is asymmetric across sections -- some skip entire batteries, others skip only sub-sections, with no documented rationale for the inconsistency
-
-The NLSCY's structural soundness (no cycles, no dead code) stems from its use of **child age as a one-directional routing variable** -- set once at household record completion and never modified by downstream items. This is a strong design pattern that avoids the feedback loops found in employment-based surveys (e.g., the LFS PATH variable). However, the age-tiered design creates substantial structural complexity: 474 of 536 items (88%) are CONDITIONAL, the custody section alone accounts for 326 of 573 total dependencies (57%), and the questionnaire's reliance on implicit CAPI state means 15+ cross-section variables had to be reverse-engineered from routing instructions during conversion.
+The instrument's structural soundness rests on one-directional age routing (set once, never modified downstream). Its main data-quality gap is the near-total absence of machine-checkable consistency rules: of the 22 constraining postconditions in the QML, all but two were *mined* from relationships the source implies but never states (counts bounded by enrolment, at-this-school experience bounded by total experience, percentages summing to 100). Formalizing these moves a large class of impossible answers from post-collection cleaning to point-of-collection prevention — the concrete value-add of the declarative model for a 1994-era paper/CAPI package.
