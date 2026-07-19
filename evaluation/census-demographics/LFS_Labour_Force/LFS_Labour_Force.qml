@@ -12,13 +12,9 @@ questionnaire:
     tenure = 0          # 0=owned, 1=not owned (from TN_Q01)
     addresses_match = 1  # 1=match, 0=differ
     respondent_age = 0    # consolidated age from ANC_Q01 or ANC_Q03
-    sex = 0               # 1=Male, 2=Female
-    armed_forces = 0      # 1=Yes, 2=No (from CAF_Q01; 0 if skipped by age filter)
     recent_immigrant = 0  # 1 if immigration year within 5 years, 0 otherwise
     has_postsecondary = 0 # 1 if ED_Q04 was answered (post-secondary obtained), 0 otherwise
-    path = 0
     usual_hours = 0
-    actual_hours = 0
     last_work_recent = 0
     is_temp_layoff = 0
     search_status = 0
@@ -52,6 +48,83 @@ questionnaire:
               1: "Birth interview in person"
               2: "Birth interview by telephone (CATI)"
               3: "Subsequent interview by telephone"
+
+    # =========================================================================
+    # BLOCK 1B: CATI SYSTEM PREFILLS (rotation status + previous-cycle data)
+    # =========================================================================
+    # The LFS is a rotating-panel monthly CATI survey. Between cycles the
+    # collection system carries forward per-household metadata that the
+    # original questionnaire consults through system filters (not respondent
+    # questions). QML has no system metadata, so — exactly like q_interview_type
+    # above — these facts are modeled as explicit early admin questions the
+    # interviewer/system answers before the interview proper. Downstream gates
+    # read their outcomes directly instead of relying on dropped externs.
+    #
+    # For birth interviews (interview_type 1 or 2) there is no previous cycle,
+    # so the system answers "No" to the previous-cycle prefills below.
+    # =========================================================================
+    - id: b_cati_prefill
+      kind: Group
+      title: "CATI System Prefills"
+      items:
+        # Rotation status: household's sixth/final month in the panel?
+        # Source: EI_R01 filter "If rotate-out (last month for interview)".
+        # Consumed by every exit-section block (replaces extern is_rotate_out).
+        - id: q_rotate_out
+          kind: Question
+          title: "Is this the household's final (rotate-out) interview? (CATI system metadata — sixth/last month in the rotation panel.)"
+          input:
+            control: Switch
+            off: "No — continuing"
+            on: "Yes — rotate-out"
+
+        # Previous-month rent data on file?
+        # Source: RM_Q01/RM_Q08/RM_Q09B/RM_Q14 filters "rent information exists
+        # from previous month". Only subsequent interviews can have this.
+        # Replaces extern has_previous_rent.
+        - id: q_prev_rent
+          kind: Question
+          title: "Does rent information from the previous month exist for this household? (CATI prefill; No for birth interviews.)"
+          input:
+            control: Switch
+            off: "No"
+            on: "Yes"
+
+        # Complete household-membership turnover since the previous interview?
+        # Source: RM_Q08/RM_Q09B/RM_Q14 filters "complete change in household
+        # membership" — when everyone is new, last month's rent cannot be
+        # compared, so the "since last month" questions are skipped.
+        # Replaces extern membership_change.
+        - id: q_membership_change
+          kind: Question
+          title: "Has there been a complete change in household membership since the previous interview? (CATI system flag; No for birth interviews.)"
+          input:
+            control: Switch
+            off: "No"
+            on: "Yes"
+
+        # Telephone number already on file?
+        # Source: TEL_Q01 filter "If no telephone number exists → TEL_Q02".
+        # Replaces extern has_phone.
+        - id: q_phone_on_file
+          kind: Question
+          title: "Is a telephone number already on file for this household? (CATI prefill.)"
+          input:
+            control: Switch
+            off: "No"
+            on: "Yes"
+
+        # Preferred call-time carried from the previous month?
+        # Source: PTC_Q01 filter "If no preferred time info from previous month
+        # → PTC_Q02". Only subsequent interviews can have this.
+        # Replaces extern has_previous_call_time.
+        - id: q_prev_call_time
+          kind: Question
+          title: "Does preferred call-time information from the previous month exist? (CATI prefill; No for birth interviews.)"
+          input:
+            control: Switch
+            off: "No"
+            on: "Yes"
 
     # =========================================================================
     # BLOCK 2: INITIAL INTRODUCTION AND RESPONDENT CONTACT
@@ -729,8 +802,6 @@ questionnaire:
         - id: q_sex_q01
           kind: Question
           title: "Enter ...'s sex."
-          codeBlock: |
-            sex = q_sex_q01.outcome
           input:
             control: Radio
             labels:
@@ -876,9 +947,6 @@ questionnaire:
             - predicate: q_imm_q01.outcome != 1
             - predicate: q_imm_q02.outcome == 1
             - predicate: recent_immigrant == 1
-          postcondition:
-            - predicate: q_imm_q04.outcome >= 1 and q_imm_q04.outcome <= 12
-              hint: "Month must be between 1 and 12."
           input:
             control: Editbox
             min: 1
@@ -1040,8 +1108,6 @@ questionnaire:
         - id: q_caf_q01
           kind: Question
           title: "Is ... a full-time member of the regular Canadian Armed Forces?"
-          codeBlock: |
-            armed_forces = q_caf_q01.outcome
           input:
             control: Switch
             off: "No"
@@ -1085,7 +1151,7 @@ questionnaire:
       title: "Dwelling Characteristics"
       precondition:
         - predicate: tenure == 1
-        - predicate: has_previous_rent == 0
+        - predicate: q_prev_rent.outcome == 0
       items:
         # RM_Q01: Floor number (apartments only)
         - id: q_rm_q01
@@ -1226,8 +1292,8 @@ questionnaire:
           kind: Question
           title: "Since last month, have there been any changes in the amount of rent paid?"
           precondition:
-            - predicate: has_previous_rent == 1
-            - predicate: membership_change == 0
+            - predicate: q_prev_rent.outcome == 1
+            - predicate: q_membership_change.outcome == 0
             - predicate: q_rm_q04.outcome == 0
             - predicate: q_rm_q06.outcome >= 1
           input:
@@ -1280,7 +1346,7 @@ questionnaire:
           kind: Question
           title: "Does this month's rent include parking facilities?"
           precondition:
-            - predicate: "has_previous_rent == 0 or membership_change == 1"
+            - predicate: "q_prev_rent.outcome == 0 or q_membership_change.outcome == 1"
           input:
             control: Switch
             off: "No"
@@ -1292,8 +1358,8 @@ questionnaire:
           kind: Question
           title: "Since last month, have there been any changes in the parking facilities?"
           precondition:
-            - predicate: has_previous_rent == 1
-            - predicate: membership_change == 0
+            - predicate: q_prev_rent.outcome == 1
+            - predicate: q_membership_change.outcome == 0
           input:
             control: Switch
             off: "No"
@@ -1378,8 +1444,8 @@ questionnaire:
           kind: Question
           title: "Since last month, have there been any changes in the utilities, services, appliances, or furnishings included in the rent?"
           precondition:
-            - predicate: has_previous_rent == 1
-            - predicate: membership_change == 0
+            - predicate: q_prev_rent.outcome == 1
+            - predicate: q_membership_change.outcome == 0
             - predicate: q_rm_q08a.outcome % 2 == 0
           input:
             control: Switch
@@ -1394,7 +1460,7 @@ questionnaire:
           kind: Question
           title: "Which of the following utilities, services, appliances, or furnishings are included as part of the monthly rent? Read list to respondent. Mark all that apply."
           precondition:
-            - predicate: "q_rm_q14.outcome == 1 or has_previous_rent == 0 or membership_change == 1 or q_rm_q08a.outcome % 2 >= 1"
+            - predicate: "q_rm_q14.outcome == 1 or q_prev_rent.outcome == 0 or q_membership_change.outcome == 1 or q_rm_q08a.outcome % 2 >= 1"
           input:
             control: Checkbox
             labels:
@@ -1432,11 +1498,6 @@ questionnaire:
         - id: q_100
           kind: Question
           title: "Last week, did ... work at a job or business? (Regardless of the number of hours.)"
-          codeBlock: |
-            if q_100.outcome == 1:
-              path = 1
-            if q_100.outcome == 3:
-              path = 7
           input:
             control: Radio
             labels:
@@ -1643,9 +1704,6 @@ questionnaire:
           title: "What was the main reason ... was absent from work last week?"
           precondition:
             - predicate: q_100.outcome == 2 and q_101.outcome == 1
-          codeBlock: |
-            if q_130.outcome not in [8, 9, 10]:
-              path = 2
           input:
             control: Dropdown
             labels:
@@ -1772,11 +1830,9 @@ questionnaire:
               if q_134.outcome == 1:
                 if q_136.outcome <= 52:
                   is_temp_layoff = 1
-                  path = 3
               elif q_135.outcome == 1:
                 if q_136.outcome <= 52:
                   is_temp_layoff = 1
-                  path = 3
           input:
             control: Editbox
             min: 0
@@ -1915,9 +1971,6 @@ questionnaire:
           precondition:
             - predicate: q_110.outcome == 1
             - predicate: q_100.outcome == 1
-          codeBlock: |
-            if q_150.outcome == 0:
-              actual_hours = q_151.outcome - q_153.outcome + q_155.outcome + q_156.outcome
           input:
             control: Editbox
             min: 0
@@ -1933,8 +1986,6 @@ questionnaire:
           precondition:
             - predicate: q_100.outcome == 1
             - predicate: q_150.outcome == 1 or q_110.outcome != 1
-          codeBlock: |
-            actual_hours = q_157.outcome
           input:
             control: Editbox
             min: 0
@@ -2064,10 +2115,7 @@ questionnaire:
             - predicate: "(q_100.outcome == 2 and q_101.outcome == 0 and q_104.outcome == 0) or (q_100.outcome == 2 and q_101.outcome == 0 and q_104.outcome == 1 and last_work_recent == 0) or (q_137.outcome in [1, 2] and is_temp_layoff == 0)"
           codeBlock: |
             if q_170.outcome == 1:
-              path = 4
               search_status = 1
-            if q_170.outcome == 0 and respondent_age >= 65:
-              path = 6
           input:
             control: Switch
             off: "No"
@@ -2128,9 +2176,6 @@ questionnaire:
           precondition:
             - predicate: q_170.outcome == 0
             - predicate: respondent_age < 65
-          codeBlock: |
-            if q_174.outcome == 0:
-              path = 6
           input:
             control: Switch
             off: "No"
@@ -2147,10 +2192,7 @@ questionnaire:
             - predicate: q_174.outcome == 1
           codeBlock: |
             if q_175.outcome == 1:
-              path = 5
               search_status = 2
-            else:
-              path = 6
           input:
             control: Radio
             labels:
@@ -2659,7 +2701,7 @@ questionnaire:
       kind: Group
       title: "Exit Introduction"
       precondition:
-        - predicate: is_rotate_out == 0
+        - predicate: q_rotate_out.outcome == 0
       items:
         # EI_R01: Transition statement before scheduling questions
         - id: q_ei_r01
@@ -2677,7 +2719,7 @@ questionnaire:
       kind: Group
       title: "Future Contact Scheduling"
       precondition:
-        - predicate: is_rotate_out == 0
+        - predicate: q_rotate_out.outcome == 0
       items:
         # FC_R01: Next month contact information
         - id: q_fc_r01
@@ -2703,7 +2745,7 @@ questionnaire:
       kind: Group
       title: "Telephone Confirmation"
       precondition:
-        - predicate: is_rotate_out == 0
+        - predicate: q_rotate_out.outcome == 0
       items:
         # TEL_Q01: Confirm phone number on file
         # Only shown if a phone number already exists
@@ -2711,7 +2753,7 @@ questionnaire:
           kind: Question
           title: "I would like to confirm your telephone number. Is it [number on file]?"
           precondition:
-            - predicate: has_phone == 1
+            - predicate: q_phone_on_file.outcome == 1
           input:
             control: Switch
             off: "No"
@@ -2723,7 +2765,7 @@ questionnaire:
           kind: Question
           title: "What is your telephone number, including the area code?"
           precondition:
-            - predicate: has_phone == 0 or q_tel_q01.outcome == 0
+            - predicate: q_phone_on_file.outcome == 0 or q_tel_q01.outcome == 0
           input:
             control: Textarea
             placeholder: "Enter telephone number with area code"
@@ -2741,7 +2783,7 @@ questionnaire:
       kind: Group
       title: "Interview Mode for Next Month"
       precondition:
-        - predicate: is_rotate_out == 0
+        - predicate: q_rotate_out.outcome == 0
       items:
         # PC_Q01: May we conduct next interview by telephone?
         # Only for in-person interviews (type 1); CATI interviews skip this
@@ -2778,7 +2820,7 @@ questionnaire:
       kind: Group
       title: "Preferred Call Time"
       precondition:
-        - predicate: is_rotate_out == 0
+        - predicate: q_rotate_out.outcome == 0
         - predicate: interview_type == 2 or interview_type == 3 or q_pc_q01.outcome == 1
       items:
         # PTC_Q01: Confirm preferred call time from previous month
@@ -2787,7 +2829,7 @@ questionnaire:
           kind: Question
           title: "Confirm preferred call time. Is [previous time] still a good time?"
           precondition:
-            - predicate: has_previous_call_time == 1
+            - predicate: q_prev_call_time.outcome == 1
           input:
             control: Switch
             off: "No"
@@ -2799,7 +2841,7 @@ questionnaire:
           kind: Question
           title: "What time of day would you prefer to be called? (Select all that apply.)"
           precondition:
-            - predicate: has_previous_call_time == 0 or q_ptc_q01.outcome == 0
+            - predicate: q_prev_call_time.outcome == 0 or q_ptc_q01.outcome == 0
           input:
             control: Checkbox
             labels:
@@ -2832,7 +2874,7 @@ questionnaire:
       kind: Group
       title: "Living Quarters Check"
       precondition:
-        - predicate: is_rotate_out == 0
+        - predicate: q_rotate_out.outcome == 0
         - predicate: interview_type == 1
         - predicate: dwelling_type >= 1 and dwelling_type <= 4
       items:
@@ -2860,7 +2902,7 @@ questionnaire:
       kind: Group
       title: "Thank You (Continuing)"
       precondition:
-        - predicate: is_rotate_out == 0
+        - predicate: q_rotate_out.outcome == 0
       items:
         - id: q_ty_r01
           kind: Comment
@@ -2876,7 +2918,7 @@ questionnaire:
       kind: Group
       title: "Thank You (Rotate-Out)"
       precondition:
-        - predicate: is_rotate_out == 1
+        - predicate: q_rotate_out.outcome == 1
       items:
         - id: q_ty_r02
           kind: Comment

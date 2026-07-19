@@ -35,10 +35,7 @@ questionnaire:
     use_aid_count = 0
     need_aid_count = 0
     hearing_has_limitation = 0
-    seeing_has_limitation = 0
     seeing_a_lot = 0
-    comm_has_difficulty_speaking = 0
-    comm_cannot_speak = 0
     comm_has_limitation = 0
     has_any_chronic = 0
     b80_any_seen = 0
@@ -64,6 +61,32 @@ questionnaire:
     dk_i9 = 0
 
   blocks:
+
+    # ===================================================================
+    # SECTION: profile_sheet (administrative preamble)
+    # ===================================================================
+    # PALS 2001 routes on a date-of-birth age gate ("born AFTER May 15, 1996"
+    # = under age 5 at the 2001 survey), carried by the external Profile Sheet
+    # the interviewer maintains alongside the form. That device fed the age
+    # comparison performed at B6.edit, B13.edit, B15.edit, B16.edit, B51.edit,
+    # B53.edit, B87.edit, C_AGE.edit, D8.edit, and the Section E/F/G/H gates.
+    # Following the SLID pattern, the administrative prefill is converted into an
+    # explicit early question capturing the selected child's age; every age gate
+    # references q_child_age.outcome directly (< 5 for under-5-only items,
+    # >= 5 for age-5-and-over items) with no pass-through alias variable.
+    # ===================================================================
+    - id: b_profile_sheet
+      kind: Group
+      title: "Profile Sheet — Selected Child"
+      items:
+        - id: q_child_age
+          kind: Question
+          title: "Interviewer: From the Profile Sheet (date of birth), what is the selected child's age in completed years? (PALS covers children under 15.)"
+          input:
+            control: Editbox
+            min: 0
+            max: 14
+            right: "years"
 
     # ===================================================================
     # SECTION: filter_questions
@@ -212,13 +235,13 @@ questionnaire:
               9: "Refusal"
 
         # B6: USE aids for hearing? (age >= 5 only, and hearing limitation found)
-        # B6.edit: if child_under_5, skip to B11
+        # B6.edit: if child is under 5 (q_child_age.outcome < 5), skip to B11
         # Reaches B6 only if hearing limitation was marked (B2=2 or B4=2/3)
         - id: q_b6
           kind: Question
           title: "Does the child USE any aids, specialized equipment or services for children with hearing difficulties, for example, a volume control telephone or T.V. decoder?"
           precondition:
-            - predicate: child_under_5 == 0
+            - predicate: q_child_age.outcome >= 5
             - predicate: hearing_has_limitation == 1
           input:
             control: Radio
@@ -236,7 +259,7 @@ questionnaire:
           kind: QuestionGroup
           title: "Does the child now use:"
           precondition:
-            - predicate: child_under_5 == 0
+            - predicate: q_child_age.outcome >= 5
             - predicate: hearing_has_limitation == 1
             - predicate: q_b6.outcome == 1 or q_b6.outcome == 3
           questions:
@@ -257,7 +280,7 @@ questionnaire:
           kind: Question
           title: "Are there any aids or services for children with hearing difficulties that the child CURRENTLY needs, but does not have?"
           precondition:
-            - predicate: child_under_5 == 0
+            - predicate: q_child_age.outcome >= 5
             - predicate: hearing_has_limitation == 1
           input:
             control: Radio
@@ -295,7 +318,7 @@ questionnaire:
           kind: QuestionGroup
           title: "This question deals with certain communication skills. Does the child:"
           precondition:
-            - predicate: child_under_5 == 0
+            - predicate: q_child_age.outcome >= 5
             - predicate: hearing_has_limitation == 1
           questions:
             - "Use Sign Language, such as ASL or LSQ"
@@ -340,7 +363,6 @@ questionnaire:
           codeBlock: |
             if q_b12.outcome == 2:
                 limitation_seeing = 1
-                seeing_has_limitation = 1
 
         # B13: How much difficulty? (with glasses)
         - id: q_b13
@@ -376,7 +398,6 @@ questionnaire:
           codeBlock: |
             if q_b14.outcome == 2 or q_b14.outcome == 3:
                 limitation_seeing = 1
-                seeing_has_limitation = 1
             if q_b14.outcome == 3:
                 seeing_a_lot = 1
 
@@ -403,12 +424,12 @@ questionnaire:
         # B13.edit/B15.edit: under-5 → B51; B16.edit: under-5 → B51
         # B13 some difficulty → B13.edit (under-5→B51, else→B21)
         # B13 a lot → B16.edit (under-5→B51, else→B16)
-        # So B16 is reached only when seeing_a_lot==1 AND child_under_5==0
+        # So B16 is reached only when seeing_a_lot==1 AND q_child_age.outcome >= 5
         - id: q_b16
           kind: Question
           title: "Has the child been diagnosed by an eye specialist as being legally blind?"
           precondition:
-            - predicate: child_under_5 == 0
+            - predicate: q_child_age.outcome >= 5
             - predicate: seeing_a_lot == 1
           input:
             control: Radio
@@ -424,7 +445,7 @@ questionnaire:
           kind: Question
           title: "Does the child USE any aids or specialized equipment for children with vision difficulties, for example, magnifiers or Braille reading materials?"
           precondition:
-            - predicate: child_under_5 == 0
+            - predicate: q_child_age.outcome >= 5
             - predicate: seeing_a_lot == 1
           input:
             control: Radio
@@ -442,7 +463,7 @@ questionnaire:
           kind: QuestionGroup
           title: "Does the child now use:"
           precondition:
-            - predicate: child_under_5 == 0
+            - predicate: q_child_age.outcome >= 5
             - predicate: seeing_a_lot == 1
             - predicate: q_b17.outcome == 1 or q_b17.outcome == 3
           questions:
@@ -464,7 +485,7 @@ questionnaire:
           kind: Question
           title: "Are there any aids or specialized equipment for children with vision difficulties that the child CURRENTLY needs, but does not have?"
           precondition:
-            - predicate: child_under_5 == 0
+            - predicate: q_child_age.outcome >= 5
             - predicate: seeing_a_lot == 1
           input:
             control: Radio
@@ -513,7 +534,7 @@ questionnaire:
       kind: Group
       title: "Communication"
       precondition:
-        - predicate: child_under_5 == 0
+        - predicate: q_child_age.outcome >= 5
       items:
         # B21: Difficulty speaking?
         - id: q_b21
@@ -530,7 +551,6 @@ questionnaire:
             if q_b21.outcome == 1:
                 limitation_communicating = 1
                 comm_has_limitation = 1
-                comm_has_difficulty_speaking = 1
 
         # B22: Difficulty making understood? (only if B21=No/DK/R)
         # B21=Yes → skip to B23
@@ -566,9 +586,8 @@ questionnaire:
               3: "Child cannot speak"
               8: "Don't know"
               9: "Refusal"
-          codeBlock: |
-            if q_b23.outcome == 3:
-                comm_cannot_speak = 1
+          # B23=cannot speak(3) routing is handled directly via q_b23.outcome in
+          # the B24 and B26 gates below; no separate "cannot speak" flag is kept.
 
         # B24: Difficulty making understood? (after B23, if child can speak)
         # B23=cannot speak(3) → skip to B26
@@ -695,7 +714,7 @@ questionnaire:
       kind: Group
       title: "Walking / Mobility"
       precondition:
-        - predicate: child_under_5 == 0
+        - predicate: q_child_age.outcome >= 5
       items:
         # B31: Difficulty walking?
         - id: q_b31
@@ -809,7 +828,7 @@ questionnaire:
       kind: Group
       title: "Hands / Fingers"
       precondition:
-        - predicate: child_under_5 == 0
+        - predicate: q_child_age.outcome >= 5
       items:
         # B37: Difficulty using hands/fingers?
         - id: q_b37
@@ -913,7 +932,7 @@ questionnaire:
       kind: Group
       title: "Learning Disability"
       precondition:
-        - predicate: child_under_5 == 0
+        - predicate: q_child_age.outcome >= 5
       items:
         # B43: Think child has learning disability?
         - id: q_b43
@@ -1065,7 +1084,7 @@ questionnaire:
           kind: Question
           title: "Because of a condition or health problem, does the child have a delay in his/her development, either a physical, intellectual or another type of delay?"
           precondition:
-            - predicate: child_under_5 == 1
+            - predicate: q_child_age.outcome < 5
           input:
             control: Radio
             labels:
@@ -1082,7 +1101,7 @@ questionnaire:
           kind: QuestionGroup
           title: "What kind of delay is this? Please answer yes or no to each."
           precondition:
-            - predicate: child_under_5 == 1
+            - predicate: q_child_age.outcome < 5
             - predicate: q_b51.outcome == 1 or q_b51.outcome == 3
           questions:
             - "A delay in his/her PHYSICAL development"
@@ -1099,7 +1118,7 @@ questionnaire:
           kind: Question
           title: "Has a doctor, psychologist or other health professional ever said that the child has a developmental disability or disorder? These may include autism, Down syndrome, or mental impairment due to a lack of oxygen at birth."
           precondition:
-            - predicate: child_under_5 == 0
+            - predicate: q_child_age.outcome >= 5
           input:
             control: Radio
             labels:
@@ -1116,7 +1135,7 @@ questionnaire:
           kind: Question
           title: "Does this condition reduce the amount or the kind of activities the child can do?"
           precondition:
-            - predicate: child_under_5 == 0
+            - predicate: q_child_age.outcome >= 5
             - predicate: q_b53.outcome == 1 or q_b53.outcome == 3
           input:
             control: Radio
@@ -1744,7 +1763,7 @@ questionnaire:
       title: "Aids Usage and Costs"
       precondition:
         - predicate: limitation_count > 0
-        - predicate: child_under_5 == 0
+        - predicate: q_child_age.outcome >= 5
       items:
         # B87: USE any other aids not already mentioned?
         - id: q_b87
@@ -1956,7 +1975,7 @@ questionnaire:
       kind: Group
       title: "Personal Care and Mobility Help"
       precondition:
-        - predicate: child_under_5 == 0
+        - predicate: q_child_age.outcome >= 5
 
       items:
         # C1: Personal care help
@@ -2547,7 +2566,7 @@ questionnaire:
     # ===================================================================
     # =========================================================================
     # SECTION E — EDUCATION
-    # Entire section skipped for children under 5 (child_under_5 == 1)
+    # Entire section skipped for children under 5 (q_child_age.outcome < 5)
     #
     # E1 routing (3-way):
     #   1 (Going to school)     → E6
@@ -2575,7 +2594,7 @@ questionnaire:
       kind: Group
       title: "Section E — Education"
       precondition:
-        - predicate: child_under_5 == 0
+        - predicate: q_child_age.outcome >= 5
 
       items:
         # -------------------------------------------------------------------
@@ -3471,7 +3490,7 @@ questionnaire:
     # ===================================================================
     # =========================================================================
     # SECTION F — Leisure and Recreation Activities
-    # Entire section skipped if child_under_5 == 1
+    # Entire section skipped if child is under 5 (q_child_age.outcome < 5)
     # =========================================================================
     # F1a–F1e: Organized activity frequency + hours (outside school hours)
     # F2a–F2c: Passive/home activity frequency + hours
@@ -3492,7 +3511,7 @@ questionnaire:
       kind: Group
       title: "Leisure and Recreation Activities"
       precondition:
-        - predicate: child_under_5 == 0
+        - predicate: q_child_age.outcome >= 5
       items:
 
         # -----------------------------------------------------------------
@@ -4081,7 +4100,7 @@ questionnaire:
     # SECTION G — HOME ACCOMMODATION
     # =========================================================================
     # G_AGE.edit: Section G is NOT asked if child was born AFTER May 15, 1996
-    # (captured via extern child_under_5 == 1 → skip entire block).
+    # (child under 5: q_child_age.outcome < 5 → skip entire block).
     #
     # ENTERING/LEAVING subsection:
     #   G1 (use?) → Yes → G2 (which?); No/DK/R → G3
@@ -4101,7 +4120,7 @@ questionnaire:
       kind: Group
       title: "Home Accommodation"
       precondition:
-        - predicate: child_under_5 == 0
+        - predicate: q_child_age.outcome >= 5
 
       items:
 
@@ -4304,7 +4323,7 @@ questionnaire:
       kind: Group
       title: "Transportation"
       precondition:
-        - predicate: child_under_5 == 0
+        - predicate: q_child_age.outcome >= 5
       items:
 
         # H1: Car has special features/equipment?

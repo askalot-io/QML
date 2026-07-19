@@ -9,10 +9,8 @@ questionnaire:
     # =====================================================================
     one_person_hh = 0
     total_weeks = 0
-    data_code = 0
     moved_in_2000 = 0
     moved_before_1995 = 0
-    prev_owned = 0
     has_vehicle = 0
     has_rec_vehicle = 0
     has_package_trip = 0
@@ -565,7 +563,7 @@ questionnaire:
     #
     # Key routing:
     #   D_Q02 < 1995 -> skip D_Q03 onward (go to Section E instructions)
-    #   D_Q04 gated on has_spouse
+    #   D_Q04 gated on A_Q05 marital status (married/common-law spouse present)
     #   D_Q05 gated on moved_in_2000
     #   D_Q06.x gated on D_Q05=Yes or D_Q05.1=Yes
     #   D_Q07.x gated on D_Q06.1=Yes or D_Q06.2=Yes (previously owned)
@@ -615,13 +613,15 @@ questionnaire:
               3: "Did not maintain their own dwelling"
 
         # D_Q04: Spouse's previous dwelling
-        # Gated on having a spouse AND not moved before 1995
+        # Gated on having a spouse AND not moved before 1995.
+        # "Has a spouse" is read directly from A_Q05 marital status:
+        # 1 = married spouse of a household member, 2 = common-law spouse.
         - id: q_d_q04
           kind: Question
           title: "Did the spouse of the reference person own or rent their previous dwelling?"
           precondition:
             - predicate: moved_before_1995 == 0
-            - predicate: has_spouse == 1
+            - predicate: q_a_q05.outcome in [1, 2]
           input:
             control: Radio
             labels:
@@ -1018,8 +1018,9 @@ questionnaire:
     - id: b_mortgages
       kind: Group
       title: "Mortgages on Owned Principal Residences"
+      # Gate reads E_Q01 (number of owned-and-occupied dwellings) directly.
       precondition:
-        - predicate: num_dwellings_owned > 0
+        - predicate: q_e_q01.outcome > 0
       items:
         # G_Q01: Have mortgages?
         - id: q_g_q01
@@ -1134,8 +1135,9 @@ questionnaire:
     - id: b_renovations
       kind: Group
       title: "Renovations and Repairs of Owned Principal Residences"
+      # Gate reads E_Q01 (number of owned-and-occupied dwellings) directly.
       precondition:
-        - predicate: num_dwellings_owned > 0
+        - predicate: q_e_q01.outcome > 0
       items:
         # H_Q01: Additions, renovations and other alterations
         - id: qg_h_q01

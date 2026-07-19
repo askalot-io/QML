@@ -8,7 +8,6 @@ questionnaire:
     # to every later block without any extern declaration.
     # =====================================================================
     age = 0
-    has_skin_cancer = 0
     had_health_contact = 0
     has_difficulty = 0
     has_activity_limitation = 0
@@ -25,16 +24,93 @@ questionnaire:
     sad_symptom_count = 0
     interest_symptom_count = 0
     had_multiple_jobs = 0
-    weeks_worked = 0
-    weeks_looking = 0
     hh_income_given = 0
     income_source_count = 0
     food_insecurity = 0
-    weight_measured = 0
-    weight_permission = 0
-    height_impossible = 0
 
   blocks:
+
+    # ===================================================================
+    # BLOCK: PREAMBLE — respondent/household classifiers established before
+    # this health module (sample design + household roster + interview mode).
+    # ===================================================================
+    # The CCHS health content is a downstream module: dozens of section filters
+    # branch on the interview MODE (proxy vs. self), the respondent's SEX and
+    # MARITAL STATUS, and HOUSEHOLD COMPOSITION (size, presence of children /
+    # other members aged 14+). Those values are collected earlier by the CCHS
+    # sample-design/household roster, not by any item in this module's own list.
+    # During the multi-file -> single-file consolidation their extern
+    # declarations were dropped, leaving the section gates reading free symbols
+    # (fail-open). This block re-establishes them as explicit admin questions so
+    # every gate references q_<x>.outcome directly (no pass-through alias),
+    # keeping each inside the Z3-verified envelope. See SLID_Labour_Income
+    # b_preamble for the same pattern.
+    # ===================================================================
+    - id: b_preamble
+      kind: Group
+      title: Respondent and Household Background
+      items:
+      # Interview mode — drives every "If proxy interview, go to <SEC>_END"
+      # section filter (GEN_C02A, ORG_C1B, SLP_C2, HCS_C1B, ... , SPC_C2, etc.).
+      - id: q_is_proxy
+        kind: Question
+        title: 'INTERVIEWER: Is this interview being completed by a proxy respondent (someone answering on behalf of the selected respondent)?'
+        input:
+          control: Switch
+          false: 'No'
+          true: 'Yes'
+      # Respondent sex — drives sex filters (CCC_C10A, CCC_C133, MED_C1S, MED_C1T,
+      # PAP_C020, MAM_C030, BRX_C110, PSA_C170, SXB pregnancy statements, etc.).
+      - id: q_sex
+        kind: Question
+        title: What is the respondent's sex?
+        input:
+          control: Radio
+          labels:
+            1: Male
+            2: Female
+      # Respondent marital status — drives SXB_C08C (married/common-law + one
+      # partner) condom-use routing. Coding per source: 1 = married, 2 = common-law.
+      - id: q_marital_status
+        kind: Question
+        title: What is the respondent's marital status?
+        input:
+          control: Radio
+          labels:
+            1: Married
+            2: Common-law
+            3: Widowed
+            4: Separated
+            5: Divorced
+            6: Single (never married)
+      # Household size — drives ETS_C10 (household of one + current/former smoker
+      # skips the "smoking allowed at home" question).
+      - id: q_household_size
+        kind: Question
+        title: 'INTERVIEWER: How many people live in this household, including the respondent?'
+        input:
+          control: Editbox
+          min: 1
+          max: 30
+          right: people
+      # Presence of other household members aged 14+ — drives the "other household
+      # member education" module (EDU_Q07 onward).
+      - id: q_has_other_hh_members_14plus
+        kind: Question
+        title: 'INTERVIEWER: Are there other household members aged 14 or older?'
+        input:
+          control: Switch
+          false: 'No'
+          true: 'Yes'
+      # Presence of children in the household — drives the FDC child food-security
+      # module (FSC_Q050 onward).
+      - id: q_has_children
+        kind: Question
+        title: 'INTERVIEWER: Are there children living in this household?'
+        input:
+          control: Switch
+          false: 'No'
+          true: 'Yes'
 
     # ===================================================================
     # SECTION: demographics_general_health
@@ -128,7 +204,7 @@ questionnaire:
         kind: Question
         title: How satisfied are you with your life in general?
         precondition:
-        - predicate: is_proxy == 0
+        - predicate: q_is_proxy.outcome == 0
         input:
           control: Radio
           labels:
@@ -141,7 +217,7 @@ questionnaire:
         kind: Question
         title: 'In general, would you say your mental health is:'
         precondition:
-        - predicate: is_proxy == 0
+        - predicate: q_is_proxy.outcome == 0
         input:
           control: Radio
           labels:
@@ -167,7 +243,7 @@ questionnaire:
         kind: Question
         title: Have you worked at a job or business at any time in the past 12 months?
         precondition:
-        - predicate: is_proxy == 0
+        - predicate: q_is_proxy.outcome == 0
         - predicate: age >= 15 and age <= 75
         input:
           control: Switch
@@ -191,7 +267,7 @@ questionnaire:
         kind: Question
         title: 'How would you describe your sense of belonging to your local community? Would you say it is:'
         precondition:
-        - predicate: is_proxy == 0
+        - predicate: q_is_proxy.outcome == 0
         input:
           control: Radio
           labels:
@@ -316,7 +392,7 @@ questionnaire:
         kind: Question
         title: 'Do you consider yourself:'
         precondition:
-        - predicate: is_proxy == 0
+        - predicate: q_is_proxy.outcome == 0
         input:
           control: Radio
           labels:
@@ -595,7 +671,7 @@ questionnaire:
       kind: Group
       title: Sexual Orientation
       precondition:
-      - predicate: is_proxy == 0
+      - predicate: q_is_proxy.outcome == 0
       - predicate: age >= 18
       - predicate: age <= 59
       items:
@@ -616,7 +692,7 @@ questionnaire:
       kind: Group
       title: Voluntary Organizations
       precondition:
-      - predicate: is_proxy == 0
+      - predicate: q_is_proxy.outcome == 0
       items:
       - id: q_org_member
         kind: Question
@@ -644,7 +720,7 @@ questionnaire:
       kind: Group
       title: Sleep
       precondition:
-      - predicate: is_proxy == 0
+      - predicate: q_is_proxy.outcome == 0
       items:
       - id: q_slp_duration
         kind: Question
@@ -702,7 +778,7 @@ questionnaire:
       kind: Group
       title: Changes Made to Improve Health
       precondition:
-      - predicate: is_proxy == 0
+      - predicate: q_is_proxy.outcome == 0
       items:
       - id: q_cih_did_improve
         kind: Question
@@ -1042,7 +1118,7 @@ questionnaire:
         precondition:
         - predicate: q_ccc_q101.outcome == 1
         - predicate: age >= 15
-        - predicate: sex == 2
+        - predicate: q_sex.outcome == 2
         - predicate: q_ccc_q102.outcome >= 15
         - predicate: q_ccc_q102.outcome <= 49
         input:
@@ -1129,7 +1205,7 @@ questionnaire:
         title: What type of cancer do/did you have?
         precondition:
         - predicate: q_ccc_q131.outcome == 1 or q_ccc_q132.outcome == 1
-        - predicate: sex == 2
+        - predicate: q_sex.outcome == 2
         input:
           control: Checkbox
           labels:
@@ -1138,15 +1214,12 @@ questionnaire:
             4: Skin - Melanoma
             8: Skin - Non-melanoma
             16: Other
-        codeBlock: |
-          if q_ccc_q133a.outcome % 8 >= 4 or q_ccc_q133a.outcome % 16 >= 8:
-              has_skin_cancer = 1
       - id: q_ccc_q133b
         kind: Question
         title: What type of cancer do/did you have?
         precondition:
         - predicate: q_ccc_q131.outcome == 1 or q_ccc_q132.outcome == 1
-        - predicate: sex == 1
+        - predicate: q_sex.outcome == 1
         input:
           control: Checkbox
           labels:
@@ -1155,9 +1228,6 @@ questionnaire:
             4: Skin - Melanoma
             8: Skin - Non-melanoma
             16: Other
-        codeBlock: |
-          if q_ccc_q133b.outcome % 8 >= 4 or q_ccc_q133b.outcome % 16 >= 8:
-              has_skin_cancer = 1
       - id: q_ccc_q141
         kind: Question
         title: Remember, we're interested in conditions diagnosed by a health professional. Do you have intestinal or stomach
@@ -1600,7 +1670,7 @@ questionnaire:
         kind: Question
         title: 'In the past month, did you take: ... asthma medications such as inhalers or nebulizers?'
         postcondition:
-        - predicate: not (q_med_q1g.outcome == 1 and ccc_q036_asthma_med == 0)
+        - predicate: not (q_med_q1g.outcome == 1 and q_ccc_q036.outcome == 0)
           hint: You indicated taking asthma medication this month but previously reported not taking asthma medicine in the
             past 12 months. Please confirm.
         input:
@@ -1667,7 +1737,7 @@ questionnaire:
         kind: Question
         title: 'In the past month, did you take: ... birth control pills?'
         precondition:
-        - predicate: sex == 2
+        - predicate: q_sex.outcome == 2
         - predicate: age <= 49
         input:
           control: Switch
@@ -1677,7 +1747,7 @@ questionnaire:
         kind: Question
         title: 'In the past month, did you take: ... hormones for menopause or ageing symptoms?'
         precondition:
-        - predicate: sex == 2
+        - predicate: q_sex.outcome == 2
         - predicate: age >= 30
         input:
           control: Switch
@@ -1737,8 +1807,8 @@ questionnaire:
       kind: Group
       title: Medication Exposure
       precondition:
-      - predicate: is_proxy == 0
-      - predicate: sex == 2
+      - predicate: q_is_proxy.outcome == 0
+      - predicate: q_sex.outcome == 2
       items:
       - id: q_mex_gave_birth
         kind: Question
@@ -1934,7 +2004,7 @@ questionnaire:
         title: During your last pregnancy, did you smoke daily, occasionally or not at all?
         precondition:
         - predicate: q_mex_gave_birth.outcome == 1
-        - predicate: smk_status in [1, 2] or smk_100_cigs == 1 or smk_ever_whole == 1
+        - predicate: q_smk_status.outcome in [1, 2] or q_smk_100_cigs.outcome == 1 or q_smk_ever_whole.outcome == 1
         input:
           control: Radio
           labels:
@@ -1964,7 +2034,7 @@ questionnaire:
         title: When you were breastfeeding your last baby, did you smoke daily, occasionally or not at all?
         precondition:
         - predicate: q_mex_breastfed.outcome == 1
-        - predicate: smk_status in [1, 2] or smk_100_cigs == 1 or smk_ever_whole == 1
+        - predicate: q_smk_status.outcome in [1, 2] or q_smk_100_cigs.outcome == 1 or q_smk_ever_whole.outcome == 1
         input:
           control: Radio
           labels:
@@ -2003,7 +2073,7 @@ questionnaire:
         title: Did you drink any alcohol during your last pregnancy?
         precondition:
         - predicate: q_mex_gave_birth.outcome == 1
-        - predicate: alc_past_year == 1 or alc_ever == 1
+        - predicate: q_alc_past_year.outcome == 1 or q_alc_ever.outcome == 1
         input:
           control: Switch
           false: 'No'
@@ -2028,7 +2098,7 @@ questionnaire:
         title: Did you drink any alcohol while you were breastfeeding your last baby?
         precondition:
         - predicate: q_mex_breastfed.outcome == 1
-        - predicate: alc_past_year == 1 or alc_ever == 1
+        - predicate: q_alc_past_year.outcome == 1 or q_alc_ever.outcome == 1
         input:
           control: Switch
           false: 'No'
@@ -2056,7 +2126,7 @@ questionnaire:
       kind: Group
       title: Health Care System Satisfaction
       precondition:
-      - predicate: is_proxy == 0
+      - predicate: q_is_proxy.outcome == 0
       - predicate: age >= 15
       items:
       - id: q_hcs_province_availability
@@ -2727,7 +2797,7 @@ questionnaire:
       kind: Group
       title: Overall Health Care Satisfaction
       precondition:
-      - predicate: is_proxy == 0
+      - predicate: q_is_proxy.outcome == 0
       - predicate: age >= 15
       items:
       - id: q_pas_r1
@@ -2772,7 +2842,7 @@ questionnaire:
       kind: Group
       title: Hospital Care Satisfaction
       precondition:
-      - predicate: is_proxy == 0
+      - predicate: q_is_proxy.outcome == 0
       - predicate: age >= 15
       - predicate: had_health_contact == 1 or q_pas_q11.outcome == 1
       items:
@@ -2824,7 +2894,7 @@ questionnaire:
       kind: Group
       title: Physician Care Satisfaction
       precondition:
-      - predicate: is_proxy == 0
+      - predicate: q_is_proxy.outcome == 0
       - predicate: age >= 15
       - predicate: had_health_contact == 1 or q_pas_q11.outcome == 1
       items:
@@ -2875,7 +2945,7 @@ questionnaire:
       kind: Group
       title: Community-Based Care Satisfaction
       precondition:
-      - predicate: is_proxy == 0
+      - predicate: q_is_proxy.outcome == 0
       - predicate: age >= 15
       - predicate: had_health_contact == 1 or q_pas_q11.outcome == 1
       items:
@@ -2920,7 +2990,7 @@ questionnaire:
       kind: Group
       title: Telehealth Satisfaction
       precondition:
-      - predicate: is_proxy == 0
+      - predicate: q_is_proxy.outcome == 0
       - predicate: age >= 15
       items:
       - id: q_pas_q51
@@ -3367,7 +3437,7 @@ questionnaire:
       kind: Group
       title: Flu Shots
       precondition:
-      - predicate: is_proxy == 0
+      - predicate: q_is_proxy.outcome == 0
       items:
       - id: q_flu_q160
         kind: Question
@@ -3423,7 +3493,7 @@ questionnaire:
       kind: Group
       title: Blood Pressure Check
       precondition:
-      - predicate: is_proxy == 0
+      - predicate: q_is_proxy.outcome == 0
       items:
       - id: q_bpc_q010
         kind: Question
@@ -3481,8 +3551,8 @@ questionnaire:
       kind: Group
       title: Pap Smear Test
       precondition:
-      - predicate: is_proxy == 0
-      - predicate: sex == 2
+      - predicate: q_is_proxy.outcome == 0
+      - predicate: q_sex.outcome == 2
       - predicate: age >= 18
       items:
       - id: q_pap_q020
@@ -3542,8 +3612,8 @@ questionnaire:
       kind: Group
       title: Mammography
       precondition:
-      - predicate: is_proxy == 0
-      - predicate: sex == 2
+      - predicate: q_is_proxy.outcome == 0
+      - predicate: q_sex.outcome == 2
       items:
       - id: q_mam_q030
         kind: Question
@@ -3649,8 +3719,8 @@ questionnaire:
       kind: Group
       title: Breast Examinations
       precondition:
-      - predicate: is_proxy == 0
-      - predicate: sex == 2
+      - predicate: q_is_proxy.outcome == 0
+      - predicate: q_sex.outcome == 2
       - predicate: age >= 18
       items:
       - id: q_brx_q110
@@ -3710,8 +3780,8 @@ questionnaire:
       kind: Group
       title: Breast Self-Examinations
       precondition:
-      - predicate: is_proxy == 0
-      - predicate: sex == 2
+      - predicate: q_is_proxy.outcome == 0
+      - predicate: q_sex.outcome == 2
       - predicate: age >= 18
       items:
       - id: q_bsx_q120
@@ -3759,14 +3829,14 @@ questionnaire:
       kind: Group
       title: Eye Examinations
       precondition:
-      - predicate: is_proxy == 0
+      - predicate: q_is_proxy.outcome == 0
       items:
       - id: q_eyx_q140
         kind: Question
         title: It was reported earlier that you have seen or talked to an optometrist or ophthalmologist in the past 12 months.
           Did you actually visit one?
         precondition:
-        - predicate: hcu_q02b_eye_doctor >= 1
+        - predicate: q_hcu_q02b.outcome >= 1
         input:
           control: Switch
           false: 'No'
@@ -3817,7 +3887,7 @@ questionnaire:
       kind: Group
       title: Physical Check-Up
       precondition:
-      - predicate: is_proxy == 0
+      - predicate: q_is_proxy.outcome == 0
       items:
       - id: q_pcu_q150
         kind: Question
@@ -3884,8 +3954,8 @@ questionnaire:
       kind: Group
       title: Prostate Cancer Screening
       precondition:
-      - predicate: is_proxy == 0
-      - predicate: sex == 1
+      - predicate: q_is_proxy.outcome == 0
+      - predicate: q_sex.outcome == 1
       - predicate: age >= 35
       items:
       - id: q_psa_q170
@@ -3957,7 +4027,7 @@ questionnaire:
       kind: Group
       title: Colorectal Cancer Screening
       precondition:
-      - predicate: is_proxy == 0
+      - predicate: q_is_proxy.outcome == 0
       - predicate: age >= 35
       items:
       - id: q_ccs_q180
@@ -4066,14 +4136,14 @@ questionnaire:
       kind: Group
       title: Dental Visits
       precondition:
-      - predicate: is_proxy == 0
+      - predicate: q_is_proxy.outcome == 0
       items:
       - id: q_den_q130
         kind: Question
         title: Now dental visits. It was reported earlier that you have seen or talked to a dentist in the past 12 months. Did
           you actually visit one?
         precondition:
-        - predicate: hcu_q02e_dentist >= 1
+        - predicate: q_hcu_q02e.outcome >= 1
         input:
           control: Switch
           false: 'No'
@@ -4082,12 +4152,12 @@ questionnaire:
         kind: Comment
         title: Now dental visits.
         precondition:
-        - predicate: hcu_q02e_dentist == 0
+        - predicate: q_hcu_q02e.outcome == 0
       - id: q_den_q132
         kind: Question
         title: When was the last time that you went to a dentist?
         precondition:
-        - predicate: hcu_q02e_dentist == 0 or q_den_q130.outcome == 0
+        - predicate: q_hcu_q02e.outcome == 0 or q_den_q130.outcome == 0
         input:
           control: Radio
           labels:
@@ -4138,13 +4208,13 @@ questionnaire:
       kind: Group
       title: Oral Health
       precondition:
-      - predicate: is_proxy == 0
+      - predicate: q_is_proxy.outcome == 0
       items:
       - id: q_oh2_q10
         kind: Question
         title: 'Do you usually visit the dentist:'
         precondition:
-        - predicate: den_q132 != 7
+        - predicate: q_den_q132.outcome != 7
         input:
           control: Radio
           labels:
@@ -4175,7 +4245,7 @@ questionnaire:
         kind: Question
         title: In the past 12 months, have you had any teeth removed by a dentist?
         precondition:
-        - predicate: den_q130 == 1 or den_q132 == 1
+        - predicate: q_den_q130.outcome == 1 or q_den_q132.outcome == 1
         input:
           control: Radio
           labels:
@@ -4203,7 +4273,7 @@ questionnaire:
         kind: Question
         title: Do you wear dentures or false teeth?
         precondition:
-        - predicate: den_q136 != 13
+        - predicate: q_den_q136.outcome != 13
         input:
           control: Radio
           labels:
@@ -4320,7 +4390,7 @@ questionnaire:
       kind: Group
       title: Food/Dietary Changes
       precondition:
-      - predicate: is_proxy == 0
+      - predicate: q_is_proxy.outcome == 0
       items:
       - id: q_fdc_intro
         kind: Comment
@@ -4425,7 +4495,7 @@ questionnaire:
       kind: Group
       title: Fruit and Vegetable Consumption
       precondition:
-      - predicate: is_proxy == 0
+      - predicate: q_is_proxy.outcome == 0
       items:
       - id: q_fvc_intro
         kind: Comment
@@ -4721,7 +4791,7 @@ questionnaire:
       kind: Group
       title: Leisure Physical Activities
       precondition:
-      - predicate: is_proxy == 0
+      - predicate: q_is_proxy.outcome == 0
       items:
       - id: q_pac_r1
         kind: Comment
@@ -4833,7 +4903,7 @@ questionnaire:
       kind: Group
       title: Work and Daily Physical Activity
       precondition:
-      - predicate: is_proxy == 0
+      - predicate: q_is_proxy.outcome == 0
       items:
       - id: q_pac_r2
         kind: Comment
@@ -4880,7 +4950,7 @@ questionnaire:
       kind: Group
       title: Sedentary Activities
       precondition:
-      - predicate: is_proxy == 0
+      - predicate: q_is_proxy.outcome == 0
       items:
       - id: q_sac_r1
         kind: Comment
@@ -4951,7 +5021,7 @@ questionnaire:
       kind: Group
       title: Use of Protective Equipment
       precondition:
-      - predicate: is_proxy == 0
+      - predicate: q_is_proxy.outcome == 0
       items:
       - id: q_upe_intro
         kind: Comment
@@ -5120,7 +5190,7 @@ questionnaire:
       kind: Group
       title: Sun Safety Behaviours
       precondition:
-      - predicate: is_proxy == 0
+      - predicate: q_is_proxy.outcome == 0
       items:
       - id: q_ssb_intro
         kind: Comment
@@ -5531,7 +5601,7 @@ questionnaire:
       kind: Group
       title: Smoking - Stages of Change
       precondition:
-      - predicate: is_proxy == 0
+      - predicate: q_is_proxy.outcome == 0
       - predicate: q_smk_status.outcome in [1, 2]
       items:
       - id: q_sch_quit_6months
@@ -5570,7 +5640,7 @@ questionnaire:
       kind: Group
       title: Nicotine Dependence
       precondition:
-      - predicate: is_proxy == 0
+      - predicate: q_is_proxy.outcome == 0
       - predicate: q_smk_status.outcome == 1
       items:
       - id: q_nde_first_cig
@@ -5616,7 +5686,7 @@ questionnaire:
       kind: Group
       title: Smoking Cessation Aids
       precondition:
-      - predicate: is_proxy == 0
+      - predicate: q_is_proxy.outcome == 0
       items:
       - id: q_sca_patch_former
         kind: Question
@@ -5728,14 +5798,14 @@ questionnaire:
       kind: Group
       title: Smoking - Physician Counselling
       precondition:
-      - predicate: is_proxy == 0
+      - predicate: q_is_proxy.outcome == 0
       - predicate: q_smk_status.outcome in [1, 2] or q_smk_when_stopped.outcome == 1 or q_smk_when_stopped_daily.outcome == 1
       items:
       - id: q_spc_saw_doctor
         kind: Question
         title: Earlier, you mentioned having a regular medical doctor. In the past 12 months, did you go see this doctor?
         precondition:
-        - predicate: hcu_regular_doctor == 1
+        - predicate: q_hcu_q01aa.outcome == 1
         input:
           control: Switch
           false: 'No'
@@ -5786,8 +5856,8 @@ questionnaire:
         kind: Question
         title: Earlier, you mentioned having seen or talked to a dentist in the past 12 months. Did you actually go to the dentist?
         precondition:
-        - predicate: den_checkup == 0 and den_other_visit == 0
-        - predicate: hcu_dentist_consult >= 1
+        - predicate: q_den_q130.outcome == 0 and q_den_q132.outcome != 1
+        - predicate: q_hcu_q02e.outcome >= 1
         input:
           control: Switch
           false: 'No'
@@ -5796,7 +5866,7 @@ questionnaire:
         kind: Question
         title: Does your dentist or dental hygienist know that you smoke cigarettes?
         precondition:
-        - predicate: den_checkup == 1 or den_other_visit == 1 or q_spc_went_dentist.outcome == 1
+        - predicate: q_den_q130.outcome == 1 or q_den_q132.outcome == 1 or q_spc_went_dentist.outcome == 1
         input:
           control: Switch
           false: 'No'
@@ -5814,7 +5884,7 @@ questionnaire:
       kind: Group
       title: Youth Smoking
       precondition:
-      - predicate: is_proxy == 0
+      - predicate: q_is_proxy.outcome == 0
       - predicate: age <= 19
       - predicate: q_smk_status.outcome in [1, 2]
       items:
@@ -5891,7 +5961,7 @@ questionnaire:
         title: Including both household members and regular visitors, does anyone smoke inside your home, every day or almost
           every day?
         precondition:
-        - predicate: not (household_size == 1 and q_smk_status.outcome in [1, 2])
+        - predicate: not (q_household_size.outcome == 1 and q_smk_status.outcome in [1, 2])
         input:
           control: Switch
           false: 'No'
@@ -6092,7 +6162,7 @@ questionnaire:
       kind: Group
       title: Drug Use
       precondition:
-      - predicate: is_proxy == 0
+      - predicate: q_is_proxy.outcome == 0
       items:
       - id: q_drg_intro
         kind: Comment
@@ -6567,7 +6637,7 @@ questionnaire:
       kind: Group
       title: Canadian Problem Gambling Index
       precondition:
-      - predicate: is_proxy == 0
+      - predicate: q_is_proxy.outcome == 0
       items:
       - id: q_cpg_intro
         kind: Comment
@@ -7114,7 +7184,7 @@ questionnaire:
       kind: Group
       title: Satisfaction with Life
       precondition:
-      - predicate: is_proxy == 0
+      - predicate: q_is_proxy.outcome == 0
       items:
       - id: q_swl_intro
         kind: Comment
@@ -7223,7 +7293,7 @@ questionnaire:
       kind: Group
       title: Stress Sources
       precondition:
-      - predicate: is_proxy == 0
+      - predicate: q_is_proxy.outcome == 0
       items:
       - id: q_sts_intro
         kind: Comment
@@ -7288,7 +7358,7 @@ questionnaire:
       kind: Group
       title: Stress Coping
       precondition:
-      - predicate: is_proxy == 0
+      - predicate: q_is_proxy.outcome == 0
       items:
       - id: q_stc_intro
         kind: Comment
@@ -7438,7 +7508,7 @@ questionnaire:
       kind: Group
       title: Childhood and Adult Stressors
       precondition:
-      - predicate: is_proxy == 0
+      - predicate: q_is_proxy.outcome == 0
       - predicate: age >= 18
       items:
       - id: q_cst_intro
@@ -7498,9 +7568,9 @@ questionnaire:
       kind: Group
       title: Work Stress
       precondition:
-      - predicate: is_proxy == 0
+      - predicate: q_is_proxy.outcome == 0
       - predicate: age >= 15 and age <= 75
-      - predicate: gen_q08_worked == 1
+      - predicate: q_gen_worked.outcome == 1
       items:
       - id: q_wst_intro
         kind: Comment
@@ -7664,7 +7734,7 @@ questionnaire:
       kind: Group
       title: Self-Esteem
       precondition:
-      - predicate: is_proxy == 0
+      - predicate: q_is_proxy.outcome == 0
       items:
       - id: q_sfe_intro
         kind: Comment
@@ -7744,7 +7814,7 @@ questionnaire:
       kind: Group
       title: Social Support Availability
       precondition:
-      - predicate: is_proxy == 0
+      - predicate: q_is_proxy.outcome == 0
       items:
       - id: q_ssa_intro
         kind: Comment
@@ -7989,7 +8059,7 @@ questionnaire:
       kind: Group
       title: Social Support Utilization
       precondition:
-      - predicate: is_proxy == 0
+      - predicate: q_is_proxy.outcome == 0
       - predicate: has_any_support == 1
       items:
       - id: q_ssu_intro
@@ -8093,7 +8163,7 @@ questionnaire:
       kind: Group
       title: Contacts with Mental Health Professionals
       precondition:
-      - predicate: is_proxy == 0
+      - predicate: q_is_proxy.outcome == 0
       items:
       - id: q_cmh_intro
         kind: Comment
@@ -8125,16 +8195,16 @@ questionnaire:
         precondition:
         - predicate: q_cmh_q01k.outcome == 1
         postcondition:
-        - predicate: q_cmh_q01m.outcome % 2 == 0 or hcu_q02a > 0
+        - predicate: q_cmh_q01m.outcome % 2 == 0 or q_hcu_q02a.outcome > 0
           hint: 'Warning: you reported seeing a family doctor for mental health but previously reported 0 visits to a family
             doctor/GP.'
-        - predicate: q_cmh_q01m.outcome % 4 < 2 or hcu_q02c > 0
+        - predicate: q_cmh_q01m.outcome % 4 < 2 or q_hcu_q02c.outcome > 0
           hint: 'Warning: you reported seeing a psychiatrist but previously reported 0 visits to other medical doctors.'
-        - predicate: q_cmh_q01m.outcome % 8 < 4 or hcu_q02i > 0
+        - predicate: q_cmh_q01m.outcome % 8 < 4 or q_hcu_q02i.outcome > 0
           hint: 'Warning: you reported seeing a psychologist for mental health but previously reported 0 visits to a psychologist.'
-        - predicate: q_cmh_q01m.outcome % 16 < 8 or hcu_q02d > 0
+        - predicate: q_cmh_q01m.outcome % 16 < 8 or q_hcu_q02d.outcome > 0
           hint: 'Warning: you reported seeing a nurse for mental health but previously reported 0 visits to a nurse.'
-        - predicate: q_cmh_q01m.outcome % 32 < 16 or hcu_q02h > 0
+        - predicate: q_cmh_q01m.outcome % 32 < 16 or q_hcu_q02h.outcome > 0
           hint: 'Warning: you reported seeing a social worker for mental health but previously reported 0 visits to a social
             worker/counsellor.'
         input:
@@ -8160,7 +8230,7 @@ questionnaire:
       kind: Group
       title: Distress
       precondition:
-      - predicate: is_proxy == 0
+      - predicate: q_is_proxy.outcome == 0
       items:
       - id: q_dis_intro
         kind: Comment
@@ -8330,7 +8400,7 @@ questionnaire:
       kind: Group
       title: Depression - Sadness Path
       precondition:
-      - predicate: is_proxy == 0
+      - predicate: q_is_proxy.outcome == 0
       items:
       - id: q_dep_q02
         kind: Question
@@ -8539,7 +8609,7 @@ questionnaire:
       kind: Group
       title: Depression - Loss of Interest Path
       precondition:
-      - predicate: is_proxy == 0
+      - predicate: q_is_proxy.outcome == 0
       items:
       - id: q_dep_q16
         kind: Question
@@ -8734,7 +8804,7 @@ questionnaire:
       kind: Group
       title: Suicidal Thoughts and Attempts
       precondition:
-      - predicate: is_proxy == 0
+      - predicate: q_is_proxy.outcome == 0
       - predicate: age >= 15
       items:
       - id: q_sui_intro
@@ -9548,7 +9618,7 @@ questionnaire:
         precondition:
         - predicate: q_sxb_q01.outcome == 1
         - predicate: q_sxb_q03.outcome == 1
-        - predicate: not (marital_status in [1, 2] and q_sxb_q04.outcome == 1)
+        - predicate: not (q_marital_status.outcome in [1, 2] and q_sxb_q04.outcome == 1)
         input:
           control: Switch
           false: 'No'
@@ -9568,8 +9638,8 @@ questionnaire:
         - predicate: q_sxb_q01.outcome == 1
         - predicate: q_sxb_q03.outcome == 1
         - predicate: age <= 24
-        - predicate: sex == 2
-        - predicate: mam_q037 != 1
+        - predicate: q_sex.outcome == 2
+        - predicate: q_mam_q037.outcome != 1
       - id: q_sxb_q09
         kind: Question
         title: It is important to me to avoid getting pregnant right now.
@@ -9577,8 +9647,8 @@ questionnaire:
         - predicate: q_sxb_q01.outcome == 1
         - predicate: q_sxb_q03.outcome == 1
         - predicate: age <= 24
-        - predicate: sex == 2
-        - predicate: mam_q037 != 1
+        - predicate: q_sex.outcome == 2
+        - predicate: q_mam_q037.outcome != 1
         input:
           control: Radio
           labels:
@@ -9595,7 +9665,7 @@ questionnaire:
         - predicate: q_sxb_q01.outcome == 1
         - predicate: q_sxb_q03.outcome == 1
         - predicate: age <= 24
-        - predicate: sex == 1
+        - predicate: q_sex.outcome == 1
       - id: q_sxb_q10
         kind: Question
         title: It is important to me to avoid getting my partner pregnant right now.
@@ -9603,7 +9673,7 @@ questionnaire:
         - predicate: q_sxb_q01.outcome == 1
         - predicate: q_sxb_q03.outcome == 1
         - predicate: age <= 24
-        - predicate: sex == 1
+        - predicate: q_sex.outcome == 1
         input:
           control: Radio
           labels:
@@ -9662,7 +9732,7 @@ questionnaire:
         - predicate: q_sxb_q03.outcome == 1
         - predicate: age <= 24
         - predicate: q_sxb_q11.outcome == 1
-        - predicate: mam_q037 != 1
+        - predicate: q_mam_q037.outcome != 1
         input:
           control: Checkbox
           labels:
@@ -9681,7 +9751,7 @@ questionnaire:
         - predicate: q_sxb_q03.outcome == 1
         - predicate: age <= 24
         - predicate: q_sxb_q11.outcome == 1
-        - predicate: mam_q037 != 1
+        - predicate: q_mam_q037.outcome != 1
         - predicate: q_sxb_q13.outcome % 128 >= 64
         input:
           control: Textarea
@@ -10371,7 +10441,7 @@ questionnaire:
         precondition:
         - predicate: q_wtm_q01.outcome == 1
         postcondition:
-        - predicate: not (q_wtm_q02.outcome == 8 and sex == 1)
+        - predicate: not (q_wtm_q02.outcome == 8 and q_sex.outcome == 1)
           hint: Gynaecological problems cannot be selected for male respondents.
         input:
           control: Dropdown
@@ -10626,7 +10696,7 @@ questionnaire:
         kind: Question
         title: What type of surgery did you require?
         postcondition:
-        - predicate: not (q_wtm_q16.outcome == 5 and sex == 1)
+        - predicate: not (q_wtm_q16.outcome == 5 and q_sex.outcome == 1)
           hint: Hysterectomy cannot be selected for male respondents.
         input:
           control: Dropdown
@@ -11490,7 +11560,7 @@ questionnaire:
         precondition:
         - predicate: q_inj_q13.outcome == 1
         postcondition:
-        - predicate: q_inj_q15.outcome == 0 or hcu_q01ba == 1
+        - predicate: q_inj_q15.outcome == 0 or q_hcu_q01ba.outcome == 1
           hint: 'Warning: you reported being admitted overnight for an injury but previously reported no overnight hospital
             stays.'
         input:
@@ -11539,7 +11609,7 @@ questionnaire:
         kind: Question
         title: Last week, did you work at a job or a business?
         postcondition:
-        - predicate: not (gen_q08 == 2 and q_lbf_q01.outcome == 1)
+        - predicate: not (q_gen_worked.outcome == 0 and q_lbf_q01.outcome == 1)
           hint: Earlier you indicated you did not work in the past 12 months, but now report working last week. Please verify.
         input:
           control: Radio
@@ -11675,7 +11745,7 @@ questionnaire:
         kind: Question
         title: What was the main reason you were absent from work last week?
         postcondition:
-        - predicate: not (sex == 1 and q_lbf_q41.outcome == 4)
+        - predicate: not (q_sex.outcome == 1 and q_lbf_q41.outcome == 4)
           hint: Maternity leave is only applicable for females.
         - predicate: not (q_lbf_q31.outcome == 1 and q_lbf_q41.outcome in [12, 13])
           hint: Self-employed reasons are not valid for employees.
@@ -11877,7 +11947,7 @@ questionnaire:
         precondition:
         - predicate: q_lbf_q11.outcome == 0
         postcondition:
-        - predicate: not (sex == 1 and q_lbf_q13.outcome == 4)
+        - predicate: not (q_sex.outcome == 1 and q_lbf_q13.outcome == 4)
           hint: Pregnancy is only applicable for females.
         input:
           control: Dropdown
@@ -11934,9 +12004,9 @@ questionnaire:
         kind: Question
         title: Did you work at a job or a business at any time in the past 12 months?
         postcondition:
-        - predicate: not (gen_q08 == 2 and q_lbf_q21.outcome == 1)
+        - predicate: not (q_gen_worked.outcome == 0 and q_lbf_q21.outcome == 1)
           hint: Earlier you indicated no work in the past 12 months, but now report working. Please verify.
-        - predicate: not (gen_q08 == 1 and q_lbf_q21.outcome == 0)
+        - predicate: not (q_gen_worked.outcome == 1 and q_lbf_q21.outcome == 0)
           hint: Earlier you indicated working in the past 12 months, but now report not working. Please verify.
         input:
           control: Switch
@@ -11979,8 +12049,6 @@ questionnaire:
           min: 1
           max: 52
           right: weeks
-        codeBlock: |
-          weeks_worked = q_lbf_q61.outcome
       - id: q_lbf_q71a
         kind: Question
         title: That leaves 1 week. During that week, did you look for work?
@@ -11990,11 +12058,6 @@ questionnaire:
           control: Switch
           false: 'No'
           true: 'Yes'
-        codeBlock: |
-          if q_lbf_q71a.outcome == 1:
-              weeks_looking = 1
-          else:
-              weeks_looking = 0
       - id: q_lbf_q71
         kind: Question
         title: During the past 52 weeks, how many weeks were you looking for work?
@@ -12005,8 +12068,6 @@ questionnaire:
           min: 0
           max: 51
           right: weeks
-        codeBlock: |
-          weeks_looking = q_lbf_q71.outcome
       - id: q_lbf_q72
         kind: Question
         title: That leaves some weeks during which you were neither working nor looking for work. Is that correct?
@@ -12028,7 +12089,7 @@ questionnaire:
         - predicate: q_lbf_q01.outcome == 1 or (q_lbf_q01.outcome == 2 and q_lbf_q02.outcome == 1) or (q_lbf_q01.outcome ==
             2 and q_lbf_q02.outcome == 0 and q_lbf_q11.outcome == 1)
         postcondition:
-        - predicate: not (sex == 1 and q_lbf_q73.outcome == 4)
+        - predicate: not (q_sex.outcome == 1 and q_lbf_q73.outcome == 4)
           hint: Pregnancy is only applicable for females.
         input:
           control: Dropdown
@@ -12086,7 +12147,7 @@ questionnaire:
         kind: Question
         title: Last week, did you work at a job or a business?
         postcondition:
-        - predicate: not (gen_q08 == 2 and q_lf2_q1.outcome == 1)
+        - predicate: not (q_gen_worked.outcome == 0 and q_lf2_q1.outcome == 1)
           hint: Earlier you indicated no work in the past 12 months, but now report working last week. Please verify.
         input:
           control: Radio
@@ -12237,7 +12298,7 @@ questionnaire:
       kind: Group
       title: Other Household Member Education
       precondition:
-      - predicate: has_other_hh_members_14plus == 1
+      - predicate: q_has_other_hh_members_14plus.outcome == 1
       items:
       - id: q_edu_r07a
         kind: Comment
@@ -12697,7 +12758,7 @@ questionnaire:
       kind: Group
       title: Child Food Situation
       precondition:
-      - predicate: has_children == 1
+      - predicate: q_has_children.outcome == 1
       items:
       - id: q_fsc_r050
         kind: Comment
@@ -12812,7 +12873,7 @@ questionnaire:
       kind: Group
       title: Child Food Insecurity Details
       precondition:
-      - predicate: has_children == 1
+      - predicate: q_has_children.outcome == 1
       - predicate: food_insecurity == 1
       items:
       - id: q_fsc_r130
@@ -12917,7 +12978,7 @@ questionnaire:
       kind: Group
       title: Weight Measurement
       precondition:
-      - predicate: is_proxy == 0
+      - predicate: q_is_proxy.outcome == 0
       items:
       - id: q_mhw_n1a
         kind: Question
@@ -12926,9 +12987,6 @@ questionnaire:
           control: Switch
           false: 'No'
           true: 'Yes'
-        codeBlock: |
-          if q_mhw_n1a.outcome == 0:
-              weight_measured = 1
       - id: q_mhw_n1b
         kind: Question
         title: 'INTERVIEWER: Select reasons why it is impossible to measure the respondent''s weight.'
@@ -12944,9 +13002,6 @@ questionnaire:
             16: Safety concerns
             32: Has already refused to be measured
             64: Other - Specify
-        codeBlock: |
-          if q_mhw_n1b.outcome % 8 >= 1:
-              height_impossible = 1
       - id: q_mhw_s1b
         kind: Question
         title: 'INTERVIEWER: Specify the reason.'
@@ -12972,9 +13027,6 @@ questionnaire:
           control: Switch
           false: 'No'
           true: 'Yes'
-        codeBlock: |
-          if q_mhw_q2a.outcome == 1:
-              weight_permission = 1
       - id: q_mhw_n2a
         kind: Question
         title: 'INTERVIEWER: Record weight to the nearest 0.01 kg.'
@@ -13027,7 +13079,7 @@ questionnaire:
       kind: Group
       title: Height Measurement
       precondition:
-      - predicate: is_proxy == 0
+      - predicate: q_is_proxy.outcome == 0
       items:
       - id: q_mhw_n5a
         kind: Question

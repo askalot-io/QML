@@ -22,8 +22,7 @@ questionnaire:
     lfs_work = 0          # derived employment status
     income_multi = 0      # multi-earner household flag
 
-    # Produced by Section 07 (General Health & Preventive).
-    is_pregnant = 0       # pregnancy flag (screens out some items)
+    # Pregnancy screening gates reference q_genhlt_q2.outcome directly.
 
     # Produced by Section 10 (Stress) — downstream consumers were in extern land,
     # kept as a local flag for future use.
@@ -2051,8 +2050,6 @@ questionnaire:
               2: "No"
               8: "Don't know"
               9: "Refused"
-          codeBlock: |
-            is_pregnant = 1 if q_genhlt_q2.outcome == 1 else 0
 
         # GENHLT-Q3 / GHC4_3: Physician/midwife planning
         # Precondition: pregnant (Q2 == 1)

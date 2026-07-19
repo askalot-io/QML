@@ -145,9 +145,6 @@ questionnaire:
             min: 1
             max: 98
             left: "Communities:"
-          postcondition:
-            - predicate: q_a5.outcome >= 1
-              hint: "Please enter the number of communities (1-97) or 98 for Don't know."
 
         # A6: Years in longest community (if A4=No and A5 is not DK)
         # Precondition: A4 == 2 and A5 != 98 (not DK)
@@ -2329,13 +2326,12 @@ questionnaire:
           title: "Before you were six years old, which languages were spoken in your home by people living there?"
           codeBlock: |
             # Check if multiple languages selected (more than one bit set)
-            val = q_n1.outcome
             count = 0
-            if val % 2 >= 1:
+            if q_n1.outcome % 2 >= 1:
                 count = count + 1
-            if val % 4 >= 2:
+            if q_n1.outcome % 4 >= 2:
                 count = count + 1
-            if val % 8 >= 4:
+            if q_n1.outcome % 8 >= 4:
                 count = count + 1
             if count >= 2:
                 n1_multiple = 1

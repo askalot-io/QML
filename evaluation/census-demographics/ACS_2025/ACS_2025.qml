@@ -7,7 +7,6 @@ questionnaire:
     # dependency graph, variables written by an earlier block are visible
     # to every later block without any extern declaration.
     # =====================================================================
-    person_count = 0
     person_age = 0
     person_sex = 0
     building_type = 0
@@ -37,8 +36,6 @@ questionnaire:
             control: Editbox
             min: 1
             max: 12
-          codeBlock: |
-            person_count = q_cover_count.outcome
 
     - id: b_person_roster
       kind: Group

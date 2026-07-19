@@ -6,9 +6,16 @@ questionnaire:
     # Cross-section variables. With a single codeInit scope and one
     # dependency graph, variables written by an earlier block are visible
     # to every later block without any extern declaration.
+    #
+    # Household-grid state (partner / children presence) and the two
+    # country-context values (EU membership, split-ballot group) are NOT
+    # modelled as frozen codeInit variables. During consolidation the
+    # roster that would produce them was dropped, which froze the frozen
+    # copies and made every gate that read them either fail open or become
+    # statically unreachable. They are now captured by explicit questions
+    # (q_hh_partner, q_hh_children, q_ctx_eu_member, q_ctx_sample_group)
+    # and gated on those outcomes directly — no pass-through variables.
     # =====================================================================
-    has_partner = 0
-    has_children_in_hh = 0
     has_work_history = 0
     in_paid_work = 0
     b16_multiple = 0
@@ -17,6 +24,48 @@ questionnaire:
     b45_multiple = 0
 
   blocks:
+
+    # ===================================================================
+    # SECTION: admin_context
+    # ===================================================================
+    # Administrative / country-context values that the ESS fielding system
+    # fixes per country and per assigned subsample. In the source these are
+    # not respondent questions but survey-frame attributes:
+    #   - EU membership decides which of the two mutually exclusive A89
+    #     referendum wordings (A89a member / A89b non-member) is shown.
+    #   - The split-ballot group (D30 experiment) randomly assigns each
+    #     respondent to one of four vignette wordings (D30a-D30d).
+    # They were previously carried as externs; that wiring was dropped during
+    # consolidation. They are re-expressed here as explicit early items and
+    # gated on their outcomes directly (SLID b_preamble pattern), so the Z3
+    # envelope sees a real producer instead of a free symbol.
+    # ===================================================================
+    - id: b_admin_context
+      kind: Group
+      title: "Survey Administration"
+      items:
+        # Country-context: is the fielding country an EU member?
+        # Controls the A89 referendum split (A89a vs A89b).
+        - id: q_ctx_eu_member
+          kind: Question
+          title: "Is the survey country a member of the European Union? (Administrative value, fixed per fielding country.)"
+          input:
+            control: Switch
+            on: "Yes"
+            off: "No"
+
+        # Split-ballot assignment for the D30 refugee-vignette experiment.
+        # Each respondent is randomly assigned one of four vignette wordings.
+        - id: q_ctx_sample_group
+          kind: Question
+          title: "Split-ballot assignment for the D30 experiment. (Administrative value, randomly assigned per respondent.)"
+          input:
+            control: Radio
+            labels:
+              1: "Group 1 — Christians from a European non-EU country, fleeing war"
+              2: "Group 2 — Christians from a European non-EU country, fleeing unemployment"
+              3: "Group 3 — Muslims from a Middle Eastern country, fleeing war"
+              4: "Group 4 — Muslims from a Middle Eastern country, fleeing unemployment"
 
     # ===================================================================
     # SECTION: self_completion_intro
@@ -1293,7 +1342,8 @@ questionnaire:
     # =========================================================================
     # BLOCK 5: EU REFERENDUM (A89a-A89b)
     # =========================================================================
-    # Mutually exclusive country variants controlled by extern is_eu_member.
+    # Mutually exclusive country variants controlled by the EU-membership
+    # context value (q_ctx_eu_member, asked in the Survey Administration block).
     # Only one of A89a or A89b is asked per country.
     # =========================================================================
     - id: b_eu_referendum
@@ -1306,7 +1356,7 @@ questionnaire:
           kind: Question
           title: "Imagine there were a referendum in [country] tomorrow about membership of the European Union. Would you vote for [country] to remain a member of the European Union or to leave the European Union?"
           precondition:
-            - predicate: is_eu_member == 1
+            - predicate: q_ctx_eu_member.outcome == 1
           input:
             control: Radio
             labels:
@@ -1323,7 +1373,7 @@ questionnaire:
           kind: Question
           title: "Imagine there were a referendum in [country] tomorrow about membership of the European Union. Would you vote for [country] to become a member of the European Union or to remain outside the European Union?"
           precondition:
-            - predicate: is_eu_member == 0
+            - predicate: q_ctx_eu_member.outcome == 0
           input:
             control: Radio
             labels:
@@ -1361,8 +1411,6 @@ questionnaire:
           postcondition:
             - predicate: q_b2.outcome <= q_b1.outcome
               hint: "Number of adults cannot exceed total household size."
-            - predicate: q_b2.outcome >= 1
-              hint: "There must be at least one adult (the respondent)."
           input:
             control: Editbox
             min: 1
@@ -1399,6 +1447,29 @@ questionnaire:
             max: 2011
             left: "Year:"
 
+        # Partner presence — screener replacing the omitted household roster.
+        # In the source, relationship code B7=1 for any household member sets
+        # has_partner. Since the dynamic roster is not representable, we ask the
+        # equivalent directly. Gated downstream by B8-B12 and the partner block.
+        - id: q_hh_partner
+          kind: Question
+          title: "Do you live together with a husband, wife, or partner as part of this household?"
+          input:
+            control: Switch
+            on: "Yes"
+            off: "No"
+
+        # Children-in-household presence — screener replacing the omitted roster.
+        # In the source, relationship code B7=2 for any member sets
+        # has_children_in_hh. Gated downstream by B12.
+        - id: q_hh_children
+          kind: Question
+          title: "Do any children (your own, step, adopted, foster, or a partner's) live in this household with you?"
+          input:
+            control: Switch
+            on: "Yes"
+            off: "No"
+
     # =========================================================================
     # BLOCK 2: HOUSEHOLD ROSTER (HHName, B5, B6, B7) — JUSTIFIED OMISSION
     # =========================================================================
@@ -1410,10 +1481,12 @@ questionnaire:
     # omission.
     #
     # The relationship data (B7) determines downstream routing:
-    #   - B7 = 1 for any member → has_partner = 1
-    #   - B7 = 2 for any member → has_children_in_hh = 1
-    # These are modelled as extern-like variables initialized in codeInit
-    # and would be set by the roster in a full implementation.
+    #   - B7 = 1 for any member → partner present
+    #   - B7 = 2 for any member → children present in household
+    # The two routing facts the roster would have produced are instead captured
+    # by explicit screener questions (q_hh_partner, q_hh_children) asked in the
+    # Household Composition block above; downstream items gate on those outcomes
+    # directly rather than on a roster-derived variable.
     # =========================================================================
     - id: b_household_roster
       kind: Group
@@ -1423,32 +1496,33 @@ questionnaire:
       items:
         - id: q_roster_note
           kind: Comment
-          title: "The following section would collect details (name, sex, birth date, relationship) for each additional household member. This dynamic roster cannot be fully represented in QML's static item structure and is omitted. Downstream routing uses the has_partner and has_children_in_hh variables."
+          title: "The following section would collect details (name, sex, birth date, relationship) for each additional household member. This dynamic roster cannot be fully represented in QML's static item structure and is omitted. The two routing facts it would produce — presence of a partner and presence of children in the household — are captured instead by the screener questions in the Household Composition block, and downstream items gate on those outcomes directly."
 
     # =========================================================================
     # BLOCK 3: MARITAL STATUS (B8-B12)
     # =========================================================================
-    # Routing:
-    #   B8: ASK IF has_partner = 1 (B7=1 for any household member)
+    # Routing (partner/children presence come from the household screeners
+    # q_hh_partner / q_hh_children rather than a roster-derived variable):
+    #   B8: ASK IF q_hh_partner = Yes (B7=1 for any household member)
     #       B8 in {1,2} (married/civil union) → B9
     #       B8 in {3,4} (cohabiting) → B10
     #       B8 in {5,6} (separated/divorced) → B9
-    #   B9: ASK IF has_partner=0 OR B8 in {1,2,5,6}
+    #   B9: ASK IF q_hh_partner = No OR B8 in {1,2,5,6}
     #   B10: ASK ALL
-    #   B11: ASK IF has_partner=0 OR B8 in {3,4}
-    #   B12: ASK IF has_children_in_hh = 0 (no B7=2)
+    #   B11: ASK IF q_hh_partner = No OR B8 in {3,4}
+    #   B12: ASK IF q_hh_children = No (no B7=2)
     # =========================================================================
     - id: b_marital_status
       kind: Group
       title: "Marital Status"
       items:
         # B8: Relationship description with partner
-        # ASK IF has_partner (living with husband/wife/partner)
+        # ASK IF living with husband/wife/partner (q_hh_partner = Yes)
         - id: q_b8
           kind: Question
           title: "Which one of the descriptions from the following list describes your relationship to your husband, wife, or partner?"
           precondition:
-            - predicate: has_partner == 1
+            - predicate: q_hh_partner.outcome == 1
           input:
             control: Radio
             labels:
@@ -1461,13 +1535,13 @@ questionnaire:
 
         # B9: Ever lived with partner without marriage/civil union?
         # ASK IF not living with partner, OR B8 in {1,2,5,6}
-        # When has_partner=0, B8 is not reached so we check that case first.
-        # When has_partner=1, B8 is answered; show B9 for married/separated/divorced.
+        # When q_hh_partner=No, B8 is not reached so we check that case first.
+        # When q_hh_partner=Yes, B8 is answered; show B9 for married/separated/divorced.
         - id: q_b9
           kind: Question
           title: "Have you ever lived with a partner without being married to them or in a civil union?"
           precondition:
-            - predicate: has_partner == 0 or q_b8.outcome in [1, 2, 5, 6]
+            - predicate: q_hh_partner.outcome == 0 or q_b8.outcome in [1, 2, 5, 6]
           input:
             control: Switch
             on: "Yes"
@@ -1488,7 +1562,7 @@ questionnaire:
           kind: Question
           title: "Which one of the descriptions from the following list describes your legal marital status now?"
           precondition:
-            - predicate: has_partner == 0 or q_b8.outcome in [3, 4]
+            - predicate: q_hh_partner.outcome == 0 or q_b8.outcome in [3, 4]
           input:
             control: Radio
             labels:
@@ -1500,12 +1574,12 @@ questionnaire:
               6: "None of these (NEVER married or in legally registered civil union)"
 
         # B12: Ever had children living in household?
-        # ASK IF no children currently in household
+        # ASK IF no children currently in household (q_hh_children = No)
         - id: q_b12
           kind: Question
           title: "Have you ever had any children of your own, step-children, adopted children, foster children or a partner's children living in your household?"
           precondition:
-            - predicate: has_children_in_hh == 0
+            - predicate: q_hh_children.outcome == 0
           input:
             control: Switch
             on: "Yes"
@@ -2008,7 +2082,7 @@ questionnaire:
     # =========================================================================
     # PARTNER DETAILS (B44-B52)
     # =========================================================================
-    # Block precondition: has_partner == 1
+    # Block precondition: q_hh_partner = Yes (living with a partner)
     #
     # B44: Partner's highest education — Dropdown (ISCED). ASK ALL with partner.
     # B45: Partner's activity status — Checkbox (power-of-2).
@@ -2026,7 +2100,7 @@ questionnaire:
       kind: Group
       title: "Partner's Background"
       precondition:
-        - predicate: has_partner == 1
+        - predicate: q_hh_partner.outcome == 1
       items:
         # B44a/B44b: Partner's highest education level
         - id: q_b44
@@ -2871,11 +2945,13 @@ questionnaire:
       title: "Treatment and Contact"
       items:
         # D19: Government treatment of immigrants vs natives (born in country only)
+        # "Born in country" is already captured by A80 (q_a80) — reference it
+        # directly rather than a separate context variable.
         - id: q_d19
           kind: Question
           title: "Compared to people like yourself who were born in this country, how do you think the government treats those who have recently come to live here from other countries?"
           precondition:
-            - predicate: "born_in_country == 1"
+            - predicate: "q_a80.outcome == 1"
           input:
             control: Radio
             labels:
@@ -3023,7 +3099,7 @@ questionnaire:
           kind: Question
           title: "Imagine a situation where Christians from a European country outside the EU have to leave their country because war makes their homes unsafe. To what extent do you think this country should allow them to come and live here?"
           precondition:
-            - predicate: "sample_group == 1"
+            - predicate: "q_ctx_sample_group.outcome == 1"
           input:
             control: Radio
             labels:
@@ -3037,7 +3113,7 @@ questionnaire:
           kind: Question
           title: "Imagine a situation where Christians from a European country outside the EU have to leave their country because they are unemployed due to a lack of work. To what extent do you think this country should allow them to come and live here?"
           precondition:
-            - predicate: "sample_group == 2"
+            - predicate: "q_ctx_sample_group.outcome == 2"
           input:
             control: Radio
             labels:
@@ -3051,7 +3127,7 @@ questionnaire:
           kind: Question
           title: "Imagine a situation where Muslims from a Middle Eastern country have to leave their country because war makes their homes unsafe. To what extent do you think this country should allow them to come and live here?"
           precondition:
-            - predicate: "sample_group == 3"
+            - predicate: "q_ctx_sample_group.outcome == 3"
           input:
             control: Radio
             labels:
@@ -3065,7 +3141,7 @@ questionnaire:
           kind: Question
           title: "Imagine a situation where Muslims from a Middle Eastern country have to leave their country because they are unemployed due to a lack of work. To what extent do you think this country should allow them to come and live here?"
           precondition:
-            - predicate: "sample_group == 4"
+            - predicate: "q_ctx_sample_group.outcome == 4"
           input:
             control: Radio
             labels:
