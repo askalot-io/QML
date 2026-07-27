@@ -1,15 +1,23 @@
 import ast
 import re
 
-# Import profiling - graceful fallback if not available
-try:
-    from askalot_common.profiling import profile_block
-except ImportError:
-    from contextlib import contextmanager
+from askalot_common.profiling import profile_block
 
-    @contextmanager
-    def profile_block(name, tags=None):
-        yield
+
+class CodeExecutionError(Exception):
+    """A code block raised while executing its body.
+
+    Carries the environment as it stood when the exception surfaced, because
+    the two things the caller needs are in tension: the failure must reach the
+    caller (a survey whose code block half-ran is degraded and has to be
+    recorded as such), while the assignments that completed before the raise
+    must survive (the flow continues on that partial state rather than
+    discarding a respondent's progress).
+    """
+
+    def __init__(self, message: str, local_env: dict):
+        super().__init__(message)
+        self.local_env = local_env
 
 
 class PythonRunner:
@@ -241,6 +249,8 @@ class PythonRunner:
 
         Raises:
             ValueError: If the code contains disallowed constructs
+            CodeExecutionError: If the code raises while executing; the partial
+                environment travels on the exception
         """
         with profile_block("qml_run_code"):
             # Clear any previous captured output
@@ -259,16 +269,18 @@ class PythonRunner:
             # Execute the code safely
             try:
                 exec(code, global_env, local_env)
-
-                # Add the captured output to the environment
-                local_env["__output__"] = self.captured_output
-                return local_env
             except Exception as e:
-                # Add the exception to the environment
-                local_env["__error__"] = str(e)
                 # Add captured output up to the point of error
                 local_env["__output__"] = self.captured_output
-                return local_env
+                # The failure is raised rather than reported through a key in
+                # the returned environment: a returned environment is
+                # indistinguishable from a successful run unless every caller
+                # remembers to look, and none did.
+                raise CodeExecutionError(str(e), local_env) from e
+
+            # Add the captured output to the environment
+            local_env["__output__"] = self.captured_output
+            return local_env
 
     def eval_expr(self, expr: str, **kwargs) -> bool:
         """

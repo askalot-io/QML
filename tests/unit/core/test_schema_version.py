@@ -6,9 +6,11 @@ Tests the decoupled Major.Minor.Patch schema-version signal:
 - `version` is valid three-part semver
 - `QML_SCHEMA_VERSION` is read from (never hardcoded apart from) the schema
   file — the single-source-of-truth / no-drift guarantee
-- the current contract version is 2.1.0 (the 2.0.0 breaking collapse of block
-  kinds to Group + Roster, plus the 2.1.0 backward-compatible addition of the
-  optional Roster `subjectFrom` key)
+- the current contract version is 2.2.0 (the 2.0.0 breaking collapse of block
+  kinds to Group + Roster, the 2.1.0 backward-compatible addition of the optional
+  Roster `subjectFrom` key, the 2.1.1 PATCH tightening that closes the
+  Item and Condition objects with `unevaluatedProperties: false`, and the 2.2.0
+  backward-compatible addition of the optional `external` Item flag)
 - the schema version is independent of the askalot_qml package version
 
 These unit tests pin the contract so a schema change cannot silently ship
@@ -47,13 +49,19 @@ class TestSchemaVersionContract:
         # sourced from the schema and cannot drift from a hardcoded copy.
         assert QML_SCHEMA_VERSION == self._schema()["version"]
 
-    def test_current_contract_version_is_2_1_0(self):
+    def test_current_contract_version_is_2_2_0(self):
         # 2.0.0 was the first breaking (MAJOR) change: block kinds collapse to
         # Group + Roster (Sequence/Sample removed, is_random dropped, kind made
         # optional). 2.1.0 is a backward-compatible (MINOR) addition: the
-        # optional Roster `subjectFrom` key (respondent-named iteration subject);
-        # every 2.0.0 document stays valid.
-        assert QML_SCHEMA_VERSION == "2.1.0"
+        # optional Roster `subjectFrom` key. 2.1.1 is a PATCH tightening of an
+        # already-de-facto constraint: `unevaluatedProperties: false` on the
+        # Item and Condition objects, so a typo'd key (`precondtion`,
+        # `postconditions`, `hnt`) is rejected at author time instead of silently
+        # doing nothing. 2.2.0 is a backward-compatible (MINOR) addition: the
+        # optional boolean `external` Item flag (runtime prefill-eligibility;
+        # invisible to Z3, so an external item classifies identically to its
+        # non-external twin). Every pre-2.2.0 document stays valid.
+        assert QML_SCHEMA_VERSION == "2.2.0"
 
     def test_schema_version_decoupled_from_package_version(self):
         # Decoupled by policy: a code-only release moves the package version

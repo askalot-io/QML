@@ -34,9 +34,19 @@ def create_validation_blueprint(
     logger = logging.getLogger(__name__)
 
     def _get_loader() -> QMLLoader:
-        """Get configured QML loader."""
-        # Use resolver if provided, otherwise fall back to static qml_dir
+        """Build the request's QML loader over the resolved directory.
+
+        A resolver that returns None means "I could not tell which tree this
+        request is about" — that is a bad request, not a directory to guess.
+        The loader itself refuses a name it cannot resolve; raising here makes
+        the refusal say *why* instead of surfacing as a missing file.
+        """
         resolved_qml_dir = qml_dir_resolver() if qml_dir_resolver else qml_dir
+        if resolved_qml_dir is None:
+            raise ValueError(
+                "No QML directory for this request — the caller could not be "
+                "resolved to a workspace."
+            )
         return QMLLoader(qml_dir=resolved_qml_dir, logger=logger)
 
     @blueprint.route("/validation", methods=["GET"])
@@ -156,6 +166,9 @@ def create_validation_blueprint(
                     },
                 }
             ), 400
+        except ValueError as e:
+            logger.warning(f"Cannot resolve a QML source for this request: {e}")
+            return jsonify({"error": str(e)}), 400
         except Exception as e:
             logger.error(f"Error generating validation: {e}")
             return jsonify({"error": str(e)}), 500
@@ -205,6 +218,9 @@ def create_validation_blueprint(
 
             return jsonify({"files": files, "count": len(files)}), 200
 
+        except ValueError as e:
+            logger.warning(f"Cannot resolve a QML source for this request: {e}")
+            return jsonify({"error": str(e)}), 400
         except Exception as e:
             logger.error(f"Error listing QML files: {e}")
             return jsonify({"error": str(e)}), 500

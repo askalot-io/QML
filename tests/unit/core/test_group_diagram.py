@@ -21,9 +21,8 @@ Pins the contract the QML Explorer React webview relies on (U9, R21):
 These unit tests build QML inline through QMLLoader.load_from_string →
 QMLState → QMLEngine → QMLDiagramIR (the same pipeline production uses,
 exercising the 2.0.0 schema/loader contract) and assert on the
-positions-free structural IR. They deliberately do NOT load the `sample_*`
-/ `Sequence` fixtures (unmigrated until U12) — the inline QML keeps this
-file green independent of the fixture-migration unit.
+positions-free structural IR. Inline QML rather than a fixture file keeps
+each case's block shape visible at the assertion.
 """
 
 import unittest

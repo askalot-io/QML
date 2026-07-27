@@ -12,7 +12,7 @@ intentionally not merged here. Both helpers are functionally equivalent.
 """
 
 from askalot_qml.core.flow_processor import FlowProcessor
-from askalot_qml.models.qml_state import QMLState
+from askalot_qml.models.qml_state import SOURCE_RESPONDENT, QMLState
 
 
 def walk_and_answer(
@@ -44,7 +44,9 @@ def walk_and_answer(
             raise AssertionError(
                 f"Test fixture has no answer for {item_id!r}; walked so far: {walked!r}"
             )
-        result = processor.process_item(state, item_id, answer_for[item_id])
+        result = processor.process_item(
+            state, item_id, answer_for[item_id], source=SOURCE_RESPONDENT
+        )
         assert result.get("success"), f"process_item failed for {item_id}: {result}"
     else:
         raise AssertionError(f"Walked >{max_steps} items — likely a loop: {walked!r}")

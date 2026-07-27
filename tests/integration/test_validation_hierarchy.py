@@ -16,7 +16,7 @@ reachability base):
 - The full base still carries the frozen constant, so a postcondition on a frozen
   variable still fires the INFEASIBLE / globally-false machinery.
 
-Reference: askalot-research/thesis/chapters/comprehensive_validation.tex
+Reference: askalot-io/docs thesis/chapters/comprehensive_validation.tex
 """
 
 import unittest
@@ -415,7 +415,16 @@ class TestFrozenGateReachability(unittest.TestCase):
         )
 
     def test_frozen_gate_emits_unreachable_item_error(self):
-        """AE4: the NEVER item surfaces the existing unreachable_item ERROR."""
+        """AE4: the NEVER item surfaces the downstream unreachable_item ERROR, and
+        (#169) the frozen variable ALSO surfaces its root cause.
+
+        `has_partner = 0` is frozen and read by two gates — `has_partner == 1`
+        (q_partner_age → NEVER) and `has_partner == 0` (q_living_alone → ALWAYS).
+        The fixture therefore yields exactly two errors: the unreachable_item
+        symptom on q_partner_age plus a single frozen_variable root-cause error
+        naming `has_partner` and both gated locations (grouped, not replaced), and
+        nothing incidental.
+        """
         state = load_qml_fixture("lint_frozen_gate.qml")
         issues = ValidationProcessor(state).to_issues()
         unreachable = [
@@ -430,17 +439,24 @@ class TestFrozenGateReachability(unittest.TestCase):
         )
         self.assertEqual(unreachable[0]["severity"], "error")
 
-        # The frozen gate is the ONLY error the fixture yields — the frozen
-        # variable is a real defect, not incidental noise.
         errors = [i for i in issues if i["severity"] == "error"]
         self.assertEqual(
-            len(errors),
-            1,
-            f"frozen-gate fixture should yield exactly one error, got {errors}",
+            sorted(i["type"] for i in errors),
+            ["frozen_variable", "unreachable_item"],
+            f"frozen-gate fixture must yield the unreachable_item symptom plus the "
+            f"frozen_variable root cause, got {errors}",
         )
+        frozen = [i for i in errors if i["type"] == "frozen_variable"]
+        self.assertEqual(len(frozen), 1, f"expected one frozen_variable error, got {frozen}")
+        self.assertIn("has_partner", frozen[0]["message"])
+        # Both gated locations are named so the fixer sees the full blast radius.
+        self.assertIn("q_partner_age", frozen[0]["message"])
+        self.assertIn("q_living_alone", frozen[0]["message"])
 
     def test_frozen_gate_equal_zero_is_always(self):
-        """`has_partner == 0` on a frozen `has_partner = 0` → ALWAYS (no error)."""
+        """`has_partner == 0` on a frozen `has_partner = 0` → ALWAYS (so no
+        unreachable_item; the frozen_variable root-cause lint fires separately —
+        see test_frozen_gate_emits_unreachable_item_error)."""
         classifications = self._classifications("lint_frozen_gate.qml")
         status = classifications["q_living_alone"]["precondition"]["status"]
         self.assertEqual(

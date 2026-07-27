@@ -27,11 +27,21 @@ import copy
 import logging
 from typing import Any
 
-from askalot_qml.core.python_runner import PythonRunner
+from askalot_qml.core.domain_validator import outcome_in_domain
+from askalot_qml.core.python_runner import CodeExecutionError, PythonRunner
 from askalot_qml.core.qml_engine import QMLEngine
 from askalot_qml.core.qml_topology import QMLTopology
 from askalot_qml.models.item_proxy import ItemProxy
-from askalot_qml.models.qml_state import QMLState
+from askalot_qml.models.qml_state import SOURCE_EXTERNAL_PREFILL, QMLState
+
+
+def _set_bits(mask: int) -> list[int]:
+    """The power-of-2 values set in a Roster ``iterateOver`` mask, low to high.
+
+    Roster iteration identity IS the bit value, so this yields the keys the
+    mask asks for — the set the declared ``labels`` are checked against.
+    """
+    return [1 << position for position in range(mask.bit_length()) if mask & (1 << position)]
 
 
 class FlowProcessor:
@@ -161,9 +171,12 @@ class FlowProcessor:
             )
             self.logger.warning(warning_msg)
 
-            # Collect warning in QMLState for data processing analysis
+            # Collect warning in QMLState for data processing analysis.
+            # `degraded`: the item was shown (or the answer kept) under a rule
+            # the engine could not actually apply — the data is present but a
+            # gate the instrument declared did not run.
             if item_id:
-                self.state.add_warning(item_id, condition_type, warning_msg)
+                self.state.add_warning(item_id, condition_type, warning_msg, severity="degraded")
 
             return True
 
@@ -179,8 +192,11 @@ class FlowProcessor:
             item_id: Optional item ID for warning collection
 
         Returns:
-            Updated context dictionary. On error, returns original context unchanged
-            and logs a warning (collected in QMLState for data analysis).
+            Updated context dictionary. When the block raises part-way through,
+            returns the partial environment (R15: the flow continues, the
+            assignments that completed stay); when the block is refused as
+            unsafe, nothing ran, so the original context is returned. Either
+            way the degradation is recorded in QMLState as `critical`.
         """
         if not code_block:
             return context  # No code block means no changes to context
@@ -189,13 +205,30 @@ class FlowProcessor:
             # Execute code and get the updated context
             result = self.python_runner.run_code(code=code_block, **context)
             return result
+        except CodeExecutionError as e:
+            # The block ran part-way. `critical`, not `degraded`: every value
+            # derived downstream from a half-built variable state may be wrong,
+            # which is a different claim than "an answer was kept that a gate
+            # would have rejected". This is the severity that excludes the
+            # survey from dataset construction (R16).
+            warning_msg = (
+                f"Error executing code block: {e}. "
+                f"Variables assigned before the failure are kept; downstream state may be wrong."
+            )
+            self.logger.warning(warning_msg)
+
+            if item_id:
+                self.state.add_warning(item_id, "codeblock", warning_msg, severity="critical")
+
+            return e.local_env
         except Exception as e:
+            # validate_code refused the block (AST-unsafe), so nothing executed
+            # and no variable the block was supposed to set exists downstream.
             warning_msg = f"Error executing code block: {e}. Context unchanged."
             self.logger.warning(warning_msg)
 
-            # Collect warning in QMLState for data processing analysis
             if item_id:
-                self.state.add_warning(item_id, "codeblock", warning_msg)
+                self.state.add_warning(item_id, "codeblock", warning_msg, severity="critical")
 
             return context
 
@@ -228,8 +261,15 @@ class FlowProcessor:
             item_proxy = self._build_item_proxy(item)
             init_context[item["id"]] = item_proxy
 
-        # Execute questionnaire initialization code block
-        init_context = self._execute_code_block(questionnaire_state.get_code_init(), init_context)
+        # Execute questionnaire initialization code block. Pass the reserved
+        # "codeInit" id (never a real item — RESERVED_ITEM_IDS) so a block that
+        # raises here records a `critical` warning through _execute_code_block's
+        # `if item_id:` guard; without an id the failure would continue the flow
+        # silently and the survey would escape the critical-warning dataset
+        # exclusion (R16) — the exact gap the item-level codeblock repair closed.
+        init_context = self._execute_code_block(
+            questionnaire_state.get_code_init(), init_context, item_id="codeInit"
+        )
 
         # update the outcomes of all the items from the init context
         variables = {k: v for k, v in init_context.items() if not isinstance(v, ItemProxy)}
@@ -407,7 +447,9 @@ class FlowProcessor:
                 f"iterateOver expression {iterate_over_expr!r} raised: {e}; skipping roster pass."
             )
             self.logger.warning(warning)
-            self.state.add_warning(item["id"], "roster_iterate_over", warning)
+            self.state.add_warning(
+                item["id"], "roster_iterate_over", warning, severity="informational"
+            )
             return None
 
         if not isinstance(mask, int) or isinstance(mask, bool) or mask < 0:
@@ -416,13 +458,30 @@ class FlowProcessor:
                 f"(must be a non-negative int); skipping roster pass."
             )
             self.logger.warning(warning)
-            self.state.add_warning(item["id"], "roster_iterate_over", warning)
+            self.state.add_warning(
+                item["id"], "roster_iterate_over", warning, severity="informational"
+            )
             return None
 
-        # Walk set bits low-to-high, intersect with declared labels.
-        # (Bits set in mask but NOT in labels are silently ignored — defensive,
-        # since loader validation typically prevents this in v1.)
+        # Walk set bits low-to-high, intersect with declared labels. A bit set
+        # in the mask with no declared label is still ignored for traversal —
+        # there is no label to iterate under — but it is recorded, because the
+        # difference between "the author declared two subjects" and "the
+        # respondent's answer asked for three" is invisible otherwise.
         active_keys = sorted(k for k in labels.keys() if mask & k)
+        undeclared = sorted(bit for bit in _set_bits(mask) if bit not in labels)
+        if undeclared:
+            warning = (
+                f"iterateOver mask {mask} sets bit(s) {undeclared} with no declared label; "
+                f"those iterations are not traversed."
+            )
+            self.logger.warning(warning)
+            # `informational`: no answer was accepted or rejected — the pass
+            # simply covers fewer subjects than the mask asked for.
+            self.state.add_warning(
+                item["id"], "roster_mask_undeclared", warning, severity="informational"
+            )
+
         self.state.set_roster_active_keys(block_id, active_keys)
 
         if active_keys:
@@ -551,7 +610,11 @@ class FlowProcessor:
           * the durable ``_group_asked`` tag cleared — the group no longer owns
             this answer, so a later sweep must not re-evict an already-clean item;
           * the item's ``history`` entry (and its lockstep
-            ``history_iter_key``) removed so the extractor never reaches it.
+            ``history_iter_key``) removed so the extractor never reaches it;
+          * the item's ``response_timing`` events removed — the answer is gone,
+            so its timing must go too, or a re-draw of the same item would
+            double-count the evicted attempt's duration in visit totals and in
+            the per-answer durations Bronze carries.
 
         A capped-Group item has no per-iteration identity (iter_key is always
         None), so every history occurrence of this item id is removed.
@@ -560,6 +623,7 @@ class FlowProcessor:
         item["outcome"] = None
         item["visited"] = False
         item.pop("_group_asked", None)
+        self.state.drop_timing_events_for_item(item_id)
 
         # Drop the item's history entry/entries, keeping history_iter_key in
         # lockstep (R9 — the extractor walks history, so nulling outcome alone
@@ -844,21 +908,38 @@ class FlowProcessor:
         questionnaire_state: QMLState,
         item_id: str,
         outcome: Any,
+        *,
+        source: str,
         skip_postcondition: bool = False,
     ) -> dict[str, Any]:
         """
         Process an item with the given outcome and return the updated context.
         Updates the item's outcome and context in the questionnaire state.
 
+        This is also the submission seam of the response-timing log (R7): the
+        answer's timing event is opened here (a no-op when a presentation seam
+        already opened it, so the respondent's own clock is preserved) and
+        closed once the answer is accepted. Keeping both halves here is what
+        gives every driver — the survey runtime, the API, the mass-fill job,
+        the external-input prefill — a timed answer from one insertion point.
+
         Args:
             questionnaire_state: The questionnaire state object
             item_id: The ID of the item to process
             outcome: The outcome value for the item
+            source: What produced this answer (R9), one of
+                ``askalot_qml.models.qml_state.TIMING_SOURCES``. Required and
+                keyword-only: only the caller's driver knows whether a person,
+                an API client, or a fill job supplied the value, and a default
+                here would tag machine answers as human ones.
             skip_postcondition: If True, skip postcondition validation.
                 Used for backward navigation where:
                 - The item will be marked as unvisited anyway
                 - The saved answer is just for convenience (restored when user returns)
                 - Real validation happens when user leaves the item going forward
+                It is also what makes the timing event UNCOMMITTED (KTD4): the
+                time was genuinely spent, but a convenience save is not an
+                answer attempt.
 
         Returns:
             Dictionary with success status and optional error message or output
@@ -868,8 +949,27 @@ class FlowProcessor:
         # Find the item in the questionnaire state
         current_item = questionnaire_state.get_item(item_id)
         if not current_item:
-            self.logger.error(f"Item {item_id} not found in questionnaire state")
+            warning_msg = f"Item {item_id} not found in questionnaire state"
+            self.logger.error(warning_msg)
+            # `degraded`: a caller submitted an answer the engine had nowhere to
+            # put. Nothing wrong was accepted, but a respondent's answer was
+            # dropped, and a survey that hits this has an id mismatch between
+            # what was presented and what the state holds.
+            questionnaire_state.add_warning(
+                item_id, "item_missing", warning_msg, severity="degraded"
+            )
             return {"success": False, "message": f"Item {item_id} not found"}
+
+        # Resolve the timing event's iteration key BEFORE anything else: the
+        # Roster post-processing below advances the block's current iteration
+        # once the pass is exhausted, so a key read after that point would close
+        # the event of the iteration the respondent is moving INTO.
+        timing_iter_key = questionnaire_state.current_iter_key(item_id)
+        # Idempotent: when a presentation seam already stamped this pair the
+        # original moment stands. A driver with no presentation seam (the API,
+        # the mass-fill job, prefill) gets its event here instead, with the
+        # near-zero duration that honestly describes a machine-supplied answer.
+        questionnaire_state.open_timing_event(item_id, timing_iter_key, source)
 
         # Clone the current context to avoid modifying the original
         new_context = copy.deepcopy(current_item["context"])
@@ -1047,12 +1147,212 @@ class FlowProcessor:
         # walk rather than force-visiting non-asked members.
         # ------------------------------------------------------------------
 
+        # Stamp submission. Only on the success path — a postcondition failure
+        # leaves the answerer sitting on the item, so its event stays open and
+        # keeps accruing until the answer is actually accepted.
+        questionnaire_state.close_timing_event(
+            item_id, timing_iter_key, committed=not skip_postcondition
+        )
+
         # Add output messages to the result if any
         result = {"success": True}
         if output_messages:
             result["output"] = output_messages
 
         return result
+
+    @staticmethod
+    def _warn_prefill_declined(
+        questionnaire_state: QMLState, item_id: str, gate: str, reason: str
+    ) -> None:
+        """Record that a supplied external value was declined, naming the gate.
+
+        The gate is the warning TYPE rather than prose inside the message, so a
+        campaign-level rollup can separate "the instrument refused this value"
+        from "the item was never going to be asked" without parsing text. The
+        message carries the reason and never the value — an external value is
+        respondent data (R17, and the same non-PII rule the provenance marker
+        follows).
+        """
+        message = f"External prefill declined for {item_id}: {reason}."
+        questionnaire_state.add_warning(
+            item_id, f"external_prefill_{gate}", message, severity="degraded"
+        )
+
+    def apply_external_inputs(
+        self,
+        questionnaire_state: QMLState,
+        injection_map: dict[str, Any],
+        sources: dict[str, str] | None = None,
+    ) -> dict[str, Any]:
+        """Auto-answer `external: true` items at survey init from an injection map.
+
+        QML External Inputs plan, U2 (R9/R10/R11/R12 write side). The service
+        layer (U5) resolves each external item's value from the respondent
+        record and passes ``{item_id: value}``; this method applies it through
+        the normal answer path so an injected value is indistinguishable from a
+        real answer downstream, apart from its provenance flag.
+
+        For each ``external`` item, in navigation order:
+          1. Skip if not eligible for prefill (not a plain Question, or it lives
+             in a Roster/capped-Group block — prefill of a repeated/drawn item
+             is undefined in v1; it is asked in the normal flow).
+          2. Evaluate its effective precondition; skip when False — a
+             precondition-false external must stay absent (running its codeBlock
+             at init would corrupt downstream branching). ``process_item`` does
+             NOT check the precondition, hence this explicit gate.
+          3. Validate the injected value against the item's declared domain
+             (``process_item`` never range-checks the outcome); skip if
+             out-of-domain — the item is asked in the normal flow (AE3/R11).
+          4. ``process_item(state, id, value)`` — validates the postcondition
+             and runs the codeBlock, propagating context to later items.
+          5. On ``success=True``: append the item to history (iter_key=None) so
+             the history-keyed Bronze extractor (U3) emits it, and set the
+             externally-supplied provenance marker. On ``success=False`` (a
+             postcondition failure) leave it unresolved — no history entry, no
+             provenance — so it is asked in the flow (fail-safe, KTD5).
+
+        Ordering: because externals are processed in navigation order and
+        ``process_item`` propagates variables forward, an external item whose
+        codeBlock feeds a *later* external item resolves in dependency order.
+
+        Idempotent via the ``external_inputs_applied`` sentinel — both runtimes
+        re-construct the FlowProcessor on every call, so a re-entrant init must
+        not re-inject or re-run external codeBlocks.
+
+        ``sources`` (optional) maps each item id to its non-PII source label
+        (e.g. ``custom_attributes.rotate_out``) for the provenance marker U3
+        surfaces in Bronze extraction. Absent, or missing an entry, the item id
+        is recorded as the label (presence-only provenance). The source LABEL —
+        never the resolved value — is stored.
+
+        Returns a PII-free summary ``{applied, skipped, item_ids}`` for the
+        service layer to log (item ids + counts, never the resolved values).
+        """
+        summary = {"applied": 0, "skipped": 0, "item_ids": []}
+
+        if questionnaire_state.external_inputs_applied():
+            self.logger.debug("External inputs already applied; skipping re-injection")
+            return summary
+        # Mark applied up-front: even a pass that injects nothing (empty/all-
+        # invalid map) is "done", so a re-entrant init does not retry.
+        questionnaire_state.mark_external_inputs_applied()
+
+        if not injection_map:
+            return summary
+
+        all_items = questionnaire_state.get_all_items()
+        navigation_path = questionnaire_state.get_navigation_path()
+
+        for item_id in navigation_path:
+            item = questionnaire_state.get_item(item_id)
+            if not item:
+                continue
+            # Nothing supplied for this item — there is no decline to record.
+            # Tested before the gates below so each of them fires only on a
+            # value the platform actually tried to apply.
+            if item_id not in injection_map:
+                continue
+
+            # Every gate below declines a supplied value, and each records which
+            # one declined it (R17). They are all `degraded`: a value the
+            # platform held about this respondent did not reach the dataset, so
+            # the item is either asked again or left absent.
+            #
+            # Guard (plan): only `external` items are injectable — a value for a
+            # non-external item is ignored.
+            if not item.get("external"):
+                self._warn_prefill_declined(
+                    questionnaire_state,
+                    item_id,
+                    "not_external",
+                    "item is not declared `external: true`",
+                )
+                continue
+            # v1 scope: only plain single-control Questions outside Roster/Group
+            # blocks are prefill-eligible. A repeated/drawn external item has no
+            # well-defined single value, so it is asked in the normal flow.
+            if item.get("_roster_block_id") or item.get("_group_block_id"):
+                self._warn_prefill_declined(
+                    questionnaire_state,
+                    item_id,
+                    "block_kind",
+                    "item is repeated or drawn (Roster/Group), so a single prefilled "
+                    "value has no well-defined iteration",
+                )
+                summary["skipped"] += 1
+                continue
+
+            value = injection_map[item_id]
+
+            # (2) Precondition gate — a precondition-false external stays absent.
+            if not self._check_preconditions(item, all_items):
+                self._warn_prefill_declined(
+                    questionnaire_state,
+                    item_id,
+                    "precondition",
+                    "the item's precondition is false, so it is not asked at all",
+                )
+                summary["skipped"] += 1
+                continue
+
+            # (3) Domain validation — out-of-domain value is not applied (AE3).
+            # The one decline that is a rejected ANSWER rather than a skipped
+            # item: the platform held a value for this respondent that the
+            # instrument's own domain refuses.
+            if not outcome_in_domain(item, value):
+                self.logger.info(
+                    "external input for %s rejected: value out of declared domain", item_id
+                )
+                self._warn_prefill_declined(
+                    questionnaire_state,
+                    item_id,
+                    "domain",
+                    "the supplied value is outside the item's declared domain",
+                )
+                summary["skipped"] += 1
+                continue
+
+            # (4) Drive the normal answer path (postcondition + codeBlock).
+            # The timing event opens and closes inside this one call, so a
+            # prefilled item records zero elapsed time (R9). That is the honest
+            # measurement — nobody read the question — and it is exactly why the
+            # source tag matters: without it these zeros would drag a
+            # respondent-duration median toward the floor.
+            result = self.process_item(
+                questionnaire_state, item_id, value, source=SOURCE_EXTERNAL_PREFILL
+            )
+            if not result.get("success", False):
+                # Postcondition failed — leave unresolved (no history, no
+                # provenance). Asked in the flow. Do NOT mark visited (process_
+                # item already returned early before the visited flip on a
+                # postcondition failure).
+                self._warn_prefill_declined(
+                    questionnaire_state,
+                    item_id,
+                    "postcondition",
+                    f"the supplied value fails the item's postcondition ({result.get('message')})",
+                )
+                summary["skipped"] += 1
+                continue
+
+            # (5) Success — append to history (non-roster: iter_key=None) so the
+            # history-walking Bronze extractor emits it, and flag provenance with
+            # the item's non-PII source label (falls back to the item id when no
+            # sources map is supplied — presence-only provenance).
+            source_label = (sources or {}).get(item_id, item_id)
+            questionnaire_state.add_to_history(item_id, iter_key=None)
+            questionnaire_state.set_external_provenance(item_id, source_label)
+            summary["applied"] += 1
+            summary["item_ids"].append(item_id)
+
+        self.logger.info(
+            "external inputs applied=%d skipped=%d for %d mapped item(s)",
+            summary["applied"],
+            summary["skipped"],
+            len(injection_map),
+        )
+        return summary
 
     def _backward_navigate(
         self,

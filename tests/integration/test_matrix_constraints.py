@@ -21,11 +21,17 @@ These tests exercise the RUNTIME path only (Python ``eval`` via
 ``PythonRunner``, which supports list comprehensions, ``all``, ``sum``,
 ``len``, ``set``, two-arg ``range``, and subscript reads). The
 complementary **static** validation path — ``ItemClassifier`` /
-``GlobalFormula`` over Z3 — silently drops these postconditions today;
-that gap is tracked in ``test_matrix_static_gap.py``.
+``GlobalFormula`` over Z3 — now LOWERS the canonical folded shapes of
+these patterns (``sum([...]) == K``, ``len(set([...])) == N``,
+``all([...])`` over comprehensions with **literal** range bounds), so they
+classify CONSTRAINING rather than being silently dropped (closed per
+``docs/plans/2026-05-05-002-feat-z3-listcomp-matrix-plan.md``).
+``test_matrix_static_gap.py`` covers that static path and the residual
+runtime-only variants (``min``/``max`` folds, non-literal range bounds,
+partial distinctness) that still fall back to a ``coverage_gap``.
 
 Reference:
-- ``shared/modules/askalot_ai/askalot_ai/agents/designer/.claude/skills/qml-syntax/matrix-constraint-patterns.md``
+- ``shared/modules/askalot_ai/askalot_ai/plugin/skills/qml-syntax/matrix-constraint-patterns.md``
 - ``shared/modules/askalot_qml/askalot_qml/core/python_runner.py``
   (safe_builtins expose ``all``, ``any``, ``sum``, ``len``, ``set``,
   ``range``, ``map``, ``filter``, ``sorted``, ``list``, …).
@@ -39,7 +45,7 @@ from pathlib import Path
 import pytest
 from askalot_qml.core.flow_processor import FlowProcessor
 from askalot_qml.core.qml_loader import QMLLoader
-from askalot_qml.models.qml_state import QMLState
+from askalot_qml.models.qml_state import SOURCE_RESPONDENT, QMLState
 
 FIXTURES_DIR = Path(__file__).parent.parent / "fixtures"
 
@@ -70,7 +76,7 @@ class TestMatrixSymmetryRuntime:
             [3, 6, 10, 8],
             [5, 4, 8, 10],
         ]
-        result = processor.process_item(state, self.ITEM_ID, symmetric)
+        result = processor.process_item(state, self.ITEM_ID, symmetric, source=SOURCE_RESPONDENT)
         assert result["success"] is True, result
 
     def test_asymmetric_matrix_rejected_with_hint(self):
@@ -85,7 +91,7 @@ class TestMatrixSymmetryRuntime:
             [3, 6, 10, 8],
             [5, 4, 8, 10],
         ]
-        result = processor.process_item(state, self.ITEM_ID, asymmetric)
+        result = processor.process_item(state, self.ITEM_ID, asymmetric, source=SOURCE_RESPONDENT)
         assert result["success"] is False
         assert "relationship" in result["message"].lower()
 
@@ -110,7 +116,7 @@ class TestMatrixFixedSumRuntime:
             [50, 10, 30, 10],
             [10, 40, 40, 10],
         ]
-        result = processor.process_item(state, self.ITEM_ID, budget)
+        result = processor.process_item(state, self.ITEM_ID, budget, source=SOURCE_RESPONDENT)
         assert result["success"] is True, result
 
     def test_row_sum_not_100_rejected_with_hint(self):
@@ -125,7 +131,7 @@ class TestMatrixFixedSumRuntime:
             [50, 10, 30, 10],  # sum = 100 ✓
             [10, 40, 40, 10],  # sum = 100 ✓
         ]
-        result = processor.process_item(state, self.ITEM_ID, bad_budget)
+        result = processor.process_item(state, self.ITEM_ID, bad_budget, source=SOURCE_RESPONDENT)
         assert result["success"] is False
         assert "sum" in result["message"].lower()
 
@@ -149,7 +155,7 @@ class TestMatrixRankingRuntime:
             [4, 3, 2, 1],
             [2, 4, 1, 3],
         ]
-        result = processor.process_item(state, self.ITEM_ID, ranks)
+        result = processor.process_item(state, self.ITEM_ID, ranks, source=SOURCE_RESPONDENT)
         assert result["success"] is True, result
 
     def test_duplicate_rank_rejected_with_hint(self):
@@ -163,7 +169,7 @@ class TestMatrixRankingRuntime:
             [1, 1, 2, 2],  # duplicates — set has size 2, not 4
             [2, 4, 1, 3],
         ]
-        result = processor.process_item(state, self.ITEM_ID, ranks)
+        result = processor.process_item(state, self.ITEM_ID, ranks, source=SOURCE_RESPONDENT)
         assert result["success"] is False
         assert "rank" in result["message"].lower() or "once" in result["message"].lower()
 

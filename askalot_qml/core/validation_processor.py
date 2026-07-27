@@ -18,10 +18,7 @@ from askalot_qml.core.qml_engine import QMLEngine
 from askalot_qml.models.qml_state import QMLState
 from askalot_qml.z3.item_classifier import ItemClassifier
 
-try:
-    from askalot_common.tracing import create_span
-except ImportError:
-    create_span = None
+from askalot_common.tracing import create_span
 
 
 class ValidationProcessor:
@@ -75,19 +72,9 @@ class ValidationProcessor:
         try:
             self.logger.info("Running Z3 validation...")
             item_count = len(self.engine.get_items())
-            span_ctx = (
-                create_span("qml.z3_validation", {"item_count": item_count})
-                if create_span
-                else None
-            )
-            if span_ctx:
-                span_ctx.__enter__()
-            try:
+            with create_span("qml.z3_validation", {"item_count": item_count}):
                 classifier = ItemClassifier(self.engine.static_builder)
                 self._classifications = classifier.classify_all_items()
-            finally:
-                if span_ctx:
-                    span_ctx.__exit__(None, None, None)
             self.logger.info("Z3 validation completed successfully")
         except Exception as e:
             self.logger.error(f"Z3 validation failed: {e}", exc_info=True)
@@ -106,7 +93,7 @@ class ValidationProcessor:
             self._postcondition_records = self.engine.static_builder.analyze_postconditions()
         return self._postcondition_records
 
-    def to_issues(self) -> list[dict[str, Any]]:
+    def to_issues(self, *, deep: bool = False) -> list[dict[str, Any]]:
         """
         Translate Z3 item classifications into a graded list of validation issues.
 
@@ -119,6 +106,19 @@ class ValidationProcessor:
         lives here, beside the classifier that produces its input, so every
         consumer (the MCP ``validate_qml_file`` tool, future UI surfaces) renders
         identical issues without re-implementing the mapping.
+
+        **Validation hierarchy coverage.** Beyond the per-item classifications
+        (Level 1) and the structural lints, this channel also surfaces the higher
+        hierarchy levels via :meth:`_hierarchy_issues`, so the publish gate's
+        "formally verified before fielding" promise is not limited to per-item
+        properties: Level 2 global satisfiability (``global_unsat`` — a
+        questionnaire that traps every respondent) and Level 3 dependency cycles
+        (``dependency_cycle`` — ambiguous evaluation order) are ERRORS run
+        unconditionally (Level 2 is one solver call; Level 3 is computed at engine
+        init). Level 4 accumulated dead code (``accumulated_dead_code``, WARNING)
+        is O(items²) solver work, so it runs only when ``deep`` is set — the
+        publish gate passes ``deep=True``; the interactive ``validate_qml_file``
+        tool keeps the default so the edit-validate loop stays fast.
 
         A single pass covers both per-item statuses (NEVER, INFEASIBLE, ...) and
         coverage gaps carried alongside them. Block-level gaps keyed by block_id
@@ -138,6 +138,17 @@ class ValidationProcessor:
             ``type``, ``message``, and ``suggestion``.
         """
         classifications = self.get_item_classifications()
+
+        # Items whose postcondition merely restates the control's own min/max
+        # (duplicate_input_bound, emitted as a WARNING by _hygiene_issues). Such a
+        # postcondition is TAUTOLOGICAL by construction — the domain base already
+        # implies it — so the classifier ALSO flags it tautological: one authoring
+        # defect, two overlapping findings (#167). The more specific
+        # duplicate_input_bound wins; the ``tautological_postcondition`` branch
+        # below suppresses these to avoid the double-report.
+        duplicate_bound_items = {
+            r["item_id"] for r in self._get_postcondition_records() if r["duplicate_input_bound"]
+        }
 
         issues: list[dict[str, Any]] = []
         for item_id, classification in classifications.items():
@@ -193,8 +204,23 @@ class ValidationProcessor:
                     }
                 )
 
-            # Tautological postconditions (warning, not error)
-            if post_invariant == "TAUTOLOGICAL":
+            # Tautological postconditions (warning, not error). Suppressed for a
+            # vacuous (NEVER-reachable) item: UNSAT(B ∧ P ∧ ¬Q) is *vacuously*
+            # true whenever P is unsatisfiable, so the classifier's TAUTOLOGICAL
+            # label there is an artifact of unreachability, not a redundant rule.
+            # Reporting it would mislabel the finding and send the author to
+            # "remove the redundant postcondition" instead of the real problem —
+            # the item is unreachable, already surfaced as ``unreachable_item``
+            # above. Checking vacuity first is the VACUOUS-before-TAUTOLOGICAL
+            # order fix (#169). The separate ``vacuous_postcondition`` warning was
+            # removed as pure noise: it fired iff ``pre_status == NEVER``, i.e.
+            # exactly when ``unreachable_item`` already fires, so it doubled every
+            # dead-item finding without adding an action.
+            if (
+                post_invariant == "TAUTOLOGICAL"
+                and not post_vacuous
+                and item_id not in duplicate_bound_items
+            ):
                 issues.append(
                     {
                         "item_id": item_id,
@@ -204,21 +230,6 @@ class ValidationProcessor:
                         "suggestion": (
                             f"The postcondition of '{item_id}' is always satisfied. "
                             f"It can be safely removed unless it serves as documentation."
-                        ),
-                    }
-                )
-
-            # Vacuous postconditions (warning)
-            if post_vacuous and pre_status == "NEVER":
-                issues.append(
-                    {
-                        "item_id": item_id,
-                        "severity": "warning",
-                        "type": "vacuous_postcondition",
-                        "message": f"Item '{item_id}' has a vacuous postcondition (item is never reached).",
-                        "suggestion": (
-                            f"The postcondition of '{item_id}' is technically valid but "
-                            f"the item is never reached, so it has no effect."
                         ),
                     }
                 )
@@ -287,9 +298,20 @@ class ValidationProcessor:
                                 f"Reference '{suggested}' instead."
                                 if suggested
                                 else (
-                                    f"Produce '{identifier}' in a codeInit or codeBlock before "
-                                    f"it is read, or correct the reference to an existing item "
-                                    f"outcome."
+                                    # Ordered so the FIRST option is the one the other
+                                    # lints endorse — the old wording led with "produce it
+                                    # in codeInit/codeBlock", which is exactly the
+                                    # frozen-variable (codeInit) and pass-through-alias
+                                    # (codeBlock) anti-patterns those lints then flag (#167).
+                                    f"Reference an existing item's outcome directly "
+                                    f"(e.g. 'q_{identifier}.outcome') if one measures "
+                                    f"'{identifier}'; if the value comes from outside the "
+                                    f"interview (prefill, sample file, roster, proxy flag), "
+                                    f"add an explicit admin/preamble question and gate on ITS "
+                                    f"outcome; only introduce a variable when '{identifier}' "
+                                    f"is genuinely derived (accumulate / classify / "
+                                    f"consolidate) and add a codeBlock that actually produces "
+                                    f"it before it is read."
                                 )
                             ),
                         }
@@ -325,6 +347,46 @@ class ValidationProcessor:
                         }
                     )
 
+                # Skipped-condition coverage gap (#165, WARNING). A precondition
+                # or postcondition the static translator could not fully lower to
+                # Z3 — an unsupported Call / ListComp / GeneratorExp, or a
+                # Subscript over an outcome the model does not represent per-cell
+                # (a QuestionGroup vector ``qg.outcome[i]`` — QuestionGroups carry
+                # a single scalar var, no per-question cells, so the read has no
+                # Z3 target). The gap was RECORDED in ``coverage_gaps`` but, before
+                # #165, no ``to_issues`` branch surfaced it, so the author saw a
+                # clean file while the item's classification silently fell back to
+                # a trivial default (a skipped precondition → ALWAYS, a skipped
+                # postcondition → TAUTOLOGICAL) and only the runtime enforced the
+                # rule. WARNING, not error: the runtime still applies the predicate
+                # and some forms are legitimately runtime-only — but the author
+                # must know the static guarantee does not cover it.
+                elif gap_kind in ("precondition", "postcondition"):
+                    nodes = ", ".join(gap.get("unsupported_nodes", []) or []) or "an unsupported construct"
+                    issues.append(
+                        {
+                            "item_id": item_id,
+                            "severity": "warning",
+                            "type": "skipped_condition",
+                            "message": (
+                                f"Item '{item_id}' has a {gap_kind} the static validator "
+                                f"could not lower to Z3 ({nodes}), so it was skipped: the "
+                                f"item's {gap_kind} classification fell back to a trivial "
+                                f"default and only the runtime enforces the rule — it sits "
+                                f"outside the verified envelope, so reachability/invariant "
+                                f"results for '{item_id}' may be wrong."
+                            ),
+                            "suggestion": (
+                                "Rewrite the condition into the statically-verified subset "
+                                "(item outcomes, bound variables, and the supported folds "
+                                "over matrix cells), or accept that this rule is "
+                                "runtime-only and unverified. A QuestionGroup vector "
+                                "outcome 'qg.outcome[i]' is not yet modeled per-question — "
+                                "gate on a dedicated item's outcome instead."
+                            ),
+                        }
+                    )
+
         # U3 hygiene lints (WARNING). Computed here — beside the severity-and-
         # message policy for every other issue type — from the builder's
         # read/write census and its postcondition analysis, NOT via the
@@ -333,6 +395,160 @@ class ValidationProcessor:
         # AST findings surfaced through ItemClassifier. All three are warnings,
         # so they never flip Portor's error-only ``is_valid`` gate.
         issues.extend(self._hygiene_issues())
+
+        # Validation hierarchy Levels 2–4 (global satisfiability, dependency
+        # cycles, accumulated dead code). Kept out of the per-item loop because
+        # they are whole-questionnaire properties, not per-item classifications.
+        issues.extend(self._hierarchy_issues(deep=deep))
+
+        return issues
+
+    def _hierarchy_issues(self, *, deep: bool) -> list[dict[str, Any]]:
+        """Surface validation-hierarchy Levels 2–4 as graded issues.
+
+        The three levels are implemented and tested in ``askalot_qml/z3/`` but,
+        before #164, no production channel ran them — only Level 1 reached
+        ``to_issues``. Consequences: a globally-UNSAT questionnaire (traps every
+        respondent) and a cyclic one (ambiguous evaluation order) both passed the
+        publish gate. This method closes that gap, reusing the already-built
+        ``engine`` (StaticBuilder + topology) so no work is duplicated.
+
+        Severity policy:
+
+        - **Level 2 — global satisfiability** (``GlobalFormula``, one solver
+          call): ``global_unsat`` ERROR when ``F := B ∧ ∧(P_i ⇒ Q_i)`` is UNSAT
+          (no valid completion exists — every path is trapped). ``UNKNOWN`` from
+          the solver is a ``global_unknown`` WARNING (soundness unproven, rare for
+          the linear-integer domain), never a false block.
+        - **Level 3 — dependency cycles** (computed at engine init, free):
+          ``dependency_cycle`` ERROR per cycle — a variable feedback loop makes
+          evaluation order ambiguous. The topology linearizes cycles so the
+          runtime does not crash, but the author must break the loop.
+        - **Level 4 — accumulated dead code** (``PathBasedValidator``, O(items²)
+          solver work): ``accumulated_dead_code`` WARNING per item that is
+          CONDITIONAL per-item yet unreachable once predecessor postconditions
+          accumulate. WARNING (not error) because the analysis is
+          topological-order-dependent; gated behind ``deep`` so it never slows the
+          interactive validate loop (only the publish gate opts in).
+
+        Each level is wrapped defensively (log + skip on failure) so a single
+        solver hiccup degrades coverage rather than nuking the whole issue list —
+        matching :meth:`get_item_classifications`, which swallows Z3 errors the
+        same way.
+        """
+        from askalot_qml.z3.global_formula import GlobalFormula
+
+        issues: list[dict[str, Any]] = []
+        builder = self.engine.static_builder
+
+        # Level 2 — global satisfiability F := B ∧ ∧(P_i ⇒ Q_i).
+        try:
+            gf = GlobalFormula(builder)
+            result = gf.check()
+            if result.status == "UNSAT":
+                conflicting = gf.get_conflicting_items()
+                where = (
+                    f" The conflict involves: {', '.join(conflicting)}."
+                    if conflicting
+                    else ""
+                )
+                issues.append(
+                    {
+                        "item_id": None,
+                        "severity": "error",
+                        "type": "global_unsat",
+                        "message": (
+                            "The questionnaire has no valid completion: accumulated "
+                            "postconditions conflict, so every respondent is trapped at "
+                            f"runtime (global formula B ∧ ∧(Pᵢ ⇒ Qᵢ) is UNSAT).{where}"
+                        ),
+                        "suggestion": (
+                            "Relax or remove the conflicting postconditions so at least "
+                            "one set of answers satisfies every reachable item's "
+                            "postcondition simultaneously."
+                        ),
+                    }
+                )
+            elif result.status == "UNKNOWN":
+                issues.append(
+                    {
+                        "item_id": None,
+                        "severity": "warning",
+                        "type": "global_unknown",
+                        "message": (
+                            "Global satisfiability could not be decided by the solver, so "
+                            "the questionnaire's soundness is unproven (it may or may not "
+                            "have a valid completion)."
+                        ),
+                        "suggestion": (
+                            "Simplify the postcondition logic (fewer non-linear or deeply "
+                            "nested constraints) so the solver can decide it."
+                        ),
+                    }
+                )
+        except Exception as e:
+            self.logger.warning(f"Global satisfiability check failed: {e}", exc_info=True)
+
+        # Level 3 — dependency cycles.
+        try:
+            if self.engine.has_cycles():
+                for cycle in self.engine.get_cycles():
+                    if not cycle:
+                        continue
+                    path = " → ".join(cycle) + f" → {cycle[0]}"
+                    issues.append(
+                        {
+                            "item_id": cycle[0],
+                            "severity": "error",
+                            "type": "dependency_cycle",
+                            "message": (
+                                f"Items form a dependency cycle ({path}): each reads a "
+                                "value the next produces, so their evaluation order is "
+                                "ambiguous."
+                            ),
+                            "suggestion": (
+                                "Break the loop by removing one of the cross-references — "
+                                "give the cycle a single acyclic direction (one item "
+                                "produces, the others read)."
+                            ),
+                        }
+                    )
+        except Exception as e:
+            self.logger.warning(f"Cycle detection failed: {e}", exc_info=True)
+
+        # Level 4 — accumulated dead code (deep only; O(items²) solver work).
+        if deep:
+            from askalot_qml.z3.path_based_validation import PathBasedValidator
+
+            try:
+                path_result = PathBasedValidator(builder, self.engine.topology).validate()
+                for item_id in path_result.dead_code_items:
+                    item_result = path_result.item_results.get(item_id)
+                    preds = (
+                        ", ".join(item_result.predecessors)
+                        if item_result and item_result.predecessors
+                        else "earlier items"
+                    )
+                    issues.append(
+                        {
+                            "item_id": item_id,
+                            "severity": "warning",
+                            "type": "accumulated_dead_code",
+                            "message": (
+                                f"Item '{item_id}' is reachable in isolation but becomes "
+                                f"unreachable once the postconditions of preceding items "
+                                f"({preds}) accumulate — it is dead code on every valid "
+                                f"path."
+                            ),
+                            "suggestion": (
+                                f"Loosen the precondition of '{item_id}' or the upstream "
+                                f"postconditions that contradict it, or remove '{item_id}' "
+                                f"if it is genuinely unreachable."
+                            ),
+                        }
+                    )
+            except Exception as e:
+                self.logger.warning(f"Path-based dead-code check failed: {e}", exc_info=True)
 
         return issues
 
@@ -362,23 +578,28 @@ class ValidationProcessor:
             # never ``None`` (every issue carries a real owner string, and
             # ``"codeInit"`` is now a reserved id so it can't shadow a real item).
             if entry["reads"] == 0:
-                owner = next(
-                    (a["context"] for a in assignments if a["context"] != "codeInit"),
-                    "codeInit",
-                )
+                # Enumerate EVERY writer site (#167): the finding used to name
+                # only the first assigning item, so a fixer who trusted it removed
+                # one dead write and left the rest (LFS: ``path`` written by six
+                # codeBlocks, flagged at one). ``owner`` remains the first real
+                # item (or the ``"codeInit"`` label) as the issue's anchor; the
+                # message lists all sites so the fixer removes them all.
+                sites = list(dict.fromkeys(a["context"] for a in assignments))
+                owner = next((c for c in sites if c != "codeInit"), "codeInit")
+                site_list = ", ".join(f"'{s}'" for s in sites)
                 issues.append(
                     {
                         "item_id": owner,
                         "severity": "warning",
                         "type": "write_only_variable",
                         "message": (
-                            f"Variable '{var_name}' is assigned but never read "
-                            f"(write-only). Its value gates nothing, so every "
-                            f"assignment is dead state."
+                            f"Variable '{var_name}' is assigned at {len(sites)} site(s) "
+                            f"({site_list}) but never read (write-only). Its value gates "
+                            f"nothing, so every assignment is dead state."
                         ),
                         "suggestion": (
-                            f"Remove '{var_name}' and its assignments, or add the "
-                            f"condition that was meant to consume it."
+                            f"Remove '{var_name}' and all {len(sites)} of its assignments, "
+                            f"or add the condition that was meant to consume it."
                         ),
                     }
                 )
@@ -411,10 +632,58 @@ class ValidationProcessor:
                     }
                 )
 
+        # Frozen-variable gates (#169). A frozen variable — initialized in
+        # codeInit, never reassigned by any codeBlock — is a compile-time
+        # constant, so every precondition/postcondition that reads it is
+        # statically decided (always true or always false) while looking
+        # conditional. The classifier already USES this fact for reachability
+        # (get_reachability_base), but before #169 the defect had no direct lint:
+        # the always-FALSE polarity surfaced only indirectly as N downstream
+        # ``unreachable_item`` errors (root cause unstated), and the always-TRUE
+        # polarity produced ZERO diagnostics — a gate the instrument specified
+        # silently enforcing nothing. This ERROR names the root cause and lists
+        # the affected gates; it groups (does not replace) the symptom findings,
+        # which stay per-location and actionable. Structural — no solver calls.
+        for var_name, locations in builder.get_frozen_variable_gates().items():
+            loc_list = ", ".join(f"'{loc}'" for loc in locations)
+            issues.append(
+                {
+                    "item_id": "codeInit",
+                    "severity": "error",
+                    "type": "frozen_variable",
+                    "message": (
+                        f"Variable '{var_name}' is initialized in codeInit and read by the "
+                        f"condition(s) of {len(locations)} item(s)/block(s) ({loc_list}) but "
+                        f"never assigned by any codeBlock — it always holds its initial "
+                        f"value, so every gate on it is statically decided (always true or "
+                        f"always false) while looking conditional."
+                    ),
+                    "suggestion": (
+                        f"If '{var_name}' is an external value (prefill, sample file, "
+                        f"roster, proxy flag), model it as a normal question with a real "
+                        f"input domain, mark that item 'external: true', and gate on its "
+                        f"outcome — the platform pre-answers it at survey init from the "
+                        f"respondent record when a value is available and asks it otherwise; "
+                        f"if it is meant to be derived, add a codeBlock that actually "
+                        f"produces it; if it is a true constant, fold it into the predicates "
+                        f"and drop the dead gate."
+                    ),
+                }
+            )
+
+        # One warning per ITEM, not per postcondition predicate (#167): an item
+        # that restates its min in one condition and its max in another (or has
+        # the same bound in two conditions) is a single authoring defect, but
+        # analyze_postconditions yields one record per predicate — dedup here so
+        # the item is flagged once.
+        seen_duplicate_bound: set[str] = set()
         for record in self._get_postcondition_records():
             if not record["duplicate_input_bound"]:
                 continue
             item_id = record["item_id"]
+            if item_id in seen_duplicate_bound:
+                continue
+            seen_duplicate_bound.add(item_id)
             issues.append(
                 {
                     "item_id": item_id,
@@ -599,6 +868,30 @@ class ValidationProcessor:
             return "\n".join(lines)
 
         return base_report
+
+    def get_quality_report(self, issues: list[dict[str, Any]] | None = None) -> dict[str, Any]:
+        """Compute the D2-D8 quality scorecard over this validation's artifacts.
+
+        Thin delegate to :func:`askalot_qml.core.quality_metrics.compute_quality_report`
+        — the scorecard is a *consumer* of validation artifacts, not a
+        validation level, so the metric definitions live in their own module.
+        Advisory only: nothing here feeds ``is_valid`` or the publish gate.
+
+        Args:
+            issues: Pre-computed ``to_issues()`` output. Callers that already
+                have it (the publish gate computes it first) pass it to avoid a
+                redundant second walk; ``None`` falls back to computing it here.
+        """
+        from askalot_qml.core.quality_metrics import compute_quality_report
+
+        return compute_quality_report(
+            state=self.state,
+            topology=self.engine.topology,
+            builder=self.engine.static_builder,
+            classifications=self.get_item_classifications(),
+            postcondition_records=self._get_postcondition_records(),
+            issues=self.to_issues() if issues is None else issues,
+        )
 
     def get_statistics(self) -> dict[str, Any]:
         """

@@ -976,27 +976,26 @@ def _classification_fingerprint(builder: StaticBuilder) -> str:
 class TestPresentPrimitiveCharacterization(unittest.TestCase):
     """Characterization of the shared ``present(item, k)`` primitive.
 
-    Two halves with DIFFERENT contracts after U3:
+    Two halves with DIFFERENT contracts:
 
-    - **Sequence path (still a proven no-op):** off the primitive's two
-      intended callers (Roster/Sample) it degrades to ``present := True`` so
-      the emitted constraint set and classification are byte-identical to the
-      pre-U2 model. ``test_sequence_only_fixture_constraint_shape_unchanged``
-      is the regression guard — U3 must NOT touch Sequence.
-    - **Roster path (U3 now fires):** the bit-guard caller emits exactly
+    - **Off its callers (a proven no-op):** an uncapped Group registers
+      nothing, so the antecedent degrades to the literal ``True`` and the
+      emitted constraint set and classification match the unconditional model
+      exactly. ``test_present_is_noop_off_roster_and_capped_group`` is the
+      regression guard — the primitive must stay invisible on that path.
+    - **Roster path (the bit-guard fires):** emits exactly
       ``inner_items × len(labels)`` additional present-definition constraints.
-      The constraint count moved on purpose (the deliberate linear growth);
-      the *classification fingerprint* must still be regression-clean and
-      deterministic — that is what the roster test now pins."""
+      That count grows linearly in ``len(labels)`` by design; the
+      *classification fingerprint* must still be regression-clean and
+      deterministic — that is what the roster test pins."""
 
-    # roster_numeric.qml: one Sequence block (q_family_count) + one Roster
+    # roster_numeric.qml: one Group block (q_family_count) + one Roster
     # block (q_member_name, q_member_age) with 4 label keys (1,2,4,8). No
     # pre/postconditions, and `family_mask = 2 ** ... - 1` uses `**` which the
     # AST→Z3 lowering does not model (no codeblock constraint emitted).
     #
-    # PRE-U3 the Roster was a no-op (0 constraints). U3 (this unit) makes the
-    # primitive's two intended callers fire: each Roster inner item emits ONE
-    # bit-guard ``present(item, K) == ((E / K) % 2 == 1)`` constraint per
+    # Each Roster inner item emits ONE bit-guard
+    # ``present(item, K) == ((E / K) % 2 == 1)`` constraint per
     # label key. 2 inner items × 4 keys = 8 bit-guard constraints + 1
     # non-negativity constraint for the single Roster block's iterateOver
     # expression = 9 constraints total. Codeblock count is still 0 (`**`
@@ -1004,10 +1003,10 @@ class TestPresentPrimitiveCharacterization(unittest.TestCase):
     EXPECTED_ROSTER_NUMERIC_CONSTRAINTS = 9
     EXPECTED_ROSTER_NUMERIC_CODEBLOCK = 0
 
-    def test_sequence_only_fixture_constraint_shape_unchanged(self):
-        """A pure Sequence questionnaire emits the same constraint shape as
-        before U2 — the primitive contributes nothing off the Sample/Roster
-        path."""
+    def test_present_is_noop_off_roster_and_capped_group(self):
+        """A plain uncapped-Group questionnaire emits the unconditional
+        constraint shape — the primitive contributes nothing off the Roster /
+        capped-Group paths."""
         state = create_questionnaire(
             [
                 {"id": "q1", "input": {"control": "Slider", "min": 1, "max": 5}},
@@ -1020,28 +1019,27 @@ class TestPresentPrimitiveCharacterization(unittest.TestCase):
             ]
         )
         builder = StaticBuilder(state)
-        # Exactly the pre/post implications a Sequence questionnaire produced
-        # before U2: one precondition + one postcondition implication.
+        # Exactly the pre/post implications an unconditional questionnaire
+        # produces: one precondition + one postcondition implication.
         self.assertEqual(len(builder.constraints), 2)
-        # And every `present` antecedent on a Sequence item is the literal
-        # True (no gating Bool introduced for non-Sample/Roster items).
+        # And every `present` antecedent is the literal True (no gating Bool
+        # introduced for items outside a Roster or capped Group).
         for item_id in builder.item_order:
             present = builder._present_antecedent(item_id, None)
             self.assertTrue(
                 is_true(simplify(present)),
-                f"{item_id}: present must degrade to True off Sample/Roster",
+                f"{item_id}: present must degrade to True off Roster/capped Group",
             )
 
     def test_roster_numeric_classification_fingerprint_pinned(self):
-        """roster_numeric.qml (Sequence + Roster) post-U3.
+        """roster_numeric.qml — one Group block plus one Roster block.
 
-        U3 makes the Roster bit-guard fire: the constraint count grows by
-        exactly ``inner_items × len(labels)`` bit-guard constraints (the
-        deliberate linear-in-len(labels) growth this unit introduces). The
-        *classification fingerprint* must still be regression-clean — no inner
-        item becomes NEVER / dead-code (the U2 classification-safety tag keeps
-        a bit-unset iteration from being flagged), and the result is stable
-        across rebuilds."""
+        The Roster bit-guard contributes exactly
+        ``inner_items × len(labels)`` constraints (linear in ``len(labels)``
+        by design). The *classification fingerprint* must be regression-clean
+        — no inner item becomes NEVER / dead-code, because the
+        classification-safety tag keeps a bit-unset iteration from being
+        flagged — and stable across rebuilds."""
         builder = StaticBuilder(_state_from_fixture("roster_numeric.qml"))
 
         self.assertEqual(
@@ -1055,8 +1053,8 @@ class TestPresentPrimitiveCharacterization(unittest.TestCase):
 
         fingerprint = _classification_fingerprint(builder)
         # No item is NEVER / dead-code in this well-formed fixture, and the
-        # Roster items classify exactly as a Sequence would (U2 is a no-op
-        # until U3 wires the bit-guard). Pin the whole structure.
+        # Roster items classify exactly as unconditional items would. Pin the
+        # whole structure.
         classifier = ItemClassifier(builder)
         results = classifier.classify_all_items()
         for item_id in ("q_family_count", "q_member_name", "q_member_age"):
@@ -1164,7 +1162,7 @@ class TestPresentPrimitiveBehavior(unittest.TestCase):
             "CONDITIONAL",
             "A conditionally-present (sampling-absent) item must not be NEVER",
         )
-        # The plain Sequence item is unaffected.
+        # The plain unconditional item is unaffected.
         self.assertEqual(
             classifier.classify_item("q1")["precondition"]["status"], "ALWAYS"
         )

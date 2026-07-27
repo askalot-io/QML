@@ -20,7 +20,9 @@ import unittest
 from pathlib import Path
 
 import pytest
+from jsonschema import ValidationError
 from askalot_qml.core.qml_loader import QMLLoader
+from askalot_qml.core.validation_processor import ValidationProcessor
 from askalot_qml.core.qml_topology import QMLTopology
 from askalot_qml.models.qml_state import QMLState
 from askalot_qml.z3.item_classifier import ItemClassifier
@@ -791,6 +793,214 @@ class TestBlockPreconditionPipeline(unittest.TestCase):
         self.assertEqual(len(composed), 2)
         self.assertEqual(composed[0]["predicate"], "q_age.outcome <= 2")
         self.assertEqual(composed[1]["predicate"], "q_employed.outcome == 1")
+
+
+@pytest.mark.integration
+class TestSchemaClosedObjects(unittest.TestCase):
+    """#166: the Item and Condition objects are closed with
+    `unevaluatedProperties: false` (schema 2.1.1), so a typo'd key is rejected at
+    load time (against the bundled schema) instead of silently attaching nothing.
+
+    `Input` is deliberately left OPEN for now: the Switch control's canonical
+    `on:`/`off:` keys are coerced to booleans by YAML (`{True: ..., False: ...}`)
+    and never matched the schema's string `on`/`off` names, so closing `Input`
+    would reject the shipped default templates. Closing it needs a loader-side
+    on/off normalization first — tracked as a follow-up.
+
+    Uses the DEFAULT loader (bundled schema on), unlike the `schema_path=None`
+    helper the rest of this module uses.
+    """
+
+    def _doc(self, item: dict) -> str:
+        import yaml
+
+        return yaml.safe_dump(
+            {
+                "qmlVersion": "2.0",
+                "questionnaire": {
+                    "title": "closed-objects",
+                    "blocks": [{"id": "b", "kind": "Group", "title": "B", "items": [item]}],
+                },
+            }
+        )
+
+    def test_valid_item_loads(self):
+        """A well-formed item (only declared keys) still loads cleanly."""
+        item = {
+            "id": "q",
+            "kind": "Question",
+            "title": "Q",
+            "precondition": [{"predicate": "1 == 1"}],
+            "input": {"control": "Radio", "labels": {1: "Yes", 2: "No"}},
+        }
+        QMLLoader().load_from_string(self._doc(item))  # no exception
+
+    def test_item_typo_key_rejected(self):
+        """A misspelled item key (`precondtion`) is rejected, not silently dropped."""
+        item = {
+            "id": "q",
+            "kind": "Question",
+            "title": "Q",
+            "precondtion": [{"predicate": "1 == 1"}],
+            "input": {"control": "Radio", "labels": {1: "Yes", 2: "No"}},
+        }
+        with self.assertRaises(Exception) as ctx:
+            QMLLoader().load_from_string(self._doc(item))
+        self.assertIn("precondtion", str(ctx.exception))
+
+    def test_condition_typo_key_rejected(self):
+        """A misspelled condition key (`hnt` for `hint`) is rejected."""
+        item = {
+            "id": "q",
+            "kind": "Question",
+            "title": "Q",
+            "postcondition": [{"predicate": "q.outcome == 1", "hnt": "typo"}],
+            "input": {"control": "Radio", "labels": {1: "Yes", 2: "No"}},
+        }
+        with self.assertRaises(Exception) as ctx:
+            QMLLoader().load_from_string(self._doc(item))
+        self.assertIn("hnt", str(ctx.exception))
+
+
+@pytest.mark.integration
+class TestExternalItemFlag(unittest.TestCase):
+    """Schema 2.2.0: the optional boolean `external` Item flag (prefill
+    eligibility). U1 of the QML External Inputs plan (R1-R5).
+
+    The flag is runtime-only and invisible to Z3 — an external item classifies
+    identically to the same item without it (AE4 / R4, R5). These tests use the
+    DEFAULT loader (bundled schema on) so schema-level acceptance/rejection is
+    exercised against the real 2.2.0 schema; the static-neutral test builds a
+    StaticBuilder + ItemClassifier over an inline twin pair.
+    """
+
+    def _doc(self, item: dict) -> str:
+        import yaml
+
+        return yaml.safe_dump(
+            {
+                "qmlVersion": "2.2",
+                "questionnaire": {
+                    "title": "external-flag",
+                    "blocks": [{"id": "b", "kind": "Group", "title": "B", "items": [item]}],
+                },
+            }
+        )
+
+    def test_external_true_item_loads(self):
+        """An item with `external: true` validates against the bundled schema."""
+        item = {
+            "id": "q_rotate_out",
+            "kind": "Question",
+            "title": "Rotate out?",
+            "external": True,
+            "input": {"control": "Radio", "labels": {0: "No", 1: "Yes"}},
+        }
+        state = QMLState(QMLLoader().load_from_string(self._doc(item)))
+        # The flag survives flattening onto the item (not dropped by the loader).
+        self.assertTrue(state.get_item("q_rotate_out").get("external"))
+
+    def test_external_false_item_loads(self):
+        """`external: false` validates (explicit default)."""
+        item = {
+            "id": "q_ok",
+            "kind": "Question",
+            "title": "Q",
+            "external": False,
+            "input": {"control": "Radio", "labels": {1: "Yes", 2: "No"}},
+        }
+        QMLLoader().load_from_string(self._doc(item))  # no exception
+
+    def test_external_absent_item_loads(self):
+        """An item without `external` still loads (backward compatible — R3)."""
+        item = {
+            "id": "q_plain",
+            "kind": "Question",
+            "title": "Q",
+            "input": {"control": "Radio", "labels": {1: "Yes", 2: "No"}},
+        }
+        state = QMLState(QMLLoader().load_from_string(self._doc(item)))
+        # Absent → falsy (schema default is false; loader does not inject it).
+        self.assertFalse(state.get_item("q_plain").get("external", False))
+
+    def test_external_non_boolean_rejected(self):
+        """A non-boolean `external` (e.g. the string "yes") is rejected by the schema."""
+        item = {
+            "id": "q_bad",
+            "kind": "Question",
+            "title": "Q",
+            "external": "yes",
+            "input": {"control": "Radio", "labels": {1: "Yes", 2: "No"}},
+        }
+        with self.assertRaises(ValidationError):
+            QMLLoader().load_from_string(self._doc(item))
+
+    def test_external_flag_is_static_neutral(self):
+        """AE4 / R4, R5: two items differing ONLY in `external: true` classify
+        identically — same reachability, no free symbol, no coverage gap, no
+        frozen-variable error. The flag must never touch the Z3 model."""
+        loader = QMLLoader(schema_path=None)
+        # A CONDITIONAL item (gated on an earlier answer) and its external twin.
+        qml = """
+questionnaire:
+  title: static-neutral twins
+  blocks:
+    - id: main
+      kind: Group
+      items:
+        - id: q_gate
+          kind: Question
+          title: Gate
+          input:
+            control: Radio
+            labels:
+              1: Yes
+              2: No
+        - id: q_plain
+          kind: Question
+          title: Plain conditional
+          precondition:
+            - predicate: "q_gate.outcome == 1"
+          input:
+            control: Radio
+            labels:
+              0: No
+              1: Yes
+        - id: q_ext
+          kind: Question
+          title: External conditional (identical but for the flag)
+          external: true
+          precondition:
+            - predicate: "q_gate.outcome == 1"
+          input:
+            control: Radio
+            labels:
+              0: No
+              1: Yes
+"""
+        state = QMLState(loader.load_from_string(qml))
+        builder = StaticBuilder(state)
+        classifier = ItemClassifier(builder)
+
+        plain = classifier.classify_item("q_plain")
+        ext = classifier.classify_item("q_ext")
+
+        # Same precondition reachability class.
+        self.assertEqual(
+            plain["precondition"]["status"], ext["precondition"]["status"]
+        )
+        self.assertEqual(ext["precondition"]["status"], "CONDITIONAL")
+
+        # No lint fallout introduced by the flag: neither twin produces a
+        # coverage_gap or frozen_variable issue attributable to `external`.
+        issues = ValidationProcessor(state).to_issues()
+        ext_issues = [i for i in issues if i.get("item_id") == "q_ext"]
+        plain_issues = [i for i in issues if i.get("item_id") == "q_plain"]
+        self.assertEqual(
+            sorted(i["type"] for i in ext_issues),
+            sorted(i["type"] for i in plain_issues),
+            f"external twin produced different issues: {ext_issues} vs {plain_issues}",
+        )
 
 
 if __name__ == "__main__":

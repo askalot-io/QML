@@ -10,21 +10,7 @@ from z3 import (
 
 from askalot_qml.z3.static_builder import StaticBuilder
 
-# Import profiling - graceful fallback if not available
-try:
-    from askalot_common.profiling import add_profiling_tags, profile_block, remove_profiling_tags
-except ImportError:
-    from contextlib import contextmanager
-
-    @contextmanager
-    def profile_block(name, tags=None):
-        yield
-
-    def add_profiling_tags(tags):
-        pass
-
-    def remove_profiling_tags(keys):
-        pass
+from askalot_common.profiling import add_profiling_tags, profile_block, remove_profiling_tags
 
 
 class ItemClassifier:

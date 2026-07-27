@@ -24,6 +24,11 @@ This test suite verifies the U2 deliverable from the Roster plan
      the `_roster_block_id` tag from U1's loader. Non-roster items don't get
      `outcomes` (AttributeError signals "outcomes is roster-only").
 
+It also covers the per-answer response timing log (Survey Detail Timing plan,
+U1), which sits beside the history contract above but is deliberately keyed by
+content rather than lockstep-indexed by position: events must survive
+`pop_history` truncating `history` under them.
+
 ## Coverage
 
 - Default initialization populates the sibling maps as empty.
@@ -36,9 +41,15 @@ This test suite verifies the U2 deliverable from the Roster plan
 - ItemProxy.outcomes for outside-roster reads.
 - ItemProxy.outcome (singular) still works for non-roster items.
 - Multiselect-driven roster scenario from Canonical Example A (covers AE2).
+- Timing log: open/close round-trip, refresh idempotence, uncommitted exits,
+  repeated attempts, per-iteration independence, reset(), JSON persistence.
 """
 
+import itertools
+import json
+
 import pytest
+from askalot_qml.models import qml_state as qml_state_module
 from askalot_qml.models.item_proxy import ItemProxy
 from askalot_qml.models.qml_state import QMLState
 
@@ -384,3 +395,226 @@ def test_roster_outcomes_string_keys_coerced_to_int_on_restore():
     # get_roster_outcomes_for_item also returns int-keyed dict.
     by_iter = state.get_roster_outcomes_for_item("per_meal", "q_satisfaction")
     assert by_iter == {1: 4, 4: 5}
+
+
+# ---------------------------------------------------------------------------
+# Per-answer response timing log
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def clock(monkeypatch):
+    """Deterministic millisecond clock: every stamp advances exactly 1000 ms.
+
+    The refresh test asserts WHICH call stamped the presentation moment, and
+    the real clock can serve two calls in the same millisecond — which would
+    let the bug this log exists to avoid pass the test.
+    """
+    ticks = itertools.count(1_700_000_000_000, 1000)
+    monkeypatch.setattr(qml_state_module, "_now_ms", lambda: next(ticks))
+    return ticks
+
+
+class TestTimingLog:
+    def test_open_then_close_records_one_complete_event(self, clock):
+        state = QMLState()
+        state.open_timing_event("q_age", None, "respondent")
+        state.close_timing_event("q_age", None, committed=True)
+
+        assert state.get_timing_events() == [
+            {
+                "i": "q_age",
+                "k": None,
+                "p": 1_700_000_000_000,
+                "s": 1_700_000_001_000,
+                "c": True,
+                "src": "respondent",
+            }
+        ]
+
+    def test_reopening_an_open_event_keeps_the_first_presentation_moment(self, clock):
+        """The refresh case: current-item is a GET that re-runs on every render.
+
+        A non-idempotent open would reset the respondent's clock on each
+        refresh, under-reporting duration while still producing plausible
+        numbers — the failure this test exists to catch.
+        """
+        state = QMLState()
+        state.open_timing_event("q_age", None, "respondent")
+        state.open_timing_event("q_age", None, "respondent")
+        state.open_timing_event("q_age", None, "respondent")
+        state.close_timing_event("q_age", None, committed=True)
+
+        events = state.get_timing_events()
+        assert len(events) == 1
+        assert events[0]["p"] == 1_700_000_000_000  # first call, not the third
+        assert events[0]["s"] == 1_700_000_001_000  # close took the very next tick
+
+    def test_uncommitted_close_records_the_event_with_the_flag_clear(self, clock):
+        """Backward navigation spends real time but is not an answer attempt."""
+        state = QMLState()
+        state.open_timing_event("q_age", None, "respondent")
+        state.close_timing_event("q_age", None, committed=False)
+
+        (event,) = state.get_timing_events()
+        assert event["c"] is False
+        assert event["s"] is not None
+        assert state.count_timing_attempts("q_age", None) == 0
+
+    def test_two_cycles_for_one_item_append_rather_than_overwrite(self, clock):
+        """Answer, navigate back, re-answer → two events, oldest first."""
+        state = QMLState()
+        state.open_timing_event("q_age", None, "respondent")
+        state.close_timing_event("q_age", None, committed=True)
+        state.open_timing_event("q_age", None, "respondent")
+        state.close_timing_event("q_age", None, committed=True)
+
+        events = state.get_timing_events_for_item("q_age")
+        assert len(events) == 2
+        assert events[0]["p"] < events[1]["p"]
+        assert events[0]["s"] < events[1]["p"]  # the first event is untouched by the second
+        assert state.count_timing_attempts("q_age", None) == 2
+
+    def test_same_item_under_two_iterations_produces_independent_events(self, clock):
+        """A Roster item answered for two subjects is two answers, not two attempts."""
+        state = QMLState()
+        state.open_timing_event("q_satisfaction", 1, "respondent")
+        state.close_timing_event("q_satisfaction", 1, committed=True)
+        state.open_timing_event("q_satisfaction", 4, "respondent")
+        state.close_timing_event("q_satisfaction", 4, committed=True)
+
+        events = state.get_timing_events_for_item("q_satisfaction")
+        assert [event["k"] for event in events] == [1, 4]
+        assert state.count_timing_attempts("q_satisfaction", 1) == 1
+        assert state.count_timing_attempts("q_satisfaction", 4) == 1
+
+    def test_open_for_a_second_iteration_does_not_close_the_first(self, clock):
+        """The open guard matches on the pair, so iterations do not shadow each other."""
+        state = QMLState()
+        state.open_timing_event("q_satisfaction", 1, "respondent")
+        state.open_timing_event("q_satisfaction", 4, "respondent")
+        assert len(state.get_timing_events()) == 2
+
+        state.close_timing_event("q_satisfaction", 1, committed=True)
+        by_iter = {event["k"]: event for event in state.get_timing_events()}
+        assert by_iter[1]["s"] is not None
+        assert by_iter[4]["s"] is None
+
+    def test_close_without_an_open_event_records_nothing(self, clock):
+        """A submission seam with no matching presentation seam fabricates no duration."""
+        state = QMLState()
+        state.close_timing_event("q_age", None, committed=True)
+        assert state.get_timing_events() == []
+
+    def test_drop_timing_events_removes_only_the_named_item(self, clock):
+        """A capped-Group eviction drops the item's answer entirely, so its
+        timing must go too — otherwise a re-draw double-counts the earlier
+        attempt. Only the evicted item's events are removed; siblings stay."""
+        state = QMLState()
+        state.open_timing_event("q_drawn", None, "respondent")
+        state.close_timing_event("q_drawn", None, committed=True)
+        state.open_timing_event("q_kept", None, "respondent")
+        state.close_timing_event("q_kept", None, committed=True)
+
+        state.drop_timing_events_for_item("q_drawn")
+
+        assert state.get_timing_events_for_item("q_drawn") == []
+        assert len(state.get_timing_events_for_item("q_kept")) == 1
+
+    def test_reset_empties_the_log(self, clock):
+        state = QMLState({"items": [], "blocks": []})
+        state.open_timing_event("q_age", None, "respondent")
+        state.close_timing_event("q_age", None, committed=True)
+
+        state.reset()
+
+        assert state["response_timing"] == []
+        assert state.get_timing_events() == []
+
+    def test_log_survives_a_json_round_trip(self, clock):
+        """The JSONB persistence path: every field must be a plain JSON type."""
+        state = QMLState({"items": [], "blocks": []})
+        state.open_timing_event("q_age", None, "respondent")
+        state.close_timing_event("q_age", None, committed=True)
+        state.open_timing_event("q_satisfaction", 4, "interviewer")
+        state.close_timing_event("q_satisfaction", 4, committed=False)
+
+        before = state.get_timing_events()
+        restored = QMLState(json.loads(json.dumps(dict(state))))
+
+        assert restored.get_timing_events() == before
+        # The iteration key is a list ELEMENT, so it survives as an int — no
+        # string-key coercion pass is involved, unlike roster_outcomes.
+        assert restored.get_timing_events_for_item("q_satisfaction")[0]["k"] == 4
+
+
+class TestSyntheticTimingInstall:
+    """Generated answers get generated durations — but only over generated answers."""
+
+    def test_spans_are_laid_end_to_end_backwards_from_the_end_moment(self):
+        state = QMLState()
+        state.install_synthetic_timing(
+            [("q_age", None), ("q_city", None), ("q_note", None)],
+            [3000, 5000, 2000],
+            end_at_ms=1_700_000_100_000,
+        )
+        events = state.get_timing_events()
+        assert [e["i"] for e in events] == ["q_age", "q_city", "q_note"]
+        # Contiguous: each event starts exactly where the previous one ended,
+        # so the log reads as one sitting rather than overlapping intervals.
+        assert [(e["p"], e["s"]) for e in events] == [
+            (1_700_000_090_000, 1_700_000_093_000),
+            (1_700_000_093_000, 1_700_000_098_000),
+            (1_700_000_098_000, 1_700_000_100_000),
+        ]
+        assert {e["src"] for e in events} == {"synthetic"}
+        assert all(e["c"] is True for e in events)
+
+    def test_roster_iteration_keys_are_carried_through(self):
+        state = QMLState()
+        state.install_synthetic_timing(
+            [("q_rating", 1), ("q_rating", 2)], [4000, 4000], end_at_ms=1_700_000_100_000
+        )
+        assert [e["k"] for e in state.get_timing_events()] == [1, 2]
+
+    def test_refuses_to_overwrite_measured_timing(self, clock):
+        """The guard that matters: a real respondent's timing is not recoverable.
+
+        Without this, a backfill pointed at the wrong organization would replace
+        observed durations with invented ones that look exactly as plausible,
+        and nothing downstream could tell which was which.
+        """
+        state = QMLState()
+        state.open_timing_event("q_age", None, "respondent")
+        state.close_timing_event("q_age", None, committed=True)
+
+        with pytest.raises(ValueError, match="measured events"):
+            state.install_synthetic_timing([("q_age", None)], [5000], end_at_ms=1_700_000_100_000)
+
+        # Untouched — the refusal is not partial.
+        (event,) = state.get_timing_events()
+        assert event["src"] == "respondent"
+
+    def test_replaces_an_existing_synthetic_log(self, clock):
+        # The fill job's own zero-span events are what this replaces, so a log
+        # already full of synthetic events must not block the rewrite.
+        state = QMLState()
+        state.open_timing_event("q_age", None, "synthetic")
+        state.close_timing_event("q_age", None, committed=True)
+        assert state.get_timing_events()[0]["s"] - state.get_timing_events()[0]["p"] == 1000
+
+        state.install_synthetic_timing([("q_age", None)], [7000], end_at_ms=1_700_000_100_000)
+        (event,) = state.get_timing_events()
+        assert event["s"] - event["p"] == 7000
+
+    def test_length_mismatch_is_refused(self):
+        state = QMLState()
+        with pytest.raises(ValueError, match="align"):
+            state.install_synthetic_timing([("q_age", None)], [1000, 2000])
+
+    def test_end_moment_defaults_to_now(self, clock):
+        state = QMLState()
+        state.install_synthetic_timing([("q_age", None)], [6000])
+        (event,) = state.get_timing_events()
+        assert event["s"] == 1_700_000_000_000
+        assert event["p"] == 1_700_000_000_000 - 6000

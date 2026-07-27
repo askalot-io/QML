@@ -16,13 +16,14 @@ diagram-viewer rewrite:
 - apply_validation_coloring inlines `classification` onto item entries
   (no separate `classes` map).
 
-These tests construct minimal QMLState instances directly — they exercise
-the emission logic without needing the four brainstorm-named reference
-questionnaires (SAEP/ICS/DHS8/ESS12), which do not live in this repo.
-The data/qml corpus (DORA chapters and demos) is the real integration
-substrate and is exercised via the test_validation_blueprint_response.py
-integration tests.
+Most tests construct minimal QMLState instances directly — they exercise
+the emission logic without needing full-size reference questionnaires, which
+do not live in this repo. `TestRosterEmission` is the exception: Roster and
+capped-Group emission is asserted against a multi-block fixture file, because
+those fields only mean something where several block kinds coexist.
 """
+
+from pathlib import Path
 
 import pytest
 from askalot_qml.core.qml_diagram_ir import QMLDiagramIR
@@ -446,36 +447,61 @@ class TestTopologyAndCycles:
         assert ir["metadata"]["cycle_nodes"]  # non-empty
 
 
-class TestRealCorpusSmoke:
-    @pytest.mark.parametrize(
-        "filename",
-        [
-            "DORA_Article_5_Governance.qml",
-            "DORA_Article_6_Framework.qml",
-            "DORA_Articles_11-12_Response.qml",
-            "DORA_Articles_13-15_Evolution.qml",
-        ],
-    )
-    def test_dora_qmls_produce_valid_ir(self, filename):
-        """Complex real-world QMLs produce IR with no positions leak."""
-        from pathlib import Path
+FIXTURES_DIR = Path(__file__).parents[2] / "fixtures"
 
-        from askalot_qml.core.qml_loader import QMLLoader
 
-        data_dir = Path("/Project/askalot/data/qml")
-        if not (data_dir / filename).exists():
-            pytest.skip(f"{filename} not present in data/qml (dev corpus)")
+def _ir_from_fixture(filename: str):
+    """Load a fixture questionnaire through the production pipeline into base IR."""
+    from askalot_qml.core.qml_loader import QMLLoader
 
-        loader = QMLLoader(qml_dir=data_dir)
-        questionnaire = loader.load_from_file(filename)
-        state = QMLState(questionnaire)
-        ir = _build_ir(state)
+    questionnaire = QMLLoader(qml_dir=FIXTURES_DIR).load_from_file(filename)
+    return _build_ir(QMLState(questionnaire))
 
-        # Contract shape
-        assert isinstance(ir["blocks"], list) and ir["blocks"]
-        assert isinstance(ir["items"], list) and ir["items"]
-        # No positions on any entry
-        forbidden = {"x", "y", "width", "height", "bend_points", "arrow_end", "arrow_start"}
-        for bucket in ("blocks", "items", "conditions", "variables", "edges"):
-            for entry in ir[bucket]:
-                assert not (forbidden & set(entry.keys()))
+
+class TestRosterEmission:
+    """Roster + capped-Group emission, pinned on a multi-block questionnaire.
+
+    The other roster_*.qml fixtures each isolate one construct. This one runs
+    two Rosters alongside Groups, block preconditions, and a capped Group, so
+    the block-kind fields the QML Explorer's renderer reads are asserted where
+    they have to coexist rather than standing alone.
+    """
+
+    FIXTURE = "roster_household_labour.qml"
+
+    def test_roster_blocks_carry_kind_and_label_count(self):
+        """Both Rosters emit kind + label_count — the ×N badge's inputs."""
+        ir = _ir_from_fixture(self.FIXTURE)
+        rosters = {b["id"]: b for b in ir["blocks"] if b.get("kind") == "Roster"}
+        assert set(rosters) == {"member_demographics", "member_labour"}
+        for block in rosters.values():
+            assert block["label_count"] == 4
+            assert block["iterate_over"] == "q_members_present.outcome"
+
+    def test_bitmask_source_edge_resolves_to_the_checkbox_item(self):
+        """Checkbox forward-tightening: iterateOver reaches the item directly.
+
+        The Checkbox's power-of-2 label keys make its outcome the bitmask, so
+        the provenance edge lands on the item itself. A decode codeBlock in
+        between would make this a variable_read against an intermediate name.
+        """
+        ir = _ir_from_fixture(self.FIXTURE)
+        edges = [e for e in ir["edges"] if e["kind"] == "bitmask_source"]
+        assert {(e["source"], e["target"]) for e in edges} == {
+            ("member_demographics", "q_members_present"),
+            ("member_labour", "q_members_present"),
+        }
+
+    def test_capped_group_emits_count_and_uncapped_groups_do_not(self):
+        """`count` appears only on the capped Group — the badge's gate."""
+        ir = _ir_from_fixture(self.FIXTURE)
+        by_id = {b["id"]: b for b in ir["blocks"]}
+        assert by_id["rotating_module"]["count"] == 2
+        for block_id in ("screening", "composition", "household_totals", "closing"):
+            assert "count" not in by_id[block_id], block_id
+
+    def test_roster_inner_items_carry_their_block_id(self):
+        """Inner items resolve to their Roster, so the renderer can group them."""
+        ir = _ir_from_fixture(self.FIXTURE)
+        labour_items = {i["id"] for i in ir["items"] if i["block_id"] == "member_labour"}
+        assert {"q_activity_status", "q_usual_hours", "q_search_duration"} <= labour_items

@@ -36,15 +36,7 @@ from z3 import (
 
 from askalot_qml.models.qml_state import QMLState
 
-# Import profiling - graceful fallback if not available
-try:
-    from askalot_common.profiling import profile_block
-except ImportError:
-    from contextlib import contextmanager
-
-    @contextmanager
-    def profile_block(name, tags=None):
-        yield
+from askalot_common.profiling import profile_block
 
 
 # Lazily-computed, process-wide cache of the names available in the predicate /
@@ -212,10 +204,10 @@ class StaticBuilder:
         # literal True and the primitive is a proven no-op.
         #
         # ``k is None`` is the canonical "single, unconditional selection"
-        # key — used by the dedicated wrapping pass below so Sequence/Roster/
-        # Sample items share one code path. U3 (Roster) and U4 (Sample) will
-        # call ``mark_conditionally_present(item_id, k)`` with concrete int
-        # ``k`` and re-wire per-iteration constraints; until then this is
+        # key — used by the dedicated wrapping pass below so Group and Roster
+        # items share one code path. The Roster bit-guard unroll calls
+        # ``mark_conditionally_present(item_id, k)`` with a concrete int
+        # ``k`` to wire per-iteration constraints; off that path this is
         # inert.
         self._present_vars: dict[tuple[str, int | None], BoolRef] = {}
         self._conditionally_present: set[tuple[str, int | None]] = set()
@@ -450,9 +442,9 @@ class StaticBuilder:
         - If ``(item_id, k)`` was marked conditionally-present → the gating
           ``present`` Bool: the constraint binds only when the item is drawn.
         - Otherwise → ``BoolVal(True)``: ``Implies(True, C) ≡ C``, so the
-          model is byte-identical to the pre-U2 unconditional one. This is
-          the proven no-op for every Sequence path (and every Roster/Sample
-          path until U3/U4 register keys).
+          model is byte-identical to the unconditional one. This is the
+          proven no-op for every uncapped-Group path — the only kind that
+          registers no presence keys.
         """
         if (item_id, k) in self._conditionally_present:
             return self._present_var(item_id, k)
@@ -2988,6 +2980,63 @@ class StaticBuilder:
         for var_name in frozen:
             frozen_constraints.extend(self.codeinit_constant_constraints.get(var_name, []))
         return self._conjoin(list(self.domain_constraints) + frozen_constraints)
+
+    def get_frozen_variable_gates(self) -> dict[str, list[str]]:
+        """Frozen variables that GATE logic: those read by ≥1 predicate.
+
+        A frozen variable (``_frozen_variable_names``: assigned in codeInit,
+        never reassigned by any codeBlock) is a compile-time constant, so any
+        precondition/postcondition referencing it is statically decided — always
+        true or always false — while looking conditional. Returns
+        ``{var_name: [location_id, ...]}`` for every frozen variable named in at
+        least one item- or block-level predicate, where each ``location_id`` is
+        the owning item id (or the block id for a block-level condition).
+
+        Structural only — no solver call. The polarity (always-true vs
+        always-false) is irrelevant to the defect: either way the gate enforces
+        nothing conditional, so the lint fires symmetrically. Precondition
+        reachability (``get_reachability_base``) already CONSUMES the frozen
+        constants to classify the always-false gates NEVER; this method is the
+        source for the corresponding root-cause lint the issue channel emits.
+
+        Scope: a frozen variable read ONLY inside codeBlocks (never in a
+        predicate) is a plain constant, not a decided gate, and is excluded — a
+        codeBlock-only dead constant is the write-only / pass-through hygiene
+        lints' concern, not this one.
+        """
+        frozen = self._frozen_variable_names()
+        if not frozen:
+            return {}
+
+        gates: dict[str, list[str]] = {}
+
+        def _scan(location_id: str, conditions: list[dict[str, Any]] | None) -> None:
+            for cond in conditions or []:
+                predicate = cond.get("predicate", "")
+                if not predicate:
+                    continue
+                try:
+                    tree = ast.parse(predicate, mode="eval")
+                except SyntaxError:
+                    continue
+                names = {n.id for n in ast.walk(tree) if isinstance(n, ast.Name)}
+                for var_name in frozen & names:
+                    locs = gates.setdefault(var_name, [])
+                    if location_id not in locs:
+                        locs.append(location_id)
+
+        # Block-level conditions stay on the block (R25); attribute to block id.
+        for block in self.state.get_blocks():
+            block_id = block.get("id", "")
+            _scan(block_id, block.get("precondition"))
+            _scan(block_id, block.get("postcondition"))
+        for item in self.state.get_all_items():
+            item_id = item.get("id")
+            if not item_id:
+                continue
+            _scan(item_id, item.get("precondition"))
+            _scan(item_id, item.get("postcondition"))
+        return gates
 
     def get_full_base(self) -> BoolRef:
         """

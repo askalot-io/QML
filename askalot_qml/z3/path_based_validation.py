@@ -17,7 +17,7 @@ This is the third and most thorough level of the validation hierarchy:
 2. Global validation - checks if any valid completion exists
 3. Path-based validation - detects dead code from accumulated constraints
 
-Reference: askalot-research/thesis/chapters/comprehensive_validation.tex, Definition 2.5
+Reference: askalot-io/docs thesis/chapters/comprehensive_validation.tex, Definition 2.5
 """
 
 import logging

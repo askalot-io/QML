@@ -3,7 +3,6 @@
 import ast
 import json
 import logging
-import os
 import re
 from pathlib import Path
 from typing import Any
@@ -67,13 +66,25 @@ _UNSET = object()
 
 class QMLLoader:
     """
-    Load and parse QML files into dictionary structures.
+    Load and parse QML documents into dictionary structures.
 
     Modern implementation without Flask dependencies, using pathlib
     and comprehensive type hints.
 
-    Environment Variables:
-        ORGANIZATIONS_DIR: Root directory containing organization data
+    Where the bytes come from is a seam. Pass ``content_source`` (a
+    ``askalot_qml.core.qml_source.QMLContentSource`` — in production the
+    document-store-backed ``RepositoryQMLSource``) and ``load_from_file`` /
+    ``list_available_files`` resolve names through it instead of the
+    filesystem. Everything above the load call — parse, schema validation,
+    kind/reserved-id checks, flattening — is identical either way, so a caller
+    swapping storage changes one constructor argument and nothing else. Without
+    a source the loader reads ``qml_dir``; that path serves fixtures, the CLI,
+    and Armiger's ephemeral workspace trees, which are real files by design.
+
+    There is no environment-derived default for ``qml_dir``. A caller that
+    resolves names by path knows which tree it means (a workspace, a fixture
+    directory), and inventing a plausible-looking one for a caller that did not
+    say would silently resolve into a directory holding no QML at all.
     """
 
     def __init__(
@@ -81,19 +92,27 @@ class QMLLoader:
         qml_dir: str | Path | None = None,
         schema_path: str | Path | None = _UNSET,
         logger: logging.Logger | None = None,
+        content_source: Any | None = None,
     ):
         """
         Initialize QML loader.
 
         Args:
-            qml_dir: Directory containing QML files. Falls back to ORGANIZATIONS_DIR env var.
+            qml_dir: Directory ``load_from_file`` resolves relative names
+                     against. Ignored when ``content_source`` is given; unset
+                     when neither is given, in which case ``load_from_file``
+                     refuses rather than guessing a directory.
             schema_path: Omit to use the bundled schema from askalot_qml.
                          Pass None to disable schema validation.
                          Pass a Path to use a custom schema.
             logger: Optional logger instance
+            content_source: Optional name→content resolver. When set, it — not
+                the filesystem — answers ``load_from_file`` and
+                ``list_available_files``.
         """
         self.logger = logger or logging.getLogger(__name__)
-        self.qml_dir = Path(qml_dir) if qml_dir else self._get_qml_dir_from_env()
+        self.content_source = content_source
+        self.qml_dir = Path(qml_dir) if qml_dir else None
 
         if schema_path is _UNSET:
             from askalot_qml.schema import SCHEMA_PATH
@@ -111,28 +130,34 @@ class QMLLoader:
             f"QMLLoader initialized with qml_dir={self.qml_dir}, schema_path={self.schema_path}"
         )
 
-    def _get_qml_dir_from_env(self) -> Path:
-        """Get QML directory from ORGANIZATIONS_DIR environment variable."""
-        qml_dir = os.environ.get("ORGANIZATIONS_DIR")
-        if qml_dir:
-            return Path(qml_dir)
-        self.logger.warning("ORGANIZATIONS_DIR environment variable not set")
-        return Path("data/organizations")
-
     def load_from_file(self, filename: str) -> dict[str, Any]:
         """
-        Load and parse QML file.
+        Load and parse a QML document by name.
 
         Args:
-            filename: Name of QML file (relative to qml_dir)
+            filename: QML name — a document name when ``content_source`` is
+                set, otherwise a path relative to ``qml_dir``.
 
         Returns:
             Parsed questionnaire dictionary
 
         Raises:
-            FileNotFoundError: If file doesn't exist
+            FileNotFoundError: nothing backs that name (the document-store
+                source raises ``QMLDocumentMissingError``, a subclass)
+            ValueError: neither a ``content_source`` nor a ``qml_dir`` was
+                given, so the name resolves against nothing
             ValidationError: If QML doesn't match schema
         """
+        if self.content_source is not None:
+            self.logger.debug(f"Resolving QML document: {filename}")
+            return self.load_from_string(self.content_source.read(filename))
+
+        if self.qml_dir is None:
+            raise ValueError(
+                f"Cannot resolve QML name {filename!r}: this loader has neither a "
+                "content_source nor a qml_dir. Pass RepositoryQMLSource to read the "
+                "document store, or a qml_dir to read a workspace/fixture tree."
+            )
         file_path = self.qml_dir / filename
         return self.load_from_path(file_path)
 
@@ -305,11 +330,23 @@ class QMLLoader:
 
     def list_available_files(self) -> list[str]:
         """
-        List all available QML files in qml_dir.
+        List every QML name this loader can resolve.
+
+        Answered by ``content_source`` when one is set (the organization's QML
+        documents), otherwise by scanning ``qml_dir``.
 
         Returns:
-            Sorted list of QML filenames
+            Sorted list of QML names
         """
+        if self.content_source is not None:
+            return self.content_source.list_names()
+
+        if self.qml_dir is None:
+            raise ValueError(
+                "Cannot list QML names: this loader has neither a content_source "
+                "nor a qml_dir."
+            )
+
         if not self.qml_dir.exists():
             self.logger.warning(f"QML directory does not exist: {self.qml_dir}")
             return []
@@ -318,18 +355,6 @@ class QMLLoader:
         self.logger.info(f"Found {len(qml_files)} QML files")
 
         return sorted(qml_files)
-
-    def get_file_path(self, filename: str) -> Path:
-        """
-        Get full path for a QML file.
-
-        Args:
-            filename: QML filename
-
-        Returns:
-            Full path to file
-        """
-        return self.qml_dir / filename
 
     # Recognized block kinds, all wired into the engine:
     #   - 'Group':  visit each in-scope inner item once in canonical

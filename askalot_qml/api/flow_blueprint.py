@@ -2,34 +2,51 @@
 
 import logging
 from collections.abc import Callable
-from pathlib import Path
 from typing import Any
 
 from flask import Blueprint, jsonify, request
 
-from askalot_qml.core import QMLLoader
 from askalot_qml.core.flow_processor import FlowProcessor
-from askalot_qml.models.qml_state import QMLState
+from askalot_qml.core.qml_loader import QMLLoader
+from askalot_qml.core.qml_source import load_fielded_qml_content
+from askalot_qml.models.qml_state import SOURCE_INTERVIEWER, SOURCE_RESPONDENT, QMLState
 
 # Type alias for audit callback function
 AuditCallback = Callable[[str, str, str, dict[str, Any] | None], None]
 
+# Type alias for the external-input resolver callback (QML External Inputs, U5).
+# The service supplies this so askalot_qml stays repository-free: the shared
+# module calls back into the service to resolve external-input sources and apply
+# them at survey init. Signature: resolver(survey, processor) -> None. The
+# service reads the survey's campaign mapping + respondent, builds the injection
+# map, and calls processor.apply_external_inputs(survey.qml_state, map). Must be
+# fail-safe (never raise) — prefill is an optimization, never a blocker.
+ExternalInputResolver = Callable[[Any, Any], None]
+
 
 def create_flow_blueprint(
     repository,
-    qml_dir: str | Path | None = None,
     url_prefix: str = "/api/flow",
     audit_callback: AuditCallback | None = None,
+    external_input_resolver: ExternalInputResolver | None = None,
 ) -> Blueprint:
     """
     Create QML flow API blueprint.
 
     Args:
-        repository: Repository instance for survey persistence
-        qml_dir: Directory containing QML files
+        repository: Repository instance for survey persistence — also the
+            source of QML content (the document store), so the blueprint needs
+            no filesystem location
         url_prefix: URL prefix for the blueprint
         audit_callback: Optional callback for audit logging with signature:
             audit_callback(entity_type, entity_id, action, context_extra)
+        external_input_resolver: Optional service-supplied callback
+            ``resolver(survey, processor) -> None`` invoked once at survey init
+            (QML External Inputs plan, U5). Keeps askalot_qml repository-free:
+            the service resolves external-input sources from the survey's
+            campaign + respondent and applies them via
+            ``processor.apply_external_inputs``. Absent → no prefill (external
+            items are asked in the normal flow).
 
     Returns:
         Flask blueprint with flow endpoints
@@ -99,23 +116,6 @@ def create_flow_blueprint(
             except Exception as e:
                 logger.warning(f"Failed to log audit event ({entity_type}.{action}): {e}")
 
-    def _get_loader() -> QMLLoader:
-        """Get configured QML loader scoped to the current organization.
-
-        Resolves the org directory as ORGANIZATIONS_DIR/{org_id}/ so that
-        qml_name paths (e.g. 'shared/questionnaires/demo.qml') resolve correctly.
-        """
-        from askalot_common.repository import get_organization_id
-
-        organization_id = get_organization_id()
-        if organization_id and qml_dir:
-            org_qml_dir = Path(qml_dir) / organization_id
-            if org_qml_dir.exists():
-                return QMLLoader(qml_dir=org_qml_dir, logger=logger)
-
-        # No org context — use ORGANIZATIONS_DIR directly (tests, CLI)
-        return QMLLoader(qml_dir=qml_dir, logger=logger)
-
     def _ensure_qml_state(survey):
         """Ensure survey.qml_state is a QMLState object, not a plain dict.
 
@@ -157,17 +157,18 @@ def create_flow_blueprint(
 
         return FlowProcessor(questionnaire_state)
 
-    def _load_questionnaire(qml_name: str):
-        """Load and initialize a questionnaire state from a QML file path."""
-        loader = _get_loader()
-        logger.debug(f"Loading QML file: {qml_name}")
+    def _load_fielded_questionnaire(survey, questionnaire) -> QMLState:
+        """Build the survey's initial state from the version it is fielded on.
 
-        # Load QML file using the modern API
-        parsed_qml = loader.load_from_file(qml_name)
+        Content comes from the document store, resolved through the campaign's
+        pin (``load_fielded_qml_content``) — not from the questionnaire's head.
+        A survey started before a publish keeps its instrument for its whole
+        life; only a campaign-less ad-hoc survey reads head.
+        """
+        qml_content = load_fielded_qml_content(repository, survey, questionnaire)
+        parsed_qml = QMLLoader(logger=logger).load_from_string(qml_content)
         logger.info("QML loaded and validated successfully.")
-        questionnaire_state = QMLState(parsed_qml)
-
-        return questionnaire_state
+        return QMLState(parsed_qml)
 
     def _update_survey_position(survey, item_data: dict[str, Any] | None) -> None:
         """Update survey's current position tracking fields.
@@ -184,6 +185,36 @@ def create_flow_blueprint(
             survey.current_item_id = None
             survey.current_block_id = None
 
+    def _timing_source(survey) -> str:
+        """Which kind of person is answering this survey (R9).
+
+        ``survey.mode`` is derived from whether an interviewer is assigned, and
+        that is the whole distinction the timing log needs: an interviewer-paced
+        answer and a self-administered one have different duration
+        distributions, so mixing them would make either look anomalous against
+        the other.
+        """
+        return SOURCE_INTERVIEWER if survey.mode == "field_interview" else SOURCE_RESPONDENT
+
+    def _close_open_timing_event(survey) -> None:
+        """Close the item being left as uncommitted, if its event is still open.
+
+        Called by the navigation endpoints, which move the answerer off an item
+        without an answer being accepted. The time was genuinely spent, so the
+        event stays in the log (and in visit totals); marking it uncommitted is
+        what keeps it out of attempt counts (KTD4).
+
+        Guarded on an event actually being open because the UI normally saves
+        what is on screen before stepping back, and that save already closed
+        the event — an unconditional close would warn on every ordinary step.
+        """
+        item_id = survey.current_item_id
+        if not item_id:
+            return
+        iter_key = survey.qml_state.current_iter_key(item_id)
+        if survey.qml_state.has_open_timing_event(item_id, iter_key):
+            survey.qml_state.close_timing_event(item_id, iter_key, committed=False)
+
     def _initialize_survey_state(survey):
         """Initialize a survey with a questionnaire state."""
         # Get the questionnaire from the database to find its QML name
@@ -196,11 +227,18 @@ def create_flow_blueprint(
                 f"Cannot find questionnaire {survey.questionnaire_id} for survey {survey.id}"
             )
 
-        # Load the questionnaire from the QML file
-        survey.qml_state = _load_questionnaire(questionnaire.qml_name)
+        # Load the questionnaire content the campaign pinned at publish time
+        survey.qml_state = _load_fielded_questionnaire(survey, questionnaire)
 
         # Initialize FlowProcessor with questionnaire state
         processor = _get_flow_processor(survey.qml_state)
+
+        # Pre-answer external items from the respondent record before the flow
+        # is walked (QML External Inputs plan, U5). The service supplies this
+        # callback so askalot_qml stays repository-free; it is idempotent (the
+        # resolver's own sentinel guards re-entry) and fail-safe (never raises).
+        if external_input_resolver is not None:
+            external_input_resolver(survey, processor)
 
         repository.upsert_survey(survey)
 
@@ -234,7 +272,7 @@ def create_flow_blueprint(
             survey = _ensure_qml_state(survey)
 
             # Check if survey is already completed
-            is_completed = survey.status == "completed" or survey.completed
+            is_completed = survey.status == "completed"
 
             # Lazy initialization if questionnaire_state is missing or empty
             # Check for actual items since QMLState defaults to empty lists
@@ -252,7 +290,6 @@ def create_flow_blueprint(
                     # First time completing - update position and save
                     _update_survey_position(survey, None)
                     survey.status = "completed"
-                    survey.completed = True
                     repository.upsert_survey(survey)
 
                     # Log audit event for survey completed
@@ -299,6 +336,18 @@ def create_flow_blueprint(
 
             # Update survey position tracking and save
             _update_survey_position(survey, item_data)
+
+            # Presentation seam of the timing log (R7). Called unconditionally:
+            # this endpoint is a GET that re-runs on every page render, refresh
+            # and resume, and the idempotence of open_timing_event is what keeps
+            # a refresh from resetting the respondent's clock (KTD2, AE6). A
+            # guard here would be a second place for that rule to live.
+            item_id = item_data.get("id")
+            if item_id:
+                survey.qml_state.open_timing_event(
+                    item_id, survey.qml_state.current_iter_key(item_id), _timing_source(survey)
+                )
+
             repository.upsert_survey(survey)
 
             # Add survey_id and completion status to response
@@ -392,9 +441,16 @@ def create_flow_blueprint(
             else:
                 processor = _get_flow_processor(survey.qml_state)
 
-            # Process the item using FlowProcessor
+            # Process the item using FlowProcessor. The submission half of the
+            # timing event happens inside process_item, which reads
+            # skip_postcondition for the committed flag — a backward-navigation
+            # convenience save is timed but is not an attempt (KTD4).
             result = processor.process_item(
-                survey.qml_state, item_id, outcome, skip_postcondition=skip_postcondition
+                survey.qml_state,
+                item_id,
+                outcome,
+                source=_timing_source(survey),
+                skip_postcondition=skip_postcondition,
             )
 
             if not result.get("success", False):
@@ -462,6 +518,11 @@ def create_flow_blueprint(
             else:
                 processor = _get_flow_processor(survey.qml_state)
 
+            # Close the item being left before the walk moves — backward
+            # navigation rewrites the Roster pass state, so the iteration key
+            # this event belongs to is only resolvable from here.
+            _close_open_timing_event(survey)
+
             # Get the previous item using FlowProcessor
             item_data = processor.get_current_item(survey.qml_state, backward=True)
             if not item_data:
@@ -469,6 +530,22 @@ def create_flow_blueprint(
 
             # Update survey position tracking and save after backward navigation
             _update_survey_position(survey, item_data)
+
+            # Presentation seam (R7): the item the respondent lands on is being
+            # presented anew, so open its timing event — mirroring /current-item
+            # and /resume. The client renders this response directly and does not
+            # re-fetch /current-item, so without this a later re-answer would be
+            # timed only from process_item's own open+close and read ~0s. The
+            # open is idempotent per (item, iteration), so a subsequent
+            # /current-item render does not reset the clock (KTD2).
+            back_item_id = item_data.get("id")
+            if back_item_id:
+                survey.qml_state.open_timing_event(
+                    back_item_id,
+                    survey.qml_state.current_iter_key(back_item_id),
+                    _timing_source(survey),
+                )
+
             repository.upsert_survey(survey)
 
             # Add survey_id to response for client convenience
@@ -673,6 +750,9 @@ def create_flow_blueprint(
                     }
                 ), 400
 
+            # Close the item being left before the jump rewrites history.
+            _close_open_timing_event(survey)
+
             # Perform navigation
             if is_in_history:
                 # Navigate backward through history to reach the target
@@ -695,6 +775,21 @@ def create_flow_blueprint(
 
             # Update survey position
             _update_survey_position(survey, target_item)
+
+            # Presentation seam (R7): the stepper jump re-presents the target
+            # item, so open its timing event — mirroring /current-item, /resume
+            # and /previous-item. The client renders this response directly
+            # without re-fetching /current-item; without this a re-answer on the
+            # jumped-to item would be timed only from process_item's own
+            # open+close and read ~0s. Idempotent per (item, iteration).
+            jump_item_id = target_item.get("id")
+            if jump_item_id:
+                survey.qml_state.open_timing_event(
+                    jump_item_id,
+                    survey.qml_state.current_iter_key(jump_item_id),
+                    _timing_source(survey),
+                )
+
             repository.upsert_survey(survey)
 
             # Add survey_id to response
@@ -754,10 +849,17 @@ def create_flow_blueprint(
                 # Reset the questionnaire state
                 survey.qml_state.reset()
                 processor = _get_flow_processor(survey.qml_state)
+                # reset() cleared the external-input sentinel + provenance, so
+                # re-run the resolver to re-prefill external items — otherwise a
+                # reset would leave an external item to be asked directly,
+                # defeating its "auto-answered, not presented" contract. Only
+                # _initialize_survey_state calls the resolver on the first-init
+                # path; the reset path must call it too.
+                if external_input_resolver is not None:
+                    external_input_resolver(survey, processor)
 
             # Reset survey status
             survey.status = "in_progress"
-            survey.completed = False
 
             # Get the first item
             first_item = processor.get_current_item(survey.qml_state)
@@ -815,7 +917,7 @@ def create_flow_blueprint(
             survey = _ensure_qml_state(survey)
 
             # Check if already completed
-            if survey.status == "completed" or survey.completed:
+            if survey.status == "completed":
                 return jsonify(
                     {
                         "status": "already_completed",
@@ -826,7 +928,12 @@ def create_flow_blueprint(
 
             # Mark survey as completed
             survey.status = "completed"
-            survey.completed = True
+
+            # The item on screen is being left unanswered — close its event
+            # here, while the position still says which item that was. Clearing
+            # the position first would strand the event open, and a later
+            # /resume would then measure the whole absence as answer time.
+            _close_open_timing_event(survey)
 
             # Clear current position (survey is done)
             _update_survey_position(survey, None)
@@ -884,7 +991,7 @@ def create_flow_blueprint(
             survey = _ensure_qml_state(survey)
 
             # Check if survey is completed
-            if survey.status != "completed" and not survey.completed:
+            if survey.status != "completed":
                 return jsonify(
                     {
                         "status": "not_completed",
@@ -895,7 +1002,6 @@ def create_flow_blueprint(
 
             # Set survey back to in_progress
             survey.status = "in_progress"
-            survey.completed = False
 
             # Initialize processor if needed
             if not survey.qml_state:
@@ -903,11 +1009,27 @@ def create_flow_blueprint(
             else:
                 processor = _get_flow_processor(survey.qml_state)
 
+            # A survey is resumed after it was abandoned or finished early, so
+            # any event still open was left open by that departure. Close it
+            # uncommitted and start a fresh one for the item now being
+            # re-presented: two events, one of which spans the absence, instead
+            # of a single event whose duration silently includes it.
+            _close_open_timing_event(survey)
+
             # Get the current item (will find first unvisited or last in path)
             item_data = processor.get_current_item(survey.qml_state, backward=False)
 
             # Update survey position and save
             _update_survey_position(survey, item_data)
+
+            if item_data and item_data.get("id"):
+                resumed_item_id = item_data["id"]
+                survey.qml_state.open_timing_event(
+                    resumed_item_id,
+                    survey.qml_state.current_iter_key(resumed_item_id),
+                    _timing_source(survey),
+                )
+
             repository.upsert_survey(survey)
 
             # Log audit event for survey resumed

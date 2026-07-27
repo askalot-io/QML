@@ -156,30 +156,23 @@ class ItemProxy:
                 )
         self.outcome = [[self._coerce_outcome(v) for v in row] for row in outcome]
 
-    # Controls where string outcomes are intentional (open-ended text input).
-    _TEXT_CONTROLS = frozenset({"textarea"})
-
     def _coerce_outcome(self, value: Any) -> Any:
         """
         Coerce string values to int or float for non-text controls. JSON / MCP
         serialization can turn numeric outcomes into strings (e.g., "7" instead
         of 7), causing precondition comparisons like `q_age.outcome >= 18` to
         fail with TypeError. Textarea controls preserve string outcomes.
+
+        Delegates to the shared ``core.controls.coerce_scalar`` — the single
+        definition of this coercion, also used by the external-input domain
+        validator, so the two never drift. Imported function-locally: a
+        top-level import would form a cycle (``models.item_proxy`` ->
+        ``core.controls`` -> ``core.__init__`` -> ``core.flow_processor`` ->
+        ``models.item_proxy``) when ``models`` is imported before ``core``.
         """
-        if not isinstance(value, str):
-            return value
-        control = getattr(self, "control", None)
-        if control and control.lower() in self._TEXT_CONTROLS:
-            return value
-        try:
-            return int(value)
-        except (ValueError, TypeError):
-            pass
-        try:
-            return float(value)
-        except (ValueError, TypeError):
-            pass
-        return value
+        from askalot_qml.core.controls import coerce_scalar
+
+        return coerce_scalar(value, getattr(self, "control", None))
 
     def to_outcome(self) -> Any | None:
         """

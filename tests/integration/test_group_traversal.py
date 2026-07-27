@@ -60,7 +60,7 @@ import unittest
 
 from askalot_qml.core.flow_processor import FlowProcessor
 from askalot_qml.core.qml_loader import QMLLoader
-from askalot_qml.models.qml_state import QMLState
+from askalot_qml.models.qml_state import SOURCE_RESPONDENT, QMLState
 
 from tests.helpers.flow_walker import walk_and_answer as _walk_and_answer
 
@@ -656,7 +656,7 @@ class TestBenignBackwardNav(unittest.TestCase):
             if item is not None and item["id"] == "q_age":
                 break
         # Re-answer q_age with the SAME value (no precondition change).
-        processor.process_item(state, "q_age", 30)
+        processor.process_item(state, "q_age", 30, source=SOURCE_RESPONDENT)
         walked2 = _walk_and_answer(processor, state, answers)
 
         # Same draw, every prior answer preserved — no eviction.
@@ -694,7 +694,7 @@ class TestAE13Eviction(unittest.TestCase):
             item = processor.get_current_item(state, backward=True)
             if item is not None and item["id"] == "q_mode":
                 break
-        processor.process_item(state, "q_mode", 1)
+        processor.process_item(state, "q_mode", 1, source=SOURCE_RESPONDENT)
 
         # Pass 2: q_mode = 1 → g1 consumes slot 1, g2 slot 2 → drawn [g1, g2].
         # g3 was drawn+answered in pass 1 but is no longer drawn → EVICTED.
@@ -914,7 +914,7 @@ class TestBackwardNavClearsGroupAsked(unittest.TestCase):
         # Answer q_age, then step into the Group pass (draws q_s1 first).
         first = processor.get_current_item(state, backward=False)
         self.assertEqual(first["id"], "q_age")
-        processor.process_item(state, "q_age", 30)
+        processor.process_item(state, "q_age", 30, source=SOURCE_RESPONDENT)
 
         drawn = processor.get_current_item(state, backward=False)
         self.assertIsNotNone(drawn)
@@ -938,7 +938,7 @@ class TestBackwardNavClearsGroupAsked(unittest.TestCase):
 
         # Re-answer q_age and re-enter — the pass is re-populated by a fresh
         # _enter_group_pass (eligibility re-derived from scratch).
-        processor.process_item(state, "q_age", 30)
+        processor.process_item(state, "q_age", 30, source=SOURCE_RESPONDENT)
         re_drawn = processor.get_current_item(state, backward=False)
         self.assertIsNotNone(re_drawn)
         self.assertEqual(re_drawn.get("_group_block_id"), block_id)

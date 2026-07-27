@@ -6,6 +6,12 @@ Tests survey flow including:
 - Outcomes stored in questionnaire state
 - Outcome persistence when navigating backward and taking different paths
 - Topological order respecting dependencies
+- Response timing captured at the answer seam: a forward answer records one
+  committed event, a backward convenience save records an uncommitted one that
+  does not count as an attempt, a re-answer records a second event beside the
+  first, and a Roster item answered under two iterations records two
+  independent events
+- `process_item` refuses to record an untagged answer — `source` is required
 """
 
 from pathlib import Path
@@ -14,7 +20,7 @@ from typing import Any, Optional
 import pytest
 from askalot_qml.core.flow_processor import FlowProcessor
 from askalot_qml.core.qml_loader import QMLLoader
-from askalot_qml.models.qml_state import QMLState
+from askalot_qml.models.qml_state import SOURCE_RESPONDENT, SOURCE_SYNTHETIC, QMLState
 
 FIXTURES_DIR = Path(__file__).parent.parent / "fixtures"
 
@@ -118,7 +124,7 @@ class TestForwardNavigation:
         assert current["id"] == "q_start"
 
         # Process with outcome=1 (Yes)
-        processor.process_item(state, "q_start", 1)
+        processor.process_item(state, "q_start", 1, source=SOURCE_RESPONDENT)
 
         # Next should be q_path (precondition: q_start.outcome == 1)
         current = processor.get_current_item(state)
@@ -130,22 +136,22 @@ class TestForwardNavigation:
         processor = FlowProcessor(state)
 
         # q_start -> Yes
-        processor.process_item(state, "q_start", 1)
+        processor.process_item(state, "q_start", 1, source=SOURCE_RESPONDENT)
         processor.get_current_item(state)  # q_path
 
         # q_path -> Technology (1)
-        processor.process_item(state, "q_path", 1)
+        processor.process_item(state, "q_path", 1, source=SOURCE_RESPONDENT)
 
         # Next should be tech path, not nature path
         current = processor.get_current_item(state)
         assert current["id"] == "q_tech_interest"
 
         # Complete tech path
-        processor.process_item(state, "q_tech_interest", 2)
+        processor.process_item(state, "q_tech_interest", 2, source=SOURCE_RESPONDENT)
         current = processor.get_current_item(state)
         assert current["id"] == "q_tech_experience"
 
-        processor.process_item(state, "q_tech_experience", 5)
+        processor.process_item(state, "q_tech_experience", 5, source=SOURCE_RESPONDENT)
 
         # Should skip nature path entirely and go to final
         current = processor.get_current_item(state)
@@ -163,7 +169,7 @@ class TestOutcomeStorage:
         processor = FlowProcessor(state)
 
         processor.get_current_item(state)
-        processor.process_item(state, "q_start", 1)
+        processor.process_item(state, "q_start", 1, source=SOURCE_RESPONDENT)
 
         item = state.get_item("q_start")
         assert get_outcome_value(item) == 1
@@ -175,13 +181,13 @@ class TestOutcomeStorage:
 
         # Process several items
         processor.get_current_item(state)
-        processor.process_item(state, "q_start", 1)
+        processor.process_item(state, "q_start", 1, source=SOURCE_RESPONDENT)
 
         processor.get_current_item(state)
-        processor.process_item(state, "q_path", 1)  # Technology
+        processor.process_item(state, "q_path", 1, source=SOURCE_RESPONDENT)  # Technology
 
         processor.get_current_item(state)
-        processor.process_item(state, "q_tech_interest", 2)  # Web
+        processor.process_item(state, "q_tech_interest", 2, source=SOURCE_RESPONDENT)  # Web
 
         # Verify all outcomes
         assert get_outcome_value(state.get_item("q_start")) == 1
@@ -194,15 +200,15 @@ class TestOutcomeStorage:
         processor = FlowProcessor(state)
 
         processor.get_current_item(state)
-        processor.process_item(state, "q_start", 1)
+        processor.process_item(state, "q_start", 1, source=SOURCE_RESPONDENT)
 
         processor.get_current_item(state)
-        processor.process_item(state, "q_path", 1)
+        processor.process_item(state, "q_path", 1, source=SOURCE_RESPONDENT)
 
         # Process q_tech_interest with outcome 2 (Web)
         # codeBlock: score = score + q_tech_interest.outcome
         processor.get_current_item(state)
-        processor.process_item(state, "q_tech_interest", 2)
+        processor.process_item(state, "q_tech_interest", 2, source=SOURCE_RESPONDENT)
 
         # Check that score was updated in subsequent items
         next_item = state.get_item("q_tech_experience")
@@ -214,7 +220,7 @@ class TestOutcomeStorage:
         processor = FlowProcessor(state)
 
         processor.get_current_item(state)
-        processor.process_item(state, "q_start", 1)
+        processor.process_item(state, "q_start", 1, source=SOURCE_RESPONDENT)
 
         item = state.get_item("q_start")
         assert item["visited"] is True
@@ -232,7 +238,7 @@ class TestBackwardNavigation:
 
         # Navigate forward
         processor.get_current_item(state)  # q_start
-        processor.process_item(state, "q_start", 1)
+        processor.process_item(state, "q_start", 1, source=SOURCE_RESPONDENT)
         processor.get_current_item(state)  # q_path
 
         # Navigate backward
@@ -247,9 +253,9 @@ class TestBackwardNavigation:
 
         # Navigate forward
         processor.get_current_item(state)
-        processor.process_item(state, "q_start", 1)
+        processor.process_item(state, "q_start", 1, source=SOURCE_RESPONDENT)
         processor.get_current_item(state)
-        processor.process_item(state, "q_path", 1)
+        processor.process_item(state, "q_path", 1, source=SOURCE_RESPONDENT)
 
         # q_path should be visited
         assert state.get_item("q_path")["visited"] is True
@@ -266,9 +272,9 @@ class TestBackwardNavigation:
         processor = FlowProcessor(state)
 
         processor.get_current_item(state)
-        processor.process_item(state, "q_start", 1)
+        processor.process_item(state, "q_start", 1, source=SOURCE_RESPONDENT)
         processor.get_current_item(state)
-        processor.process_item(state, "q_path", 1)
+        processor.process_item(state, "q_path", 1, source=SOURCE_RESPONDENT)
 
         # History should have both items
         assert "q_start" in state.get_history()
@@ -308,13 +314,13 @@ class TestOutcomePersistenceOnPathChange:
 
         # Complete part of the survey
         processor.get_current_item(state)
-        processor.process_item(state, "q_start", 1)
+        processor.process_item(state, "q_start", 1, source=SOURCE_RESPONDENT)
 
         processor.get_current_item(state)
-        processor.process_item(state, "q_path", 1)  # Technology
+        processor.process_item(state, "q_path", 1, source=SOURCE_RESPONDENT)  # Technology
 
         processor.get_current_item(state)
-        processor.process_item(state, "q_tech_interest", 3)  # Mobile
+        processor.process_item(state, "q_tech_interest", 3, source=SOURCE_RESPONDENT)  # Mobile
 
         # Navigate backward to q_path
         processor.get_current_item(state, backward=True)  # to q_path
@@ -333,16 +339,16 @@ class TestOutcomePersistenceOnPathChange:
 
         # Start survey
         processor.get_current_item(state)
-        processor.process_item(state, "q_start", 1)
+        processor.process_item(state, "q_start", 1, source=SOURCE_RESPONDENT)
 
         processor.get_current_item(state)
-        processor.process_item(state, "q_path", 1)  # Technology
+        processor.process_item(state, "q_path", 1, source=SOURCE_RESPONDENT)  # Technology
 
         # Go back and change answer
         processor.get_current_item(state, backward=True)
 
         # Re-answer with different value
-        processor.process_item(state, "q_path", 2)  # Nature
+        processor.process_item(state, "q_path", 2, source=SOURCE_RESPONDENT)  # Nature
 
         # Outcome should be updated
         assert get_outcome_value(state.get_item("q_path")) == 2
@@ -354,17 +360,17 @@ class TestOutcomePersistenceOnPathChange:
 
         # Take Technology path first
         processor.get_current_item(state)
-        processor.process_item(state, "q_start", 1)
+        processor.process_item(state, "q_start", 1, source=SOURCE_RESPONDENT)
 
         processor.get_current_item(state)
-        processor.process_item(state, "q_path", 1)  # Technology
+        processor.process_item(state, "q_path", 1, source=SOURCE_RESPONDENT)  # Technology
 
         processor.get_current_item(state)
-        processor.process_item(state, "q_tech_interest", 2)
+        processor.process_item(state, "q_tech_interest", 2, source=SOURCE_RESPONDENT)
 
         # Now go back to q_path and choose Nature instead
         processor.get_current_item(state, backward=True)  # to q_path
-        processor.process_item(state, "q_path", 2)  # Nature
+        processor.process_item(state, "q_path", 2, source=SOURCE_RESPONDENT)  # Nature
 
         # Forward navigation should now go to Nature path
         current = processor.get_current_item(state)
@@ -380,13 +386,15 @@ class TestOutcomePersistenceOnPathChange:
 
         # Take Technology path
         processor.get_current_item(state)
-        processor.process_item(state, "q_start", 1)
+        processor.process_item(state, "q_start", 1, source=SOURCE_RESPONDENT)
 
         processor.get_current_item(state)
-        processor.process_item(state, "q_path", 1)
+        processor.process_item(state, "q_path", 1, source=SOURCE_RESPONDENT)
 
         processor.get_current_item(state)
-        processor.process_item(state, "q_tech_interest", 3)  # Mobile = 3 points
+        processor.process_item(
+            state, "q_tech_interest", 3, source=SOURCE_RESPONDENT
+        )  # Mobile = 3 points
 
         # Check score after tech_interest
         tech_exp = state.get_item("q_tech_experience")
@@ -394,10 +402,12 @@ class TestOutcomePersistenceOnPathChange:
 
         # Go back and take Nature path
         processor.get_current_item(state, backward=True)  # to q_path
-        processor.process_item(state, "q_path", 2)  # Nature
+        processor.process_item(state, "q_path", 2, source=SOURCE_RESPONDENT)  # Nature
 
         processor.get_current_item(state)  # q_nature_interest
-        processor.process_item(state, "q_nature_interest", 1)  # Wildlife = 1 point
+        processor.process_item(
+            state, "q_nature_interest", 1, source=SOURCE_RESPONDENT
+        )  # Wildlife = 1 point
 
         # Score should reflect new path
         nature_freq = state.get_item("q_nature_frequency")
@@ -417,27 +427,27 @@ class TestCompleteFlowScenarios:
         # q_start
         current = processor.get_current_item(state)
         assert current["id"] == "q_start"
-        processor.process_item(state, "q_start", 1)
+        processor.process_item(state, "q_start", 1, source=SOURCE_RESPONDENT)
 
         # q_path
         current = processor.get_current_item(state)
         assert current["id"] == "q_path"
-        processor.process_item(state, "q_path", 1)  # Technology
+        processor.process_item(state, "q_path", 1, source=SOURCE_RESPONDENT)  # Technology
 
         # q_tech_interest
         current = processor.get_current_item(state)
         assert current["id"] == "q_tech_interest"
-        processor.process_item(state, "q_tech_interest", 1)  # AI
+        processor.process_item(state, "q_tech_interest", 1, source=SOURCE_RESPONDENT)  # AI
 
         # q_tech_experience
         current = processor.get_current_item(state)
         assert current["id"] == "q_tech_experience"
-        processor.process_item(state, "q_tech_experience", 10)
+        processor.process_item(state, "q_tech_experience", 10, source=SOURCE_RESPONDENT)
 
         # q_final
         current = processor.get_current_item(state)
         assert current["id"] == "q_final"
-        processor.process_item(state, "q_final", 1)
+        processor.process_item(state, "q_final", 1, source=SOURCE_RESPONDENT)
 
         # Verify final score: 1 (AI) + 10 (experience >= 5) = 11
         final_item = state.get_item("q_final")
@@ -450,21 +460,21 @@ class TestCompleteFlowScenarios:
 
         # q_start
         processor.get_current_item(state)
-        processor.process_item(state, "q_start", 1)
+        processor.process_item(state, "q_start", 1, source=SOURCE_RESPONDENT)
 
         # q_path -> Nature
         processor.get_current_item(state)
-        processor.process_item(state, "q_path", 2)
+        processor.process_item(state, "q_path", 2, source=SOURCE_RESPONDENT)
 
         # q_nature_interest
         current = processor.get_current_item(state)
         assert current["id"] == "q_nature_interest"
-        processor.process_item(state, "q_nature_interest", 2)  # Plants
+        processor.process_item(state, "q_nature_interest", 2, source=SOURCE_RESPONDENT)  # Plants
 
         # q_nature_frequency
         current = processor.get_current_item(state)
         assert current["id"] == "q_nature_frequency"
-        processor.process_item(state, "q_nature_frequency", 1)  # Daily
+        processor.process_item(state, "q_nature_frequency", 1, source=SOURCE_RESPONDENT)  # Daily
 
         # q_final
         current = processor.get_current_item(state)
@@ -480,7 +490,7 @@ class TestCompleteFlowScenarios:
 
         # q_start -> No
         processor.get_current_item(state)
-        processor.process_item(state, "q_start", 2)  # No
+        processor.process_item(state, "q_start", 2, source=SOURCE_RESPONDENT)  # No
 
         # Should skip q_path (precondition: q_start.outcome == 1)
         # and go directly to q_final
@@ -494,13 +504,13 @@ class TestCompleteFlowScenarios:
 
         # Forward through several items
         processor.get_current_item(state)
-        processor.process_item(state, "q_start", 1)
+        processor.process_item(state, "q_start", 1, source=SOURCE_RESPONDENT)
 
         processor.get_current_item(state)
-        processor.process_item(state, "q_path", 1)
+        processor.process_item(state, "q_path", 1, source=SOURCE_RESPONDENT)
 
         processor.get_current_item(state)
-        processor.process_item(state, "q_tech_interest", 2)
+        processor.process_item(state, "q_tech_interest", 2, source=SOURCE_RESPONDENT)
 
         # Go back
         processor.get_current_item(state, backward=True)
@@ -518,7 +528,7 @@ class TestCompleteFlowScenarios:
         # Go forward and take different path
         current = processor.get_current_item(state)
         assert current["id"] == "q_path"
-        processor.process_item(state, "q_path", 2)  # Nature
+        processor.process_item(state, "q_path", 2, source=SOURCE_RESPONDENT)  # Nature
 
         current = processor.get_current_item(state)
         assert current["id"] == "q_nature_interest"
@@ -537,7 +547,7 @@ class TestDependencyBasedNavigation:
         # q_employed first
         current = processor.get_current_item(state)
         assert current["id"] == "q_employed"
-        processor.process_item(state, "q_employed", 1)  # Yes
+        processor.process_item(state, "q_employed", 1, source=SOURCE_RESPONDENT)  # Yes
 
         # Complete the survey and verify job questions were shown
         visited_ids = []
@@ -547,7 +557,7 @@ class TestDependencyBasedNavigation:
                 break
             visited_ids.append(current["id"])
             # Provide simple answers
-            processor.process_item(state, current["id"], 1)
+            processor.process_item(state, current["id"], 1, source=SOURCE_RESPONDENT)
 
         # Job questions should have been visited (precondition satisfied)
         assert "q_job_title" in visited_ids
@@ -560,7 +570,7 @@ class TestDependencyBasedNavigation:
 
         # q_employed -> No
         processor.get_current_item(state)
-        processor.process_item(state, "q_employed", 2)
+        processor.process_item(state, "q_employed", 2, source=SOURCE_RESPONDENT)
 
         # Should skip job questions and go to degree
         current = processor.get_current_item(state)
@@ -584,7 +594,7 @@ class TestPreconditionErrorHandling:
             # First question should work
             current = processor.get_current_item(state)
             assert current["id"] == "q_first"
-            processor.process_item(state, "q_first", 1)
+            processor.process_item(state, "q_first", 1, source=SOURCE_RESPONDENT)
 
             # q_malformed should be SHOWN (assume True when can't evaluate)
             # to allow data collection even with malformed preconditions
@@ -616,7 +626,7 @@ class TestPreconditionErrorHandling:
             current_id = current["id"]
             if current_id not in visited_ids:
                 visited_ids.append(current_id)
-            processor.process_item(state, current_id, 1)
+            processor.process_item(state, current_id, 1, source=SOURCE_RESPONDENT)
             if current.get("isLast"):
                 break
 
@@ -624,3 +634,130 @@ class TestPreconditionErrorHandling:
         assert "q_first" in visited_ids
         assert "q_malformed" in visited_ids
         assert "q_last" in visited_ids
+
+
+@pytest.mark.integration
+@pytest.mark.flow
+class TestResponseTiming:
+    """Per-answer timing events written at the FlowProcessor answer seam.
+
+    The blueprint-level half of the capture — presentation stamping, refresh
+    idempotence, resume, and the respondent/interviewer tag — lives in
+    test_flow_blueprint_timing.py, because those seams are HTTP endpoints.
+    """
+
+    def test_forward_answer_records_one_committed_event(self):
+        """An answered item leaves exactly one closed, committed event whose
+        submission moment is at or after its presentation moment."""
+        state = load_qml_fixture("branching_flow.qml")
+        processor = FlowProcessor(state)
+
+        processor.get_current_item(state)
+        processor.process_item(state, "q_start", 1, source=SOURCE_RESPONDENT)
+
+        events = state.get_timing_events()
+        assert len(events) == 1
+        event = events[0]
+        assert event["i"] == "q_start"
+        assert event["k"] is None
+        assert event["c"] is True
+        assert event["src"] == SOURCE_RESPONDENT
+        assert event["s"] >= event["p"]
+
+    def test_backward_convenience_save_is_uncommitted_and_not_an_attempt(self):
+        """KTD4: a save made while stepping back is timed but is not an answer
+        attempt — the event exists (the time was spent) and the attempt count
+        stays zero, so a back-and-forth does not inflate R12's per-item count."""
+        state = load_qml_fixture("branching_flow.qml")
+        processor = FlowProcessor(state)
+
+        processor.get_current_item(state)
+        processor.process_item(
+            state, "q_start", 1, source=SOURCE_RESPONDENT, skip_postcondition=True
+        )
+
+        events = state.get_timing_events()
+        assert len(events) == 1
+        assert events[0]["c"] is False
+        assert state.count_timing_attempts("q_start", None) == 0
+
+    def test_reanswer_after_going_back_records_two_events(self):
+        """AE2: answering, stepping back, and re-answering keeps BOTH events —
+        one uncommitted, one committed — because the log is append-only and the
+        second attempt must not overwrite the first attempt's duration."""
+        state = load_qml_fixture("branching_flow.qml")
+        processor = FlowProcessor(state)
+
+        processor.get_current_item(state)
+        processor.process_item(state, "q_start", 1, source=SOURCE_RESPONDENT)
+        # The convenience save the UI issues on the way back, then a fresh
+        # presentation and a real re-answer.
+        processor.process_item(
+            state, "q_start", 2, source=SOURCE_RESPONDENT, skip_postcondition=True
+        )
+        state.open_timing_event("q_start", None, SOURCE_RESPONDENT)
+        processor.process_item(state, "q_start", 1, source=SOURCE_RESPONDENT)
+
+        events = state.get_timing_events_for_item("q_start")
+        assert [event["c"] for event in events] == [True, False, True]
+        # Only the two real answers count as attempts.
+        assert state.count_timing_attempts("q_start", None) == 2
+
+    def test_roster_iterations_record_independent_events(self):
+        """AE1: the same item answered under two Roster iterations is two
+        answers, not two attempts at one — the events carry distinct iteration
+        keys and each iteration's attempt count is 1."""
+        state = load_qml_fixture("roster_numeric.qml")
+        processor = FlowProcessor(state)
+
+        # 2 family members → mask 3 → iterations under bits 1 and 2.
+        processor.get_current_item(state)
+        processor.process_item(state, "q_family_count", 2, source=SOURCE_RESPONDENT)
+
+        for _step in range(10):
+            item = processor.get_current_item(state)
+            if item is None or item.get("isLast"):
+                break
+            processor.process_item(state, item["id"], 1, source=SOURCE_RESPONDENT)
+
+        name_events = state.get_timing_events_for_item("q_member_name")
+        assert [event["k"] for event in name_events] == [1, 2]
+        assert state.count_timing_attempts("q_member_name", 1) == 1
+        assert state.count_timing_attempts("q_member_name", 2) == 1
+
+    def test_process_item_without_source_raises(self):
+        """The argument is required, not defaulted: a driver that forgets it
+        must fail where it is written rather than record answers no consumer
+        can separate from human ones (KTD12)."""
+        state = load_qml_fixture("branching_flow.qml")
+        processor = FlowProcessor(state)
+        processor.get_current_item(state)
+
+        with pytest.raises(TypeError):
+            processor.process_item(state, "q_start", 1)
+
+        assert state.get_timing_events() == []
+
+    def test_unknown_source_is_refused(self):
+        """An unrecognized tag is rejected rather than stored — the same rule
+        add_warning applies to severity, and for the same reason: a typo would
+        silently escape every source-based filter downstream."""
+        state = load_qml_fixture("branching_flow.qml")
+        processor = FlowProcessor(state)
+        processor.get_current_item(state)
+
+        with pytest.raises(ValueError, match="Unknown timing source"):
+            processor.process_item(state, "q_start", 1, source="robot")
+
+        assert state.get_timing_events() == []
+
+    def test_source_is_recorded_verbatim_per_driver(self):
+        """The tag on the event is the one the driver supplied — a machine fill
+        stays separable from a human answer in the same log (AE5)."""
+        state = load_qml_fixture("branching_flow.qml")
+        processor = FlowProcessor(state)
+
+        processor.get_current_item(state)
+        processor.process_item(state, "q_start", 1, source=SOURCE_SYNTHETIC)
+
+        assert state.get_timing_events()[0]["src"] == SOURCE_SYNTHETIC

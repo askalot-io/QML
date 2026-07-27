@@ -51,7 +51,7 @@ from pathlib import Path
 import pytest
 from askalot_qml.core.flow_processor import FlowProcessor
 from askalot_qml.core.qml_loader import QMLLoader
-from askalot_qml.models.qml_state import QMLState
+from askalot_qml.models.qml_state import SOURCE_RESPONDENT, QMLState
 
 FIXTURES_DIR = Path(__file__).parent.parent / "fixtures"
 
@@ -108,7 +108,7 @@ def _walk_and_answer(
             )
 
         # Native shape: bare value passed directly (plan 2026-05-05-001).
-        result = processor.process_item(state, item_id, value)
+        result = processor.process_item(state, item_id, value, source=SOURCE_RESPONDENT)
         assert result.get("success"), f"process_item failed for {item_id}: {result}"
     else:
         raise AssertionError(f"Walked >200 items — likely a navigation loop: {walked!r}")
@@ -305,7 +305,7 @@ class TestMidSurveyMaskChange(unittest.TestCase):
 
         # Re-answer with mask=6 (Lunch+Dinner). Bit 1 dropped, bit 2 added,
         # bit 4 retained.
-        result = processor.process_item(state, "q_meals_eaten", 6)
+        result = processor.process_item(state, "q_meals_eaten", 6, source=SOURCE_RESPONDENT)
         self.assertTrue(result.get("success"))
 
         # Walk forward through the new pass.
@@ -358,7 +358,7 @@ class TestMidSurveyMaskChange(unittest.TestCase):
             prev = processor.get_current_item(state, backward=True)
             if prev and prev["id"] == "q_meals_eaten":
                 break
-        processor.process_item(state, "q_meals_eaten", 7)
+        processor.process_item(state, "q_meals_eaten", 7, source=SOURCE_RESPONDENT)
 
         # Forward walk should re-traverse all 3 active iters but only NEW iter
         # (bit 2) needs fresh answers; existing iters can be re-answered.

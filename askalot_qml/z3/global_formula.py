@@ -12,7 +12,7 @@ Where:
 SAT(F) indicates that at least one valid questionnaire completion exists.
 UNSAT(F) indicates accumulated postconditions conflict - no valid completion possible.
 
-Reference: askalot-research/thesis/chapters/comprehensive_validation.tex, Definition 2.1
+Reference: askalot-io/docs thesis/chapters/comprehensive_validation.tex, Definition 2.1
 """
 
 import logging
