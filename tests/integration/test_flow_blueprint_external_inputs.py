@@ -115,6 +115,11 @@ def _make_app(repo, resolver=None) -> Flask:
         repository=repo,
         url_prefix="/api/flow",
         external_input_resolver=resolver,
+        # The flow API needs a credential (R37). These tests are about
+        # external-input injection, so they present the smallest session that
+        # authorizes them — the shape SirWay's signed cookie resolves to.
+        # ``test_flow_session_binding.py`` asserts the refusals themselves.
+        session_resolver=lambda: ("org-1", "org-slug", str(repo._survey.id)),
     )
     app.register_blueprint(bp)
     return app

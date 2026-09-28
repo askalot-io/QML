@@ -10,7 +10,8 @@ init from a service-supplied `{item_id: value}` injection map:
 - Missing: an external item with no injection is asked in the normal flow (AE2 / R10).
 - Out-of-domain: a value outside the item's declared domain is rejected and the
   item is asked (AE3 / R11).
-- Provenance: an auto-answered outcome carries the externally-supplied marker (R12).
+- Provenance: an auto-answered outcome carries the externally-supplied marker;
+  an answer that replaces the value drops it, one re-submitting it keeps it (R12).
 - Precondition-false: a precondition-false external stays absent despite a value.
 - Postcondition-fail: an in-domain value failing the postcondition leaves the
   item unresolved (no history, no provenance) and asked in the flow.
@@ -37,7 +38,7 @@ from typing import Any
 import pytest
 from askalot_qml.core.flow_processor import FlowProcessor
 from askalot_qml.core.qml_loader import QMLLoader
-from askalot_qml.models.qml_state import SOURCE_EXTERNAL_PREFILL, QMLState
+from askalot_qml.models.qml_state import SOURCE_EXTERNAL_PREFILL, SOURCE_RESPONDENT, QMLState
 
 
 def _state(qml: str) -> QMLState:
@@ -116,9 +117,10 @@ class TestApplyExternalInputs:
         item = state.get_item("q_rotate_out")
         assert item["outcome"] == 1
         assert item["visited"] is True
-        # codeBlock ran: derived variable set on downstream context.
-        followup = state.get_item("q_followup")
-        assert followup["context"]["rotate_flag"] == 1
+        # codeBlock ran: the prefilled item joined history and its derived
+        # variable is in the state later items are reached with.
+        assert state.get_history() == ["q_rotate_out"]
+        assert state.tail_state()["vars"]["rotate_flag"] == 1
         # Not presented — the flow skips straight to the follow-up.
         assert _first_item_id(state) == "q_followup"
 
@@ -170,6 +172,40 @@ class TestApplyExternalInputs:
         assert state.get_external_provenance("q_rotate_out") == {"source": "q_rotate_out"}
         # A normal, un-injected item is unmarked.
         assert not state.is_externally_supplied("q_followup")
+
+    def test_an_answer_from_another_source_drops_the_marker(self):
+        """R12: the marker describes the value the item holds NOW. When the
+        respondent answers an item that was prefilled — it came back onto the
+        path after a backward edit — the marker goes with the replaced value,
+        or the row would label the respondent's own answer as prefilled."""
+        state = _state(_QML_BASIC)
+        processor = FlowProcessor(state)
+        processor.apply_external_inputs(state, {"q_rotate_out": 0})
+        assert state.is_externally_supplied("q_rotate_out")
+
+        processor.process_item(state, "q_rotate_out", 1, source=SOURCE_RESPONDENT)
+
+        assert not state.is_externally_supplied("q_rotate_out")
+
+    @pytest.mark.parametrize("skip_postcondition", [True, False])
+    def test_resubmitting_the_prefilled_value_keeps_the_marker(self, skip_postcondition):
+        """R12: a prefilled item sits in history, so a respondent paging back
+        through it re-submits the value it holds — the Back button's
+        convenience save, or Next on the unchanged item. The value is still
+        the prefilled one, so the marker stays."""
+        state = _state(_QML_BASIC)
+        processor = FlowProcessor(state)
+        processor.apply_external_inputs(state, {"q_rotate_out": 0})
+
+        processor.process_item(
+            state,
+            "q_rotate_out",
+            0,
+            source=SOURCE_RESPONDENT,
+            skip_postcondition=skip_postcondition,
+        )
+
+        assert state.is_externally_supplied("q_rotate_out")
 
     def test_prefill_records_a_committed_zero_duration_event(self):
         """R9: a prefilled answer is timed like any other, tagged

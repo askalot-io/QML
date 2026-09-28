@@ -1,3 +1,4 @@
+import copy
 import logging
 import time
 from collections.abc import Iterable
@@ -109,7 +110,6 @@ class QuestionnaireItem(TypedDict):
     # Runtime state (added during execution)
     outcome: NotRequired[Any]  # User's answer/selection
     visited: NotRequired[bool]  # Has been shown to user
-    context: NotRequired[dict[str, Any]]  # Variable state AFTER this item's execution
 
 
 class QuestionnaireBlock(TypedDict):
@@ -153,8 +153,8 @@ class QMLState(dict):
     QML execution state with flat item structure and exposed types.
 
     Items reference their blocks rather than being nested inside them.
-    Maintains functional approach where context flows through items without mutation.
-    Each item's context represents the variable state after that item's execution.
+    Variables flow along history, not items: each history entry holds the
+    variable state after that entry's codeBlock ran (see `history_state`).
 
     This class inherits from dict to maintain JSON serialization compatibility
     while providing type-safe access methods.
@@ -330,6 +330,34 @@ class QMLState(dict):
                     rekeyed[k] = v
             self["roster_outcomes"][block_id] = rekeyed
 
+        # Variable state chain (#1021). A codeBlock variable lives in the state
+        # of the HISTORY ENTRY that produced it, never on an item:
+        #
+        #  * `init_variables`  What codeInit left, the state before the first
+        #                      entry.
+        #  * `history_state`   Parallel list to `history`, lockstep-indexed like
+        #                      `history_iter_key`. Entry i is
+        #                      {"vars": {...}, "unknown": [names],
+        #                       "outcome_undo": {item_id: [outcome, visited, written]}}:
+        #                      the variables after entry i's codeBlock ran, the
+        #                      subset of them computed from an unanswered item
+        #                      (#1044), and the prior value of every OTHER item's
+        #                      outcome that codeBlock overwrote, beside the value
+        #                      it wrote.
+        #
+        # An entry is created by cloning its predecessor's state when the walk
+        # reaches the item (add_to_history), and replaced when the item is
+        # processed. So the state an item sees is derived from the items that
+        # actually ran before it: a value no longer produced is absent, not
+        # stale, and truncating history IS the rollback — truncate_history also
+        # replays `outcome_undo`, because a codeBlock-written outcome lives on the
+        # item, not in the entry. A respondent's own answer is never in an undo
+        # log; history truncation already takes it off the path.
+        if "history_state" not in self and self.get("navigation_path"):
+            self._upgrade_item_contexts()
+        self.setdefault("init_variables", {})
+        self.setdefault("history_state", [])
+
         # Repair length drift defensively. If a future bug ever stores history without
         # updating history_iter_key (or vice versa) we'd silently misattribute
         # iter_keys; keep both in lockstep here so all downstream callers can rely
@@ -339,6 +367,49 @@ class QMLState(dict):
             self["history_iter_key"].extend([None] * (history_len - len(self["history_iter_key"])))
         elif len(self["history_iter_key"]) > history_len:
             self["history_iter_key"] = self["history_iter_key"][:history_len]
+        while len(self["history_state"]) < history_len:
+            self["history_state"].append(self._clone_entry(self["history_state"][-1:]))
+        del self["history_state"][history_len:]
+
+    def _upgrade_item_contexts(self) -> None:
+        """Build the state chain for a survey persisted with per-item contexts.
+
+        That shape broadcast every processed item's variables into the
+        `context` of each later item, so the context an item holds is the
+        merged state it was reached with. Entry i therefore takes the context
+        of the item entry i+1 names. The last entry's item holds the state it
+        was reached with, which lacks its own codeBlock's output once it has
+        been answered, so a visited last item takes the context of the item
+        after it on `navigation_path` — the one that received its broadcast.
+        The survey sees exactly the variables it saw before the upgrade, and
+        only the next backward edit starts deriving state the new way.
+        """
+        items = {item.get("id"): item for item in self.get("items", [])}
+        history = self.get("history", [])
+        path = self.get("navigation_path", [])
+
+        def context_of(item_id: str | None) -> dict[str, Any]:
+            return copy.deepcopy((items.get(item_id) or {}).get("context") or {})
+
+        def after_last(item_id: str) -> str:
+            if (items.get(item_id) or {}).get("visited") and item_id in path:
+                position = path.index(item_id)
+                if position + 1 < len(path):
+                    return path[position + 1]
+            return item_id
+
+        first = history[0] if history else next(iter(items), None)
+        self["init_variables"] = context_of(first)
+        self["history_state"] = [
+            {
+                "vars": context_of(history[i + 1] if i + 1 < len(history) else after_last(item_id)),
+                "unknown": [],
+                "outcome_undo": {},
+            }
+            for i, item_id in enumerate(history)
+        ]
+        for item in items.values():
+            item.pop("context", None)
 
     def _rebuild_indices(self) -> None:
         """Rebuild the id→item / id→block / blockId→[items] / kind→[blocks]
@@ -445,6 +516,87 @@ class QMLState(dict):
         """
         self.setdefault("history", []).append(item_id)
         self.setdefault("history_iter_key", []).append(iter_key)
+        # Pull-at-reach: the new entry starts from the state of the entry that
+        # actually ran before it, whatever navigation_path position it holds.
+        states = self.setdefault("history_state", [])
+        states.append(self._clone_entry(states[-1:]))
+
+    def _clone_entry(self, predecessor: list[dict[str, Any]]) -> dict[str, Any]:
+        """A fresh history entry carrying *predecessor*'s variables and marks
+        (a one-element list, empty for the first entry → `init_variables`)."""
+        if predecessor:
+            source = predecessor[0]
+            return {
+                "vars": copy.deepcopy(source["vars"]),
+                "unknown": list(source["unknown"]),
+                "outcome_undo": {},
+            }
+        return {
+            "vars": copy.deepcopy(self.get("init_variables", {})),
+            "unknown": [],
+            "outcome_undo": {},
+        }
+
+    def entry_index(self, item_id: str, iter_key: int | None) -> int | None:
+        """Index of the LAST history entry for `(item_id, iter_key)`, or None."""
+        history = self.get("history", [])
+        iter_keys = self.get("history_iter_key", [])
+        for idx in range(len(history) - 1, -1, -1):
+            if history[idx] == item_id and iter_keys[idx] == iter_key:
+                return idx
+        return None
+
+    def state_before(self, idx: int) -> dict[str, Any]:
+        """The entry the state at history index *idx* derives from: entry
+        idx-1, or the codeInit state for the first entry. Returned by
+        reference — callers copy before mutating."""
+        if idx > 0:
+            return self["history_state"][idx - 1]
+        return {"vars": self.get("init_variables", {}), "unknown": [], "outcome_undo": {}}
+
+    def tail_state(self) -> dict[str, Any]:
+        """The state the walk is at now: the last history entry's, or codeInit's."""
+        return self.state_before(len(self.get("history_state", [])))
+
+    def undo_entry_outcomes(self, idx: int) -> None:
+        """Restore every outcome entry *idx*'s codeBlock overwrote, and empty its log.
+
+        An outcome that no longer holds the value the codeBlock wrote was
+        replaced since — by a respondent's answer or a later entry's codeBlock —
+        and is left alone: the undo rolls back the write, not what followed it.
+        """
+        entry = self["history_state"][idx]
+        for item_id, (outcome, visited, written) in entry["outcome_undo"].items():
+            item = self.get_item(item_id)
+            if item is not None and item.get("outcome") == written:
+                item["outcome"] = outcome
+                item["visited"] = visited
+        entry["outcome_undo"] = {}
+
+    def truncate_history(self, length: int) -> list[tuple]:
+        """Cut history to its first *length* entries; return the removed
+        `(item_id, iter_key)` pairs, oldest first.
+
+        The one way to shorten history from the middle-out: the three
+        parallel lists stay in lockstep, and each removed entry's codeBlock
+        outcome writes are undone newest first, so the state is what it was
+        when the surviving tail entry was current.
+        """
+        history = self.get("history", [])
+        removed = self.get_history_with_iter()[length:]
+        for idx in range(len(history) - 1, length - 1, -1):
+            self.undo_entry_outcomes(idx)
+        del history[length:]
+        del self["history_iter_key"][length:]
+        del self["history_state"][length:]
+        return removed
+
+    def remove_history_entries(self, item_id: str) -> None:
+        """Drop every history entry for *item_id* in place (capped-Group
+        eviction). Later entries keep the state they were derived with."""
+        keep = [i for i, hid in enumerate(self.get("history", [])) if hid != item_id]
+        for key in ("history", "history_iter_key", "history_state"):
+            self[key] = [self[key][i] for i in keep]
 
     def pop_history(self) -> tuple | None:
         """
@@ -455,12 +607,9 @@ class QMLState(dict):
         can't drift out of lockstep between `history` and `history_iter_key`.
         """
         history = self.get("history", [])
-        iter_keys = self.get("history_iter_key", [])
         if not history:
             return None
-        item_id = history.pop()
-        iter_key = iter_keys.pop() if iter_keys else None
-        return (item_id, iter_key)
+        return self.truncate_history(len(history) - 1)[0]
 
     def get_history(self) -> list[str]:
         """
@@ -519,7 +668,7 @@ class QMLState(dict):
         - Warnings
         - Response timing log
         - Cached diagrams
-        - Item outcomes, visited status, and context
+        - Item outcomes and visited status; the variable state chain
 
         After reset, the FlowProcessor will re-initialize the questionnaire,
         including re-running the initCode block with fresh context.
@@ -527,6 +676,8 @@ class QMLState(dict):
         # Clear navigation state
         self["history"] = []
         self["history_iter_key"] = []
+        self["history_state"] = []
+        self["init_variables"] = {}
         self["visited_items"] = []
         self["warnings"] = []
         self["response_timing"] = []
@@ -556,7 +707,6 @@ class QMLState(dict):
             # Remove runtime fields
             item.pop("outcome", None)
             item.pop("visited", None)
-            item.pop("context", None)
 
     def set_current_item(self, item_id: str) -> None:
         """
@@ -709,6 +859,10 @@ class QMLState(dict):
         field / ``custom_attributes`` key the value came from — never the value.
         """
         self.setdefault("external_provenance", {})[item_id] = {"source": source}
+
+    def clear_external_provenance(self, item_id: str) -> None:
+        """Drop an item's provenance marker."""
+        self.get("external_provenance", {}).pop(item_id, None)
 
     def get_external_provenance(self, item_id: str) -> dict[str, Any] | None:
         """The provenance marker for an item, or None if it was not prefilled."""
@@ -961,7 +1115,7 @@ class QMLState(dict):
     # on which subsystem raised it, so a cosmetic label drop never ranks beside
     # a corrupted branch.
 
-    def add_warning(self, item_id: str, warning_type: str, message: str, *, severity: str) -> None:
+    def add_warning(self, item_id: str, warning_type: str, message: str, *, severity: str) -> bool:
         """
         Record a degradation the engine absorbed during flow processing.
 
@@ -978,6 +1132,10 @@ class QMLState(dict):
         Args:
             item_id: The item where the degradation occurred.
             warning_type: What degraded — 'precondition', 'postcondition',
+                their '<kind>_unanswered_dependency' forms (a condition not
+                evaluated because it reads an item left unanswered), their
+                '<kind>_orphaned_answer' forms (a condition that read an answer
+                a backward edit took off the path as None),
                 'codeblock', 'roster_iterate_over', 'roster_mask_undeclared',
                 'item_missing', or an 'external_prefill_<gate>' decline.
             message: Human-readable description; never carries a respondent's
@@ -988,6 +1146,10 @@ class QMLState(dict):
                 construction. 'degraded' — the engine kept an answer or a path
                 its own rules would have rejected. 'informational' — the
                 dataset is unaffected.
+
+        Returns:
+            True when this is a new record, False when it only counted a repeat
+            — so a caller logs an occurrence once rather than on every pass.
         """
         if severity not in WARNING_SEVERITIES:
             # Loud, because severity is what a dataset-exclusion gate reads: a
@@ -1014,7 +1176,7 @@ class QMLState(dict):
             ):
                 existing["count"] += 1
                 existing["last_seen"] = now
-                return
+                return False
 
         warnings.append(
             {
@@ -1029,6 +1191,7 @@ class QMLState(dict):
                 "last_seen": now,
             }
         )
+        return True
 
     def get_warnings(self) -> list[dict[str, Any]]:
         """Get all warnings collected during flow processing."""

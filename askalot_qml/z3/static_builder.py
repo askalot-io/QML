@@ -14,6 +14,7 @@ import logging
 from collections.abc import Callable
 from typing import Any
 
+from askalot_common.profiling import profile_block
 from z3 import (
     And,
     Bool,
@@ -35,9 +36,7 @@ from z3 import (
 )
 
 from askalot_qml.models.qml_state import QMLState
-
-from askalot_common.profiling import profile_block
-
+from askalot_qml.predicate_ast import outcome_ref_name
 
 # Lazily-computed, process-wide cache of the names available in the predicate /
 # code evaluation namespace. Single source of truth: the ``PythonRunner`` sandbox
@@ -243,6 +242,7 @@ class StaticBuilder:
         Domain constraints define the valid value space for each item:
         - For Editbox/Slider: min <= S_i <= max
         - For Radio/Dropdown: S_i ∈ {v1, v2, ...}
+        - For Checkbox: S_i is a sum of distinct label keys (a bitmask, 0 included)
 
         These constraints form B (base constraint) as defined in the thesis:
         B := ∧_i D_i(S_i)
@@ -277,7 +277,46 @@ class StaticBuilder:
                     f"Unsupported max value type for {item_id}: {type(max_val).__name__}"
                 )
 
-        elif control in ("Radio", "Dropdown", "Checkbox", "Switch"):
+        elif control == "Checkbox":
+            # A Checkbox answers the SUM of its ticked keys (the loader holds
+            # every key to a positive power of 2), not one key: labels
+            # {1, 2, 4} answer any of 0..7, and 0 is "nothing ticked", which
+            # the control submits as its initial value. Modelled as
+            # 0 <= S <= mask with every UNDECLARED bit below the top key clear,
+            # tested by constant division and modulus as the Roster unroll
+            # does, so it stays linear integer arithmetic (no BitVec). An
+            # enumeration of the keys (the Radio branch) would classify a gate
+            # on a real combination, ``q.outcome == 3``, NEVER.
+            # Imported here, not at module level: ``askalot_qml.core``'s
+            # package __init__ imports the engine, which imports this module,
+            # so a top-level import breaks ``import askalot_qml.z3`` whenever
+            # it runs before ``askalot_qml.core``.
+            from askalot_qml.core.controls import checkbox_mask
+
+            mask = checkbox_mask(input_spec)
+            if mask:
+                # One ``(S / lo) % 2**run == 0`` per RUN of undeclared bits,
+                # not per bit: keys {1, 2**20} cost one term, not nineteen.
+                clear: list[tuple[int, int]] = []
+                bit = 0
+                while (1 << bit) <= mask:
+                    if mask >> bit & 1:
+                        bit += 1
+                        continue
+                    run = bit
+                    while (1 << run) <= mask and not mask >> run & 1:
+                        run += 1
+                    clear.append((1 << bit, 1 << (run - bit)))
+                    bit = run
+                builders.append(
+                    lambda v, _mask=mask, _clear=tuple(clear): And(
+                        v >= 0,
+                        v <= _mask,
+                        *[(v / lo) % span == 0 for lo, span in _clear],
+                    )
+                )
+
+        elif control in ("Radio", "Dropdown", "Switch"):
             # Enumeration constraint for choice controls
             # labels = {1: "Yes", 2: "No"} → valid values are integer keys
             valid_values: list[int] = []
@@ -1622,28 +1661,10 @@ class StaticBuilder:
         return bound
 
     @staticmethod
-    def _outcome_ref_name(node: ast.AST) -> str | None:
-        """The base name X iff ``node`` is exactly ``X.outcome`` (a plain
-        ``Name.outcome`` attribute access); else None.
-
-        Shared shape primitive for the pass-through-alias RHS check
-        (``_bare_outcome_item``, which filters the name against known items) and
-        the own-outcome postcondition test (``_is_own_outcome``, which compares
-        it to a specific item id).
-        """
-        if (
-            isinstance(node, ast.Attribute)
-            and node.attr == "outcome"
-            and isinstance(node.value, ast.Name)
-        ):
-            return node.value.id
-        return None
-
-    @staticmethod
     def _bare_outcome_item(value_node: ast.AST, item_details: dict[str, Any]) -> str | None:
         """Return item X iff ``value_node`` is exactly ``X.outcome`` for a known
         item X (the pass-through-alias RHS shape U3 keys on); else None."""
-        name = StaticBuilder._outcome_ref_name(value_node)
+        name = outcome_ref_name(value_node)
         return name if name in item_details else None
 
     def _record_undefined_name(
@@ -1677,7 +1698,7 @@ class StaticBuilder:
         self.logger.warning(
             "undefined name '%s' referenced in the %s of '%s' — it resolves to no "
             "item id, codeInit/codeBlock variable, or safe builtin. At runtime the "
-            "predicate fails open and Z3 sees a free symbol, so the logic enforces "
+            "predicate raises and Z3 sees a free symbol, so the logic enforces "
             "nothing.%s",
             identifier,
             condition_kind,
@@ -1724,9 +1745,9 @@ class StaticBuilder:
 
     def _is_textarea_outcome_ref(self, node: ast.AST) -> str | None:
         """The item name X iff ``node`` is ``X.outcome`` for a Textarea-controlled
-        item; else None. The shape check reuses ``_outcome_ref_name``; the control
+        item; else None. The shape check reuses ``predicate_ast.outcome_ref_name``; the control
         lookup reads ``item_details`` (populated in pass 1)."""
-        name = self._outcome_ref_name(node)
+        name = outcome_ref_name(node)
         if name is not None and self.item_details.get(name, {}).get("control") == "Textarea":
             return name
         return None
@@ -2102,7 +2123,7 @@ class StaticBuilder:
     @staticmethod
     def _is_own_outcome(node: ast.AST, item_id: str) -> bool:
         """True iff ``node`` is exactly ``<item_id>.outcome``."""
-        return StaticBuilder._outcome_ref_name(node) == item_id
+        return outcome_ref_name(node) == item_id
 
     @staticmethod
     def _literal_int(node: ast.AST) -> int | None:
@@ -2916,6 +2937,7 @@ class StaticBuilder:
         B := ∧_i D_i(S_i) where D_i(S_i) are domain constraints:
         - min/max for Editbox/Slider controls
         - enumeration for Radio/Dropdown controls
+        - a bitmask (sum of distinct keys) for Checkbox controls
 
         This is the correct B for use in:
         - Global validation: F = B ∧ ∧(P_i ⇒ Q_i)

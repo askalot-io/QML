@@ -140,10 +140,12 @@ def load_fielded_qml_content(repository: Any, survey: Any, questionnaire: Any) -
 
     Head is read only when there is no pin to honour:
 
-    - the survey has no campaign (ad-hoc preview), or
-    - the campaign row carries no ``qml_version_id`` (pre-cutover campaign) —
-      logged at warning level, because a live campaign without a pin is a
-      migration gap, not a design choice.
+    - the walk is a **preview**, which belongs to no campaign and so has no pin
+      to read (every survey does — ``ck_surveys_campaign_present``), or
+    - the campaign row carries no ``qml_version_id`` — logged at warning level,
+      because a live campaign without a pin means its questionnaire was never
+      published through the fielding door, which is a gap rather than a design
+      choice.
     """
     campaign_id = getattr(survey, "campaign_id", None)
     if not campaign_id:
@@ -193,6 +195,46 @@ class RepositoryQMLSource:
     def read(self, qml_name: str) -> str:
         """The head content of the questionnaire ``qml_name`` addresses."""
         return load_qml_content(self.repository, self._questionnaire_for(qml_name))
+
+    def read_within(self, qml_name: str, max_bytes: int) -> tuple[int, str | None]:
+        """``(size_bytes, content)`` — content only when it fits (#213).
+
+        For a caller choosing between inlining the QML and handing back a
+        reference to it: Portor's ``get_qml_content`` picks between the body and
+        a signed download URL on a 32 KB threshold. Reading the body to measure
+        it defeats the threshold for exactly the large documents it protects,
+        but measuring and reading as two calls is worse still — it doubles the
+        round trips on the common under-threshold path, and lets a concurrent
+        save leave the size describing one version and the body another.
+
+        One repository read answers both, so the returned size always describes
+        the returned content, and an oversized body is never transferred.
+        ``content`` is ``None`` exactly when ``size_bytes > max_bytes``.
+
+        Raises ``QMLDocumentMissingError`` on the same misses :meth:`read`
+        does — a length of "no document" is not zero.
+        """
+        questionnaire = self._questionnaire_for(qml_name)
+        document_id = getattr(questionnaire, "document_id", None)
+        if not document_id:
+            raise QMLDocumentMissingError(
+                f"Questionnaire {getattr(questionnaire, 'id', '<unknown>')!r} has no QML document — "
+                "the tenant's content import has not run for it."
+            )
+        probe = self.repository.head_content_within(str(document_id), max_bytes=max_bytes)
+        if probe is None:
+            raise QMLDocumentMissingError(
+                f"QML document {document_id!r} for QML name {qml_name!r} has no content."
+            )
+        content = probe.content
+        # Same PyYAML-stream guard as `load_qml_content`: this is a second
+        # document-store QML read path, so it needs the same chokepoint.
+        if content is not None and not isinstance(content, str):
+            raise TypeError(
+                f"QML document {document_id!r} resolved to {type(content).__name__}, "
+                "not QML text — refusing before PyYAML reads it as a stream."
+            )
+        return probe.size_bytes, content
 
     def list_names(self) -> list[str]:
         """Canonical names of every live QML document in the organization."""

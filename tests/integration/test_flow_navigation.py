@@ -12,6 +12,11 @@ Tests survey flow including:
   first, and a Roster item answered under two iterations records two
   independent events
 - `process_item` refuses to record an untagged answer — `source` is required
+- The variable state is a chain (#1021): a re-answer that no longer assigns a
+  variable or writes an outcome leaves it absent downstream; answering an
+  earlier item directly (as an API driver may) rewinds the walk to it and
+  rolls back every later codeBlock write; a survey persisted with per-item
+  contexts is upgraded to the same variables it read before
 """
 
 from pathlib import Path
@@ -59,12 +64,8 @@ class TestFlowInitialization:
         state = load_qml_fixture("branching_flow.qml")
         FlowProcessor(state)
 
-        # Check that score variable was initialized
-        first_item = state.get_item("q_start")
-        assert first_item is not None
-        context = first_item.get("context", {})
-        assert "score" in context
-        assert context["score"] == 0
+        # codeInit's variables are the state the first history entry derives from
+        assert state["init_variables"] == {"score": 0}
 
     def test_initialization_sets_items_unvisited(self):
         """Test that all items start as unvisited."""
@@ -210,9 +211,8 @@ class TestOutcomeStorage:
         processor.get_current_item(state)
         processor.process_item(state, "q_tech_interest", 2, source=SOURCE_RESPONDENT)
 
-        # Check that score was updated in subsequent items
-        next_item = state.get_item("q_tech_experience")
-        assert next_item["context"]["score"] == 2
+        # The state the walk carries forward holds the updated score
+        assert state.tail_state()["vars"]["score"] == 2
 
     def test_item_marked_visited_after_processing(self):
         """Test that items are marked as visited after processing."""
@@ -397,8 +397,7 @@ class TestOutcomePersistenceOnPathChange:
         )  # Mobile = 3 points
 
         # Check score after tech_interest
-        tech_exp = state.get_item("q_tech_experience")
-        assert tech_exp["context"]["score"] == 3
+        assert state.tail_state()["vars"]["score"] == 3
 
         # Go back and take Nature path
         processor.get_current_item(state, backward=True)  # to q_path
@@ -410,8 +409,7 @@ class TestOutcomePersistenceOnPathChange:
         )  # Wildlife = 1 point
 
         # Score should reflect new path
-        nature_freq = state.get_item("q_nature_frequency")
-        assert nature_freq["context"]["score"] == 1
+        assert state.tail_state()["vars"]["score"] == 1
 
 
 @pytest.mark.integration
@@ -450,8 +448,7 @@ class TestCompleteFlowScenarios:
         processor.process_item(state, "q_final", 1, source=SOURCE_RESPONDENT)
 
         # Verify final score: 1 (AI) + 10 (experience >= 5) = 11
-        final_item = state.get_item("q_final")
-        assert final_item["context"]["score"] == 11
+        assert state.tail_state()["vars"]["score"] == 11
 
     def test_complete_nature_path(self):
         """Test completing the entire nature path."""
@@ -481,7 +478,7 @@ class TestCompleteFlowScenarios:
         assert current["id"] == "q_final"
 
         # Verify final score: 2 (Plants) + 5 (frequency <= 2) = 7
-        assert current["context"]["score"] == 7
+        assert state.tail_state()["vars"]["score"] == 7
 
     def test_survey_ends_when_user_declines(self):
         """Test that survey ends quickly when user declines to start."""
@@ -582,8 +579,13 @@ class TestDependencyBasedNavigation:
 class TestPreconditionErrorHandling:
     """Test handling of malformed or unevaluatable preconditions."""
 
-    def test_malformed_precondition_shows_item_with_warning(self, caplog):
-        """Test that items with unevaluatable preconditions are shown with warning."""
+    def test_malformed_precondition_skips_item_with_warning(self, caplog):
+        """An unevaluatable gate is honoured, not ignored: the item is skipped.
+
+        Showing it would administer an item the instrument restricted, silently
+        turning the interview into a different one (#658). The skip is recorded
+        on QMLState so the analysis layer can tell it from an intended skip.
+        """
         import logging
 
         state = load_qml_fixture("malformed_precondition.qml")
@@ -596,10 +598,9 @@ class TestPreconditionErrorHandling:
             assert current["id"] == "q_first"
             processor.process_item(state, "q_first", 1, source=SOURCE_RESPONDENT)
 
-            # q_malformed should be SHOWN (assume True when can't evaluate)
-            # to allow data collection even with malformed preconditions
+            # q_malformed is SKIPPED — navigation moves past it to q_last.
             current = processor.get_current_item(state)
-            assert current["id"] == "q_malformed"
+            assert current["id"] == "q_last"
 
             # Check that a warning was logged about the malformed precondition
             assert any("Unable to evaluate" in record.message for record in caplog.records)
@@ -612,7 +613,13 @@ class TestPreconditionErrorHandling:
             assert any(w["type"] == "precondition" for w in warnings)
 
     def test_malformed_precondition_survey_completes(self):
-        """Test that survey can complete even with malformed preconditions."""
+        """The survey still reaches its end — skipping does not stall the walk.
+
+        This is the half of the #168 stranding worry that survives: a gate that
+        errors on every attempt must not trap the respondent. It does not,
+        because a False precondition advances navigation exactly as a
+        legitimately-False one does.
+        """
         state = load_qml_fixture("malformed_precondition.qml")
         processor = FlowProcessor(state)
 
@@ -630,9 +637,9 @@ class TestPreconditionErrorHandling:
             if current.get("isLast"):
                 break
 
-        # All items should be visited including malformed (assume True on error)
+        # The gated item is the only one left out; the walk still reaches the end.
         assert "q_first" in visited_ids
-        assert "q_malformed" in visited_ids
+        assert "q_malformed" not in visited_ids
         assert "q_last" in visited_ids
 
 
@@ -761,3 +768,277 @@ class TestResponseTiming:
         processor.process_item(state, "q_start", 1, source=SOURCE_SYNTHETIC)
 
         assert state.get_timing_events()[0]["src"] == SOURCE_SYNTHETIC
+
+
+# q_b's codeBlock sets `risk` only on one branch and writes q_flag's outcome on
+# the same branch; q_c reads the variable, q_d the written outcome. {init} is
+# replaced per test to seed `risk` (or not) in codeInit.
+_QML_CONDITIONAL_ASSIGNMENT = """
+questionnaire:
+  title: Conditional assignment
+  {init}
+  blocks:
+    - id: main
+      kind: Group
+      items:
+        - id: q_b
+          kind: Question
+          title: Score
+          codeBlock: |
+            if q_b.outcome > 5:
+                risk = 1
+                q_flag.outcome = 1
+          input:
+            control: Radio
+            labels:
+              2: Low
+              9: High
+        - id: q_flag
+          kind: Question
+          title: Flag set by q_b, never asked
+          precondition:
+            - predicate: "q_b.outcome == 100"
+              hint: Never
+          input:
+            control: Radio
+            labels:
+              1: Flagged
+        - id: q_c
+          kind: Question
+          title: Follow-up on risk
+          precondition:
+            - predicate: "risk == 1"
+              hint: At risk
+          input:
+            control: Radio
+            labels:
+              1: "Yes"
+        - id: q_d
+          kind: Question
+          title: Follow-up on the flag
+          precondition:
+            - predicate: "q_flag.outcome == 1"
+              hint: Flagged
+          input:
+            control: Radio
+            labels:
+              1: "Yes"
+        - id: q_end
+          kind: Question
+          title: End
+          input:
+            control: Radio
+            labels:
+              1: Done
+"""
+
+
+# q_a's codeBlock writes q_x on one branch, q_c's unconditionally; q_x is
+# never asked.
+_QML_TWO_WRITERS = """
+questionnaire:
+  title: Two writers
+  blocks:
+    - id: main
+      kind: Group
+      items:
+        - id: q_a
+          kind: Question
+          title: Score
+          codeBlock: |
+            if q_a.outcome > 5:
+                q_x.outcome = 1
+          input:
+            control: Radio
+            labels:
+              2: Low
+              9: High
+        - id: q_x
+          kind: Question
+          title: Written, never asked
+          precondition:
+            - predicate: "q_a.outcome == 100"
+              hint: Never
+          input:
+            control: Radio
+            labels:
+              1: One
+              2: Two
+        - id: q_c
+          kind: Question
+          title: Override
+          codeBlock: "q_x.outcome = 2"
+          input:
+            control: Radio
+            labels:
+              1: Done
+        - id: q_end
+          kind: Question
+          title: End
+          input:
+            control: Radio
+            labels:
+              1: Done
+"""
+
+
+def _conditional_state(init: str = "") -> QMLState:
+    qml = _QML_CONDITIONAL_ASSIGNMENT.replace("{init}", init)
+    return QMLState(QMLLoader(schema_path=None).load_from_string(qml))
+
+
+def _answer_high_then_low(state: QMLState) -> tuple[FlowProcessor, list[str], str]:
+    """Answer q_b=9, walk to the next item, go back, re-answer q_b=2.
+
+    Returns the processor, the items presented after the first answer, and
+    the id presented after the re-answer.
+    """
+    processor = FlowProcessor(state)
+    assert processor.get_current_item(state)["id"] == "q_b"
+    processor.process_item(state, "q_b", 9, source=SOURCE_RESPONDENT)
+    first = processor.get_current_item(state)["id"]
+    processor.process_item(state, first, 1, source=SOURCE_RESPONDENT)
+    second = processor.get_current_item(state)["id"]
+
+    # Back twice to q_b, then change the answer so the branch is not taken.
+    processor.get_current_item(state, backward=True)
+    assert processor.get_current_item(state, backward=True)["id"] == "q_b"
+    processor.process_item(state, "q_b", 2, source=SOURCE_RESPONDENT)
+    after = processor.get_current_item(state)["id"]
+    return processor, [first, second], after
+
+
+@pytest.mark.integration
+@pytest.mark.flow
+class TestStateChainRollsBackOnBackwardEdit:
+    """#1021: a variable (or a codeBlock-written outcome) that a re-answer no
+    longer produces is gone from the state downstream items see — absent, not
+    left over from the abandoned answer."""
+
+    def test_a_variable_no_longer_assigned_is_absent_downstream(self):
+        state = _conditional_state()
+
+        _, before, after = _answer_high_then_low(state)
+
+        assert before == ["q_c", "q_d"]
+        assert after == "q_end"
+        assert "risk" not in state.tail_state()["vars"]
+
+    def test_a_codeinit_seed_is_what_downstream_reads_after_the_edit(self):
+        state = _conditional_state('codeInit: "risk = 0"')
+
+        _, before, after = _answer_high_then_low(state)
+
+        assert before == ["q_c", "q_d"]
+        assert after == "q_end"
+        assert state.tail_state()["vars"]["risk"] == 0
+
+    def test_a_codeblock_written_outcome_is_rolled_back(self):
+        state = _conditional_state()
+
+        _answer_high_then_low(state)
+
+        flag = state.get_item("q_flag")
+        assert flag["outcome"] is None
+        assert flag["visited"] is False
+
+    def test_answering_an_earlier_writer_rolls_back_every_later_write(self):
+        """q_a's codeBlock writes q_x, then q_c's overwrites it. Answering q_a
+        again rewinds past q_c, so both writes are undone newest first and the
+        re-run's branch decides q_x afresh."""
+        state = QMLState(QMLLoader(schema_path=None).load_from_string(_QML_TWO_WRITERS))
+        processor = FlowProcessor(state)
+        for item_id, answer in (("q_a", 9), ("q_c", 1)):
+            assert processor.get_current_item(state)["id"] == item_id
+            processor.process_item(state, item_id, answer, source=SOURCE_RESPONDENT)
+        assert state.get_item("q_x")["outcome"] == 2
+
+        processor.process_item(state, "q_a", 2, source=SOURCE_RESPONDENT)
+
+        assert state.get_item("q_x")["outcome"] is None
+        assert state.get_history() == ["q_a"]
+
+    def test_answering_an_earlier_item_directly_rewinds_the_walk(self):
+        """An API driver may answer any item. Answering q_b while q_d is
+        presented is a backward edit: later entries go, and the walk re-reaches
+        them against the new state rather than one built on the old answer."""
+        state = _conditional_state()
+        processor = FlowProcessor(state)
+        processor.get_current_item(state)
+        processor.process_item(state, "q_b", 9, source=SOURCE_RESPONDENT)
+        processor.get_current_item(state)
+        processor.process_item(state, "q_c", 1, source=SOURCE_RESPONDENT)
+        assert processor.get_current_item(state)["id"] == "q_d"
+
+        processor.process_item(state, "q_b", 2, source=SOURCE_RESPONDENT)
+
+        assert state.get_history() == ["q_b"]
+        assert "risk" not in state.tail_state()["vars"]
+        assert state.get_item("q_c")["visited"] is False
+        assert processor.get_current_item(state)["id"] == "q_end"
+
+    def test_history_lists_stay_in_lockstep_through_edits(self):
+        state = _conditional_state()
+
+        _answer_high_then_low(state)
+
+        assert (
+            len(state["history"]) == len(state["history_iter_key"]) == len(state["history_state"])
+        )
+
+
+@pytest.mark.integration
+@pytest.mark.flow
+class TestLegacyItemContextUpgrade:
+    """A survey persisted before the state chain carried a merged `context`
+    per item; loading it builds `history_state` from those contexts, so it
+    reads the same variables it did before, and drops the item key."""
+
+    def test_item_contexts_become_the_history_state(self):
+        state = _conditional_state('codeInit: "risk = 0"')
+        processor = FlowProcessor(state)
+        processor.get_current_item(state)
+        processor.process_item(state, "q_b", 9, source=SOURCE_RESPONDENT)
+        processor.get_current_item(state)
+
+        legacy = dict(state)
+        legacy.pop("history_state")
+        legacy.pop("init_variables")
+        contexts = {
+            "q_b": {"risk": 0},
+            "q_flag": {"risk": 1},
+            "q_c": {"risk": 1},
+            "q_d": {"risk": 1},
+            "q_end": {"risk": 1},
+        }
+        for item in legacy["items"]:
+            item["context"] = contexts[item["id"]]
+
+        upgraded = QMLState(legacy)
+
+        assert upgraded["init_variables"] == {"risk": 0}
+        assert [entry["vars"] for entry in upgraded["history_state"]] == [
+            {"risk": 1},
+            {"risk": 1},
+        ]
+        assert all("context" not in item for item in upgraded["items"])
+
+    def test_an_answered_last_entry_takes_the_state_its_codeblock_broadcast(self):
+        """Saved between an answer and the next walk step: the last history
+        item's own context predates its codeBlock, so its entry takes the
+        context of the item after it, which received the broadcast."""
+        state = _conditional_state()
+        processor = FlowProcessor(state)
+        processor.get_current_item(state)
+        processor.process_item(state, "q_b", 9, source=SOURCE_RESPONDENT)
+
+        legacy = dict(state)
+        legacy.pop("history_state")
+        legacy.pop("init_variables")
+        for item in legacy["items"]:
+            item["context"] = {} if item["id"] == "q_b" else {"risk": 1}
+
+        upgraded = QMLState(legacy)
+
+        assert upgraded["history"] == ["q_b"]
+        assert upgraded["history_state"][0]["vars"] == {"risk": 1}

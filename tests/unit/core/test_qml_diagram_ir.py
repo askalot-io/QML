@@ -15,6 +15,9 @@ diagram-viewer rewrite:
   the top-level `layout` key never appear on any IR entry.
 - apply_validation_coloring inlines `classification` onto item entries
   (no separate `classes` map).
+- Cycle edges carry `cycle_group`: independent rings get distinct indices in
+  file order of their earliest member, stable when the topology lists its
+  cycles in another order or an unrelated dependency reorders the chain (#760).
 
 Most tests construct minimal QMLState instances directly — they exercise
 the emission logic without needing full-size reference questionnaires, which
@@ -445,6 +448,65 @@ class TestTopologyAndCycles:
         ir = _build_ir(state)
         assert ir["metadata"]["has_cycles"] is True
         assert ir["metadata"]["cycle_nodes"]  # non-empty
+
+
+class TestCycleGroups:
+    """#760: each ring's edges carry one stable index, numbered in file order."""
+
+    @staticmethod
+    def _two_rings():
+        def item(item_id, reads):
+            return {
+                "id": item_id,
+                "input": {"control": "Editbox", "min": 0, "max": 10},
+                "precondition": [{"predicate": f"{reads}.outcome > 0"}],
+            }
+
+        # Ring one: q1 <-> q2. Ring two: q3 <-> q4. Disjoint, so they never merge.
+        return _make_state([item("q1", "q2"), item("q2", "q1"), item("q3", "q4"), item("q4", "q3")])
+
+    def test_independent_rings_get_distinct_indices_in_file_order(self):
+        ir = _build_ir(self._two_rings())
+        rings = {}
+        for e in (e for e in ir["edges"] if e["kind"] == "cycle"):
+            rings.setdefault(e["cycle_group"], set()).update({e["source"], e["target"]})
+        assert rings == {0: {"q1", "q2"}, 1: {"q3", "q4"}}
+
+    def test_an_unrelated_dependency_does_not_renumber_the_rings(self):
+        """q3 ahead of q1 in the dependency chain still leaves q1's ring first: numbering is by file."""
+
+        def item(item_id, predicate):
+            return {
+                "id": item_id,
+                "input": {"control": "Editbox", "min": 0, "max": 10},
+                "precondition": [{"predicate": predicate}],
+            }
+
+        # q1 also reads q3, so the chain may place the q3/q4 ring before q1's.
+        state = _make_state(
+            [
+                item("q1", "q2.outcome > 0 and q3.outcome > 0"),
+                item("q2", "q1.outcome > 0"),
+                item("q3", "q4.outcome > 0"),
+                item("q4", "q3.outcome > 0"),
+            ]
+        )
+        rings = {}
+        for e in (e for e in _build_ir(state)["edges"] if e["kind"] == "cycle"):
+            rings.setdefault(e["cycle_group"], set()).update({e["source"], e["target"]})
+        assert rings == {0: {"q1", "q2"}, 1: {"q3", "q4"}}
+
+    def test_the_index_does_not_follow_the_order_cycles_are_listed_in(self):
+        state = self._two_rings()
+        engine = QMLEngine(state)
+        forward = QMLDiagramIR(engine.topology, state).generate_base_graph()
+        engine.topology.cycles = list(reversed(engine.topology.cycles))
+        reversed_ir = QMLDiagramIR(engine.topology, state).generate_base_graph()
+
+        def groups(ir):
+            return sorted((e["source"], e["target"], e["cycle_group"]) for e in ir["edges"] if e["kind"] == "cycle")
+
+        assert groups(forward) == groups(reversed_ir)
 
 
 FIXTURES_DIR = Path(__file__).parents[2] / "fixtures"

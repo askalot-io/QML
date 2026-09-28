@@ -6,6 +6,8 @@ Tests the complete pipeline from QML files to Z3 constraints:
 - Block-level preconditions propagate to enclosed items during flattening
 - Items with existing preconditions receive block preconditions prepended
 - Scalar predicates (bool, int, float) at block level are normalized to strings
+- Switch label keys YAML read as booleans reach readers as "on"/"off", and
+  boolean, numeric and empty label values still load (#186)
 - QMLState is initialized with correct flat structure and blockId references
 - StaticBuilder generates Z3 constraints including inherited block preconditions
 - QMLTopology discovers dependencies from block-inherited preconditions
@@ -20,13 +22,13 @@ import unittest
 from pathlib import Path
 
 import pytest
-from jsonschema import ValidationError
 from askalot_qml.core.qml_loader import QMLLoader
-from askalot_qml.core.validation_processor import ValidationProcessor
 from askalot_qml.core.qml_topology import QMLTopology
+from askalot_qml.core.validation_processor import ValidationProcessor
 from askalot_qml.models.qml_state import QMLState
 from askalot_qml.z3.item_classifier import ItemClassifier
 from askalot_qml.z3.static_builder import StaticBuilder
+from jsonschema import ValidationError
 
 # Path to fixture files
 FIXTURES_DIR = Path(__file__).parent.parent / "fixtures"
@@ -801,11 +803,10 @@ class TestSchemaClosedObjects(unittest.TestCase):
     `unevaluatedProperties: false` (schema 2.1.1), so a typo'd key is rejected at
     load time (against the bundled schema) instead of silently attaching nothing.
 
-    `Input` is deliberately left OPEN for now: the Switch control's canonical
-    `on:`/`off:` keys are coerced to booleans by YAML (`{True: ..., False: ...}`)
-    and never matched the schema's string `on`/`off` names, so closing `Input`
-    would reject the shipped default templates. Closing it needs a loader-side
-    on/off normalization first — tracked as a follow-up.
+    `Input` is deliberately left OPEN. The loader now gives Switch labels their
+    `on`/`off` names back (TestSwitchLabelNormalization), but closing `Input`
+    would also reject a key a live campaign's pinned version carries
+    (`minLength`), and that trade-off is still undecided (#186, D6).
 
     Uses the DEFAULT loader (bundled schema on), unlike the `schema_path=None`
     helper the rest of this module uses.
@@ -848,6 +849,11 @@ class TestSchemaClosedObjects(unittest.TestCase):
             QMLLoader().load_from_string(self._doc(item))
         self.assertIn("precondtion", str(ctx.exception))
 
+    def test_a_non_mapping_questionnaire_is_a_schema_error(self):
+        """``questionnaire: broken`` is reported by the schema, not an AttributeError in the pre-pass."""
+        with self.assertRaises(ValidationError):
+            QMLLoader().load_from_string("qmlVersion: '2.0'\nquestionnaire: broken\n")
+
     def test_condition_typo_key_rejected(self):
         """A misspelled condition key (`hnt` for `hint`) is rejected."""
         item = {
@@ -860,6 +866,91 @@ class TestSchemaClosedObjects(unittest.TestCase):
         with self.assertRaises(Exception) as ctx:
             QMLLoader().load_from_string(self._doc(item))
         self.assertIn("hnt", str(ctx.exception))
+
+
+@pytest.mark.integration
+class TestSwitchLabelNormalization(unittest.TestCase):
+    """#186: a Switch's labels arrive under ``"on"`` / ``"off"``, whatever the spelling.
+
+    YAML 1.1 reads ``on``/``off``, ``true``/``false`` and ``yes``/``no`` as
+    booleans, so before normalization every Switch reached its readers as
+    ``{True: ..., False: ...}`` and a lookup of ``input["on"]`` found nothing.
+    Written as raw YAML text on purpose: ``yaml.safe_dump`` of a dict would quote
+    the keys and hide the coercion this class exists to pin. Uses the DEFAULT
+    loader, so the bundled schema's ``on``/``off`` string typing applies too.
+    """
+
+    def _switch_input(self, label_lines: str, control: str = "Switch", loader=None) -> dict:
+        qml = (
+            "qmlVersion: '2.0'\n"
+            "questionnaire:\n"
+            "  title: switch\n"
+            "  blocks:\n"
+            "    - id: b\n"
+            "      title: B\n"
+            "      items:\n"
+            "        - id: q\n"
+            "          kind: Question\n"
+            "          title: Q\n"
+            "          input:\n"
+            f"            control: {control}\n"
+            f"{label_lines}"
+        )
+        data = (loader or QMLLoader()).load_from_string(qml)
+        return next(i for i in data["items"] if i["id"] == "q")["input"]
+
+    def test_bare_on_off_become_string_keys(self):
+        spec = self._switch_input('            on: "Ja"\n            off: "Nein"\n')
+        self.assertEqual((spec["on"], spec["off"]), ("Ja", "Nein"))
+        self.assertNotIn(True, spec)
+        self.assertNotIn(False, spec)
+
+    def test_true_false_spelling_lands_on_the_same_keys(self):
+        """The spelling every stored Demo instrument uses reaches the same names."""
+        spec = self._switch_input('            true: "Yes"\n            false: "No"\n')
+        self.assertEqual((spec["on"], spec["off"]), ("Yes", "No"))
+
+    def test_boolean_label_values_still_load(self):
+        """``on: Yes`` reads as {True: True}; naming the key must not make the schema refuse it."""
+        spec = self._switch_input("            on: Yes\n            off: No\n")
+        self.assertEqual((spec["on"], spec["off"]), ("Yes", "No"))
+
+    def test_numeric_and_empty_label_values_still_load(self):
+        """``on: 1`` / ``off:`` loaded while the keys were booleans; naming them must not refuse it."""
+        spec = self._switch_input("            on: 1\n            off:\n")
+        self.assertEqual(spec["on"], "1")
+        self.assertNotIn("off", spec)
+        self.assertNotIn(False, spec)
+
+    def test_quoted_key_wins_over_a_coerced_one(self):
+        """A quoted ``"on"`` is what the author meant; YAML never rewrote it."""
+        spec = self._switch_input('            "on": "Quoted"\n            yes: "Coerced"\n')
+        self.assertEqual(spec["on"], "Quoted")
+        self.assertNotIn(True, spec)
+
+    def test_a_non_switch_boolean_key_is_left_alone(self):
+        """Only a Switch's label spelling is known; another control's key is not renamed."""
+        spec = self._switch_input("            on: 1\n", control="Editbox", loader=QMLLoader(schema_path=None))
+        self.assertIn(True, spec)
+        self.assertNotIn("on", spec)
+
+    def test_shipped_template_switches_carry_no_boolean_keys(self):
+        """No Switch in the bundled all-controls template keeps a coerced key.
+
+        The template also spells Switch labels ``left``/``right`` (its QuestionGroup
+        and Matrix rows), which YAML leaves as strings; those pass through as-is.
+        """
+        from importlib.resources import files
+
+        text = (files("askalot_common") / "assets" / "questionnaires" / "all-controls.qml").read_text()
+        data = QMLLoader().load_from_string(text)
+        switches = {
+            i["id"]: i["input"] for i in data["items"] if i.get("input", {}).get("control") == "Switch"
+        }
+        self.assertTrue(switches)
+        for item_id, spec in switches.items():
+            self.assertFalse({True, False} & set(spec), item_id)
+        self.assertTrue(any({"on", "off"} <= set(spec) for spec in switches.values()))
 
 
 @pytest.mark.integration

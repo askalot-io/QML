@@ -1,6 +1,7 @@
 import logging
 from typing import Any
 
+from askalot_common.profiling import profile_block
 from z3 import (
     BoolRef,
     Not,
@@ -9,8 +10,6 @@ from z3 import (
 )
 
 from askalot_qml.z3.static_builder import StaticBuilder
-
-from askalot_common.profiling import add_profiling_tags, profile_block, remove_profiling_tags
 
 
 class ItemClassifier:

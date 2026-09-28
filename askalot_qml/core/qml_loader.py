@@ -64,6 +64,42 @@ def _ast_referenced_names(expression: str, mode: str = "eval") -> set[str]:
 _UNSET = object()
 
 
+def normalize_switch_input(spec: Any) -> None:
+    """Give a Switch input its ``"on"`` / ``"off"`` label keys back, in place (#186).
+
+    The schema and the skills spell a Switch's labels ``on:`` / ``off:``, and
+    the stored corpus spells them ``true:`` / ``false:``. YAML 1.1 reads all four
+    (and ``yes`` / ``no``) as booleans, so a Switch arrives as
+    ``{True: <on label>, False: <off label>}`` and no reader asking for
+    ``input["on"]`` finds anything. A string key the author quoted is already
+    correct and wins over a coerced one, because it is the one YAML did not
+    rewrite. Anything that is not a Switch input is left alone: another control's
+    boolean key is not a label spelling this knows how to name.
+
+    The label VALUES are retyped the same way. ``on: Yes`` / ``off: No`` is the
+    natural way to write a Switch and YAML reads both sides as booleans; once the
+    keys are named, the schema types ``on``/``off`` as strings and would refuse
+    a document that loaded before. YAML has already discarded the author's exact
+    word, so a boolean label becomes ``"Yes"`` / ``"No"``. A numeric label
+    (``on: 1``) becomes its text, and an empty one (``on:``) is dropped — the
+    Switch simply carries no label on that side, as the renderers already show
+    it. Any other shape (a list, a mapping) is left for the schema to refuse.
+    """
+    if not isinstance(spec, dict) or spec.get("control") != "Switch":
+        return
+    for flag, name in ((True, "on"), (False, "off")):
+        if flag in spec:
+            label = spec.pop(flag)
+            spec.setdefault(name, label)
+        label = spec.get(name)
+        if isinstance(label, bool):
+            spec[name] = "Yes" if label else "No"
+        elif isinstance(label, (int, float)):
+            spec[name] = str(label)
+        elif name in spec and label is None:
+            del spec[name]
+
+
 class QMLLoader:
     """
     Load and parse QML documents into dictionary structures.
@@ -158,7 +194,20 @@ class QMLLoader:
                 "content_source nor a qml_dir. Pass RepositoryQMLSource to read the "
                 "document store, or a qml_dir to read a workspace/fixture tree."
             )
-        file_path = self.qml_dir / filename
+        # ``qml_dir`` is a BOUNDARY, not a convenience prefix. The name reaches
+        # here from a query parameter, and ``Path.__truediv__`` discards the
+        # left operand entirely when the right one is absolute — so an
+        # unchecked join let ``/etc/hostname`` and ``../../<other user>/x.qml``
+        # read outside the caller's workspace. Confirmed against the live
+        # tenant before this check existed: an absolute path was opened and
+        # parsed, and a name that does not exist answered differently from one
+        # that does, which is an existence oracle over the whole filesystem.
+        root = self.qml_dir.resolve()
+        file_path = (self.qml_dir / filename).resolve()
+        if not file_path.is_relative_to(root):
+            # Deliberately does not echo the resolved path: the caller chose the
+            # name and learning where it landed is itself the disclosure.
+            raise ValueError(f"QML name {filename!r} resolves outside the workspace")
         return self.load_from_path(file_path)
 
     def load_from_path(self, file_path: str | Path) -> dict[str, Any]:
@@ -215,8 +264,9 @@ class QMLLoader:
         1. qmlVersion gate (BEFORE schema validation, so a legacy document gets
            a clear version error rather than a cryptic enum failure on the
            removed kinds)
-        2. predicate normalization (BEFORE schema validation, so bare
-           True/False predicates pass)
+        2. ``normalize_before_validation`` (BEFORE schema validation): bare
+           True/False predicates become strings, and Switch label keys YAML
+           read as booleans get their ``"on"``/``"off"`` names back
         3. JSON-Schema validation (when a schema is available)
         4. default missing ``kind`` to "Group" (the JSON-Schema ``default`` is
            not injected during validation)
@@ -237,7 +287,7 @@ class QMLLoader:
         # 2. Normalize predicates BEFORE schema validation so QML authors can
         # write bare boolean/numeric predicates (like `predicate: True`).
         if "questionnaire" in self.parsed_yaml:
-            self._normalize_all_predicates(self.parsed_yaml["questionnaire"])
+            self.normalize_before_validation(self.parsed_yaml["questionnaire"])
 
         # 3. Validate against schema if available.
         if self.schema_path and self.schema_path.exists():
@@ -661,24 +711,40 @@ class QMLLoader:
                         f"to ask every item."
                     )
 
-    def _normalize_all_predicates(self, questionnaire: dict[str, Any]) -> None:
+    def normalize_before_validation(self, questionnaire: dict[str, Any]) -> None:
+        """Undo what YAML 1.1 did to a questionnaire before the schema reads it.
+
+        One pass over the nested (not yet flattened) structure, modified in
+        place. Public because the schema check is not only the loader's: Portor's
+        save path validates a document against the same schema without loading
+        it, and a document the loader accepts must not draw a schema warning
+        there for a key YAML merely retyped.
+
+        - Predicates: a bare ``predicate: True`` (or a number) becomes the string
+          the Python runner parses, at block and item level.
+        - Switch labels: ``normalize_switch_input`` gives each Switch input its
+          ``"on"``/``"off"`` keys back (#186).
+
+        Raises:
+            ValueError: A predicate is a list or mapping, which is an authoring
+                error rather than a YAML retyping.
         """
-        Normalize predicates in the nested questionnaire structure (before flattening).
-
-        This method walks through the nested block/item structure and normalizes
-        all predicates BEFORE schema validation. This allows QML authors to write
-        bare boolean/numeric predicates (like `predicate: True`) without quotes.
-
-        Normalizes both block-level and item-level predicates.
-
-        Args:
-            questionnaire: Nested questionnaire dictionary (modified in place)
-        """
-        for block in questionnaire.get("blocks", []):
-            # Normalize block-level predicates
+        # Shapes the schema will refuse (a string where a list of blocks belongs)
+        # are skipped rather than walked: reporting them is the schema's job, and
+        # a save path that calls this must not fail on a malformed draft.
+        if not isinstance(questionnaire, dict):
+            return
+        blocks = questionnaire.get("blocks")
+        for block in blocks if isinstance(blocks, list) else []:
+            if not isinstance(block, dict):
+                continue
             self._normalize_predicates(block)
-            for item in block.get("items", []):
+            items = block.get("items")
+            for item in items if isinstance(items, list) else []:
+                if not isinstance(item, dict):
+                    continue
                 self._normalize_predicates(item)
+                normalize_switch_input(item.get("input"))
 
     def _flatten_questionnaire_structure(self, questionnaire: dict[str, Any]) -> dict[str, Any]:
         """
@@ -803,8 +869,10 @@ class QMLLoader:
         """
         for condition_key in ("precondition", "postcondition"):
             conditions = item.get(condition_key)
-            if conditions:
+            if isinstance(conditions, list):
                 for condition in conditions:
+                    if not isinstance(condition, dict):
+                        continue
                     predicate = condition.get("predicate")
                     if predicate is None:
                         continue

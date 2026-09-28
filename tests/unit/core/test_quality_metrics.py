@@ -37,6 +37,7 @@ from askalot_qml.core.quality_metrics import (
     GRADE_STRONG,
     GRADE_WEAK,
     _item_cost,
+    _quality_gate_density,
 )
 from askalot_qml.core.validation_processor import ValidationProcessor
 from askalot_qml.models.qml_state import QMLState
@@ -142,27 +143,105 @@ class TestComplexityAndDiversity(unittest.TestCase):
 
 @pytest.mark.unit
 class TestQualityGateDensity(unittest.TestCase):
-    """D3: only CONSTRAINING postconditions count as real gates."""
+    """D3: CONSTRAINING coverage over the items that can carry a bound."""
 
     def test_tautology_and_duplicate_bound_not_constraining(self):
         report = quality_report("quality_tautology_only.qml")
         dim = report["dimensions"]["quality_gate_density"]
         # AE2: the file validates (no errors) yet carries zero real gates.
-        self.assertEqual(dim["metrics"]["constraining_postcondition_items"], 0)
+        self.assertEqual(dim["metrics"]["bounded_items"], 0)
         self.assertEqual(dim["grade"], GRADE_WEAK)
         details = " ".join(o["detail"] for o in dim["offenders"])
         self.assertIn("TAUTOLOGICAL", details)
         self.assertIn("min/max", details)
         self.assertGreaterEqual(dim["metrics"]["duplicate_input_bounds"], 1)
 
-    def test_constraining_postcondition_counts(self):
-        # classification.qml carries a genuinely constraining gate; its
-        # constraining share (0.2) sits exactly on the strong band floor,
-        # pinning the positive arm of the D3 grade bands.
-        report = quality_report("classification.qml")
+    def test_bound_coverage_is_over_gateable_items_only(self):
+        # The positive arm of the bands: 2 of 4 numeric inputs bounded is 0.5,
+        # well clear of the strong floor. The eight choice items alongside them
+        # are not gateable and must not appear in either side of the rate.
+        report = quality_report("quality_bound_coverage.qml")
         dim = report["dimensions"]["quality_gate_density"]
-        self.assertGreater(dim["metrics"]["constraining_postcondition_items"], 0)
+        metrics = dim["metrics"]
+        self.assertEqual(metrics["items_total"], 12)
+        self.assertEqual(metrics["gateable_items"], 4)
+        self.assertEqual(metrics["bounded_items"], 2)
+        self.assertEqual(metrics["bound_coverage"], 0.5)
         self.assertEqual(dim["grade"], GRADE_STRONG)
+
+    def test_consistency_gate_on_a_choice_item_is_reported_not_counted(self):
+        # A CONSTRAINING postcondition tying one choice item to another is a
+        # real rule and is surfaced — but folding it into the coverage rate
+        # would credit the author for gating an item whose label set already
+        # pins it, and would make the rate depend on how many choice items the
+        # instrument happens to have.
+        dim = quality_report("quality_bound_coverage.qml")["dimensions"][
+            "quality_gate_density"
+        ]
+        self.assertEqual(dim["metrics"]["consistency_gates"], 1)
+        self.assertEqual(dim["metrics"]["postcondition_invariants"]["CONSTRAINING"], 3)
+        # Three constraining postconditions, but only two are bounds.
+        self.assertEqual(dim["metrics"]["bounded_items"], 2)
+
+    def test_unbounded_numeric_inputs_are_named_as_offenders(self):
+        dim = quality_report("quality_bound_coverage.qml")["dimensions"][
+            "quality_gate_density"
+        ]
+        unbounded = {
+            o["item_id"]
+            for o in dim["offenders"]
+            if "no constraining postcondition" in o["detail"]
+        }
+        self.assertEqual(unbounded, {"q_household_size", "q_satisfaction"})
+
+    def test_no_numeric_inputs_grades_not_applicable(self):
+        # A questionnaire answered entirely by choosing was never asked to
+        # bound anything. Under the old all-items denominator it took a `weak`
+        # it could not escape by any amount of good authoring (#528).
+        dim = quality_report("classification.qml")["dimensions"]["quality_gate_density"]
+        self.assertEqual(dim["metrics"]["gateable_items"], 0)
+        self.assertEqual(dim["grade"], GRADE_NA)
+        self.assertIn("numeric", dim["metrics"]["reason"])
+        # The gate it does carry is still reported rather than lost.
+        self.assertGreaterEqual(dim["metrics"]["consistency_gates"], 1)
+
+    def test_grade_does_not_move_when_the_instrument_only_gets_longer(self):
+        """The #528 property, asserted directly rather than via a fixture pair.
+
+        The old rule divided by every item, so appending choice items — which
+        can carry no bound — drove the grade down until `adequate` was
+        unreachable on a long instrument. Same gateable population, same
+        grade, whatever the length.
+        """
+        gateable = [
+            {"id": f"q_num{i}", "input": {"control": "Editbox"}} for i in range(4)
+        ]
+        bounded = {"postcondition": {"invariant": "CONSTRAINING"}}
+        unbounded = {"postcondition": {"invariant": "NONE"}}
+
+        def report_at(choice_count: int) -> dict:
+            items = gateable + [
+                {"id": f"q_pad{i}", "input": {"control": "Radio"}}
+                for i in range(choice_count)
+            ]
+            classifications = {
+                "q_num0": bounded,
+                "q_num1": bounded,
+                "q_num2": unbounded,
+                "q_num3": unbounded,
+            }
+            classifications.update(
+                {f"q_pad{i}": unbounded for i in range(choice_count)}
+            )
+            return _quality_gate_density(items, classifications, [])
+
+        short, long = report_at(0), report_at(400)
+        self.assertEqual(short["metrics"]["bound_coverage"], 0.5)
+        self.assertEqual(long["metrics"]["bound_coverage"], 0.5)
+        self.assertEqual(short["grade"], long["grade"])
+        self.assertEqual(long["grade"], GRADE_STRONG)
+        # The old denominator is what changed: 2/404 would have been weak.
+        self.assertEqual(long["metrics"]["items_total"], 404)
 
 
 @pytest.mark.unit

@@ -22,12 +22,10 @@ Semantics per control (single-control `Question` items only — see below):
 | Editbox / Slider / Range | `min <= v <= max` (each bound checked only if declared) |
 | Textarea               | any string (free text — unconstrained)                  |
 
-Deliberate departures from the Z3 model, both correct for a *runtime answer*:
-- **Checkbox** is a bitmask at runtime (the sum of selected power-of-2 keys),
-  whereas `_domain_constraint_builders` enumerates it as a single-choice
-  control — a known static/runtime asymmetry the plan calls out ("Checkbox
-  bitmask"). We use the true runtime domain here so a legitimate multi-select
-  bitmask is not rejected.
+A **Checkbox** is a bitmask here and in the Z3 model alike
+(`_domain_constraint_builders`, #1140): any sum of distinct declared keys,
+0 included. One deliberate departure from the Z3 model remains, correct for a
+*runtime answer*:
 - **Switch** carries no `labels` in the schema (it has `on`/`off`), so the Z3
   builder emits no domain constraint for it; the real runtime domain is {0, 1}.
 
@@ -39,7 +37,7 @@ rather than risk injecting a malformed shape.
 
 from typing import Any
 
-from askalot_qml.core.controls import coerce_scalar, label_keys
+from askalot_qml.core.controls import checkbox_mask, coerce_scalar, label_keys
 
 _NUMERIC_CONTROLS = frozenset({"Editbox", "Slider", "Range"})
 _SINGLE_CHOICE_CONTROLS = frozenset({"Radio", "Dropdown"})
@@ -95,17 +93,14 @@ def outcome_in_domain(item: dict[str, Any], value: Any) -> bool:
         # Bitmask: non-negative int whose set bits are all declared label keys.
         if not _is_int(coerced) or coerced < 0:
             return False
-        keys = label_keys(input_spec)
-        if not keys:
+        mask = checkbox_mask(input_spec)
+        if not mask:
             # No declared labels → fail CLOSED, matching Radio/Dropdown/Switch:
             # a label-less choice control has an empty domain, so nothing is
             # injectable (the injected value is asked in the flow instead). This
             # is the only runtime domain guard, so it must not accept an
             # arbitrary integer for a degenerate item.
             return False
-        mask = 0
-        for k in keys:
-            mask |= k
         return (coerced & ~mask) == 0
 
     if control == "Textarea":

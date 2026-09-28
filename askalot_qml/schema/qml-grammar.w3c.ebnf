@@ -9,8 +9,6 @@ QMLDocument   ::= "qmlVersion" VersionString
 
 Questionnaire ::= ( "title" String )?
                   ( "codeInit" CodeBlock )?
-                  ( "precondition" Condition* )?
-                  ( "postcondition" Condition* )?
                   "blocks" Block+
 
 /* Block */

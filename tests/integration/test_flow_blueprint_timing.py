@@ -108,9 +108,23 @@ class _FakeRepo:
         return survey.id
 
 
+
+#: The flow API now requires a credential (R37): a JWT, or the service's own
+#: anonymous session. These tests are about the flow engine, not about
+#: authorization, so they present the smallest session that authorizes them —
+#: the same shape SirWay's cookie resolves to. ``test_flow_session_binding.py``
+#: is where the refusals themselves are asserted.
+def _session_for(survey_id):
+    return lambda: ("org-1", "org-slug", str(survey_id))
+
+
 def _client(survey):
     app = Flask(__name__)
-    app.register_blueprint(create_flow_blueprint(repository=_FakeRepo(survey)))
+    app.register_blueprint(
+        create_flow_blueprint(
+            repository=_FakeRepo(survey), session_resolver=_session_for(survey.id)
+        )
+    )
     return app.test_client()
 
 

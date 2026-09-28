@@ -1,9 +1,9 @@
 """
-Shared control-value helpers: outcome coercion and label-key extraction.
+Shared control-value helpers: outcome coercion, label-key extraction, Checkbox mask.
 
-One canonical definition of two small operations several runtime consumers need,
-so the logic is not copy-pasted across ``ItemProxy``, the external-input domain
-validator, and the external-item enumerator:
+One canonical definition of small operations several consumers need, so the
+logic is not copy-pasted across ``ItemProxy``, the external-input domain
+validator, the external-item enumerator, and the Z3 domain builder:
 
 - ``coerce_scalar(value, control)`` — coerce a JSON/attribute string to int/float
   for non-text controls (Textarea preserves strings). JSON/MCP round-trips turn
@@ -13,12 +13,15 @@ validator, and the external-item enumerator:
   map, coercing string keys (JSONB round-trips stringify object keys) and
   skipping bool keys (a ``bool`` is not a valid domain code even though it is an
   ``int`` subclass).
+- ``checkbox_mask(input_spec)`` — the bitwise OR of a Checkbox's keys, which
+  bounds its bitmask outcome for the runtime domain validator and the Z3
+  Checkbox domain alike.
 
-``StaticBuilder._domain_constraint_builders`` (z3/) keeps its OWN inline copy of
-the label-key loop by design — it is a Z3-only concern and this ``core`` helper
-must not pull a Z3 dependency into the runtime path; the two are allowed to
-diverge because they serve different layers (KTD1: the verified envelope is
-untouched).
+This module stays Z3-free, so importing it never pulls Z3 into the runtime path.
+``StaticBuilder._domain_constraint_builders`` (z3/) imports ``checkbox_mask``
+function-locally (``askalot_qml.core``'s package ``__init__`` imports the engine,
+which imports the builder), and keeps its own inline label-key loop for the
+Radio/Dropdown/Switch enumeration, which does not skip bool keys.
 """
 
 from typing import Any
@@ -70,3 +73,17 @@ def label_keys(input_spec: dict[str, Any]) -> list[int]:
                 except (TypeError, ValueError):
                     pass
     return keys
+
+
+def checkbox_mask(input_spec: dict[str, Any]) -> int:
+    """The bitwise OR of a Checkbox's declared keys: every bit an answer may set.
+
+    A Checkbox answers the sum of its ticked keys (the loader holds each key to
+    a positive power of 2), so its domain is every value in ``0..mask`` whose
+    set bits lie inside ``mask``. The runtime validator and the Z3 domain both
+    read it from here. 0 when no key is declared.
+    """
+    mask = 0
+    for key in label_keys(input_spec):
+        mask |= key
+    return mask

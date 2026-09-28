@@ -74,7 +74,7 @@ class PathBasedValidator:
     Theorem (Global Not Sufficient): SAT(F) doesn't guarantee all items reachable.
     """
 
-    def __init__(self, builder: StaticBuilder, topology: "QMLTopology"):
+    def __init__(self, builder: StaticBuilder, topology: QMLTopology):
         """
         Initialize path-based validator.
 

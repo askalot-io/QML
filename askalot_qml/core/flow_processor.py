@@ -23,8 +23,12 @@ Architecture:
 Uses the common QMLEngine pipeline for topology analysis.
 """
 
+import ast
 import copy
+import functools
 import logging
+from collections.abc import Callable, Iterable
+from dataclasses import dataclass
 from typing import Any
 
 from askalot_qml.core.domain_validator import outcome_in_domain
@@ -33,6 +37,245 @@ from askalot_qml.core.qml_engine import QMLEngine
 from askalot_qml.core.qml_topology import QMLTopology
 from askalot_qml.models.item_proxy import ItemProxy
 from askalot_qml.models.qml_state import SOURCE_EXTERNAL_PREFILL, QMLState
+from askalot_qml.predicate_ast import (
+    name_reads,
+    none_tested_names,
+    none_tested_outcomes,
+    outcome_reads,
+)
+
+# What the engine does with a condition it could not evaluate (#168, #658).
+#
+# Each entry is ``(value_the_evaluator_returns, severity_recorded)``. The two
+# kinds differ on BOTH axes, and the axes are decided by different facts:
+#
+#   precondition  → False, ``degraded``. A precondition RESTRICTS: it names the
+#                   respondents an item is for. When the restriction cannot be
+#                   checked, honouring it (skip) preserves the instrument;
+#                   ignoring it (show) silently administers a different one.
+#                   Returning False cannot strand anyone — navigation simply
+#                   moves to the next item. The cost is under-collection of an
+#                   item that may have been wanted, which the warning records:
+#                   ``degraded``, and the survey stays dataset-eligible.
+#   postcondition → True, ``critical``. A postcondition ADMITS: returning False
+#                   is what ``process_item`` turns into "you may not advance"
+#                   (it returns ``success: False`` with the author's hint), so
+#                   failing closed here strands the respondent on an item whose
+#                   check errors on every attempt. It must fail open — and the
+#                   answer was then accepted without the check that decides
+#                   whether it is admissible, so the stored value may be one the
+#                   instrument's own rules reject. That is ``critical``, the
+#                   string the dataset-eligibility probe matches on (the JSONB
+#                   probe in ``askalot_common.repository.mixins.dataset``).
+#
+# #168 read the stranding argument as applying to both kinds and made both fail
+# open; it only ever applied to the postcondition, because only there does False
+# block. The precondition half of that stance was the defect #658 named: on the
+# BRFSS demo fill an unanswered upstream item made three age-gated modules
+# (``>= 45``) evaluate ``None >= 45``, and every one of them was administered to
+# every respondent. Skipping is what the gate asked for.
+_UNEVALUATABLE_CONDITION_POLICY: dict[str, tuple[bool, str]] = {
+    "precondition": (False, "degraded"),
+    "postcondition": (True, "critical"),
+}
+
+# Severity of a condition left undecided because a part that would decide it
+# reads an item the respondent was SHOWN and left unanswered (#1023). The
+# direction is ``_UNEVALUATABLE_CONDITION_POLICY``'s; the severity is
+# ``degraded`` for both kinds, because a waived postcondition relates the answer
+# to a value that does not exist and so no stored value contradicts it. The
+# reasoning and the corpus figures are in askalot_qml/CLAUDE.md (Degradation
+# warnings).
+_UNANSWERED_OPERAND_SEVERITY = "degraded"
+
+# The third truth value: a part of a condition that reads an unanswered item.
+_UNKNOWN = object()
+
+
+@dataclass(frozen=True)
+class _Leaf:
+    """A part of a condition below its and/or/not structure, evaluated on its own."""
+
+    source: str
+    # Items the leaf reads as ``X.outcome`` without itself testing them
+    # against None — the operands whose missing answer makes it unknown.
+    operands: frozenset[str]
+    # Bare names the leaf reads without testing them against None: a variable
+    # among them computed from an unanswered item makes the leaf unknown too
+    # (#1044). Names read as ``X.outcome`` are operands, not variables.
+    variables: frozenset[str]
+
+
+@dataclass(frozen=True)
+class _Junction:
+    op: str  # "and" | "or" | "not"
+    parts: tuple[_Leaf | _Junction, ...]
+
+
+@dataclass(frozen=True)
+class _ParsedCondition:
+    root: _Leaf | _Junction
+    operands: frozenset[str]  # every leaf's operands, for the no-unknowns fast path
+    variables: frozenset[str]  # every leaf's variables, likewise
+
+
+@functools.lru_cache(maxsize=4096)
+def _parse_condition(expression: str) -> _ParsedCondition | None:
+    """Split a condition into its and/or/not structure over leaves (#1023).
+
+    A leaf that reads an unanswered item is UNKNOWN, and the structure combines
+    it the Kleene way, so the parts that were answered still decide the gate
+    when they can: ``q_a.outcome == 1 or q_b.outcome == 1`` holds for a
+    respondent who answered 1 to ``q_a`` and skipped ``q_b``. A leaf that tests
+    its own operand against None (``q_b.outcome is None``) has said what a
+    missing answer means, so it is evaluated as written.
+
+    A variable the state marks as computed from an unanswered item counts the
+    same way (#1044), so ``v in [1, 2]`` after ``v = q_a.outcome`` is unknown
+    when ``q_a`` was skipped — see ``_unknown_after``.
+    Cached on the text because the serving path (``from_cached_state``) builds
+    no dependency graph and a condition runs on every navigation step. None for
+    an unparseable expression, which the evaluator then raises on and records.
+    """
+    try:
+        body = ast.parse(expression, mode="eval").body
+    except SyntaxError:
+        return None
+
+    operands: set[str] = set()
+    variables: set[str] = set()
+
+    def split(node: ast.expr) -> _Leaf | _Junction:
+        if isinstance(node, ast.BoolOp):
+            op = "and" if isinstance(node.op, ast.And) else "or"
+            return _Junction(op, tuple(split(value) for value in node.values))
+        if isinstance(node, ast.UnaryOp) and isinstance(node.op, ast.Not):
+            return _Junction("not", (split(node.operand),))
+        leaf_operands = frozenset(outcome_reads(node) - none_tested_outcomes(node))
+        leaf_variables = frozenset(name_reads(node) - outcome_reads(node) - none_tested_names(node))
+        operands.update(leaf_operands)
+        variables.update(leaf_variables)
+        return _Leaf(ast.unparse(node), leaf_operands, leaf_variables)
+
+    root = split(body)
+    return _ParsedCondition(root, frozenset(operands), frozenset(variables))
+
+
+@functools.lru_cache(maxsize=1024)
+def _parse_code_block(code: str) -> ast.Module | None:
+    try:
+        return ast.parse(code)
+    except SyntaxError:
+        return None
+
+
+def _unknown_after(
+    code: str,
+    unknown: frozenset[str],
+    unanswered: Callable[[str], bool],
+) -> tuple[set[str], set[str]]:
+    """Which variables a codeBlock computes from an unanswered item (#1044).
+
+    Walks the block's statements in order and returns ``(marked, cleared)``:
+    names assigned from an expression that reads the ``.outcome`` of an item
+    *unanswered* says was left without an answer, or a variable already
+    unknown — and names assigned from anything else. An assignment under an
+    ``if`` / ``while`` / ``for`` whose test reads such data is marked too: which
+    branch ran was itself decided by the missing answer. A read the expression
+    tests against None (``q.outcome if q.outcome is not None else 0``) is the
+    author's own handling and does not taint. Static and conservative — it
+    cannot tell which branch actually ran, so alternative branches are walked
+    from the same starting marks and merged: a name marked in ANY branch stays
+    marked. The caller only CLEARS a mark on a name whose value actually
+    changed, so an untaken clean branch keeps it. A container mutated with
+    unanswered data (``d[k] = q.outcome``, ``xs.append(q.outcome)``) is marked
+    but never cleared — its other elements may still hold such data.
+    """
+    tree = _parse_code_block(code)
+    if tree is None:
+        return set(), set()
+    current = set(unknown)
+    marked: set[str] = set()
+    cleared: set[str] = set()
+
+    def tainted(expr: ast.AST) -> bool:
+        reads = outcome_reads(expr) - none_tested_outcomes(expr)
+        if any(unanswered(item_id) for item_id in reads):
+            return True
+        return bool((name_reads(expr) - none_tested_names(expr)) & current)
+
+    def stores(node: ast.AST) -> set[str]:
+        return {
+            n.id for n in ast.walk(node) if isinstance(n, ast.Name) and isinstance(n.ctx, ast.Store)
+        }
+
+    def mutated(node: ast.AST) -> set[str]:
+        """The variable a subscript / attribute target (or call receiver) mutates."""
+        while isinstance(node, (ast.Subscript, ast.Attribute)):
+            node = node.value
+        return {node.id} if isinstance(node, ast.Name) else set()
+
+    def assign(names: set[str], is_tainted: bool) -> None:
+        if is_tainted:
+            current.update(names)
+            marked.update(names)
+            cleared.difference_update(names)
+        else:
+            current.difference_update(names)
+            cleared.update(names)
+            marked.difference_update(names)
+
+    def mutate(names: set[str], is_tainted: bool) -> None:
+        if is_tainted:
+            assign(names, True)
+
+    def alternatives(bodies: list[list[ast.stmt]], under_taint: bool) -> None:
+        """Walk each body from the same marks, then keep the union of marks."""
+        nonlocal current, marked, cleared
+        start = (current, marked, cleared)
+        results = []
+        for body in bodies:
+            current, marked, cleared = set(start[0]), set(start[1]), set(start[2])
+            walk(body, under_taint)
+            results.append((current, marked, cleared))
+        current = set().union(*(r[0] for r in results))
+        marked = set().union(*(r[1] for r in results))
+        cleared = set().union(*(r[2] for r in results)) - marked
+
+    def walk(statements: list[ast.stmt], under_taint: bool) -> None:
+        for st in statements:
+            if isinstance(st, (ast.Assign, ast.AnnAssign)):
+                targets = st.targets if isinstance(st, ast.Assign) else [st.target]
+                is_tainted = under_taint or (st.value is not None and tainted(st.value))
+                assign(set().union(*(stores(t) for t in targets)), is_tainted)
+                mutate(set().union(*(mutated(t) for t in targets)), is_tainted)
+            elif isinstance(st, ast.AugAssign):
+                names = stores(st.target)
+                assign(names, under_taint or bool(names & current) or tainted(st.value))
+                mutate(mutated(st.target), under_taint or tainted(st.value))
+            elif (
+                isinstance(st, ast.Expr)
+                and isinstance(st.value, ast.Call)
+                and isinstance(st.value.func, ast.Attribute)
+            ):
+                mutate(mutated(st.value.func.value), under_taint or tainted(st.value))
+            elif isinstance(st, (ast.If, ast.While)):
+                alternatives([st.body, st.orelse], under_taint or tainted(st.test))
+            elif isinstance(st, ast.For):
+                branch = under_taint or tainted(st.iter)
+                assign(stores(st.target), branch)
+                alternatives([st.body, st.orelse], branch)
+            elif isinstance(st, ast.With):
+                walk(st.body, under_taint)
+            elif isinstance(st, ast.Try):
+                alternatives(
+                    [st.body + st.orelse, *(handler.body for handler in st.handlers)],
+                    under_taint,
+                )
+                walk(st.finalbody, under_taint)
+
+    walk(tree.body, False)
+    return marked, cleared
 
 
 def _set_bits(mask: int) -> list[int]:
@@ -90,6 +333,8 @@ class FlowProcessor:
         self.state = questionnaire_state
         self.python_runner = PythonRunner()
         self.topology: QMLTopology | None = None
+        # See _check_preconditions: transient, and only _group_reach_decision reads it.
+        self._last_gate_undecided = False
 
         # Use unified engine for common pipeline
         self.engine = QMLEngine(questionnaire_state)
@@ -106,7 +351,7 @@ class FlowProcessor:
         self.logger.info(f"FlowProcessor initialized for {len(self.engine.get_items())} items")
 
     @classmethod
-    def from_cached_state(cls, questionnaire_state: QMLState) -> "FlowProcessor":
+    def from_cached_state(cls, questionnaire_state: QMLState) -> FlowProcessor:
         """Create a lightweight FlowProcessor without Z3/QMLEngine initialization.
 
         Use this when the survey is already initialized (has navigation_path cached).
@@ -125,60 +370,263 @@ class FlowProcessor:
         instance.python_runner = PythonRunner()
         instance.topology = None
         instance.engine = None
+        instance._last_gate_undecided = False
         instance.logger.debug("FlowProcessor created from cached state (no Z3)")
         return instance
 
     def _evaluate_condition(
         self,
         condition_expr: str,
-        context: dict[str, Any],
-        item_id: str = None,
-        condition_type: str = "condition",
+        context_of: Callable[[], dict[str, Any]],
+        item_id: str,
+        condition_type: str,
+        unknown: Iterable[str] | None = None,
     ) -> bool:
         """
-        Evaluate a condition expression in the given context.
+        Evaluate a condition expression.
 
         Args:
             condition_expr: The Python expression to evaluate
-            context: Variables and item proxies available for evaluation
-            item_id: Optional item ID for warning collection
-            condition_type: Type of condition ('precondition', 'postcondition')
+            context_of: Returns the variables and item proxies to evaluate in.
+                Called only when a part of the condition is actually evaluated:
+                building the context costs a deep copy plus one proxy per item,
+                and a gate undecided on an unanswered item — re-checked on every
+                navigation step — needs none.
+            item_id: Item ID the condition belongs to, for warning collection
+            condition_type: Key into ``_UNEVALUATABLE_CONDITION_POLICY`` —
+                'precondition' or 'postcondition'. Required and indexed
+                directly: an unrecognised kind has no defensible fallback
+                direction, so a KeyError is the honest outcome.
+            unknown: The variables *context_of* marks as computed from an
+                unanswered item (#1044). Must describe the same state the
+                context is built from; None means the current (tail) state,
+                which is what a gate reads.
 
         Returns:
             - True if condition expression evaluates to truthy value
-            - True if expression cannot be evaluated (unsupported AST constructs,
-              missing variables, type errors, etc.) - a warning is logged to
-              QMLState for data analysis
             - False if condition expression evaluates to falsy value
+            - The policy's fail value if the expression cannot be evaluated
+              (unsupported AST constructs, missing variables, type errors) —
+              False for a precondition, True for a postcondition — with a
+              warning recorded on QMLState at the matching severity.
+            - The same fail value when the answered parts of the condition
+              cannot decide it and the rest read an item the respondent was
+              shown and left unanswered — ``<kind>_unanswered_dependency`` at
+              ``_UNANSWERED_OPERAND_SEVERITY`` (#1023).
 
         Design rationale:
-            When evaluation fails due to unsupported Python features or runtime errors,
-            we "fail open" by returning True. This ensures items are shown even with
-            evaluation errors, allowing data collection. Warnings are recorded in
-            QMLState.warnings for post-survey analysis.
+            The two kinds fail in opposite directions because False means
+            opposite things to their callers: a precondition that returns False
+            skips an item, a postcondition that returns False refuses to let the
+            respondent advance. See ``_UNEVALUATABLE_CONDITION_POLICY``.
         """
         if not condition_expr:
             return True  # If no condition, it's always satisfied
 
+        parsed = _parse_condition(condition_expr)
+        unanswered: frozenset[str] = frozenset()
+        if parsed:
+            # One history snapshot for both scans: a skipped item's gate is
+            # re-checked on every navigation step.
+            on_path = self._on_path()
+            self._record_orphan_reads(parsed.operands, item_id, condition_type, on_path)
+            unanswered = self._unanswered(
+                parsed.operands, item_id, on_path
+            ) | self._unknown_variables(parsed.variables, unknown)
         try:
-            return self.python_runner.eval_expr(expr=condition_expr, **context)
+            if not unanswered:
+                return self.python_runner.eval_expr(expr=condition_expr, **context_of())
+            verdict = self._evaluate_three_valued(parsed.root, unanswered, context_of)
         except Exception as e:
-            # Warning because this indicates malfunction or unrecognized Python elements
-            # Assume True to show the item anyway - better to collect data than skip
-            warning_msg = (
-                f"Unable to evaluate {condition_type} '{condition_expr}': {e}. "
-                f"Assuming condition is True."
+            return self._undecided(
+                condition_type,
+                item_id,
+                warning_type=condition_type,
+                reason=f"Unable to evaluate {condition_type} '{condition_expr}': {e}.",
+                severity=_UNEVALUATABLE_CONDITION_POLICY[condition_type][1],
             )
-            self.logger.warning(warning_msg)
+        if verdict is not _UNKNOWN:
+            return verdict
+        return self._undecided(
+            condition_type,
+            item_id,
+            warning_type=f"{condition_type}_unanswered_dependency",
+            reason=(
+                f"Could not decide {condition_type} '{condition_expr}': it reads "
+                f"{', '.join(sorted(unanswered))}, presented and left unanswered "
+                f"or computed from such an item."
+            ),
+            severity=_UNANSWERED_OPERAND_SEVERITY,
+        )
 
-            # Collect warning in QMLState for data processing analysis.
-            # `degraded`: the item was shown (or the answer kept) under a rule
-            # the engine could not actually apply — the data is present but a
-            # gate the instrument declared did not run.
-            if item_id:
-                self.state.add_warning(item_id, condition_type, warning_msg, severity="degraded")
+    def _presented(self, item: dict[str, Any], on_path: frozenset[str]) -> bool:
+        """The flow presented *item* on the current path and it was processed.
 
-            return True
+        The one predicate for "the respondent was shown this" (#1022/#1023):
+        history holds only items the walk actually reached, and ``visited``
+        that the item was processed. Either alone is wrong — ``visited`` is also
+        set by Roster completion on members nobody asked, and by a codeBlock
+        writing another item's outcome; history also holds the presented item
+        not yet answered.
+        """
+        return item["id"] in on_path and bool(item.get("visited"))
+
+    @staticmethod
+    def _orphaned(item: dict[str, Any], on_path: frozenset[str]) -> bool:
+        """An answer the respondent gave to an item a backward edit has since
+        taken off the path (D12: mask, never evict). ``_asked`` is what
+        separates it from an outcome codeInit or a codeBlock set on an item
+        nobody asked, which reads through wherever the item is."""
+        return bool(item.get("_asked")) and item["id"] not in on_path
+
+    def _on_path(self) -> frozenset[str]:
+        return frozenset(self.state.get_history())
+
+    def _unanswered(
+        self, operands: frozenset[str], item_id: str | None, on_path: frozenset[str]
+    ) -> frozenset[str]:
+        """The *operands* the respondent was shown and left without an answer.
+
+        Being presented is what separates the two ways an outcome is None: an
+        item its own gate kept out was never meant to be answered, and gating
+        on its None is the sanctioned pattern (#559's BRFSS pregnancy item),
+        while a presented item's None is unknown. The condition's own item is
+        excluded: its postcondition is validating the answer being given now,
+        which the state does not hold yet.
+
+        *on_path* is the caller's: ``process_item`` passes history plus the item
+        it is processing, which joins history only after its codeBlock's marks
+        are computed — an item answered without being presented (an API
+        submission) is still the one answered now.
+        """
+        return frozenset(
+            name
+            for name in operands
+            if name != item_id
+            and (item := self.state.get_item(name))
+            and self._presented(item, on_path)
+            and item.get("outcome") is None
+        )
+
+    def _record_orphan_reads(
+        self,
+        operands: frozenset[str],
+        item_id: str | None,
+        condition_type: str,
+        on_path: frozenset[str],
+    ) -> None:
+        """Record a condition that read an orphaned answer as None (#1022).
+
+        ``informational``: the engine did what the instrument asks — an answer
+        off the current path is not the respondent's answer to this path — but
+        the survey record should say a collected answer was set aside, rather
+        than leave it to be inferred from an absence. An orphan holding None
+        (left blank, or evicted from a capped Group) set nothing aside, so it
+        is masked like any other but not recorded."""
+        if not item_id:
+            return
+        orphans = sorted(
+            name
+            for name in operands
+            if name != item_id
+            and (item := self.state.get_item(name))
+            and self._orphaned(item, on_path)
+            and item.get("outcome") is not None
+        )
+        if orphans:
+            self.state.add_warning(
+                item_id,
+                f"{condition_type}_orphaned_answer",
+                f"{condition_type.capitalize()} read {', '.join(orphans)} as never asked: "
+                f"the answer given is off the current path after a backward edit.",
+                severity="informational",
+            )
+
+    def _unknown_variables(
+        self, names: frozenset[str], marks: Iterable[str] | None
+    ) -> frozenset[str]:
+        """The *names* among *marks* (default: the current state's) — the
+        variables computed from an unanswered item."""
+        if marks is None:
+            marks = self.state.tail_state()["unknown"]
+        return frozenset(names).intersection(marks)
+
+    def _evaluate_three_valued(
+        self,
+        node: _Leaf | _Junction,
+        unanswered: frozenset[str],
+        context_of: Callable[[], dict[str, Any]],
+        after_unknown: bool = False,
+    ) -> bool | object:
+        """Kleene evaluation of a parsed condition: a leaf reading an
+        unanswered item is ``_UNKNOWN``; ``or`` is settled by any True part and
+        ``and`` by any False part, left to right as Python would, so an
+        answered part still decides the gate whenever it can.
+
+        ``after_unknown`` marks a part reached only because an earlier sibling
+        (here or in an enclosing junction) was undecided. Python would have
+        short-circuited before it — ``q_a.outcome == 1 and q_c.outcome > 3``
+        never reads ``q_c`` when ``q_a`` is None — so such a part raising is
+        undecided too, not an unevaluatable condition: that would record the
+        postcondition kind ``critical`` and exclude the survey from datasets."""
+        if isinstance(node, _Leaf):
+            if (node.operands | node.variables) & unanswered:
+                return _UNKNOWN
+            try:
+                return bool(self.python_runner.eval_expr(expr=node.source, **context_of()))
+            except Exception:
+                if after_unknown:
+                    return _UNKNOWN
+                raise
+        if node.op == "not":
+            value = self._evaluate_three_valued(
+                node.parts[0], unanswered, context_of, after_unknown
+            )
+            return value if value is _UNKNOWN else not value
+        settles = node.op == "or"
+        unknown = False
+        for part in node.parts:
+            value = self._evaluate_three_valued(
+                part, unanswered, context_of, after_unknown or unknown
+            )
+            if value is _UNKNOWN:
+                unknown = True
+            elif value is settles:
+                return settles
+        return _UNKNOWN if unknown else not settles
+
+    def _undecided(
+        self,
+        condition_type: str,
+        item_id: str | None,
+        *,
+        warning_type: str,
+        reason: str,
+        severity: str,
+    ) -> bool:
+        """Record a condition the engine could not decide and return the
+        policy's fail value for its kind.
+
+        Sets ``_last_gate_undecided``, which is what keeps capped-Group eviction
+        from deleting a collected answer on a gate that decided nothing. Logs
+        once per record: an undecided gate is re-checked on every navigation
+        step, and the record's ``count`` already carries the repeats.
+        """
+        self._last_gate_undecided = True
+        fail_value = _UNEVALUATABLE_CONDITION_POLICY[condition_type][0]
+        consequence = (
+            "Treating it as satisfied (the answer is accepted unchecked)."
+            if fail_value
+            else "Treating it as unsatisfied (the gated item is skipped)."
+        )
+        message = f"{reason} {consequence}"
+        first = (
+            self.state.add_warning(item_id, warning_type, message, severity=severity)
+            if item_id
+            else True
+        )
+        self.logger.log(logging.WARNING if first else logging.DEBUG, message)
+        return fail_value
 
     def _execute_code_block(
         self, code_block: str, context: dict[str, Any], item_id: str = None
@@ -257,8 +705,9 @@ class FlowProcessor:
         # Create ItemProxy for each item in the context (roster items get the
         # dict-shaped `outcomes` accessor when their block has any persisted
         # roster_outcomes — typically empty during init).
+        on_path = self._on_path()
         for item in all_items:
-            item_proxy = self._build_item_proxy(item)
+            item_proxy = self._build_item_proxy(item, on_path)
             init_context[item["id"]] = item_proxy
 
         # Execute questionnaire initialization code block. Pass the reserved
@@ -272,7 +721,6 @@ class FlowProcessor:
         )
 
         # update the outcomes of all the items from the init context
-        variables = {k: v for k, v in init_context.items() if not isinstance(v, ItemProxy)}
         for item in all_items:
             item_proxy = init_context[item["id"]]
             # Convert the simplified outcome back to the storage format
@@ -280,15 +728,26 @@ class FlowProcessor:
             # Ensure visited field is always present
             item["visited"] = False
 
-            context = {}  # create a context for the item
+        # codeInit's variables are the state the first history entry derives
+        # from. Its print() capture is not a variable.
+        init_context.pop("__output__", None)
+        questionnaire_state["init_variables"] = self._variables_of(init_context)
 
-            # copy the variables from the init context to the item's context.
-            for var_key, var_value in variables.items():
-                context[var_key] = copy.deepcopy(var_value)
+    @staticmethod
+    def _variables_of(context: dict[str, Any]) -> dict[str, Any]:
+        """The variables in an execution context — everything but the item proxies."""
+        return {k: v for k, v in context.items() if not isinstance(v, ItemProxy)}
 
-            item["context"] = context
+    def _evaluation_context(self, all_items: list[dict[str, Any]]) -> dict[str, Any]:
+        """The current state's variables plus a proxy per item — what a gate,
+        or a Roster's ``iterateOver``, is evaluated in when the walk reaches it."""
+        context = copy.deepcopy(self.state.tail_state()["vars"])
+        on_path = self._on_path()
+        for item in all_items:
+            context[item["id"]] = self._build_item_proxy(item, on_path)
+        return context
 
-    def _build_item_proxy(self, item: dict[str, Any]) -> ItemProxy:
+    def _build_item_proxy(self, item: dict[str, Any], on_path: frozenset[str]) -> ItemProxy:
         """
         Construct an ItemProxy, threading roster outcomes through if applicable.
 
@@ -299,7 +758,17 @@ class FlowProcessor:
         Inner-roster reads of `q.outcome` (singular) work via the snapshot/restore
         layer below — `item['outcome']` is set to the current iteration's value
         before any precondition or codeBlock runs.
+
+        With *on_path* (the ids in history), an orphaned answer reads as None
+        (D12, #1022): off the path it is not an answer to this path, yet it
+        stays in the state for a gate that flips back. Required, so no caller
+        can build an unmasked context by omission.
         """
+        if self._orphaned(item, on_path):
+            masked = {**item, "outcome": None}
+            if item.get("_roster_block_id"):
+                return ItemProxy(masked, roster_outcomes_for_block={})
+            return ItemProxy(masked)
         block_id = item.get("_roster_block_id")
         if block_id:
             roster_block = self.state.get("roster_outcomes", {}).get(block_id, {})
@@ -433,10 +902,8 @@ class FlowProcessor:
         raw_labels = item.get("_roster_labels", {})
         labels = {int(k): v for k, v in raw_labels.items()}
 
-        # Evaluate iterateOver in the current item's context (with all ItemProxies bound).
-        eval_context = copy.deepcopy(item.get("context", {}))
-        for other_item in all_items:
-            eval_context[other_item["id"]] = self._build_item_proxy(other_item)
+        # Evaluate iterateOver in the current state (with all ItemProxies bound).
+        eval_context = self._evaluation_context(all_items)
 
         try:
             # Use eval_value (raw) — eval_expr applies bool() coercion which would
@@ -591,7 +1058,18 @@ class FlowProcessor:
         # this member and it still carries an answer — A1: only group-asked items
         # may be cleared; codeInit/codeBlock-set outcomes on never-asked members
         # survive.
-        if item.get("_group_asked") and item.get("outcome") is not None:
+        #
+        # A skip forced by an UNDECIDED gate never evicts. Eviction exists for a
+        # gate that decided against the member — the respondent changed an
+        # upstream answer and the instrument no longer wants this question — and
+        # it deletes a collected answer, its history entry and its timing events.
+        # A gate that raised, or that could not be decided because an item it
+        # reads was left unanswered, decided nothing, so destroying data on the
+        # strength of it would turn "the engine could not tell" into "the
+        # respondent never answered". Skipping the member is still right: it is
+        # what the gate asked for, and it is recoverable. Deleting the answer is
+        # not.
+        if not self._last_gate_undecided and item.get("_group_asked") and item.get("outcome") is not None:
             self._evict_group_item(item)
         return False
 
@@ -603,18 +1081,21 @@ class FlowProcessor:
         The analysis extractor (``survey_extractor.extract_survey_outcomes``)
         walks ``state['history']`` and emits any item whose ``outcome`` is not
         None, so a stale outcome left on an evicted item would leak into the
-        Bronze dataset. Three surfaces are reset:
+        Bronze dataset. Every surface that carries the answer is reset:
 
           * ``item['outcome']`` → None (the value), and the item un-visited so
             the forward walk does not treat it as already shown;
           * the durable ``_group_asked`` tag cleared — the group no longer owns
-            this answer, so a later sweep must not re-evict an already-clean item;
+            this answer, so a later sweep must not re-evict an already-clean item
+            — and ``_asked`` with it: there is no answer left to mask (#1022);
           * the item's ``history`` entry (and its lockstep
             ``history_iter_key``) removed so the extractor never reaches it;
           * the item's ``response_timing`` events removed — the answer is gone,
             so its timing must go too, or a re-draw of the same item would
             double-count the evicted attempt's duration in visit totals and in
-            the per-answer durations Bronze carries.
+            the per-answer durations Bronze carries;
+          * the item's ``external_provenance`` marker removed, or the next
+            answer the respondent gives on a re-draw would read as prefilled.
 
         A capped-Group item has no per-iteration identity (iter_key is always
         None), so every history occurrence of this item id is removed.
@@ -623,22 +1104,15 @@ class FlowProcessor:
         item["outcome"] = None
         item["visited"] = False
         item.pop("_group_asked", None)
+        item.pop("_asked", None)
         self.state.drop_timing_events_for_item(item_id)
+        self.state.clear_external_provenance(item_id)
 
-        # Drop the item's history entry/entries, keeping history_iter_key in
-        # lockstep (R9 — the extractor walks history, so nulling outcome alone
-        # would still be insufficient if the entry remained).
-        history = self.state.get("history", [])
-        iter_keys = self.state.get("history_iter_key", [])
-        kept_history: list[str] = []
-        kept_iter_keys: list[int | None] = []
-        for idx, hid in enumerate(history):
-            if hid == item_id:
-                continue
-            kept_history.append(hid)
-            kept_iter_keys.append(iter_keys[idx] if idx < len(iter_keys) else None)
-        self.state["history"] = kept_history
-        self.state["history_iter_key"] = kept_iter_keys
+        # Drop the item's history entry/entries (R9 — the extractor walks
+        # history, so nulling outcome alone would still be insufficient if the
+        # entry remained). Later entries keep the variables they were derived
+        # with, the evicted member's codeBlock output included.
+        self.state.remove_history_entries(item_id)
 
     def _check_preconditions(self, item: dict[str, Any], all_items: list[dict[str, Any]]) -> bool:
         """
@@ -650,29 +1124,47 @@ class FlowProcessor:
         ALL preconditions (block + item) evaluate to True.
 
         Returns:
-            True if all preconditions are satisfied, no preconditions exist,
-            or any precondition cannot be evaluated (assumes True on error).
-            False only if a precondition explicitly evaluates to False.
+            True if all preconditions are satisfied, or none exist.
+            False if any precondition evaluates to False, or cannot be
+            evaluated at all (unrecognized Python, missing variables, a
+            comparison against an unasked item's ``None`` outcome).
 
-            When a precondition cannot be evaluated (unrecognized Python, missing vars),
-            a warning is logged and the item is shown anyway to allow data collection.
+            An unevaluatable gate skips the item and records a ``degraded``
+            warning: a gate that cannot be checked is honoured, not ignored,
+            because ignoring it administers an item the instrument restricted.
+            See ``_UNEVALUATABLE_CONDITION_POLICY``.
+
+            Sets ``_last_gate_undecided`` for the duration of this call, so a
+            caller that acts DESTRUCTIVELY on a False can tell "the gate said
+            no" from "the gate decided nothing" — it raised, or an item it
+            reads was left unanswered (#1023). Only
+            ``_group_reach_decision`` reads it, immediately after its own call;
+            it is reset on entry here and is meaningless at any other moment.
         """
+        self._last_gate_undecided = False
+
         effective = self._effective_conditions(item, "precondition")
         if not effective:
             return True  # No preconditions
 
-        # Clone context and add item proxies
-        context = copy.deepcopy(item.get("context", {}))
-        for other_item in all_items:
-            item_proxy = self._build_item_proxy(other_item)
-            context[other_item["id"]] = item_proxy
+        # The current state plus a proxy per item, built on first use: a gate
+        # left undecided by an unanswered item evaluates nothing and needs none.
+        # The current state is the last history entry's — the items that
+        # actually ran — whichever item the gate belongs to (#1021).
+        context: dict[str, Any] | None = None
+
+        def context_of() -> dict[str, Any]:
+            nonlocal context
+            if context is None:
+                context = self._evaluation_context(all_items)
+            return context
 
         # Evaluate all preconditions - ALL must be satisfied
         item_id = item.get("id")
         for condition in effective:
             if not self._evaluate_condition(
                 condition.get("predicate", ""),
-                context,
+                context_of,
                 item_id=item_id,
                 condition_type="precondition",
             ):
@@ -971,15 +1463,39 @@ class FlowProcessor:
         # near-zero duration that honestly describes a machine-supplied answer.
         questionnaire_state.open_timing_event(item_id, timing_iter_key, source)
 
-        # Clone the current context to avoid modifying the original
-        new_context = copy.deepcopy(current_item["context"])
+        # The history entry this answer belongs to. An item answered without
+        # being presented (the external-input prefill, an API submission for an
+        # item the walk has not reached) joins the path here: it now has an
+        # answer, and its variables must reach whatever runs after it.
+        entry_idx = questionnaire_state.entry_index(item_id, timing_iter_key)
+        # Answering an item that later entries were built on is a backward
+        # edit, whichever driver sends it (the API takes any item id): the
+        # walk rewinds to it, as the stepper jump does, and the items after
+        # it are re-reached against the new state. Their answers stay on the
+        # items. Re-running the entry in place would leave every later state
+        # derived from the abandoned answer.
+        if entry_idx is not None and entry_idx < len(questionnaire_state.get_history()) - 1:
+            for removed_id, _ in questionnaire_state.truncate_history(entry_idx + 1):
+                removed = questionnaire_state.get_item(removed_id)
+                if removed is not None:
+                    removed["visited"] = False
+        base = (
+            questionnaire_state.state_before(entry_idx)
+            if entry_idx is not None
+            else questionnaire_state.tail_state()
+        )
+
+        # The state chain (#1021): this item runs on the state of the entry
+        # before it, never on one a later item already built on.
+        new_context = copy.deepcopy(base["vars"])
 
         # Fill in the new context with the ItemProxies. Roster items get the
         # dict-shaped `outcomes` attribute via _build_item_proxy so that
         # post-roster code (and any inner codeBlock that legitimately reads
         # other iterations) can resolve `q_satisfaction.outcomes[K]`.
+        on_path = self._on_path() | {item_id}
         for item in all_items:
-            item_proxy = self._build_item_proxy(item)
+            item_proxy = self._build_item_proxy(item, on_path)
             if item["id"] == item_id:
                 item_proxy.from_outcome(outcome)
             new_context[item["id"]] = item_proxy
@@ -994,60 +1510,102 @@ class FlowProcessor:
             for condition in effective_post:
                 if not self._evaluate_condition(
                     condition.get("predicate", ""),
-                    new_context,
+                    lambda: new_context,
                     item_id=item_id,
                     condition_type="postcondition",
+                    unknown=base["unknown"],
                 ):
                     # Return the hint message instead of just False
                     hint = condition.get("hint", "Postcondition failed")
                     return {"success": False, "message": hint}
 
+        # A prefill marker describes the value the item holds now, so an answer
+        # that REPLACES the value drops it; the prefill seam sets it again after
+        # its own answer. An unchanged value keeps it: a prefilled item sits in
+        # history, so a respondent paging back through it re-submits the same
+        # value (the Back button's convenience save, or Next on the unchanged
+        # item), and that value is still the prefilled one.
+        if outcome != current_item.get("outcome"):
+            questionnaire_state.clear_external_provenance(item_id)
+
+        # A re-run replaces this entry's earlier run, so the outcomes that run
+        # wrote on other items go back first — or a branch the new answer no
+        # longer takes would leave its write behind. The proxies are rebuilt
+        # after the undo so the codeBlock reads the restored values.
+        if (
+            entry_idx is not None
+            and questionnaire_state["history_state"][entry_idx]["outcome_undo"]
+        ):
+            questionnaire_state.undo_entry_outcomes(entry_idx)
+            for item in all_items:
+                if item["id"] != item_id:
+                    new_context[item["id"]] = self._build_item_proxy(item, on_path)
+
         # Execute the code block
-        new_context = self._execute_code_block(
-            current_item.get("codeBlock"), new_context, item_id=item_id
-        )
+        code_block = current_item.get("codeBlock")
+        new_context = self._execute_code_block(code_block, new_context, item_id=item_id)
 
         # Extract captured output if any
         output_messages = new_context.pop("__output__", [])
 
         # Update outcomes for all items that may have been modified in the code block
-        # and mark them as visited if they now have outcomes
+        # and mark them as visited if they now have outcomes. Every OTHER item's
+        # prior value goes in the entry's undo log (the current item's is the
+        # answer itself, which history truncation already governs), beside the
+        # value written — an undo restores only a value nothing replaced since.
+        # An orphan's proxy was built reading None, so None is its baseline:
+        # the block changed it only if it wrote something else. Comparing with
+        # the stored answer instead would read the mask itself as a write and
+        # delete the answer the mask exists to keep.
+        outcome_undo: dict[str, list[Any]] = {}
         for item in all_items:
             item_proxy = new_context[item["id"]]
             updated_outcome = item_proxy.to_outcome()
+            baseline = None if self._orphaned(item, on_path) else item.get("outcome")
 
             # If the outcome has changed or is newly set, update it and mark as visited
-            if updated_outcome != item.get("outcome"):
+            if updated_outcome != baseline:
+                if item["id"] != item_id:
+                    outcome_undo[item["id"]] = [
+                        item.get("outcome"),
+                        item.get("visited", False),
+                        updated_outcome,
+                    ]
                 item["outcome"] = updated_outcome
                 if updated_outcome is not None:
                     item["visited"] = True
 
-        # The current item is always marked as visited since it was actively processed
+        # The current item is always marked as visited since it was actively
+        # processed, and tagged as asked: its outcome is an answer, which
+        # _orphaned masks once a backward edit takes it off the path.
         current_item["visited"] = True
+        current_item["_asked"] = True
 
-        # Propagate variables to all items that execute AFTER this one — in
-        # navigation_path (stable-Kahn topological) order, the authoritative
-        # execution order. Using file order here would skip an item that sorts
-        # before the current item in the file but AFTER it topologically: e.g. a
-        # capped-Group member `c` whose precondition reads a variable an OUTER
-        # item `f` sets, where stable-Kahn orders the path [a, f, c] but the file
-        # lists the Group block (a, c) before f's block. With file-order
-        # propagation f's variable never reaches c's context, so c's
-        # precondition would wrongly read the stale value when the on-reach walk
-        # evaluates it (the C1 bug). nav-order propagation makes every member's
-        # cross-block dependencies visible by the time the walk reaches it.
-        variables = {k: v for k, v in new_context.items() if not isinstance(v, ItemProxy)}
-        nav_path = questionnaire_state.get_navigation_path()
-        # O(1) position lookup via the cached index (was nav_path.index(item_id),
-        # O(N) per call → O(N^2) over a full survey). -1 mirrors the prior
-        # ValueError fallback when item_id isn't on the path.
-        current_pos = questionnaire_state.get_navigation_index().get(item_id, -1)
-        if current_pos >= 0:
-            subsequent_ids = set(nav_path[current_pos + 1 :])
-            for item in all_items:
-                if item["id"] in subsequent_ids:
-                    for var_name, var_value in variables.items():
-                        item["context"][var_name] = copy.deepcopy(var_value)
+        # Record the entry's new state. A mark follows the value: set on a name
+        # assigned from unanswered data, cleared only on a name whose value the
+        # block actually changed from clean data (#1044).
+        variables = self._variables_of(new_context)
+        unknown = set(base["unknown"]) & variables.keys()
+        if code_block:
+            marked, cleared = _unknown_after(
+                code_block,
+                frozenset(unknown),
+                lambda name: bool(self._unanswered(frozenset((name,)), None, on_path)),
+            )
+            unknown |= marked & variables.keys()
+            unknown -= {
+                name
+                for name in cleared
+                if name not in base["vars"] or base["vars"][name] != variables.get(name)
+            }
+        if entry_idx is None:
+            questionnaire_state.add_to_history(item_id, iter_key=timing_iter_key)
+            entry_idx = len(questionnaire_state.get_history()) - 1
+        questionnaire_state["history_state"][entry_idx] = {
+            "vars": variables,
+            "unknown": sorted(unknown),
+            "outcome_undo": outcome_undo,
+        }
 
         # ------------------------------------------------------------------
         # Roster post-processing: snapshot all roster items in the block
@@ -1205,15 +1763,15 @@ class FlowProcessor:
              (``process_item`` never range-checks the outcome); skip if
              out-of-domain — the item is asked in the normal flow (AE3/R11).
           4. ``process_item(state, id, value)`` — validates the postcondition
-             and runs the codeBlock, propagating context to later items.
-          5. On ``success=True``: append the item to history (iter_key=None) so
-             the history-keyed Bronze extractor (U3) emits it, and set the
-             externally-supplied provenance marker. On ``success=False`` (a
+             and runs the codeBlock. An item the walk has not presented joins
+             history there (iter_key=None), so the history-keyed Bronze
+             extractor (U3) emits it and its variables reach later items.
+          5. On ``success=True``: set the externally-supplied provenance marker. On ``success=False`` (a
              postcondition failure) leave it unresolved — no history entry, no
              provenance — so it is asked in the flow (fail-safe, KTD5).
 
         Ordering: because externals are processed in navigation order and
-        ``process_item`` propagates variables forward, an external item whose
+        each one's history entry derives from the one before, an external item whose
         codeBlock feeds a *later* external item resolves in dependency order.
 
         Idempotent via the ``external_inputs_applied`` sentinel — both runtimes
@@ -1336,12 +1894,12 @@ class FlowProcessor:
                 summary["skipped"] += 1
                 continue
 
-            # (5) Success — append to history (non-roster: iter_key=None) so the
-            # history-walking Bronze extractor emits it, and flag provenance with
-            # the item's non-PII source label (falls back to the item id when no
-            # sources map is supplied — presence-only provenance).
+            # (5) Success — process_item put the item on history (it was not
+            # presented), so the history-walking Bronze extractor emits it.
+            # Flag provenance with the item's non-PII source label (falls back
+            # to the item id when no sources map is supplied — presence-only
+            # provenance).
             source_label = (sources or {}).get(item_id, item_id)
-            questionnaire_state.add_to_history(item_id, iter_key=None)
             questionnaire_state.set_external_provenance(item_id, source_label)
             summary["applied"] += 1
             summary["item_ids"].append(item_id)

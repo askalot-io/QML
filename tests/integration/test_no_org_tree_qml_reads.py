@@ -74,12 +74,25 @@ ALLOWLIST: dict[str, str] = {
     "services/tenant/armiger/app/core/designer_ws_turn.py": (
         "workspace-relative path resolution for the Designer turn"
     ),
+    "services/tenant/armiger/app/core/work_surface.py": (
+        "enumerates a SESSION WORKSPACE's materialized copies to decide which "
+        "editor tabs to open (R15). Reads names, never content — and reads the "
+        "filesystem deliberately: it runs in a Flask-free background thread "
+        "after the redirect, so it has no request or organization context to "
+        "query the document store with, and a DB-derived list could name a file "
+        "the editor cannot open"
+    ),
     "services/tenant/armiger/app/core/slug_sanitizer.py": "docstring reference only",
     "services/tenant/armiger/app/config.py": "declares the org volume for the workspace layer",
     "services/tenant/armiger/app/app.py": "startup logging of the org volume",
     # The loader's own filesystem branch — fixtures, the CLI, workspaces.
     "shared/modules/askalot_qml/askalot_qml/core/qml_loader.py": (
         "the filesystem branch itself — used by fixtures, the CLI, and workspaces"
+    ),
+    "shared/modules/askalot_common/askalot_common/workspace/sync.py": (
+        "resolves the artifact store for the documents tier — uploaded "
+        "reference documents are BINARY artifacts on the org volume (R8), the "
+        "one thing that legitimately still lives there; no QML is read"
     ),
     # Non-QML uses of the org volume: datasets, exports, uploads, briefs,
     # summaries — explicitly out of the QML read swap's scope.
@@ -98,18 +111,22 @@ ALLOWLIST: dict[str, str] = {
     "services/tenant/portor/app/mcp_tools/upload_tools.py": "upload staging paths",
     "services/tenant/portor/app/mcp_tools/dataset_tools.py": "dataset artifact paths",
     "services/tenant/portor/app/mcp_tools/bundle_tools.py": "dataset artifact paths",
-    "services/tenant/portor/app/mcp_tools/access_tags.py": "docstring reference only",
     "services/tenant/portor/app/capabilities/bundle.py": "dataset artifact paths",
     "services/tenant/portor/app/capability_layer/extensions/signed_url.py": (
         "signed-URL org-prefix convention"
     ),
     "services/tenant/seneschal/app/seneschal/config.py": "declares the org volume",
-    "shared/modules/askalot_common/askalot_common/startup.py": "declares the org volume",
-    "shared/modules/askalot_analysis/askalot_analysis/extraction/pipeline.py": (
-        "dataset parquet output paths"
-    ),
-    "shared/modules/askalot_analysis/askalot_analysis/jobs/coding_task.py": (
-        "dataset artifact paths"
+    # The binary-artifact storage driver (#203). This entry is a stronger claim
+    # than the others: the rest are files that happen to touch the org volume
+    # for a non-QML reason, whereas this one is the module the whole seam exists
+    # to concentrate that access INTO — "no module outside the store composes an
+    # org-volume path" is the invariant, and the store is the stated exception.
+    # It resolves opaque ArtifactRef(org, lane, key) triples to local paths and
+    # contains traversal to the lane; an object-store driver would replace this
+    # file and need no allowlist entry at all.
+    "shared/modules/askalot_common/askalot_common/files/artifact_store.py": (
+        "the artifact-storage driver — the single sanctioned composer of "
+        "org-volume paths; binary lanes only, never QML content"
     ),
 }
 

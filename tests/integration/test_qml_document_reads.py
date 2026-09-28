@@ -9,12 +9,17 @@ filesystem, and that a survey keeps the instrument it was fielded on:
 - ``load_qml_content(version_id=...)`` returns that exact version instead
 - ``load_fielded_qml_content`` serves the campaign's pinned version EVEN AFTER
   the questionnaire's head advances (Covers F4)
-- a campaign-less ad-hoc survey, and a campaign with no pin, read head
+- a VOLUNTEER survey, created against a campaign after that head moved, is
+  served the same pinned version as a drawn one (Covers AE4)
+- a campaign-less preview, and a campaign with no pin, read head
 - a questionnaire with no document link fails loud (``QMLDocumentMissingError``,
   a ``FileNotFoundError``) instead of silently resolving to nothing
 - ``RepositoryQMLSource`` resolves canonical questionnaire names and refuses
   non-canonical ones; ``QMLLoader(content_source=...)`` runs the full
   parse/validate pipeline over the resolved content and lists document names
+- ``RepositoryQMLSource.read_within`` returns a body with ITS OWN byte size in
+  one read, withholds an oversized body while still reporting its size, and
+  fails loud rather than reporting 0 for a document that is not there (#213)
 - the SirWay flow blueprint, driven end-to-end over HTTP, serves the pinned
   questionnaire's first item after the head moved on
 
@@ -25,6 +30,8 @@ pin is the guarantee that a respondent mid-interview is never handed a
 different questionnaire, so it is asserted at both the helper and the HTTP
 layer.
 """
+
+from types import SimpleNamespace
 
 import pytest
 from askalot_qml.api import create_flow_blueprint
@@ -97,10 +104,13 @@ class _FakeCampaign:
 
 
 class _FakeSurvey:
-    def __init__(self, campaign_id: str | None):
+    def __init__(self, campaign_id: str | None, arrival: str = "drawn"):
         self.id = "survey-1"
         self.questionnaire_id = QUESTIONNAIRE_ID
         self.campaign_id = campaign_id
+        # How the respondent reached the campaign. Resolution keys on the
+        # campaign, never on this, which is what AE4 asserts.
+        self.arrival = arrival
         self.respondent_id = "r-1"
         self.qml_state = None
         self.status = "in_progress"
@@ -147,8 +157,53 @@ class _FakeRepo:
     def get_campaign(self, campaign_id):
         return self._campaigns.get(campaign_id)
 
+    def _is_preview(self) -> bool:
+        return getattr(self._survey, "arrival", None) == "preview"
+
     def get_survey(self, survey_id):
-        return self._survey if self._survey and survey_id == self._survey.id else None
+        """A preview is NOT in surveys — it lives in the preview store.
+
+        The fixture answers the way production does after previews moved out of
+        ``surveys``, so a test that says "preview" exercises the store that
+        actually holds one.
+        """
+        if not self._survey or survey_id != self._survey.id or self._is_preview():
+            return None
+        return self._survey
+
+    def get_preview_run(self, run_id):
+        if not self._survey or run_id != self._survey.id or not self._is_preview():
+            return None
+        return self._survey
+
+    def update_preview_run_state(
+        self, run_id, *, qml_state, current_block_id=None, current_item_id=None, status=None
+    ):
+        self._survey.qml_state = qml_state
+        self._survey.current_block_id = current_block_id
+        self._survey.current_item_id = current_item_id
+        if status is not None:
+            self._survey.status = status
+        return True
+
+    def head_content_within(self, document_id, *, max_bytes):
+        """The real one-read probe: size always, body only when it fits.
+
+        Reproduces the SQL exactly — both values are taken from the one head
+        row, so a caller cannot get a size and a body that describe different
+        versions.
+        """
+        if document_id != DOCUMENT_ID:
+            return None
+        version = self._versions.get(self._head_version_id)
+        if version is None:
+            return None
+        size = len(version.content.encode("utf-8"))
+        return SimpleNamespace(
+            size_bytes=size,
+            content=version.content if size <= max_bytes else None,
+            fits=size <= max_bytes,
+        )
 
     def get_organization(self, org_id):
         return None
@@ -200,8 +255,31 @@ class TestFieldingPin:
         assert content == PINNED_QML
         assert content != HEAD_QML
 
-    def test_ad_hoc_survey_without_campaign_reads_head(self, repo):
+    def test_volunteer_survey_gets_the_same_pin_as_a_drawn_one(self, repo):
+        """Covers AE4 — a volunteer joins an already-fielded campaign, so the
+        instrument they answer is the one that campaign pinned, not whatever
+        the questionnaire's head has since become. Resolution keys on the
+        campaign; how the respondent arrived never enters it."""
+        volunteer = _FakeSurvey(campaign_id="camp-pinned", arrival="volunteer")
+        drawn = _FakeSurvey(campaign_id="camp-pinned", arrival="drawn")
+
+        content = load_fielded_qml_content(repo, volunteer, _FakeQuestionnaire())
+
+        assert content == PINNED_QML
+        assert content == load_fielded_qml_content(repo, drawn, _FakeQuestionnaire())
+
+    def test_survey_without_campaign_reads_head(self, repo):
+        """A preview or training run belongs to no campaign, so there is no pin
+        to serve. This is the only head-reading branch, and a volunteer does not
+        widen it — they have a campaign."""
         survey = _FakeSurvey(campaign_id=None)
+
+        assert load_fielded_qml_content(repo, survey, _FakeQuestionnaire()) == HEAD_QML
+
+    def test_volunteer_on_an_unpinned_campaign_reads_head(self, repo):
+        """A campaign with no pin reads head for every arrival alike — the
+        missing pin is the reason, and it is logged where it happens."""
+        survey = _FakeSurvey(campaign_id="camp-unpinned", arrival="volunteer")
 
         assert load_fielded_qml_content(repo, survey, _FakeQuestionnaire()) == HEAD_QML
 
@@ -227,6 +305,42 @@ class TestRepositoryQMLSource:
             canonical_qml_rel_path(PROJECT_ID, QUESTIONNAIRE_ID)
         ]
 
+    def test_read_within_returns_the_body_and_its_own_size_when_it_fits(self, repo):
+        """Portor's inline-vs-signed-URL threshold reads this instead of
+        measuring a body it is about to discard (#213), and the size it gets
+        must describe the body it gets — they come from one read."""
+        name = canonical_qml_rel_path(PROJECT_ID, QUESTIONNAIRE_ID)
+        source = RepositoryQMLSource(repo)
+
+        size, content = source.read_within(name, 1_000_000)
+
+        assert content == source.read(name)
+        assert size == len(content.encode("utf-8"))
+
+    def test_read_within_withholds_an_oversized_body_but_still_reports_its_size(self, repo):
+        """The whole point: the caller learns it is too big without paying to
+        move it, and has nothing it could accidentally inline."""
+        name = canonical_qml_rel_path(PROJECT_ID, QUESTIONNAIRE_ID)
+
+        size, content = RepositoryQMLSource(repo).read_within(name, 1)
+
+        assert content is None
+        assert size == len(HEAD_QML.encode("utf-8"))
+
+    def test_read_within_refuses_a_non_canonical_name(self, repo):
+        with pytest.raises(QMLDocumentMissingError):
+            RepositoryQMLSource(repo).read_within("demographic.qml", 1024)
+
+    def test_read_within_of_a_documentless_questionnaire_fails_loud(self):
+        """Not zero — an absent document is a miss, and reporting 0 bytes would
+        inline an "empty" questionnaire instead of saying it is not there."""
+        repo = _FakeRepo(questionnaire=_FakeQuestionnaire(document_id=None))
+
+        with pytest.raises(QMLDocumentMissingError):
+            RepositoryQMLSource(repo).read_within(
+                canonical_qml_rel_path(PROJECT_ID, QUESTIONNAIRE_ID), 1024
+            )
+
     def test_loader_seam_runs_the_full_pipeline(self, repo):
         loader = QMLLoader(content_source=RepositoryQMLSource(repo))
 
@@ -249,7 +363,16 @@ class TestFlowBlueprintServesPinnedVersion:
     def _client(self, repo, survey):
         repo._survey = survey
         app = Flask(__name__)
-        app.register_blueprint(create_flow_blueprint(repository=repo, url_prefix="/api/flow"))
+        app.register_blueprint(
+            create_flow_blueprint(
+                repository=repo,
+                url_prefix="/api/flow",
+                # The flow API needs a credential (R37); these tests are about
+                # which QML VERSION is served, so they present the smallest
+                # session that authorizes them.
+                session_resolver=lambda: ("org-1", "org-slug", str(survey.id)),
+            )
+        )
         return app.test_client()
 
     def test_current_item_comes_from_the_pinned_version(self, repo):
@@ -267,3 +390,66 @@ class TestFlowBlueprintServesPinnedVersion:
 
         assert response.status_code == 200
         assert response.get_json()["title"] == "Head question"
+
+    def test_preview_reset_picks_up_a_moved_head(self, repo):
+        """#534: a preview is a walk of an instrument someone is editing.
+
+        Its state is materialized once, so a reload keeps serving the copy
+        captured at first render — Reset is what re-reads the document.
+        """
+        repo._head_version_id = "v1"
+        client = self._client(repo, _FakeSurvey(campaign_id=None, arrival="preview"))
+
+        first = client.get("/api/flow/current-item?survey_id=survey-1")
+        assert first.get_json()["title"] == "Pinned question"
+
+        # The designer edits the QML: head advances underneath the live preview.
+        repo._head_version_id = "v2"
+
+        # A plain reload still serves the materialized copy — deliberate, and
+        # the reason Reset has to be the door.
+        stale = client.get("/api/flow/current-item?survey_id=survey-1")
+        assert stale.get_json()["title"] == "Pinned question"
+
+        reset = client.post("/api/flow/reset", json={"survey_id": "survey-1"})
+        assert reset.status_code == 200
+        assert reset.get_json()["item"]["title"] == "Head question"
+
+    def test_fielded_reset_keeps_the_pinned_version(self, repo):
+        """The load-bearing half: a reset must NOT re-read for a real interview.
+
+        The campaign's pin is what stops a save from changing the questions
+        mid-interview, and a Reset is still inside that interview.
+        """
+        client = self._client(repo, _FakeSurvey(campaign_id="camp-pinned"))
+
+        assert (
+            client.get("/api/flow/current-item?survey_id=survey-1").get_json()["title"]
+            == "Pinned question"
+        )
+        # Head is already v2 in the fixture — the pin is the only thing holding
+        # this survey on v1.
+        reset = client.post("/api/flow/reset", json={"survey_id": "survey-1"})
+
+        assert reset.status_code == 200
+        assert reset.get_json()["item"]["title"] == "Pinned question"
+
+    def test_preview_reset_without_a_moved_head_still_clears_answers(self, repo):
+        """Re-reading is additional to the reset, not instead of it."""
+        repo._head_version_id = "v1"
+        survey = _FakeSurvey(campaign_id=None, arrival="preview")
+        client = self._client(repo, survey)
+
+        client.get("/api/flow/current-item?survey_id=survey-1")
+        client.post(
+            "/api/flow/evaluate-item",
+            json={"survey_id": "survey-1", "item_id": "q_first", "outcome": 1},
+        )
+
+        reset = client.post("/api/flow/reset", json={"survey_id": "survey-1"})
+
+        assert reset.status_code == 200
+        assert reset.get_json()["item"]["title"] == "Pinned question"
+        first_item = survey.qml_state.get_item("q_first")
+        assert first_item.get("outcome") is None
+        assert not first_item.get("visited")

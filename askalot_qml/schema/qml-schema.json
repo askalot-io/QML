@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "Questionnaire Markup Language",
-  "version": "2.2.0",
+  "version": "2.4.1",
   "type": "object",
   "required": [
     "qmlVersion",
@@ -30,18 +30,6 @@
         "codeInit": {
           "description": "Code block which is executed before the questionnaire is started",
           "$ref": "#/$defs/CodeBlock"
-        },
-        "precondition": {
-          "type": "array",
-          "items": {
-            "$ref": "#/$defs/Condition"
-          }
-        },
-        "postcondition": {
-          "type": "array",
-          "items": {
-            "$ref": "#/$defs/Condition"
-          }
         },
         "blocks": {
           "type": "array",
@@ -202,7 +190,7 @@
         "external": {
           "type": "boolean",
           "default": false,
-          "description": "Runtime-only flag (schema 2.2.0+): when true, the item is prefill-eligible — the platform may auto-answer it at survey init from the respondent record (demographics + custom_attributes), joined per-campaign by an external_input_mapping in Targetor. An unresolvable or out-of-domain value falls back to asking the item in the normal flow (fail-safe). This flag is invisible to Z3/static analysis: an external item classifies identically to the same item without it (same domain in base constraint B, no free symbol), so it introduces zero new verified surface. It is the sanctioned resolution for the undefined_name / frozen_variable failure modes when the gated value enters from outside the interview."
+          "description": "Runtime-only flag (schema 2.2.0+): when true, the item is prefill-eligible \u2014 the platform may auto-answer it at survey init from the respondent record (demographics + custom_attributes), joined per-campaign by an external_input_mapping in Targetor. An unresolvable or out-of-domain value falls back to asking the item in the normal flow (fail-safe). This flag is invisible to Z3/static analysis: an external item classifies identically to the same item without it (same domain in base constraint B, no free symbol), so it introduces zero new verified surface. It is the sanctioned resolution for the undefined_name / frozen_variable failure modes when the gated value enters from outside the interview."
         },
         "precondition": {
           "type": "array",
@@ -337,9 +325,15 @@
         "predicate": {
           "description": "Expression that must be true for the condition to be met (booleans and numbers are automatically converted to strings)",
           "oneOf": [
-            {"type": "string"},
-            {"type": "boolean"},
-            {"type": "number"}
+            {
+              "type": "string"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "number"
+            }
           ]
         },
         "hint": {
@@ -388,7 +382,10 @@
               },
               "default": {
                 "type": "integer",
-                "enum": [0, 1],
+                "enum": [
+                  0,
+                  1
+                ],
                 "description": "Default value for the switch: 0 for off, 1 for on"
               }
             }
@@ -496,7 +493,7 @@
               "default": {
                 "type": "integer",
                 "description": "Default value for the editbox. Must be between min and max (inclusive)."
-              }              
+              }
             },
             "required": [
               "min",

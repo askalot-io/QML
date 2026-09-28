@@ -444,8 +444,17 @@ class QMLDiagramIR:
         """Emit cycle edges + collect member set.
 
         Overlapping cycles merge (union-find) into a single group. Members are
-        sorted by file-order position in the stable Kahn chain; forward edges
+        sorted by their position in the stable Kahn chain; forward edges
         connect consecutive members; one backward arc closes the group.
+
+        Every edge carries ``cycle_group``, the ring it belongs to (#760), so
+        the front end can lay independent rings in separate corridor lanes
+        instead of drawing them on top of each other. Rings are numbered by
+        the questionnaire-file position of their earliest member — not in the
+        order the merge produces them (it iterates the topology's cycle list)
+        and not by the Kahn chain (an unrelated dependency reorders it) —
+        because either would move a ring to another lane on a recompute that
+        did not change the ring.
         """
         cycle_members: set = set()
         cycle_edges: list[dict] = []
@@ -456,11 +465,16 @@ class QMLDiagramIR:
         chain_pairs = {(chain[i], chain[i + 1]) for i in range(len(chain) - 1)}
 
         cycle_sets = [set(c[:-1]) for c in (self.topology.cycles or [])]
+        groups = []
         for group in self._merge_overlapping_sets(cycle_sets):
             cycle_members.update(group)
-            if len(group) < 2:
-                continue
-            sorted_members = sorted(group, key=lambda x: chain_index.get(x, 0))
+            if len(group) >= 2:
+                groups.append(sorted(group, key=lambda x: (chain_index.get(x, 0), x)))
+        # Numbered by FILE position, not by the Kahn chain: the chain moves when
+        # an unrelated dependency is added, and the number picks a lane.
+        file_index = {item_id: i for i, item_id in enumerate(self.items_by_id)}
+        groups.sort(key=lambda members: min((file_index.get(m, len(file_index)), m) for m in members))
+        for ring, sorted_members in enumerate(groups):
             for j in range(len(sorted_members) - 1):
                 pair = (sorted_members[j], sorted_members[j + 1])
                 if pair not in chain_pairs:
@@ -469,6 +483,7 @@ class QMLDiagramIR:
                             "source": sorted_members[j],
                             "target": sorted_members[j + 1],
                             "kind": "cycle",
+                            "cycle_group": ring,
                         }
                     )
             cycle_edges.append(
@@ -476,6 +491,7 @@ class QMLDiagramIR:
                     "source": sorted_members[-1],
                     "target": sorted_members[0],
                     "kind": "cycle",
+                    "cycle_group": ring,
                 }
             )
         return cycle_edges, cycle_members

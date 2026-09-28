@@ -65,12 +65,31 @@ OFFENDER_CAP = 10
 # pathological files carry 30-60% dead variables.
 ECONOMY_ADEQUATE_MAX_DEAD_SHARE = 0.25
 
-# D3: share of classified items whose postcondition is CONSTRAINING. The
-# corpus audit found seven of twelve files at exactly 0 constraining share;
-# SLID — regenerated under the 2026-07-05 generation-discipline rules and the
-# corpus's disciplined exemplar — sits at 0.207, which anchors the strong band.
-GATE_STRONG_MIN_CONSTRAINING_SHARE = 0.20
-GATE_ADEQUATE_MIN_CONSTRAINING_SHARE = 0.10
+# D3: share of GATEABLE items carrying a CONSTRAINING postcondition.
+#
+# The denominator is numeric-input items only, and that choice is the whole
+# dimension. An enumerated control (Radio/Dropdown/Switch/Checkbox) already
+# pins its outcome to its label keys (a Checkbox to sums of them) — the control
+# IS the domain, so a postcondition there expresses cross-item consistency, not
+# validity, and an author who writes none has not skipped a gate. A numeric control's min/max
+# are optional and coarse, so a postcondition is where a real validity bound
+# gets asserted. Textarea and Comment carry no Z3-modelled outcome at all.
+#
+# Dividing by every item instead made the band a statement about instrument
+# COMPOSITION rather than about discipline, and unreachable in proportion to
+# length: a 261-item health survey with 42 numerics needed 27 constraining
+# postconditions to clear an "adequate" bar that a 12-item instrument cleared
+# with 2 (#528).
+GATEABLE_CONTROLS = ("Editbox", "Slider", "Range")
+
+# Bands on the bound-coverage scale, re-anchored on the 12-file conversion
+# corpus plus the eight live Askalot Demo instruments (#528). A disciplined
+# instrument bounds at least a quarter of its open numeric inputs; below one in
+# ten is not a practice. Both are far above the old thresholds because the
+# denominator shrank to the population where a bound is the right thing to
+# author.
+GATE_STRONG_MIN_BOUND_COVERAGE = 0.25
+GATE_ADEQUATE_MIN_BOUND_COVERAGE = 0.10
 
 # D4: share of authored predicates fully lowered to Z3 (no runtime fallback,
 # no textarea sentinel, no phantom). The "formally verified" claim should
@@ -146,7 +165,7 @@ def compute_quality_report(
     dimensions = {
         "instrument_economy": _instrument_economy(builder, issues),
         "quality_gate_density": _quality_gate_density(
-            classifications, postcondition_records
+            items, classifications, postcondition_records
         ),
         "verification_coverage": _verification_coverage(state, builder),
         "structural_complexity": _structural_complexity(state, topology, items),
@@ -241,24 +260,66 @@ def _instrument_economy(
 # ---------------------------------------------------------------------------
 
 
+def _gateable_item_ids(items: Sequence[Mapping[str, Any]]) -> set[str]:
+    """Item ids whose control admits a validity bound a postcondition can add.
+
+    ``GATEABLE_CONTROLS`` names them and the constant carries the reasoning.
+    Read off the AUTHORED item rather than the Z3 census because the question
+    is what the author was offered, not what the solver managed to model: an
+    Editbox with no min/max is exactly the item most in need of a bound, and
+    it is the one a census-derived set would be likeliest to miss.
+    """
+    gateable: set[str] = set()
+    for item in items:
+        item_id = item.get("id")
+        if not item_id:
+            continue
+        control = (item.get("input") or {}).get("control", "")
+        if control in GATEABLE_CONTROLS:
+            gateable.add(item_id)
+    return gateable
+
+
 def _quality_gate_density(
+    items: Sequence[Mapping[str, Any]],
     classifications: dict[str, Any],
     postcondition_records: list[dict[str, Any]],
 ) -> dict[str, Any]:
-    """How many items carry a postcondition that actually filters responses.
+    """How many of the items that CAN carry a validity bound actually do.
 
-    The metric is CONSTRAINING share, not raw postcondition count — the
-    corpus audit's tautological postconditions validate cleanly while
-    enforcing nothing, which is exactly the blind spot this dimension closes.
+    The metric is CONSTRAINING share over gateable items, not over all of them
+    and not raw postcondition count. Two separate blind spots close here: the
+    corpus audit's tautological postconditions validate cleanly while enforcing
+    nothing, and a denominator of every item made the grade track instrument
+    length instead of authoring discipline (#528).
+
+    A CONSTRAINING postcondition on a non-gateable item is not discarded — an
+    enumerated item tied to another item's outcome is a real consistency rule.
+    It is counted as ``consistency_gates`` and reported, but it is not folded
+    into the coverage rate, because the population it belongs to has no
+    denominator: there is no number of Radio items that *should* carry one.
+
+    An instrument with no gateable items grades ``not_applicable``. That is the
+    honest answer for a checklist built entirely from Radio and Switch — it was
+    never asked to bound anything — where the old all-items denominator gave it
+    a ``weak`` it could not escape by any amount of good authoring.
     """
     if not classifications:
         return _dimension("D3", GRADE_NA, {"reason": "no Z3 classifications"}, [])
 
+    gateable = _gateable_item_ids(items)
     invariant_counts: dict[str, int] = {}
     weak_gate_offenders: list[dict[str, Any]] = []
+    bounded: set[str] = set()
+    consistency_gates = 0
     for item_id, classification in classifications.items():
         invariant = classification.get("postcondition", {}).get("invariant", "UNKNOWN")
         invariant_counts[invariant] = invariant_counts.get(invariant, 0) + 1
+        if invariant == "CONSTRAINING":
+            if item_id in gateable:
+                bounded.add(item_id)
+            else:
+                consistency_gates += 1
         if invariant in ("TAUTOLOGICAL", "INFEASIBLE"):
             weak_gate_offenders.append(
                 {"item_id": item_id, "detail": f"postcondition is {invariant}"}
@@ -272,34 +333,47 @@ def _quality_gate_density(
         }
         for record in duplicate_bounds
     )
+    # The actionable list: a numeric input nobody bounded. Sorted so two runs
+    # over one file return identical reports (the determinism contract), and
+    # appended last so the pre-existing offender kinds keep their priority
+    # under the cap.
+    weak_gate_offenders.extend(
+        {
+            "item_id": item_id,
+            "detail": "numeric input carries no constraining postcondition",
+        }
+        for item_id in sorted(gateable - bounded)
+    )
 
-    total_items = len(classifications)
-    constraining = invariant_counts.get("CONSTRAINING", 0)
     relational = sum(1 for r in postcondition_records if r["relational"])
     local = len(postcondition_records) - relational
-    constraining_share = constraining / total_items
 
-    if constraining_share >= GATE_STRONG_MIN_CONSTRAINING_SHARE:
+    metrics: dict[str, Any] = {
+        "items_total": len(classifications),
+        "gateable_items": len(gateable),
+        "bounded_items": len(bounded),
+        "consistency_gates": consistency_gates,
+        "relational_postconditions": relational,
+        "local_postconditions": local,
+        "postcondition_invariants": invariant_counts,
+        "duplicate_input_bounds": len(duplicate_bounds),
+    }
+
+    if not gateable:
+        metrics["reason"] = "no numeric-input items to bound"
+        return _dimension("D3", GRADE_NA, metrics, weak_gate_offenders)
+
+    bound_coverage = len(bounded) / len(gateable)
+    metrics["bound_coverage"] = round(bound_coverage, 4)
+
+    if bound_coverage >= GATE_STRONG_MIN_BOUND_COVERAGE:
         grade = GRADE_STRONG
-    elif constraining_share >= GATE_ADEQUATE_MIN_CONSTRAINING_SHARE:
+    elif bound_coverage >= GATE_ADEQUATE_MIN_BOUND_COVERAGE:
         grade = GRADE_ADEQUATE
     else:
         grade = GRADE_WEAK
 
-    return _dimension(
-        "D3",
-        grade,
-        {
-            "items_total": total_items,
-            "constraining_postcondition_items": constraining,
-            "constraining_share": round(constraining_share, 4),
-            "relational_postconditions": relational,
-            "local_postconditions": local,
-            "postcondition_invariants": invariant_counts,
-            "duplicate_input_bounds": len(duplicate_bounds),
-        },
-        weak_gate_offenders,
-    )
+    return _dimension("D3", grade, metrics, weak_gate_offenders)
 
 
 # ---------------------------------------------------------------------------

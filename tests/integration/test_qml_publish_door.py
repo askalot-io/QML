@@ -10,11 +10,15 @@ but never blocked, while fielding refuses anything unvalidated.
   on the questionnaire row, and never raises for unsound content (AE6, save half)
 - a fail-closed gate (unparseable QML) clears the quality report to "not
   assessed" rather than leaving a stale one standing
+- the stamp records WHICH version the quality report graded, and moves it with
+  the head on the next stamp (#540)
 - ``publish_questionnaire_to_campaign`` refuses an unsound head, writes no pin,
   and returns the graded issues; it pins a sound one and returns the version id
   (AE6, publish half)
 - publishing again after an edit re-pins to the NEW head
 - a questionnaire with no document fails loud instead of publishing nothing
+- the stamp→pin split runs the Z3 gate exactly ONCE per publish and reads the
+  document once (#212), and pinning a failing ticket raises rather than fielding
 
 These integration tests run the real Z3 publish gate over real QML — the whole
 question is whether a genuinely broken questionnaire is refused at exactly one
@@ -26,6 +30,7 @@ import pytest
 from askalot_qml.core import (
     QMLDocumentMissingError,
     evaluate_qml_content,
+    pin_validated_version,
     publish_questionnaire_to_campaign,
     publish_refusal_message,
     stamp_questionnaire_validation,
@@ -113,6 +118,7 @@ class _FakeQuestionnaire:
         self.logic_validated_at = None
         self.quality_report = {"stale": "report"}
         self.quality_report_at = "2020-01-01T00:00:00+00:00"
+        self.quality_report_version_id = "an-earlier-version"
 
 
 class _FakeRepo:
@@ -130,8 +136,13 @@ class _FakeRepo:
         self.head_id = versions[-1].id if versions else None
         self.pins: dict[str, str] = {}
         self.upserts = 0
+        #: Full-content reads. The publish path used to make four per campaign
+        #: create — the counter is what keeps a re-introduced redundant fetch
+        #: (#212) from passing silently.
+        self.content_reads = 0
 
     def get_document_content(self, document_id, *, version_id=None):
+        self.content_reads += 1
         assert document_id == DOCUMENT_ID
         if version_id is not None:
             return self.versions.get(version_id)
@@ -212,6 +223,19 @@ class TestStampingNeverBlocks:
         assert questionnaire.logic_validated is True
         assert questionnaire.quality_report is not None
         assert questionnaire.quality_report_at == questionnaire.logic_validated_at
+        assert questionnaire.quality_report_version_id == "v1"
+
+    def test_the_report_names_the_head_it_graded_after_an_edit(self):
+        """#540: a report is only current while its version is the head, so the
+        stamp must move the recorded version with the head it re-graded."""
+        questionnaire = _FakeQuestionnaire()
+        repo = _FakeRepo(questionnaire, [_FakeVersion("v1", SOUND_QML)])
+        stamp_questionnaire_validation(repo, questionnaire)
+
+        repo.append_head(_FakeVersion("v2", SOUND_QML.replace("Sound", "Sound v2")))
+        stamp_questionnaire_validation(repo, questionnaire)
+
+        assert questionnaire.quality_report_version_id == "v2"
 
     def test_fail_closed_gate_clears_the_stale_quality_report(self):
         """R7: unparseable content produces no artifacts, so "not assessed"
@@ -225,17 +249,7 @@ class TestStampingNeverBlocks:
         assert gate.ok is False
         assert questionnaire.quality_report is None
         assert questionnaire.quality_report_at is None
-
-    def test_supplied_content_is_graded_instead_of_re_reading_head(self):
-        """The save door already holds the bytes it just wrote."""
-        version = _FakeVersion("v1", UNSOUND_QML)
-        questionnaire = _FakeQuestionnaire()
-        repo = _FakeRepo(questionnaire, [version])
-
-        gate = stamp_questionnaire_validation(repo, questionnaire, content=SOUND_QML)
-
-        assert gate.ok is True
-        assert version.validation["ok"] is True
+        assert questionnaire.quality_report_version_id is None
 
     def test_questionnaire_without_a_document_fails_loud(self):
         questionnaire = _FakeQuestionnaire(document_id=None)
@@ -340,6 +354,105 @@ class TestPublishPinsTheValidatedVersion:
         )
 
         assert result.ok is False
+        assert repo.pins == {CAMPAIGN_ID: "v1"}
+
+
+@pytest.mark.integration
+class TestStampThenPinRunsTheGateOnce:
+    """The #212 split: a caller that must write a row between the refusal and
+    the pin stamps once, holds the ticket, and redeems it.
+
+    Before the split, every campaign create / edit / rebind ran the full
+    ``deep=True`` Z3 gate TWICE over byte-identical content — once at the
+    caller's own refuse-before-write check, once again inside the pin — and
+    resolved the document four times. These tests pin the count, not just the
+    outcome, because the outcome was always correct; only the cost was wrong.
+    """
+
+    def _counting_gate(self, monkeypatch):
+        """Wrap the real gate in a call counter, leaving its behaviour intact."""
+        from askalot_qml.core import qml_publish
+
+        calls = []
+        real = qml_publish.evaluate_publish_gate_content
+
+        def counted(content, **kwargs):
+            calls.append(content)
+            return real(content, **kwargs)
+
+        monkeypatch.setattr(qml_publish, "evaluate_publish_gate_content", counted)
+        return calls
+
+    def test_stamp_then_pin_evaluates_the_gate_exactly_once(self, monkeypatch):
+        version = _FakeVersion("v1", SOUND_QML)
+        questionnaire = _FakeQuestionnaire()
+        repo = _FakeRepo(questionnaire, [version])
+        gate_calls = self._counting_gate(monkeypatch)
+
+        ticket = stamp_questionnaire_validation(repo, questionnaire)
+        # …the caller writes its campaign row here…
+        pinned = pin_validated_version(repo, campaign_id=CAMPAIGN_ID, ticket=ticket)
+
+        assert len(gate_calls) == 1
+        assert repo.content_reads == 1
+        assert pinned == "v1"
+        assert repo.pins == {CAMPAIGN_ID: "v1"}
+
+    def test_one_shot_publish_also_evaluates_the_gate_exactly_once(self, monkeypatch):
+        version = _FakeVersion("v1", SOUND_QML)
+        questionnaire = _FakeQuestionnaire()
+        repo = _FakeRepo(questionnaire, [version])
+        gate_calls = self._counting_gate(monkeypatch)
+
+        result = publish_questionnaire_to_campaign(
+            repo, campaign_id=CAMPAIGN_ID, questionnaire=questionnaire
+        )
+
+        assert len(gate_calls) == 1
+        assert repo.content_reads == 1
+        assert result.pinned is True
+
+    def test_the_ticket_names_the_version_its_verdict_was_written_onto(self):
+        """What makes a ticket redeemable: the pin's fail-closed floor re-reads
+        that version's stored verdict, so the two must be the same row."""
+        version = _FakeVersion("v1", SOUND_QML)
+        questionnaire = _FakeQuestionnaire()
+        repo = _FakeRepo(questionnaire, [version])
+
+        ticket = stamp_questionnaire_validation(repo, questionnaire)
+
+        assert ticket.version_id == "v1"
+        assert repo.versions["v1"].validation["ok"] is True
+
+    def test_pinning_a_failing_ticket_raises_instead_of_fielding_it(self):
+        """A refusal belongs at the stamp, where no campaign row exists yet.
+        Reaching the pin with one is a caller-ordering bug, not an outcome."""
+        version = _FakeVersion("v1", UNSOUND_QML)
+        questionnaire = _FakeQuestionnaire()
+        repo = _FakeRepo(questionnaire, [version])
+
+        ticket = stamp_questionnaire_validation(repo, questionnaire)
+
+        assert ticket.ok is False
+        with pytest.raises(ValueError, match="refusing to pin"):
+            pin_validated_version(repo, campaign_id=CAMPAIGN_ID, ticket=ticket)
+        assert repo.pins == {}
+
+    def test_the_pinned_version_is_the_one_the_caller_was_shown(self):
+        """The ticket also closes a TOCTOU the second stamp introduced: a save
+        landing between the refusal check and the pin used to move the campaign
+        onto content the caller never saw a verdict for."""
+        first = _FakeVersion("v1", SOUND_QML)
+        questionnaire = _FakeQuestionnaire()
+        repo = _FakeRepo(questionnaire, [first])
+
+        ticket = stamp_questionnaire_validation(repo, questionnaire)
+        # A concurrent save advances head while the campaign row is written.
+        second = _FakeVersion("v2", SOUND_QML.replace("Sound", "Sound v2"))
+        second.validation = {"ok": True}
+        repo.append_head(second)
+        pin_validated_version(repo, campaign_id=CAMPAIGN_ID, ticket=ticket)
+
         assert repo.pins == {CAMPAIGN_ID: "v1"}
 
 

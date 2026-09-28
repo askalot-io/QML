@@ -883,11 +883,9 @@ class TestA1EvictionScopedToAsked(unittest.TestCase):
             "codeInit-set outcome on a non-asked member must NOT be cleared",
         )
         # And the downstream read saw 8, not None: q_read's codeBlock evaluated
-        # `captured = g2_keep.outcome` and that variable propagated forward to
-        # q_final's context (the current item's own context is not rewritten
-        # post-codeBlock — variables flow to subsequent items, the canonical
-        # FlowProcessor contract).
-        self.assertEqual(state.get_item("q_final")["context"].get("captured"), 8)
+        # `captured = g2_keep.outcome`, and that variable is in the state the
+        # walk carried on to q_final.
+        self.assertEqual(state.tail_state()["vars"].get("captured"), 8)
 
 
 # ---------------------------------------------------------------------------

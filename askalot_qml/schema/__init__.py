@@ -8,7 +8,8 @@ deliberately decoupled from the askalot_qml package version:
 - MAJOR — breaking: existing valid QML may stop loading, or an existing
   construct's meaning changes. Authors/AI must migrate.
 - MINOR — backward-compatible addition: a new optional capability; every
-  older document remains valid (e.g. the additive `Sample` block kind).
+  older document remains valid (e.g. the optional Roster ``subjectFrom``
+  key at 2.1.0).
 - PATCH — no contract change: clarified text, a schema-bug fix, or
   tightening a constraint that was already de-facto enforced.
 

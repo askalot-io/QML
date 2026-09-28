@@ -52,6 +52,9 @@ This test suite verifies the StaticBuilder class which provides:
 - Outcome augmented assignment (item.outcome += expr)
 - Complex code block with if/elif/else and AugAssign
 
+### Import order
+- ``askalot_qml.z3`` imports in a fresh interpreter before ``askalot_qml.core``
+
 ### U1 Undefined-Name Detection & Variable Census
 - Phantom predicate identifier recorded as an undefined_name coverage gap,
   with a `q_<name>.outcome` suggestion when that item exists
@@ -64,6 +67,8 @@ This test suite verifies the StaticBuilder class which provides:
   shape, read count across predicates and code) exposed for the U3 hygiene lints
 """
 
+import subprocess
+import sys
 import unittest
 
 import pytest
@@ -1692,6 +1697,34 @@ class TestFrozenReachabilityBase(unittest.TestCase):
         )
         builder = StaticBuilder(state)
         self.assertNotIn("x", builder._frozen_variable_names())
+
+
+@pytest.mark.unit
+@pytest.mark.z3
+class TestStaticBuilderImportOrder(unittest.TestCase):
+    """``askalot_qml.z3`` must import on its own, before ``askalot_qml.core``.
+
+    ``askalot_qml.core``'s package __init__ imports the engine, which imports
+    ``static_builder``. A module-level ``askalot_qml.core`` import in
+    ``static_builder`` therefore fails whenever the z3 package loads first — and
+    no in-process test can see it, because a neighbouring test has already
+    imported ``core``. Each case runs in a fresh interpreter (#1140).
+    """
+
+    def _imports_cleanly(self, module: str) -> None:
+        result = subprocess.run(
+            [sys.executable, "-c", f"import {module}"],
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr[-2000:])
+
+    def test_z3_package_imports_first(self):
+        self._imports_cleanly("askalot_qml.z3")
+
+    def test_static_builder_imports_first(self):
+        self._imports_cleanly("askalot_qml.z3.static_builder")
 
 
 if __name__ == "__main__":
