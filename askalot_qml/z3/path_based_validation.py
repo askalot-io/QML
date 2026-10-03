@@ -24,7 +24,7 @@ import logging
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
-from z3 import BoolRef, Implies, Not, Solver, sat, unsat
+from z3 import BoolRef, Not, Solver, sat, unsat
 
 from askalot_qml.z3.static_builder import StaticBuilder
 
@@ -107,19 +107,22 @@ class PathBasedValidator:
         # Build predecessor map from topological order
         predecessors_map = self._build_predecessors_map(topological_order)
 
-        # Pre-compile each item's (P_i, Q_i) once and assert the domain base once
+        # Pre-compile each item's (P_i, P_i ⇒ Q_i) once and assert the domain base once
         # into a single persistent solver, then reuse both across every per-item
         # check. An item that is a predecessor of M others would otherwise have
         # its P/Q recompiled M times, and the domain base rebuilt and re-asserted
         # once per item — O(items^2) of redundant Z3 work. compile_conditions
         # reads the now-frozen SSA versions, so a single build yields expressions
         # identical to the per-call ones; per-item constraints are scoped with
-        # push()/pop() so the shared base is never disturbed.
+        # push()/pop() so the shared base is never disturbed. The implication is
+        # left out when P_i did not lower whole (StaticBuilder.item_implication):
+        # a wider P_i would assume Q_i where the real gate is false and report
+        # a reachable item as dead code.
         base = self.builder.get_domain_base()
         compiled_conditions: dict[str, tuple[BoolRef, BoolRef]] = {
             iid: (
                 self.builder.compile_conditions(iid, details["preconditions"]),
-                self.builder.compile_conditions(iid, details["postconditions"]),
+                self.builder.item_implication(iid),
             )
             for iid, details in self.builder.item_details.items()
         }
@@ -196,7 +199,7 @@ class PathBasedValidator:
             solver: Shared persistent solver with the domain base B already
                 asserted. Every check here is wrapped in ``push()`` / ``pop()``
                 so the base is asserted once for the whole pass, not per item.
-            compiled_conditions: Pre-compiled (P_i, Q_i) per item.
+            compiled_conditions: Pre-compiled (P_i, P_i ⇒ Q_i) per item.
 
         Returns:
             ItemReachabilityResult for this item
@@ -264,8 +267,7 @@ class PathBasedValidator:
         for pred_id in predecessors:
             pred_compiled = compiled_conditions.get(pred_id)
             if pred_compiled is not None:
-                P_j, Q_j = pred_compiled
-                solver.add(Implies(P_j, Q_j))
+                solver.add(pred_compiled[1])
 
         # Check SAT(A_i ∧ P_i)
         solver.add(P_i)

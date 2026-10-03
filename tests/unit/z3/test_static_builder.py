@@ -52,6 +52,19 @@ This test suite verifies the StaticBuilder class which provides:
 - Outcome augmented assignment (item.outcome += expr)
 - Complex code block with if/elif/else and AugAssign
 
+### Unlowerable operands are not dropped (#1164)
+- An ``and`` / ``or`` with an unlowerable operand (a ``str()`` call) lowers to
+  ``None`` as a whole, never to its remaining operand, and records an
+  ``unsupported_nodes`` coverage gap
+- An item gated on such an ``or`` is not classified NEVER
+- A ``not`` over it and an ``in [...]`` with an unlowerable member lower to
+  ``None`` too; a fully lowerable ``and`` / ``or`` still lowers
+- A condition left out of P or Q never yields ALWAYS, TAUTOLOGICAL or
+  globally-true (the formula is wider than the real one)
+- An inexact P is never ASSUMED as ``P ⇒ Q`` (no false ``global_unsat`` or
+  ``accumulated_dead_code``), and an inexact owner gate reports no
+  ``none_unsafe_reference``
+
 ### Import order
 - ``askalot_qml.z3`` imports in a fresh interpreter before ``askalot_qml.core``
 
@@ -74,6 +87,7 @@ import unittest
 import pytest
 from askalot_qml.core.validation_processor import ValidationProcessor
 from askalot_qml.models.qml_state import QMLState
+from askalot_qml.z3.item_classifier import ItemClassifier
 from askalot_qml.z3.static_builder import StaticBuilder
 from z3 import *
 
@@ -1697,6 +1711,160 @@ class TestFrozenReachabilityBase(unittest.TestCase):
         )
         builder = StaticBuilder(state)
         self.assertNotIn("x", builder._frozen_variable_names())
+
+
+def _gated_on(predicate: str) -> StaticBuilder:
+    """``q_b`` (Radio 1/2/9), a codeInit variable ``risk``, and ``q_c`` gated on *predicate*."""
+    return StaticBuilder(
+        create_questionnaire(
+            [
+                {"id": "q_b", "input": {"control": "Radio", "labels": {1: "A", 2: "B", 9: "C"}}},
+                {
+                    "id": "q_c",
+                    "precondition": [{"predicate": predicate}],
+                    "input": {"control": "Editbox", "min": 0, "max": 10},
+                },
+            ],
+            code_init="risk = 1",
+        )
+    )
+
+
+@pytest.mark.unit
+@pytest.mark.z3
+class TestUnsupportedOperandIsNotDropped(unittest.TestCase):
+    """#1164: a gate Z3 cannot express in full is not verified as a different one."""
+
+    def test_and_or_with_an_unlowerable_operand_lower_to_none(self):
+        for predicate in (
+            "str(q_b.outcome) == '9' and risk == 1",
+            "str(q_b.outcome) == '9' or q_b.outcome == 2",
+            "not (str(q_b.outcome) == '9' and q_b.outcome == 2)",
+            "q_b.outcome in [1, str(q_b.outcome)]",
+        ):
+            with self.subTest(predicate=predicate):
+                builder = _gated_on(predicate)
+                self.assertIsNone(builder._compile_predicate_to_z3(predicate, "q_c"))
+
+    def test_the_dropped_operand_is_recorded_as_a_coverage_gap(self):
+        builder = _gated_on("str(q_b.outcome) == '9' and risk == 1")
+
+        gaps = builder.coverage_gaps.get("q_c") or []
+        self.assertEqual(
+            [(g["kind"], g["unsupported_nodes"]) for g in gaps], [("precondition", ["Call"])]
+        )
+
+    def test_an_or_gated_item_is_not_classified_never(self):
+        """Before the fix the ``or`` lowered to ``q_b == 2`` alone; with a domain
+        that makes that side impossible it classified a reachable item NEVER."""
+        builder = StaticBuilder(
+            create_questionnaire(
+                [
+                    {"id": "q_b", "input": {"control": "Radio", "labels": {1: "A", 9: "C"}}},
+                    {
+                        "id": "q_c",
+                        "precondition": [
+                            {"predicate": "str(q_b.outcome) == '9' or q_b.outcome == 2"}
+                        ],
+                        "input": {"control": "Editbox", "min": 0, "max": 10},
+                    },
+                ]
+            )
+        )
+
+        status = ItemClassifier(builder).classify_item("q_c")["precondition"]["status"]
+        self.assertNotEqual(status, "NEVER")
+
+    def test_a_none_guard_postcondition_is_not_called_tautological(self):
+        """``x is None or y >= x`` cannot be lowered (``is``). Leaving it out makes
+        Q true, which must not be reported as a redundant, removable condition —
+        found on a dev questionnaire by the corpus check for this change."""
+        builder = StaticBuilder(
+            create_questionnaire(
+                [
+                    {"id": "q_a", "input": {"control": "Editbox", "min": 0, "max": 99}},
+                    {
+                        "id": "q_b",
+                        "postcondition": [
+                            {"predicate": "q_a.outcome is None or q_b.outcome >= q_a.outcome"}
+                        ],
+                        "input": {"control": "Editbox", "min": 0, "max": 99},
+                    },
+                ]
+            )
+        )
+
+        post = ItemClassifier(builder).classify_item("q_b")["postcondition"]
+        self.assertNotEqual(post["invariant"], "TAUTOLOGICAL")
+        self.assertFalse(post["global"]["q_globally_true"])
+
+    def test_an_inexact_precondition_is_not_called_always(self):
+        """An unlowerable gate conjoins to True; ALWAYS would tell the
+        none-unsafe-reference lint the item is asked on every path."""
+        builder = _gated_on("str(q_b.outcome) == '9' and risk == 1")
+
+        pre = ItemClassifier(builder).classify_item("q_c")["precondition"]["status"]
+        self.assertEqual(pre, "CONDITIONAL")
+
+    def test_a_fully_lowerable_and_or_still_lowers(self):
+        builder = _gated_on("q_b.outcome == 1 and risk == 1")
+        for predicate in ("q_b.outcome == 1 and risk == 1", "q_b.outcome == 1 or q_b.outcome == 2"):
+            with self.subTest(predicate=predicate):
+                self.assertIsNotNone(builder._compile_predicate_to_z3(predicate, "q_c"))
+        self.assertEqual(builder.coverage_gaps.get("q_c"), None)
+
+    def test_an_inexact_gate_is_not_assumed_where_it_is_false(self):
+        """``x is not None and x == 1`` lowers to None, so P is True. Assumed as
+        ``P ⇒ Q``, that P demands Q on every path: two items gated on q_0 == 1
+        and == 2, each restating its gate as a postcondition, read as a
+        publish-blocking global conflict, and an item gated on q_0 == 2 as dead."""
+        radio = {"control": "Radio", "labels": {1: "A", 2: "B"}}
+        state = create_questionnaire(
+            [
+                {"id": "q_0", "input": radio},
+                *(
+                    {
+                        "id": f"q_{k}",
+                        "precondition": [
+                            {"predicate": f"q_0.outcome is not None and q_0.outcome == {k}"}
+                        ],
+                        "postcondition": [{"predicate": f"q_0.outcome == {k}"}],
+                        "input": radio,
+                    }
+                    for k in (1, 2)
+                ),
+                {"id": "q_3", "precondition": [{"predicate": "q_0.outcome == 2"}], "input": radio},
+            ]
+        )
+
+        types = {i["type"] for i in ValidationProcessor(state).to_issues(deep=True)}
+        self.assertNotIn("global_unsat", types)
+        self.assertNotIn("accumulated_dead_code", types)
+
+    def test_an_inexact_owner_gate_reports_no_unsafe_reference(self):
+        """The owner's gate lowers to True, so the solver would find a path to
+        it on which ``q_r`` (gated on q_0 == 1) is not asked, though the real
+        gate is false there."""
+        radio = {"control": "Radio", "labels": {1: "A", 2: "B"}}
+        state = create_questionnaire(
+            [
+                {"id": "q_0", "input": radio},
+                {"id": "q_r", "precondition": [{"predicate": "q_0.outcome == 1"}], "input": radio},
+                {
+                    "id": "q_o",
+                    "precondition": [
+                        {
+                            "predicate": "q_0.outcome == 1 and q_r.outcome >= 1"
+                            " and str(q_0.outcome) == '1'"
+                        }
+                    ],
+                    "input": radio,
+                },
+            ]
+        )
+
+        types = {i["type"] for i in ValidationProcessor(state).to_issues()}
+        self.assertNotIn("none_unsafe_reference", types)
 
 
 @pytest.mark.unit

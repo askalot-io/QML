@@ -17,6 +17,7 @@ severity (error/warning), machine type, human message, and suggestion:
   suggestion, and a postcondition that merely restates its control's min/max
   (duplicate_input_bound) — while transformed derivations, consolidated
   two-producer variables, and tighter-than-bound postconditions are NOT flagged.
+  Their order is the same under every hash seed (#1138).
 - A Textarea item's ``.outcome`` referenced in a precondition/postcondition or a
   codeBlock surfaces as a ``textarea_in_predicate`` ``warning`` naming the
   Textarea item and the referencing location; an unreferenced Textarea is silent.
@@ -791,6 +792,56 @@ class TestHygieneLints:
         expected_keys = {"item_id", "severity", "type", "message", "suggestion"}
         for issue in _processor("lint_hygiene.qml").to_issues():
             assert set(issue.keys()) == expected_keys
+
+
+#: The fixtures whose hygiene findings reordered across hash seeds (#1138).
+_SEED_SENSITIVE_FIXTURES = (
+    "defect_unsupported_python.qml",
+    "lint_hygiene.qml",
+    "quality_tautology_only.qml",
+)
+
+_ORDER_PROBE = """
+import json, logging, sys
+logging.disable(logging.CRITICAL)
+from askalot_qml.core.qml_loader import QMLLoader
+from askalot_qml.core.validation_processor import ValidationProcessor
+from askalot_qml.models.qml_state import QMLState
+issues = ValidationProcessor(
+    QMLState(QMLLoader(schema_path=None).load_from_path(sys.argv[1]))
+).to_issues()
+print(json.dumps([[i["type"], i["item_id"], i["message"]] for i in issues]))
+"""
+
+
+@pytest.mark.integration
+class TestLintOrderIsStable:
+    """#1138: the same document yields the same issue list, in the same order,
+    whatever ``PYTHONHASHSEED`` the process started with. The census the
+    write-only and pass-through-alias lints walk was seeded from a set."""
+
+    @pytest.mark.parametrize("fixture", _SEED_SENSITIVE_FIXTURES)
+    def test_issue_order_does_not_depend_on_the_hash_seed(self, fixture):
+        import json
+        import os
+        import subprocess
+        import sys
+
+        orders = set()
+        for seed in ("1", "2", "3", "5", "8"):
+            out = subprocess.run(
+                [sys.executable, "-c", _ORDER_PROBE, str(FIXTURES_DIR / fixture)],
+                capture_output=True,
+                text=True,
+                check=True,
+                env={**os.environ, "PYTHONHASHSEED": seed},
+            ).stdout
+            orders.add(out)
+        assert len(orders) == 1, f"{fixture}: {len(orders)} different issue orders across seeds"
+        hygiene = {t for t, _item, _msg in json.loads(orders.pop())}
+        assert hygiene & {"write_only_variable", "pass_through_alias"}, (
+            f"{fixture} no longer exercises the census lints"
+        )
 
 
 @pytest.mark.integration

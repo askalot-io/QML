@@ -88,6 +88,51 @@ def create_validation_blueprint(
             )
         return QMLLoader(qml_dir=resolved_qml_dir, logger=logger)
 
+    def _fault(qml_name: str, e: Exception, loader):
+        """The one answer to a load fault, shared by ``/validation`` and ``/validate``
+        so the two routes answer a fault alike (#1136)."""
+        if isinstance(e, FileNotFoundError):
+            return _not_found(qml_name)
+        if isinstance(e, (yaml.MarkedYAMLError, yaml.reader.ReaderError)):
+            return _parse_error(qml_name, e, loader.qml_content if loader else None)
+        if isinstance(e, ValidationError):
+            return _schema_invalid(qml_name, e)
+        if isinstance(e, ValueError):
+            return _author_facing(e)
+        return _load_fault(e)
+
+    def _schema_invalid(qml_name: str, e: ValidationError):
+        """The structured 400 for a document that fails the QML schema."""
+        logger.warning(f"QML schema validation failed for {qml_name}: {e.message}")
+        return jsonify(
+            {
+                "qml_name": qml_name,
+                "content_origin": content_origin,
+                "valid": False,
+                "validation_error": {
+                    "message": e.message,
+                    "path": list(e.absolute_path),
+                    "schema_path": list(e.absolute_schema_path),
+                },
+            }
+        ), 400
+
+    def _author_facing(e: ValueError):
+        """The loader's own ``ValueError`` messages are sentences for the author
+        (a reserved item id, a bad Group count), so they are returned as said."""
+        logger.warning(f"QML load refused: {e}")
+        return jsonify({"error": str(e)}), 400
+
+    def _load_fault(e: Exception):
+        """Any other fault: LOGGED in full and not returned. A loader fault
+        carries the offending path, and a parse fault carries a fragment of
+        whatever was parsed, so echoing it turned a 500 into a read of the file
+        the caller named ("'str' object has no attribute 'get'" for a one-line
+        text file) and into an existence oracle (500 for a file that is there,
+        404 for one that is not)."""
+        logger.error(f"Error analysing a questionnaire: {e}", exc_info=True)
+        return jsonify({"error": "Could not analyse this questionnaire"}), 500
+
     def _not_found(qml_name: str):
         """The refusal for a name the directory does not hold.
 
@@ -176,6 +221,7 @@ def create_validation_blueprint(
             - item_classifications: Per-item Z3 precondition/postcondition status
             - validation_report: Comprehensive text report of questionnaire structure
         """
+        qml_name = loader = None
         try:
             qml_name = request.args.get("qml_name")
             if not qml_name:
@@ -267,36 +313,8 @@ def create_validation_blueprint(
                 }
             ), 200
 
-        except FileNotFoundError:
-            return _not_found(qml_name)
-        except (yaml.MarkedYAMLError, yaml.reader.ReaderError) as e:
-            return _parse_error(qml_name, e, loader.qml_content)
-        except ValidationError as e:
-            logger.warning(f"QML schema validation failed for {qml_name}: {e.message}")
-            return jsonify(
-                {
-                    "qml_name": qml_name,
-                    "content_origin": content_origin,
-                    "valid": False,
-                    "validation_error": {
-                        "message": e.message,
-                        "path": list(e.absolute_path),
-                        "schema_path": list(e.absolute_schema_path),
-                    },
-                }
-            ), 400
-        except ValueError as e:
-            logger.warning(f"Cannot resolve a QML source for this request: {e}")
-            return jsonify({"error": str(e)}), 400
         except Exception as e:
-            # The message is LOGGED in full and not returned. A loader fault
-            # carries the offending path, and a parse fault carries a fragment
-            # of whatever was parsed — so echoing it turned a 500 into a read
-            # of the file the caller named ("'str' object has no attribute
-            # 'get'" for a one-line text file) and into an existence oracle
-            # (500 for a file that is there, 404 for one that is not).
-            logger.error(f"Error generating validation: {e}", exc_info=True)
-            return jsonify({"error": "Could not analyse this questionnaire"}), 500
+            return _fault(qml_name, e, loader)
 
     @blueprint.route("/validate", methods=["GET"])
     def validate_qml():
@@ -310,6 +328,7 @@ def create_validation_blueprint(
         Returns:
             JSON with validation result
         """
+        qml_name = loader = None
         try:
             qml_name = request.args.get("qml_name")
             if not qml_name:
@@ -328,15 +347,8 @@ def create_validation_blueprint(
                 }
             ), 200
 
-        except FileNotFoundError:
-            return _not_found(qml_name)
-        except (yaml.MarkedYAMLError, yaml.reader.ReaderError) as e:
-            return _parse_error(qml_name, e, loader.qml_content)
         except Exception as e:
-            logger.error(f"QML validation failed: {e}")
-            return jsonify(
-                {"qml_name": qml_name, "content_origin": content_origin, "valid": False, "error": str(e)}
-            ), 400
+            return _fault(qml_name, e, loader)
 
     @blueprint.route("/files", methods=["GET"])
     def list_files():

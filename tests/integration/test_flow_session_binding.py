@@ -109,7 +109,7 @@ class _FakeRepo:
     def get_organization(self, org_id):
         return None
 
-    def upsert_survey(self, survey):
+    def save_survey_walk(self, survey):
         return survey.id
 
 

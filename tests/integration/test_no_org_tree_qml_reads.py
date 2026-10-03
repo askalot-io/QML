@@ -64,9 +64,6 @@ ALLOWLIST: dict[str, str] = {
     "services/tenant/armiger/app/core/workspace_manager.py": (
         "workspace materialization — ephemeral copies, not canonical content"
     ),
-    "services/tenant/armiger/app/core/document_index_sync.py": (
-        "indexes uploaded documents on the org volume (not QML content)"
-    ),
     "services/tenant/armiger/app/core/project_summary_stitcher.py": (
         "reads uploaded reference documents (binary artifacts) off the org "
         "volume; the summary it produces is written to the document store"

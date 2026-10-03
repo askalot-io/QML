@@ -1402,6 +1402,7 @@ class FlowProcessor:
         outcome: Any,
         *,
         source: str,
+        channel: str | None = None,
         skip_postcondition: bool = False,
     ) -> dict[str, Any]:
         """
@@ -1424,9 +1425,15 @@ class FlowProcessor:
                 keyword-only: only the caller's driver knows whether a person,
                 an API client, or a fill job supplied the value, and a default
                 here would tag machine answers as human ones.
+            channel: The surface the answer came through (``web`` / ``ai``,
+                ``TIMING_CHANNELS``), or None for a driver with no presenting
+                surface. Used only when this call opens the event itself — an
+                event a presentation seam opened keeps that seam's channel.
             skip_postcondition: If True, skip postcondition validation.
                 Used for backward navigation where:
-                - The item will be marked as unvisited anyway
+                - The item keeps the visited flag it had: Back unmarks it when
+                  it leaves, and on the first item, which Back cannot leave, an
+                  unvalidated answer must not count as answered
                 - The saved answer is just for convenience (restored when user returns)
                 - Real validation happens when user leaves the item going forward
                 It is also what makes the timing event UNCOMMITTED (KTD4): the
@@ -1457,11 +1464,12 @@ class FlowProcessor:
         # once the pass is exhausted, so a key read after that point would close
         # the event of the iteration the respondent is moving INTO.
         timing_iter_key = questionnaire_state.current_iter_key(item_id)
+        was_visited = current_item.get("visited", False)
         # Idempotent: when a presentation seam already stamped this pair the
         # original moment stands. A driver with no presentation seam (the API,
         # the mass-fill job, prefill) gets its event here instead, with the
         # near-zero duration that honestly describes a machine-supplied answer.
-        questionnaire_state.open_timing_event(item_id, timing_iter_key, source)
+        questionnaire_state.open_timing_event(item_id, timing_iter_key, source, channel=channel)
 
         # The history entry this answer belongs to. An item answered without
         # being presented (the external-input prefill, an API submission for an
@@ -1575,10 +1583,11 @@ class FlowProcessor:
                 if updated_outcome is not None:
                     item["visited"] = True
 
-        # The current item is always marked as visited since it was actively
-        # processed, and tagged as asked: its outcome is an answer, which
-        # _orphaned masks once a backward edit takes it off the path.
-        current_item["visited"] = True
+        # The current item is marked as visited since it was actively processed
+        # (a convenience save keeps the flag it had, see skip_postcondition),
+        # and tagged as asked: its outcome is an answer, which _orphaned masks
+        # once a backward edit takes it off the path.
+        current_item["visited"] = was_visited if skip_postcondition else True
         current_item["_asked"] = True
 
         # Record the entry's new state. A mark follows the value: set on a name
@@ -1937,10 +1946,14 @@ class FlowProcessor:
         frozen order to preserve — draw order comes from the navigation_path
         projection (R8/R17), itself frozen at init.
         """
-        popped = questionnaire_state.pop_history()
-        if popped is None:
-            self.logger.warning("No navigation history for backward navigation")
+        # Nothing before the current entry: Back changes nothing. Popping it
+        # anyway left the first item unvisited and off history in memory, which
+        # a driver persisting only on success never wrote, so the stored walk
+        # and the one the driver went on with disagreed (flow walker).
+        if len(questionnaire_state.get_history_with_iter()) < 2:
+            self.logger.debug("No previous item for backward navigation")
             return None
+        popped = questionnaire_state.pop_history()
 
         current_id, current_iter = popped
         current_item = next((item for item in all_items if item["id"] == current_id), None)
@@ -1972,7 +1985,26 @@ class FlowProcessor:
             ):
                 questionnaire_state.clear_group_pass_state(group_block_id)
 
-        # Determine the previous item to return.
+        return self._reenter_top_of_history(questionnaire_state, all_items)
+
+    def reenter_top_of_history(self, questionnaire_state: QMLState) -> dict[str, Any] | None:
+        """The item on top of history, back in its Roster iteration, without popping it.
+
+        For a driver that shows an end screen past the last item: stepping back
+        from it re-presents that item where it was answered. A Roster item is in
+        history once per iteration, and the pass state is cleared once the pass
+        is done, so the iteration comes from the history entry, not from the item
+        id (a jump by id lands on the first iteration and truncates the rest).
+        ``None`` when history is empty.
+        """
+        return self._reenter_top_of_history(
+            questionnaire_state, questionnaire_state.get_all_items()
+        )
+
+    def _reenter_top_of_history(
+        self, questionnaire_state: QMLState, all_items: list[dict[str, Any]]
+    ) -> dict[str, Any] | None:
+        """The top history entry's item, its Roster pass and iteration restored."""
         new_history = questionnaire_state.get_history_with_iter()
         if not new_history:
             return None
@@ -1994,7 +2026,9 @@ class FlowProcessor:
             self._restore_roster_outcomes_for_iter(prev_block_id, prev_iter)
 
         self.logger.debug(f"Backward navigation to: {prev_id} (iter_key={prev_iter})")
-        return prev_item
+        # Decorated like a forward step's item, so a Roster item stepped back
+        # into still says which iteration it asks about.
+        return self._decorate_with_roster_progress(prev_item)
 
     @staticmethod
     def _block_has_history_entries(state: QMLState, block_id: str) -> bool:

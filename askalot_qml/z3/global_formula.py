@@ -19,7 +19,7 @@ import logging
 from dataclasses import dataclass
 from typing import Any
 
-from z3 import Implies, Solver, sat, unsat
+from z3 import Solver, sat, unsat
 
 from askalot_qml.z3.static_builder import StaticBuilder
 
@@ -82,12 +82,9 @@ class GlobalFormula:
             if not details:
                 continue
 
-            # Compile P_i and Q_i
-            P_i = self.builder.compile_conditions(item_id, details["preconditions"])
-            Q_i = self.builder.compile_conditions(item_id, details["postconditions"])
-
-            # Add implication P_i ⇒ Q_i
-            implication = Implies(P_i, Q_i)
+            # P_i ⇒ Q_i, left out when P_i did not lower whole (see
+            # StaticBuilder.item_implication): UNSAT here blocks publication.
+            implication = self.builder.item_implication(item_id)
             implications.append(implication)
             solver.add(implication)
 
@@ -176,18 +173,17 @@ class GlobalFormula:
             if not details:
                 continue
 
-            P_i = self.builder.compile_conditions(item_id, details["preconditions"])
-            Q_i = self.builder.compile_conditions(item_id, details["postconditions"])
+            implication = self.builder.item_implication(item_id)
 
             solver.push()
-            solver.add(Implies(P_i, Q_i))
+            solver.add(implication)
 
             if solver.check() == unsat:
                 conflicting.append(item_id)
                 solver.pop()
             else:
                 solver.pop()
-                solver.add(Implies(P_i, Q_i))
+                solver.add(implication)
 
         return conflicting
 

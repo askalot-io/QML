@@ -64,6 +64,17 @@ TIMING_SOURCES = frozenset(
     {SOURCE_RESPONDENT, SOURCE_INTERVIEWER, SOURCE_EXTERNAL_PREFILL, SOURCE_SYNTHETIC}
 )
 
+# Timing-event channels — which surface put the item in front of a person.
+# Orthogonal to the source: a respondent answering for themselves may do so in
+# the web survey or in the AI-assisted view, and a survey can switch between
+# them, so the channel is recorded per event rather than per survey. Only the
+# flow service's presenting drivers state one; machine drivers (synthetic fill,
+# external prefill) have no channel and their events carry no ``ch`` key.
+CHANNEL_WEB = "web"  # SirWay's web survey
+CHANNEL_AI = "ai"  # The respondent lane's survey view inside an AI assistant
+
+TIMING_CHANNELS = frozenset({CHANNEL_WEB, CHANNEL_AI})
+
 
 class Condition(TypedDict):
     """
@@ -224,6 +235,10 @@ class QMLState(dict):
         #                      attempt); None while the event is open
         #     src  source      what drove the answer (R9) — respondent, interviewer,
         #                      external prefill, synthetic fill
+        #     ch   channel     the surface that presented the item (``web`` or ``ai``).
+        #                      Written only when the driver states one, so machine
+        #                      events and events recorded before channels existed
+        #                      have no ``ch`` key; read it with ``event.get("ch")``.
         #
         # `k` is a list ELEMENT, not a dict key, so JSON persistence preserves
         # its int type — no string-key coercion pass is needed here (contrast
@@ -915,7 +930,9 @@ class QMLState(dict):
                 return event
         return None
 
-    def open_timing_event(self, item_id: str, iter_key: int | None, source: str) -> None:
+    def open_timing_event(
+        self, item_id: str, iter_key: int | None, source: str, *, channel: str | None = None
+    ) -> None:
         """Stamp the presentation moment for an item — once per (item, iteration).
 
         Idempotent by design, and that is load-bearing: the flow's current-item
@@ -932,6 +949,12 @@ class QMLState(dict):
             source: What drives this answer (R9), one of ``TIMING_SOURCES``.
                 Required — the caller's driver knows it and there is no
                 defensible default.
+            channel: The surface presenting the item, one of
+                ``TIMING_CHANNELS``, or None for a driver that presents nothing
+                (synthetic fill, external prefill). The flow service requires
+                it of every presenting caller; None here writes no ``ch`` key.
+                Like the presentation moment, it is fixed by whichever seam
+                opened the event first.
         """
         if source not in TIMING_SOURCES:
             # Loud, for the same reason add_warning refuses an unknown severity:
@@ -941,19 +964,24 @@ class QMLState(dict):
             raise ValueError(
                 f"Unknown timing source {source!r}; expected one of {sorted(TIMING_SOURCES)}"
             )
+        if channel is not None and channel not in TIMING_CHANNELS:
+            raise ValueError(
+                f"Unknown timing channel {channel!r}; expected one of {sorted(TIMING_CHANNELS)}"
+            )
 
         if self._find_open_timing_event(item_id, iter_key) is not None:
             return
-        self.setdefault("response_timing", []).append(
-            {
-                "i": item_id,
-                "k": iter_key,
-                "p": _now_ms(),
-                "s": None,
-                "c": None,
-                "src": source,
-            }
-        )
+        event: dict[str, Any] = {
+            "i": item_id,
+            "k": iter_key,
+            "p": _now_ms(),
+            "s": None,
+            "c": None,
+            "src": source,
+        }
+        if channel is not None:
+            event["ch"] = channel
+        self.setdefault("response_timing", []).append(event)
 
     def close_timing_event(self, item_id: str, iter_key: int | None, committed: bool) -> None:
         """Stamp the submission moment on this (item, iteration)'s open event.

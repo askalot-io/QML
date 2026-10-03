@@ -19,6 +19,8 @@ Tests the store seam:
 - A fielded walk in a SEALED organization is closed legibly, on the endpoints
   that look like reads as well as the ones that obviously write — while a
   preview walk in the same sealed organization keeps working.
+- A fielded write that lost a race with another step on the same survey
+  answers 409 ``survey_state_conflict``, not a 500, and records nothing.
 
 These integration tests drive the real blueprint over Flask's test client, with
 a fake repository that records which store each call reached. A unit test of the
@@ -117,7 +119,7 @@ class _RecordingRepo:
         self.survey_reads.append(survey_id)
         return self._surveys.get(survey_id)
 
-    def upsert_survey(self, survey):
+    def save_survey_walk(self, survey):
         self.survey_writes.append(survey.id)
         self._surveys[survey.id] = survey
         return survey.id
@@ -261,7 +263,7 @@ class TestTheStoreComesFromTheCredential:
 class TestAFieldedWalkInASealedOrganization:
     """The seal reaches the walk, and says so instead of crashing.
 
-    ``upsert_survey`` refuses a survey write in a sealed organization, and every
+    ``save_survey_walk`` refuses a survey write in a sealed organization, and every
     survey write here funnels through ``_FlowStore.save``. The endpoints wrap
     their bodies in a blanket ``except Exception`` that returns 500 with the
     raw message, so without a translation the respondent's page load answered
@@ -272,7 +274,7 @@ class TestAFieldedWalkInASealedOrganization:
     """
 
     class _SealedRepo(_RecordingRepo):
-        def upsert_survey(self, survey):
+        def save_survey_walk(self, survey):
             from askalot_common.repository.exceptions import OrganizationSealedError
 
             raise OrganizationSealedError("Organization org-1 is sealed; no write may land.")
@@ -321,3 +323,41 @@ class TestAFieldedWalkInASealedOrganization:
         assert resp.status_code == 200, resp.get_data(as_text=True)
         assert repo.preview_writes, "the preview store was never written"
         assert repo.survey_writes == [], "a preview walk reached surveys"
+
+
+@pytest.mark.integration
+@pytest.mark.flow
+class TestAFieldedWriteThatLostARace:
+    """A step whose survey changed since it was read is refused, legibly.
+
+    ``save_survey_walk`` raises ``SurveyStateConflictError`` when the row moved
+    under the walk (another tab, the respondent's AI channel). Writing anyway
+    would restore what this step had read over what the other one saved; the
+    blanket ``except Exception`` would have turned the refusal into a 500.
+    """
+
+    class _RacedRepo(_RecordingRepo):
+        def save_survey_walk(self, survey):
+            from askalot_common.repository.exceptions import SurveyStateConflictError
+
+            raise SurveyStateConflictError(survey.id)
+
+    @pytest.mark.parametrize(
+        "method,path,payload",
+        [
+            ("get", "/api/flow/current-item", None),
+            ("post", "/api/flow/evaluate-item", {"item_id": "q1", "outcome": 1}),
+        ],
+    )
+    def test_the_step_answers_409_and_says_reload(self, method, path, payload):
+        client = _client(self._RacedRepo(), ("org-1", "org-slug", SURVEY_ID))
+
+        if method == "get":
+            resp = client.get(path, query_string={"survey_id": SURVEY_ID})
+        else:
+            resp = client.post(path, json={"survey_id": SURVEY_ID, **payload})
+
+        assert resp.status_code == 409, resp.get_data(as_text=True)
+        body = resp.get_json()
+        assert body["error"] == "survey_state_conflict"
+        assert "Reload" in body["message"] and SURVEY_ID not in body["message"]

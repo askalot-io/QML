@@ -1032,11 +1032,18 @@ class ValidationProcessor:
             A solver failure answers True — the finding is dropped rather than
             asserted on evidence the solver never produced. Reporting a gate as
             unsafe because Z3 fell over would send the author to edit a correct
-            predicate.
+            predicate. An owner gate that did not lower whole answers True for
+            the same reason: it is wider than the real gate, so a SAT here could
+            be a path the real gate never takes (#1164).
             """
             try:
+                owner_gate, owner_exact = builder.compile_conditions_exactly(
+                    owner_id, _gate(owner_id)
+                )
+                if not owner_exact:
+                    return True
                 solver.push()
-                solver.add(builder.compile_conditions(owner_id, _gate(owner_id)))
+                solver.add(owner_gate)
                 solver.add(Not(builder.compile_conditions(referenced, _gate(referenced))))
                 answer = solver.check() == unsat
                 solver.pop()
@@ -1217,9 +1224,9 @@ class ValidationProcessor:
                 )
             return runs[item_id, name]
 
-        # The Z3 lowering drops what it cannot express — a whole predicate, or
-        # silently one conjunct of it (``str(q.outcome) == '9' and …`` lowers to
-        # the other conjunct alone). On an assigner that only widens "it ran"
+        # The Z3 lowering drops a predicate it cannot express whole (#1164: one
+        # unlowerable operand of ``str(q.outcome) == '9' and …`` drops the whole
+        # predicate, leaving the gate True). On an assigner that only widens "it ran"
         # (fewer findings); on the READER it widens where the read can happen and
         # would flag a read its own gate protects. So a reader whose gate uses a
         # construct outside the plain comparison-and-arithmetic subset (a call, a

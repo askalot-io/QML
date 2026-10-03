@@ -1989,9 +1989,15 @@ class StaticBuilder:
         # code-bound names so a variable produced ONLY via tuple-unpack / for /
         # walrus / with-as (which SSA never records) is still censused — else a
         # non-Name-only unread producer escapes the write-only lint entirely.
-        censused_names = set(self.version_history) | self._all_bound_code_names()
+        #
+        # Seeded in a stable order, because the hygiene lints iterate this dict
+        # and a set's order follows ``PYTHONHASHSEED`` (#1138): SSA names in the
+        # order the builder met them (file order), then the non-SSA bound names
+        # by name.
+        ssa_names = list(self.version_history)
+        other_bound = sorted(self._all_bound_code_names() - set(ssa_names))
         self.variable_census = {
-            var: {"assignments": [], "reads": 0} for var in censused_names
+            var: {"assignments": [], "reads": 0} for var in [*ssa_names, *other_bound]
         }
 
         # codeInit is a code unit for the census (assignments + reads) but has no
@@ -2753,8 +2759,10 @@ class StaticBuilder:
                         member_vals = [
                             self._ast_to_z3(elt, context, local_bindings) for elt in comp.elts
                         ]
-                        member_vals = [v for v in member_vals if v is not None]
-                        if not member_vals:
+                        # One unlowerable member makes the whole membership
+                        # unlowerable: dropping it would narrow ``in`` and widen
+                        # ``not in`` (#1164).
+                        if not member_vals or any(v is None for v in member_vals):
                             return None
                         membership = Or(*[lhs == v for v in member_vals])
                         if isinstance(op, ast.In):
@@ -2788,14 +2796,20 @@ class StaticBuilder:
             return And(*clauses) if len(clauses) > 1 else clauses[0] if clauses else None
 
         elif isinstance(node, ast.BoolOp):
+            # All operands or nothing (#1164). Dropping an unlowerable operand
+            # would verify a different predicate: a dropped ``and`` operand
+            # widens the gate (an item reads as reachable where it is not), a
+            # dropped ``or`` operand narrows it (a reachable item can classify
+            # NEVER and block publication), and a ``not`` over either inverts
+            # the error. ``None`` for the whole gate is what the caller already
+            # reports as a coverage gap and leaves to runtime enforcement.
+            clauses = [self._ast_to_z3_bool(v, context, local_bindings) for v in node.values]
+            if any(c is None for c in clauses):
+                return None
             if isinstance(node.op, ast.And):
-                clauses = [self._ast_to_z3_bool(v, context, local_bindings) for v in node.values]
-                clauses = [c for c in clauses if c is not None]
-                return And(*clauses) if len(clauses) > 1 else clauses[0] if clauses else None
-            elif isinstance(node.op, ast.Or):
-                clauses = [self._ast_to_z3_bool(v, context, local_bindings) for v in node.values]
-                clauses = [c for c in clauses if c is not None]
-                return Or(*clauses) if len(clauses) > 1 else clauses[0] if clauses else None
+                return And(*clauses)
+            if isinstance(node.op, ast.Or):
+                return Or(*clauses)
 
         elif isinstance(node, ast.UnaryOp):
             if isinstance(node.op, ast.Not):
@@ -3084,20 +3098,52 @@ class StaticBuilder:
         return self._conjoin(all_constraints)
 
     def compile_conditions(self, item_id: str, conditions: list[dict[str, Any]]) -> BoolRef:
-        """Compile a list of conditions to a single Z3 boolean expression (ItemClassifier compatibility)."""
-        if not conditions:
-            return BoolVal(True, self.ctx)
+        """The conjunction of the conditions that lowered (see :meth:`compile_conditions_exactly`)."""
+        return self.compile_conditions_exactly(item_id, conditions)[0]
 
+    def compile_conditions_exactly(
+        self, item_id: str, conditions: list[dict[str, Any]]
+    ) -> tuple[BoolRef, bool]:
+        """``(conjunction of the conditions that lowered, whether every one did)``.
+
+        A condition Z3 cannot express lowers to ``None`` and is left out of the
+        conjunction, so the formula is WIDER than the real one whenever the flag
+        is ``False``. Its consumers must then refuse any verdict that only a
+        narrower formula could prove: ``ItemClassifier`` claims no ALWAYS
+        precondition and no TAUTOLOGICAL / globally-true postcondition on an
+        inexact formula (#1164), while NEVER and INFEASIBLE, which a wider
+        formula still proves, stand. Where an inexact P is an ASSUMPTION rather
+        than the thing classified, see :meth:`item_implication`.
+        """
         compiled_conditions = []
-
+        exact = True
         for condition in conditions:
             predicate = condition.get("predicate", "")
             if predicate:
                 compiled = self._compile_predicate_to_z3(predicate, item_id)
-                if compiled is not None:
+                if compiled is None:
+                    exact = False
+                else:
                     compiled_conditions.append(compiled)
 
-        return self._conjoin(compiled_conditions)
+        return self._conjoin(compiled_conditions), exact
+
+    def item_implication(self, item_id: str) -> BoolRef:
+        """``P_i ⇒ Q_i`` for one item, or ``True`` when its precondition did not
+        lower whole.
+
+        ``GlobalFormula`` and ``PathBasedValidator`` ASSUME these implications
+        and then claim UNSAT (``global_unsat``, accumulated dead code). An
+        inexact P_i is wider than the real gate, so its implication would demand
+        Q_i where the real gate is false: a STRONGER assumption, and a false
+        conflict. Leaving it out only weakens the assumption, so every UNSAT
+        verdict stays sound (#1164). An inexact Q_i is wider and needs no guard.
+        """
+        details = self.item_details[item_id]
+        P_i, P_exact = self.compile_conditions_exactly(item_id, details["preconditions"])
+        if not P_exact:
+            return BoolVal(True, self.ctx)
+        return Implies(P_i, self.compile_conditions(item_id, details["postconditions"]))
 
     def _compile_predicate_to_z3(self, predicate: str, context: str) -> BoolRef | None:
         """Compile a predicate string to Z3 boolean expression."""

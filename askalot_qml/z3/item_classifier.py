@@ -3,7 +3,6 @@ from typing import Any
 
 from askalot_common.profiling import profile_block
 from z3 import (
-    BoolRef,
     Not,
     Solver,
     unsat,
@@ -62,10 +61,16 @@ class ItemClassifier:
 
             # Compile precondition and postcondition using the shared helper
             with profile_block("z3_compile_conditions", {"item_id": item_id}):
-                P_form: BoolRef = self.builder.compile_conditions(item_id, details["preconditions"])  # type: ignore
-                Q_form: BoolRef = self.builder.compile_conditions(
+                # ``*_exact`` is False when a condition could not be lowered and
+                # was left out: the formula is then wider than the real one, so
+                # only the verdicts a wider formula still proves are claimed below
+                # (#1164).
+                P_form, P_exact = self.builder.compile_conditions_exactly(
+                    item_id, details["preconditions"]
+                )
+                Q_form, Q_exact = self.builder.compile_conditions_exactly(
                     item_id, details["postconditions"]
-                )  # type: ignore
+                )
 
             # Persistent base solvers. The reachability base B := ∧_i D_i(S_i)
             # (min/max, enumeration) PLUS frozen-variable constants — a variable
@@ -111,7 +116,7 @@ class ItemClassifier:
             # item (it can always be skipped), so clamp that too.
             if self.builder.is_conditionally_present(item_id):
                 pre_status = "CONDITIONAL"
-            elif precondition_always:
+            elif precondition_always and P_exact:
                 pre_status = "ALWAYS"
             elif precondition_never:
                 pre_status = "NEVER"
@@ -145,7 +150,7 @@ class ItemClassifier:
                     infeasible_under_P = full_solver.check() == unsat
                     full_solver.pop()
 
-                if tautological_under_P:
+                if tautological_under_P and Q_exact:
                     post_invariant = "TAUTOLOGICAL"
                 elif infeasible_under_P:
                     post_invariant = "INFEASIBLE"
@@ -170,7 +175,7 @@ class ItemClassifier:
 
                     full_solver.push()
                     full_solver.add(Not(Q_form))
-                    q_globally_true = full_solver.check() == unsat
+                    q_globally_true = Q_exact and full_solver.check() == unsat
                     full_solver.pop()
             else:
                 # Items without postconditions have no global Q flags

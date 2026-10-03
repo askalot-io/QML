@@ -386,7 +386,7 @@
                   0,
                   1
                 ],
-                "description": "Default value for the switch: 0 for off, 1 for on"
+                "description": "Suggested position for the switch (0 off, 1 on). Not rendered and never an answer: the switch starts on neither side, and nothing is recorded for the item until the respondent chooses one."
               }
             }
           }
@@ -406,7 +406,7 @@
               },
               "default": {
                 "type": "integer",
-                "description": "Default value for the radio control. Must be one of the keys defined in the labels object."
+                "description": "Suggested option for the radio control: marked, not selected. Must be one of the keys defined in the labels object. A hint shown to the respondent, never an answer: nothing is recorded for the item until they interact with the control."
               }
             },
             "required": [
@@ -429,7 +429,7 @@
               },
               "default": {
                 "type": "integer",
-                "description": "Default value for the checkbox control. Typically a bit mask of the selected options."
+                "description": "Suggested selection for the checkbox control, as a bit mask of options. Not rendered and never an answer: every box starts unticked, and nothing is recorded for the item until the respondent ticks one."
               }
             },
             "required": [
@@ -458,7 +458,7 @@
               },
               "default": {
                 "type": "integer",
-                "description": "Default value for the dropdown control. Must be one of the keys defined in the labels object."
+                "description": "Suggested option for the dropdown control: named in its empty placeholder. Must be one of the keys defined in the labels object. A hint shown to the respondent, never an answer: nothing is recorded for the item until they interact with the control."
               }
             },
             "required": [
@@ -492,7 +492,7 @@
               },
               "default": {
                 "type": "integer",
-                "description": "Default value for the editbox. Must be between min and max (inclusive)."
+                "description": "Suggested value for the editbox: shown as its placeholder. Must be between min and max (inclusive). A hint shown to the respondent, never an answer: nothing is recorded for the item until they interact with the control."
               }
             },
             "required": [
@@ -549,7 +549,7 @@
               },
               "default": {
                 "type": "integer",
-                "description": "Default value for the slider. Must be between min and max (inclusive)."
+                "description": "Resting position of the slider thumb. Must be between min and max (inclusive). A hint shown to the respondent, never an answer: nothing is recorded for the item until they interact with the control."
               },
               "left": {
                 "type": "string"

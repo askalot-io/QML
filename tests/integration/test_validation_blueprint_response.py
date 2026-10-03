@@ -29,6 +29,11 @@ never the snippet or context PyYAML prints, which quote the file. A single
 offending character (a tab) survives the blanking, and a control character the
 YAML reader refuses is located the same way.
 
+Every other load fault is answered alike by ``/validate`` and ``/validation``
+(#1136): a schema failure is the structured 400 on both, and a fault whose
+message would quote the file is a generic 500 on both, with none of the file in
+the body.
+
 This integration test exercises the Flask blueprint end to end (routing +
 QMLLoader + ValidationProcessor + IR emission) on a questionnaire written into
 tmp_path, so it depends on no fixture file.
@@ -268,3 +273,33 @@ class TestAParseFailureNamesWhereItBroke:
             "column": 10,
         }
         assert "SECRET-MARKER" not in resp.get_data(as_text=True)
+
+
+class TestValidateDoesNotEchoLoadFaults:
+    """#1136: ``/validate`` had a ``str(e)`` catch-all ``/validation`` retired."""
+
+    ROUTES = ("/api/qml/validate", "/api/qml/validation")
+
+    def _answers(self, tmp_path: Path, content: str) -> list[tuple[int, dict]]:
+        (tmp_path / "doc.qml").write_text(content)
+        with _client(tmp_path) as client:
+            return [
+                (r.status_code, r.get_json())
+                for r in (client.get(route, query_string={"qml_name": "doc.qml"}) for route in self.ROUTES)
+            ]
+
+    def test_a_fault_quoting_the_file_is_not_echoed_by_either_route(self, tmp_path):
+        """A one-line text file parses as a YAML string, and the loader's fault
+        on it names the file's content; neither route may return any of it."""
+        marker = "private-marker-7f3a"
+        answers = self._answers(tmp_path, f"{marker}\n")
+
+        assert {status for status, _ in answers} == {500}, answers
+        assert all(marker not in str(body) for _, body in answers)
+        assert answers[0][1]["error"] == answers[1][1]["error"]
+
+    def test_a_schema_failure_is_the_same_structured_400_on_both(self, tmp_path):
+        answers = self._answers(tmp_path, "questionnaire:\n  title: 7\n  blocks: nope\n")
+
+        assert [status for status, _ in answers] == [400, 400], answers
+        assert all("validation_error" in body for _, body in answers)

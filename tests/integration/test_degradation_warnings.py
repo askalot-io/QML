@@ -1142,8 +1142,9 @@ class TestUnansweredOperandIsNotSilentlyDecided:
         visited with no outcome — and its own postcondition must check the new
         answer, not be waived as if it read somebody else's missing one."""
         state, processor = _on_q_start(8)
-        processor.process_item(state, "q_start", None, source=SOURCE_RESPONDENT, skip_postcondition=True)
-        assert state.get_item("q_start").get("visited") is True, "precondition: blank and on screen"
+        # Blank and on screen: visited with no outcome. Set directly, because a
+        # Back convenience save keeps the visited flag the item had.
+        state.get_item("q_start")["visited"] = True
 
         result = processor.process_item(state, "q_start", 9, source=SOURCE_RESPONDENT)
 
