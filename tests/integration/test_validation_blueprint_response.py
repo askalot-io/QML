@@ -34,6 +34,15 @@ Every other load fault is answered alike by ``/validate`` and ``/validation``
 message would quote the file is a generic 500 on both, with none of the file in
 the body.
 
+Posted content is validated without a stored copy: ``POST /validation`` takes
+the questionnaire in the request body and answers with the payload the GET route
+gives for the same questionnaire (same keys, same ``graph_data``), under the
+``content_origin`` the registering service names for posted content. Its
+refusals are the GET route's (``parse_error`` with no file text,
+``validation_error``), plus a 413 ``too_large`` for a body over 1 MB and a 400
+``content_required`` for a body with no content. A blueprint registered without
+a posted-content origin does not carry the route.
+
 This integration test exercises the Flask blueprint end to end (routing +
 QMLLoader + ValidationProcessor + IR emission) on a questionnaire written into
 tmp_path, so it depends on no fixture file.
@@ -48,9 +57,19 @@ from flask import Flask
 FIXTURES = Path(__file__).resolve().parents[1] / "fixtures"
 
 
-def _client(qml_dir: Path = FIXTURES, content_origin: str = "directory"):
+def _client(
+    qml_dir: Path = FIXTURES,
+    content_origin: str = "directory",
+    posted_content_origin: str | None = None,
+):
     app = Flask(__name__)
-    app.register_blueprint(create_validation_blueprint(qml_dir=qml_dir, content_origin=content_origin))
+    app.register_blueprint(
+        create_validation_blueprint(
+            qml_dir=qml_dir,
+            content_origin=content_origin,
+            posted_content_origin=posted_content_origin,
+        )
+    )
     return app.test_client()
 
 
@@ -303,3 +322,83 @@ class TestValidateDoesNotEchoLoadFaults:
 
         assert [status for status, _ in answers] == [400, 400], answers
         assert all("validation_error" in body for _, body in answers)
+
+
+class TestPostedContentIsValidated:
+    """``POST /validation`` judges the content in the request body, with no stored copy."""
+
+    ROUTE = "/api/qml/validation"
+    FIXTURE = "defect_unreachable.qml"
+
+    def _post(self, body: dict):
+        return _client(content_origin="workspace", posted_content_origin="editor").post(self.ROUTE, json=body)
+
+    def test_posted_and_stored_content_yield_the_same_payload(self):
+        """One questionnaire, read from the directory and sent in the body."""
+        client = _client(content_origin="workspace", posted_content_origin="editor")
+        stored = client.get(self.ROUTE, query_string={"qml_name": self.FIXTURE})
+        posted = client.post(
+            self.ROUTE, json={"content": (FIXTURES / self.FIXTURE).read_text(), "name": self.FIXTURE}
+        )
+
+        assert stored.status_code == 200, stored.get_data(as_text=True)
+        assert posted.status_code == 200, posted.get_data(as_text=True)
+        stored_body, posted_body = stored.get_json(), posted.get_json()
+        assert set(posted_body) == set(stored_body)
+        assert posted_body["graph_data"] == stored_body["graph_data"]
+        assert posted_body["graph_data"]["items"]
+        # Only the provenance differs: each verdict names the copy it judged.
+        assert stored_body.pop("content_origin") == "workspace"
+        assert posted_body.pop("content_origin") == "editor"
+        assert posted_body == stored_body
+
+    def test_a_yaml_syntax_error_names_where_it_broke_without_the_file(self):
+        resp = self._post({"content": TestAParseFailureNamesWhereItBroke.BROKEN, "name": "broken.qml"})
+
+        assert resp.status_code == 400, resp.get_data(as_text=True)
+        body = resp.get_json()
+        assert body["valid"] is False and body["content_origin"] == "editor"
+        assert body["parse_error"] == {"problem": "found unexpected end of stream", "line": 8, "column": 1}
+        assert "SECRET-MARKER" not in resp.get_data(as_text=True)
+
+    def test_a_problem_that_quotes_the_content_is_blanked(self):
+        resp = self._post({"content": "qmlVersion: '2.0'\nquestionnaire: *SECRET-MARKER\n", "name": "alias.qml"})
+
+        assert resp.status_code == 400, resp.get_data(as_text=True)
+        assert resp.get_json()["parse_error"]["problem"] == "found undefined alias '…'"
+        assert "SECRET-MARKER" not in resp.get_data(as_text=True)
+
+    def test_a_schema_failure_is_the_structured_400(self):
+        resp = self._post({"content": "questionnaire:\n  title: 7\n  blocks: nope\n", "name": "doc.qml"})
+
+        assert resp.status_code == 400, resp.get_data(as_text=True)
+        body = resp.get_json()
+        assert body["valid"] is False and body["content_origin"] == "editor"
+        assert set(body["validation_error"]) == {"message", "path", "schema_path"}
+
+    def test_a_body_over_the_cap_is_refused(self):
+        """One megabyte of content plus its JSON envelope is over the cap."""
+        resp = self._post({"content": "#" * 1_048_576, "name": "big.qml"})
+
+        assert resp.status_code == 413, resp.get_data(as_text=True)[:200]
+        assert resp.get_json()["error"] == "too_large"
+
+    def test_a_body_under_the_cap_is_read(self):
+        """The cap is on size alone: a large comment over a real questionnaire validates."""
+        content = "#" * 900_000 + "\n" + (FIXTURES / self.FIXTURE).read_text()
+        resp = self._post({"content": content, "name": self.FIXTURE})
+
+        assert resp.status_code == 200, resp.get_data(as_text=True)[:200]
+
+    @pytest.mark.parametrize("body", [{"name": "doc.qml"}, {"content": "", "name": "doc.qml"}])
+    def test_missing_or_empty_content_is_refused_with_a_code(self, body):
+        resp = self._post(body)
+
+        assert resp.status_code == 400, resp.get_data(as_text=True)
+        assert resp.get_json()["error"] == "content_required"
+
+    def test_a_blueprint_without_a_posted_origin_has_no_post_route(self):
+        """A service that names no origin for posted content does not serve it."""
+        resp = _client().post(self.ROUTE, json={"content": "x", "name": "doc.qml"})
+
+        assert resp.status_code == 405

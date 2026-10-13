@@ -370,7 +370,7 @@ questionnaire:
   blocks:
     - id: per_subject
       kind: Roster
-      iterateOver: "mask"
+      iterateOver: mask
       labels:
         1: "First"
       items:

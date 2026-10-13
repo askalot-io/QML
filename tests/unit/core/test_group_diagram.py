@@ -181,7 +181,7 @@ questionnaire:
     - id: per_member
       kind: Roster
       title: "Member details"
-      iterateOver: "family_mask"
+      iterateOver: family_mask
       labels:
         1: "Member 1"
         2: "Member 2"
@@ -214,7 +214,7 @@ questionnaire:
     - id: per_meal
       kind: Roster
       title: "Per-meal detail"
-      iterateOver: "q_meals_eaten.outcome"
+      iterateOver: q_meals_eaten.outcome
       labels:
         1: "Breakfast"
         2: "Lunch"
@@ -231,7 +231,7 @@ class TestRosterBitmaskSourceEdge(unittest.TestCase):
     def test_variable_iterate_over_resolves_to_version_node(self):
         """Edge: `iterateOver` referencing a codeBlock variable.
 
-        A codeBlock-computed bitmask (`iterateOver: "family_mask"`) → the edge
+        A codeBlock-computed bitmask (`iterateOver: family_mask`) → the edge
         targets the latest emitted variable version node.
         """
         graph = _build_graph_from_string(_ROSTER_VARIABLE_MASK_QML)
@@ -248,7 +248,7 @@ class TestRosterBitmaskSourceEdge(unittest.TestCase):
     def test_item_outcome_iterate_over_resolves_to_item(self):
         """Edge: `iterateOver` referencing an item outcome.
 
-        A Checkbox feeding the mask (`iterateOver: "q_meals_eaten.outcome"`) →
+        A Checkbox feeding the mask (`iterateOver: q_meals_eaten.outcome`) →
         the edge targets that item id directly.
         """
         graph = _build_graph_from_string(_ROSTER_ITEM_OUTCOME_MASK_QML)

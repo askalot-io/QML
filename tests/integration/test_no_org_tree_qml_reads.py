@@ -68,9 +68,6 @@ ALLOWLIST: dict[str, str] = {
         "reads uploaded reference documents (binary artifacts) off the org "
         "volume; the summary it produces is written to the document store"
     ),
-    "services/tenant/armiger/app/core/designer_ws_turn.py": (
-        "workspace-relative path resolution for the Designer turn"
-    ),
     "services/tenant/armiger/app/core/work_surface.py": (
         "enumerates a SESSION WORKSPACE's materialized copies to decide which "
         "editor tabs to open (R15). Reads names, never content — and reads the "

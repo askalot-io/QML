@@ -9,6 +9,7 @@ from askalot_qml.core.merge_gate import (
     MergeGateVerdict,
     evaluate_merge_gate,
     merge_qml,
+    merge_qml_judged,
 )
 from askalot_qml.core.publish_gate import (
     PublishGateResult,
@@ -29,18 +30,21 @@ from askalot_qml.core.qml_publish import (
     validation_record,
 )
 from askalot_qml.core.qml_source import (
+    QMLAddress,
     QMLContentSource,
     QMLDocumentMissingError,
     RepositoryQMLSource,
     canonical_qml_rel_path,
     load_fielded_qml_content,
     load_qml_content,
+    parse_qml_address,
 )
 from askalot_qml.core.qml_topology import QMLTopology
 from askalot_qml.core.quality_metrics import compute_quality_report
 from askalot_qml.core.validation_processor import ValidationProcessor
 
 __all__ = [
+    "QMLAddress",
     "QMLContentSource",
     "QMLDocumentMissingError",
     "QMLLoader",
@@ -50,6 +54,7 @@ __all__ = [
     "canonical_qml_rel_path",
     "load_fielded_qml_content",
     "load_qml_content",
+    "parse_qml_address",
     "FlowProcessor",
     "GatedMergeOutcome",
     "MergeGateVerdict",
@@ -69,6 +74,7 @@ __all__ = [
     "stamp_questionnaire_validation",
     "validation_record",
     "merge_qml",
+    "merge_qml_judged",
     "list_external_items",
     "outcome_in_domain",
     "questionnaire_item_count",

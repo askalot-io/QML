@@ -28,7 +28,7 @@ questionnaire:
     - id: per_member
       kind: Roster
       title: "Family member details"
-      iterateOver: "family_mask"
+      iterateOver: family_mask
       labels:
         1: "Member 1"
         2: "Member 2"

@@ -27,7 +27,7 @@ questionnaire:
     - id: vehicle_details
       kind: Roster
       title: "Per-vehicle details"
-      iterateOver: "q_vehicles.outcome"
+      iterateOver: q_vehicles.outcome
       labels:
         1: Car
         2: Motorcycle

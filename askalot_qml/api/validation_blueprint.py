@@ -7,6 +7,13 @@ other surface hands out (#415). The two share a parameter name, so a document
 address that misses here is refused with a 400 that names the two address
 spaces, rather than a 404 that reads as "that questionnaire does not exist".
 The response's ``content_origin`` says which copy was validated.
+
+``POST /validation`` validates content sent in the request body instead of a
+file, for an editor whose buffer is saved nowhere yet. It runs the same payload
+builder and the same fault ladder as the GET route, so the two answers have one
+shape, and it reads and writes no directory. Its ``content_origin`` is a second
+value the registering service supplies, because posted content is not the
+directory's copy; a service that supplies none does not get the route.
 """
 
 import ast
@@ -18,11 +25,17 @@ from pathlib import Path
 import yaml
 from flask import Blueprint, jsonify, request
 from jsonschema import ValidationError
+from werkzeug.exceptions import RequestEntityTooLarge
 
 from askalot_qml.core import QMLLoader
-from askalot_qml.core.qml_source import CANONICAL_QML_REL_PATH
+from askalot_qml.core.qml_source import parse_qml_address
 from askalot_qml.core.validation_processor import ValidationProcessor
 from askalot_qml.models.qml_state import QMLState
+
+#: The largest request body ``POST /validation`` reads. A questionnaire is tens
+#: of kilobytes; the services in front of this blueprint set no limit of their
+#: own, so the route states one.
+MAX_POSTED_BODY_BYTES = 1_048_576
 
 #: A quoted fragment of a PyYAML problem that is not a ``<token class>``: text
 #: the parser copied out of the file (an alias name, a tag, a stray character).
@@ -51,6 +64,7 @@ def create_validation_blueprint(
     qml_dir_resolver: Callable[[], str | Path | None] | None = None,
     *,
     content_origin: str,
+    posted_content_origin: str | None = None,
 ) -> Blueprint:
     """
     Create QML validation API blueprint.
@@ -65,6 +79,11 @@ def create_validation_blueprint(
                         on every validation response so a verdict states its
                         provenance. Armiger passes ``"workspace"``: the editor's
                         copy, which can differ from the promoted document head.
+        posted_content_origin: The ``content_origin`` reported for content validated from a
+                               request body. Passing it registers ``POST /validation``;
+                               without it the blueprint has no such route, since no value
+                               of ``content_origin`` describes content that is in no
+                               directory.
 
     Returns:
         Flask blueprint with validation endpoints
@@ -88,26 +107,27 @@ def create_validation_blueprint(
             )
         return QMLLoader(qml_dir=resolved_qml_dir, logger=logger)
 
-    def _fault(qml_name: str, e: Exception, loader):
-        """The one answer to a load fault, shared by ``/validation`` and ``/validate``
-        so the two routes answer a fault alike (#1136)."""
+    def _fault(qml_name: str, e: Exception, loader, origin: str = content_origin):
+        """The one answer to a load fault, shared by every validating route so
+        they answer a fault alike (#1136). ``origin`` is the copy that was being
+        validated when it faulted."""
         if isinstance(e, FileNotFoundError):
             return _not_found(qml_name)
         if isinstance(e, (yaml.MarkedYAMLError, yaml.reader.ReaderError)):
-            return _parse_error(qml_name, e, loader.qml_content if loader else None)
+            return _parse_error(qml_name, e, loader.qml_content if loader else None, origin)
         if isinstance(e, ValidationError):
-            return _schema_invalid(qml_name, e)
+            return _schema_invalid(qml_name, e, origin)
         if isinstance(e, ValueError):
             return _author_facing(e)
         return _load_fault(e)
 
-    def _schema_invalid(qml_name: str, e: ValidationError):
+    def _schema_invalid(qml_name: str, e: ValidationError, origin: str):
         """The structured 400 for a document that fails the QML schema."""
         logger.warning(f"QML schema validation failed for {qml_name}: {e.message}")
         return jsonify(
             {
                 "qml_name": qml_name,
-                "content_origin": content_origin,
+                "content_origin": origin,
                 "valid": False,
                 "validation_error": {
                     "message": e.message,
@@ -139,7 +159,8 @@ def create_validation_blueprint(
         A document address cannot be a path here, so it gets a 400 naming both
         address spaces; anything else is an ordinary missing file.
         """
-        if CANONICAL_QML_REL_PATH.match(qml_name):
+        address = parse_qml_address(qml_name)
+        if address is not None and address.form == "canonical":
             # A caller mistake, not a server fault: warning, not error.
             logger.warning("QML document address sent as a %s path: %s", content_origin, qml_name)
             return jsonify(
@@ -157,7 +178,10 @@ def create_validation_blueprint(
         return jsonify({"error": f"QML file not found: {qml_name}"}), 404
 
     def _parse_error(
-        qml_name: str, e: yaml.MarkedYAMLError | yaml.reader.ReaderError, content: str | None
+        qml_name: str,
+        e: yaml.MarkedYAMLError | yaml.reader.ReaderError,
+        content: str | None,
+        origin: str,
     ):
         """The refusal for a file that is not YAML, naming where it broke (#759).
 
@@ -189,11 +213,99 @@ def create_validation_blueprint(
         return jsonify(
             {
                 "qml_name": qml_name,
-                "content_origin": content_origin,
+                "content_origin": origin,
                 "valid": False,
                 "parse_error": {"problem": problem, "line": line, "column": column},
             }
         ), 400
+
+    def _validation_payload(qml_name: str, questionnaire_data: dict, origin: str) -> dict:
+        """The full validation answer for a loaded questionnaire.
+
+        The one builder behind both ``/validation`` routes, so a stored and a
+        posted questionnaire are answered in the same shape. ``qml_name`` is the
+        name echoed back (and the title's stand-in), ``origin`` the copy the
+        content came from.
+        """
+        # Human-readable title sourced from the QML top-level field.
+        # Fallback to the filename so the client's tab title always has
+        # *something* to display; this mirrors the old UUID-basename behavior.
+        questionnaire_title = questionnaire_data.get("title") or qml_name
+
+        # Create questionnaire state
+        state = QMLState(questionnaire_data)
+
+        logger.debug(f"Starting validation processing for {qml_name}")
+
+        # Initialize ValidationProcessor
+        processor = ValidationProcessor(state)
+
+        # Get topology statistics from the engine
+        topology_stats = processor.engine.get_statistics()
+
+        # Get components information
+        components = []
+        for i, component in enumerate(processor.engine.topology.get_components()):
+            # Order items within component by topology order
+            ordered_items = [item for item in processor.engine.get_items() if item in component]
+            components.append(
+                {
+                    "component_id": i,
+                    "size": len(component),
+                    "items": ordered_items,
+                    "is_isolated": len(component) == 1,
+                }
+            )
+
+        # Get dependency layers
+        layers = processor.engine.topology.get_dependency_layers()
+        dependency_layers = []
+        for i, layer in enumerate(layers):
+            dependency_layers.append({"layer": i, "items": sorted(layer), "count": len(layer)})
+
+        # Generate positions-free structural IR with classifications inlined.
+        # Layout runs client-side in the QML Explorer React webview (ELK.js).
+        graph_data = processor.generate_validation_graph(enable_z3_validation=True)
+
+        # Get per-item Z3 classifications (already computed by generate_validation_graph)
+        classifications = processor.get_item_classifications()
+        item_classifications = {
+            item_id: {
+                "precondition": c.get("precondition", {}).get("status", "UNKNOWN"),
+                "postcondition": c.get("postcondition", {}).get("invariant", "UNKNOWN"),
+            }
+            for item_id, c in classifications.items()
+        }
+
+        # Generate comprehensive validation report
+        validation_report = processor.generate_validation_report()
+
+        # The graded findings themselves (#728). Until now this endpoint
+        # returned the two Z3 axes and a text summary, so a human editing
+        # QML in code-server could see three of the twenty finding types —
+        # the three that happen to get a colour — and the other seventeen
+        # rendered as a healthy diagram. The MCP tool and the publish gate
+        # both had them; the author did not.
+        #
+        # `deep` stays at its default. Level 4 accumulated dead code is
+        # O(items^2) solver work and this is the interactive edit-validate
+        # loop, not the gate; the gate passes deep=True on its own path.
+        validation_issues = processor.to_issues()
+
+        logger.debug(f"Validation completed for {qml_name}")
+
+        return {
+            "qml_name": qml_name,
+            "content_origin": origin,
+            "questionnaire_title": questionnaire_title,
+            "topology_stats": topology_stats,
+            "components": components,
+            "dependency_layers": dependency_layers,
+            "graph_data": graph_data,
+            "item_classifications": item_classifications,
+            "validation_report": validation_report,
+            "validation_issues": validation_issues,
+        }
 
     @blueprint.route("/validation", methods=["GET"])
     def get_validation():
@@ -227,94 +339,63 @@ def create_validation_blueprint(
             if not qml_name:
                 return jsonify({"error": "qml_name parameter is required"}), 400
 
-            # Load questionnaire
             loader = _get_loader()
             questionnaire_data = loader.load_from_file(qml_name)
-
-            # Human-readable title sourced from the QML top-level field.
-            # Fallback to the filename so the client's tab title always has
-            # *something* to display; this mirrors the old UUID-basename behavior.
-            questionnaire_title = questionnaire_data.get("title") or qml_name
-
-            # Create questionnaire state
-            state = QMLState(questionnaire_data)
-
-            logger.debug(f"Starting validation processing for {qml_name}")
-
-            # Initialize ValidationProcessor
-            processor = ValidationProcessor(state)
-
-            # Get topology statistics from the engine
-            topology_stats = processor.engine.get_statistics()
-
-            # Get components information
-            components = []
-            for i, component in enumerate(processor.engine.topology.get_components()):
-                # Order items within component by topology order
-                ordered_items = [item for item in processor.engine.get_items() if item in component]
-                components.append(
-                    {
-                        "component_id": i,
-                        "size": len(component),
-                        "items": ordered_items,
-                        "is_isolated": len(component) == 1,
-                    }
-                )
-
-            # Get dependency layers
-            layers = processor.engine.topology.get_dependency_layers()
-            dependency_layers = []
-            for i, layer in enumerate(layers):
-                dependency_layers.append({"layer": i, "items": sorted(layer), "count": len(layer)})
-
-            # Generate positions-free structural IR with classifications inlined.
-            # Layout runs client-side in the QML Explorer React webview (ELK.js).
-            graph_data = processor.generate_validation_graph(enable_z3_validation=True)
-
-            # Get per-item Z3 classifications (already computed by generate_validation_graph)
-            classifications = processor.get_item_classifications()
-            item_classifications = {
-                item_id: {
-                    "precondition": c.get("precondition", {}).get("status", "UNKNOWN"),
-                    "postcondition": c.get("postcondition", {}).get("invariant", "UNKNOWN"),
-                }
-                for item_id, c in classifications.items()
-            }
-
-            # Generate comprehensive validation report
-            validation_report = processor.generate_validation_report()
-
-            # The graded findings themselves (#728). Until now this endpoint
-            # returned the two Z3 axes and a text summary, so a human editing
-            # QML in code-server could see three of the twenty finding types —
-            # the three that happen to get a colour — and the other seventeen
-            # rendered as a healthy diagram. The MCP tool and the publish gate
-            # both had them; the author did not.
-            #
-            # `deep` stays at its default. Level 4 accumulated dead code is
-            # O(items^2) solver work and this is the interactive edit-validate
-            # loop, not the gate; the gate passes deep=True on its own path.
-            validation_issues = processor.to_issues()
-
-            logger.debug(f"Validation completed for {qml_name}")
-
-            return jsonify(
-                {
-                    "qml_name": qml_name,
-                    "content_origin": content_origin,
-                    "questionnaire_title": questionnaire_title,
-                    "topology_stats": topology_stats,
-                    "components": components,
-                    "dependency_layers": dependency_layers,
-                    "graph_data": graph_data,
-                    "item_classifications": item_classifications,
-                    "validation_report": validation_report,
-                    "validation_issues": validation_issues,
-                }
-            ), 200
+            return jsonify(_validation_payload(qml_name, questionnaire_data, content_origin)), 200
 
         except Exception as e:
             return _fault(qml_name, e, loader)
+
+    if posted_content_origin is not None:
+
+        @blueprint.route("/validation", methods=["POST"])
+        def post_validation():
+            """
+            Validate QML content sent in the request body.
+
+            JSON body:
+                content: The questionnaire's QML text
+                name: Display name, echoed as ``qml_name`` and used as the title
+                      when the questionnaire states none. It addresses nothing.
+
+            Returns:
+                The GET route's payload for the same questionnaire, with the
+                posted-content ``content_origin``. A body over
+                ``MAX_POSTED_BODY_BYTES`` is refused with 413 ``too_large``
+                before any of it is parsed, a body without ``content`` or
+                ``name`` with a 400 naming the field.
+            """
+            # Bounds the read itself, so a body sent without a Content-Length
+            # is cut off at the cap too.
+            request.max_content_length = MAX_POSTED_BODY_BYTES
+            try:
+                body = request.get_json(silent=True)
+            except RequestEntityTooLarge:
+                return jsonify(
+                    {
+                        "error": "too_large",
+                        "detail": f"The request body exceeds {MAX_POSTED_BODY_BYTES} bytes.",
+                    }
+                ), 413
+            if not isinstance(body, dict):
+                body = {}
+            for field in ("content", "name"):
+                value = body.get(field)
+                if not isinstance(value, str) or not value.strip():
+                    return jsonify(
+                        {
+                            "error": f"{field}_required",
+                            "detail": f"The JSON body must carry a non-empty string {field!r}.",
+                        }
+                    ), 400
+
+            name = body["name"]
+            loader = QMLLoader(logger=logger)
+            try:
+                questionnaire_data = loader.load_from_string(body["content"])
+                return jsonify(_validation_payload(name, questionnaire_data, posted_content_origin)), 200
+            except Exception as e:
+                return _fault(name, e, loader, posted_content_origin)
 
     @blueprint.route("/validate", methods=["GET"])
     def validate_qml():

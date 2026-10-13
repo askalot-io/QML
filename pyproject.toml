@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "askalot_qml"
-version = "1.72.2"
+version = "1.75.0"
 description = "QML processing and analysis engine for Askalot platform"
 authors = [
     {name = "Askalot IO", email = "info@askalot.io"}

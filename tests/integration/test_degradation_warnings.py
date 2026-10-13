@@ -211,7 +211,7 @@ questionnaire:
               2: B
     - id: per_subject
       kind: Roster
-      iterateOver: "mask"
+      iterateOver: mask
       labels:
         1: "First"
       items:
@@ -291,7 +291,7 @@ questionnaire:
               2: B
     - id: per_subject
       kind: Roster
-      iterateOver: "mask"
+      iterateOver: mask
       labels:
         1: "First"
         2: "Second"
@@ -1001,7 +1001,7 @@ questionnaire:
   blocks:
     - id: per_subject
       kind: Roster
-      iterateOver: "mask"
+      iterateOver: mask
       labels:
         1: "First"
       items:

@@ -28,7 +28,7 @@ questionnaire:
     - id: per_item
       kind: Roster
       title: "Per-item rating"
-      iterateOver: "family_mask"
+      iterateOver: family_mask
       labels:
         1: "Slot 1"
         2: "Slot 2"

@@ -14,12 +14,15 @@ filesystem, and that a survey keeps the instrument it was fielded on:
 - a campaign-less preview, and a campaign with no pin, read head
 - a questionnaire with no document link fails loud (``QMLDocumentMissingError``,
   a ``FileNotFoundError``) instead of silently resolving to nothing
+- ``parse_qml_address`` reads the canonical and the bare address into their
+  ids and form, and answers nothing for any other layout
 - ``RepositoryQMLSource`` resolves canonical questionnaire names and refuses
-  non-canonical ones; ``QMLLoader(content_source=...)`` runs the full
+  non-canonical ones, the bare ``<questionnaire_id>.qml`` included; ``QMLLoader(content_source=...)`` runs the full
   parse/validate pipeline over the resolved content and lists document names
-- ``RepositoryQMLSource.read_within`` returns a body with ITS OWN byte size in
-  one read, withholds an oversized body while still reporting its size, and
-  fails loud rather than reporting 0 for a document that is not there (#213)
+- ``RepositoryQMLSource.read_within`` returns a body with ITS OWN byte size,
+  version id and version number in one read, withholds an oversized body while
+  still reporting its size and version, and fails loud rather than reporting 0
+  for a document that is not there (#213)
 - the SirWay flow blueprint, driven end-to-end over HTTP, serves the pinned
   questionnaire's first item after the head moved on
 
@@ -34,6 +37,7 @@ layer.
 from types import SimpleNamespace
 
 import pytest
+from askalot_common.repository.mixins.document import HeadContentProbe
 from askalot_qml.api import create_flow_blueprint
 from askalot_qml.core import (
     QMLDocumentMissingError,
@@ -42,6 +46,7 @@ from askalot_qml.core import (
     canonical_qml_rel_path,
     load_fielded_qml_content,
     load_qml_content,
+    parse_qml_address,
 )
 from flask import Flask
 
@@ -75,10 +80,11 @@ HEAD_QML = _qml("Head", "Head question")
 
 
 class _FakeVersion:
-    def __init__(self, version_id: str, content: str):
+    def __init__(self, version_id: str, content: str, version_number: int = 1):
         self.id = version_id
         self.document_id = DOCUMENT_ID
         self.content = content
+        self.version_number = version_number
 
 
 class _FakeDocument:
@@ -187,11 +193,11 @@ class _FakeRepo:
         return True
 
     def head_content_within(self, document_id, *, max_bytes):
-        """The real one-read probe: size always, body only when it fits.
+        """The real one-read probe: id, number and size always, body only when it fits.
 
-        Reproduces the SQL exactly — both values are taken from the one head
-        row, so a caller cannot get a size and a body that describe different
-        versions.
+        Reproduces the SQL exactly — every value is taken from the one head
+        row, so a caller cannot get an id, a size and a body that describe
+        different versions.
         """
         if document_id != DOCUMENT_ID:
             return None
@@ -199,10 +205,11 @@ class _FakeRepo:
         if version is None:
             return None
         size = len(version.content.encode("utf-8"))
-        return SimpleNamespace(
+        return HeadContentProbe(
+            version_id=version.id,
+            version_number=version.version_number,
             size_bytes=size,
             content=version.content if size <= max_bytes else None,
-            fits=size <= max_bytes,
         )
 
     def get_organization(self, org_id):
@@ -221,7 +228,7 @@ def repo():
             "camp-pinned": _FakeCampaign("camp-pinned", "v1"),
             "camp-unpinned": _FakeCampaign("camp-unpinned", None),
         },
-        versions={"v1": _FakeVersion("v1", PINNED_QML), "v2": _FakeVersion("v2", HEAD_QML)},
+        versions={"v1": _FakeVersion("v1", PINNED_QML), "v2": _FakeVersion("v2", HEAD_QML, 2)},
         head_version_id="v2",
     )
 
@@ -290,6 +297,45 @@ class TestFieldingPin:
 
 
 @pytest.mark.integration
+class TestQmlAddressParser:
+    def test_a_canonical_address_yields_both_ids(self):
+        address = parse_qml_address(canonical_qml_rel_path(PROJECT_ID, QUESTIONNAIRE_ID))
+
+        assert address.form == "canonical"
+        assert address.project_id == PROJECT_ID
+        assert address.questionnaire_id == QUESTIONNAIRE_ID
+
+    def test_a_bare_address_yields_the_questionnaire_and_no_project(self):
+        address = parse_qml_address(f"{QUESTIONNAIRE_ID}.qml")
+
+        assert address.form == "bare"
+        assert address.project_id is None
+        assert address.questionnaire_id == QUESTIONNAIRE_ID
+
+    def test_slashes_around_an_address_are_ignored(self):
+        name = canonical_qml_rel_path(PROJECT_ID, QUESTIONNAIRE_ID)
+
+        assert parse_qml_address(f"/{name}/") == parse_qml_address(name)
+
+    @pytest.mark.parametrize(
+        "qml_name",
+        [
+            "",
+            ".qml",
+            "shared/foo.qml",
+            QUESTIONNAIRE_ID,
+            f"{QUESTIONNAIRE_ID}.txt",
+            f"projects/{PROJECT_ID}/questionnaires/{QUESTIONNAIRE_ID}",
+            f"projects/{PROJECT_ID}/{QUESTIONNAIRE_ID}.qml",
+            f"drafts/{PROJECT_ID}/questionnaires/{QUESTIONNAIRE_ID}.qml",
+            f"projects/{PROJECT_ID}/questionnaires/extra/{QUESTIONNAIRE_ID}.qml",
+        ],
+    )
+    def test_any_other_layout_addresses_nothing(self, qml_name):
+        assert parse_qml_address(qml_name) is None
+
+
+@pytest.mark.integration
 class TestRepositoryQMLSource:
     def test_canonical_name_resolves_head_content(self, repo):
         source = RepositoryQMLSource(repo)
@@ -299,6 +345,12 @@ class TestRepositoryQMLSource:
     def test_non_canonical_name_is_refused(self, repo):
         with pytest.raises(QMLDocumentMissingError):
             RepositoryQMLSource(repo).read("demographic.qml")
+
+    def test_the_bare_address_of_a_stored_questionnaire_is_refused(self, repo):
+        """A read serves the canonical form only: the reach gate in front of
+        the read tools checks canonical names, so a bare name would pass it."""
+        with pytest.raises(QMLDocumentMissingError):
+            RepositoryQMLSource(repo).read(f"{QUESTIONNAIRE_ID}.qml")
 
     def test_listing_returns_document_names(self, repo):
         assert RepositoryQMLSource(repo).list_names() == [
@@ -312,20 +364,22 @@ class TestRepositoryQMLSource:
         name = canonical_qml_rel_path(PROJECT_ID, QUESTIONNAIRE_ID)
         source = RepositoryQMLSource(repo)
 
-        size, content = source.read_within(name, 1_000_000)
+        probe = source.read_within(name, 1_000_000)
 
-        assert content == source.read(name)
-        assert size == len(content.encode("utf-8"))
+        assert probe.content == source.read(name)
+        assert probe.size_bytes == len(probe.content.encode("utf-8"))
+        assert (probe.version_id, probe.version_number) == ("v2", 2)
 
     def test_read_within_withholds_an_oversized_body_but_still_reports_its_size(self, repo):
         """The whole point: the caller learns it is too big without paying to
         move it, and has nothing it could accidentally inline."""
         name = canonical_qml_rel_path(PROJECT_ID, QUESTIONNAIRE_ID)
 
-        size, content = RepositoryQMLSource(repo).read_within(name, 1)
+        probe = RepositoryQMLSource(repo).read_within(name, 1)
 
-        assert content is None
-        assert size == len(HEAD_QML.encode("utf-8"))
+        assert probe.content is None
+        assert probe.size_bytes == len(HEAD_QML.encode("utf-8"))
+        assert (probe.version_id, probe.version_number) == ("v2", 2)
 
     def test_read_within_refuses_a_non_canonical_name(self, repo):
         with pytest.raises(QMLDocumentMissingError):

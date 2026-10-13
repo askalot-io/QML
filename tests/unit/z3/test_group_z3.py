@@ -376,7 +376,7 @@ class TestGroupConditionalPresence(unittest.TestCase):
                         family_mask = 2 ** q_count.outcome - 1
                 - id: per_member
                   kind: Roster
-                  iterateOver: "family_mask"
+                  iterateOver: family_mask
                   labels:
                     1: "Member 1"
                     2: "Member 2"

@@ -106,7 +106,7 @@ questionnaire:
     - id: per_member
       kind: Roster
       title: "Family member details"
-      iterateOver: "family_mask"
+      iterateOver: family_mask
       labels:
         1: "Member 1"
         2: "Member 2"
@@ -150,7 +150,7 @@ questionnaire:
               8: "Snack"
     - id: per_meal
       kind: Roster
-      iterateOver: "q_meals_eaten.outcome"
+      iterateOver: q_meals_eaten.outcome
       labels:
         1: "Breakfast"
         2: "Lunch"
@@ -318,7 +318,7 @@ class TestSchemaAcceptance:
           codeBlock: "mask = 1"
     - id: lonely
       kind: Roster
-      iterateOver: "mask"
+      iterateOver: mask
       labels:
         1: "Only"
       items:
@@ -470,7 +470,7 @@ class TestLoaderRosterValidation:
           codeBlock: "mask = 1"
     - id: bad
       kind: Roster
-      iterateOver: "mask"
+      iterateOver: mask
       labels:
 {labels_yaml}
       items:
@@ -493,7 +493,7 @@ class TestLoaderRosterValidation:
         yaml_str = _make_qml("""
     - id: bad
       kind: Roster
-      iterateOver: "q_inner.outcome"
+      iterateOver: q_inner.outcome
       labels:
         1: "A"
       items:
@@ -710,7 +710,7 @@ questionnaire:
           codeBlock: "mask = 2 ** q_count.outcome - 1"
     - id: per_thing
       kind: Roster
-      iterateOver: "mask"
+      iterateOver: mask
       labels:
         1: "A"
         2: "B"

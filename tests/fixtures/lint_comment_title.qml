@@ -99,7 +99,7 @@ questionnaire:
     - id: b_good_roster
       kind: Roster
       title: "Members"
-      iterateOver: "q_good_members.outcome"
+      iterateOver: q_good_members.outcome
       labels:
         1: "Member 1"
         2: "Member 2"
@@ -115,7 +115,7 @@ questionnaire:
     - id: b_broken_roster
       kind: Roster
       title: "Guests"
-      iterateOver: "q_broken_members.outcome"
+      iterateOver: q_broken_members.outcome
       labels:
         1: "Guest 1"
         2: "Guest 2"

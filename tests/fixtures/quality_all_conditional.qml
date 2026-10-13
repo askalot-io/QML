@@ -9,7 +9,7 @@ questionnaire:
     - id: members
       kind: Roster
       title: "Household members"
-      iterateOver: "mask"
+      iterateOver: mask
       labels:
         1: First
         2: Second

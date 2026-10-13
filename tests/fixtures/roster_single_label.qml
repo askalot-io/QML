@@ -21,7 +21,7 @@ questionnaire:
     - id: per_pick
       kind: Roster
       title: "Optional section"
-      iterateOver: "q_pick.outcome"
+      iterateOver: q_pick.outcome
       labels:
         1: "Only iteration"
       items:

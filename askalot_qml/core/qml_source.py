@@ -32,20 +32,66 @@ from __future__ import annotations
 
 import logging
 import re
-from typing import Any, Protocol, runtime_checkable
+from dataclasses import dataclass
+from typing import Any, Literal, Protocol, runtime_checkable
 
 from askalot_common.repository.entities import derive_questionnaire_qml_rel_path
+from askalot_common.repository.mixins.document import HeadContentProbe
 
-#: Canonical relative path of a questionnaire's QML, as
+#: The canonical form of a questionnaire address, as
 #: ``askalot_common.repository.entities.derive_questionnaire_qml_rel_path``
-#: renders it. The document store keys a ``qml`` document on
-#: ``(project_id, kind="qml", key=<questionnaire_id>)``, so this pattern is the
-#: bridge between a caller holding a name and the document identity.
-CANONICAL_QML_REL_PATH = re.compile(
+#: renders it. Private: :func:`parse_qml_address` is the only reader.
+_CANONICAL_ADDRESS = re.compile(
     r"^projects/(?P<project_id>[^/]+)/questionnaires/(?P<questionnaire_id>[^/]+)\.qml$"
 )
 
+_QML_SUFFIX = ".qml"
+
 logger = logging.getLogger(__name__)
+
+
+@dataclass(frozen=True)
+class QMLAddress:
+    """The ids a ``qml_name`` carries, and which of the two forms it was written in.
+
+    ``form`` is ``"canonical"`` for ``projects/<project_id>/questionnaires/<questionnaire_id>.qml``
+    and ``"bare"`` for ``<questionnaire_id>.qml``, which names no project. The
+    ids are the address's own text: nothing here says they are UUIDs or that a
+    questionnaire exists under them.
+    """
+
+    project_id: str | None
+    questionnaire_id: str
+    form: Literal["canonical", "bare"]
+
+
+def parse_qml_address(qml_name: str) -> QMLAddress | None:
+    """Turn a ``qml_name`` into its ids, or ``None`` when it addresses no questionnaire.
+
+    The one parser of the questionnaire address grammar. The document store
+    keys a ``qml`` document on ``(project_id, kind="qml", key=<questionnaire_id>)``,
+    so this is the bridge between a caller holding a name and the document
+    identity. Slashes around the name are ignored and the ``.qml`` suffix is
+    required. Any other layout (an org-root draft path, ``shared/foo.qml``)
+    has no document identity and yields ``None``.
+
+    Which forms a caller serves is the caller's policy, read from ``form``:
+    reads take the canonical form only, because the reach gate checks canonical
+    names; the write resolver and the approval diff take the bare form too.
+    """
+    name = qml_name.strip("/")
+    canonical = _CANONICAL_ADDRESS.match(name)
+    if canonical:
+        return QMLAddress(
+            project_id=canonical.group("project_id"),
+            questionnaire_id=canonical.group("questionnaire_id"),
+            form="canonical",
+        )
+    if "/" not in name and name.endswith(_QML_SUFFIX) and len(name) > len(_QML_SUFFIX):
+        return QMLAddress(
+            project_id=None, questionnaire_id=name[: -len(_QML_SUFFIX)], form="bare"
+        )
+    return None
 
 
 class QMLDocumentMissingError(FileNotFoundError):
@@ -78,10 +124,8 @@ class QMLContentSource(Protocol):
 def canonical_qml_rel_path(project_id: str, questionnaire_id: str) -> str:
     """The ``qml_name`` a questionnaire's document is addressed by.
 
-    Delegates to ``askalot_common``'s canonical renderer so the format has one
-    source of truth — the ``CANONICAL_QML_REL_PATH`` regex above parses what
-    that function builds, and a future layout change updates both by touching
-    only the renderer.
+    Delegates to ``askalot_common``'s canonical renderer; :func:`parse_qml_address`
+    reads back what that function builds.
     """
     return derive_questionnaire_qml_rel_path(project_id, questionnaire_id)
 
@@ -178,17 +222,17 @@ class RepositoryQMLSource:
         self.repository = repository
 
     def _questionnaire_for(self, qml_name: str) -> Any:
-        match = CANONICAL_QML_REL_PATH.match(qml_name)
-        if not match:
+        address = parse_qml_address(qml_name)
+        if address is None or address.form != "canonical":
             raise QMLDocumentMissingError(
                 f"QML name {qml_name!r} is not a canonical questionnaire path "
                 f"(projects/<project_id>/questionnaires/<questionnaire_id>.qml) — "
                 "only questionnaire documents are addressable."
             )
-        questionnaire = self.repository.get_questionnaire(match.group("questionnaire_id"))
+        questionnaire = self.repository.get_questionnaire(address.questionnaire_id)
         if questionnaire is None:
             raise QMLDocumentMissingError(
-                f"No questionnaire {match.group('questionnaire_id')!r} for QML name {qml_name!r}."
+                f"No questionnaire {address.questionnaire_id!r} for QML name {qml_name!r}."
             )
         return questionnaire
 
@@ -196,8 +240,8 @@ class RepositoryQMLSource:
         """The head content of the questionnaire ``qml_name`` addresses."""
         return load_qml_content(self.repository, self._questionnaire_for(qml_name))
 
-    def read_within(self, qml_name: str, max_bytes: int) -> tuple[int, str | None]:
-        """``(size_bytes, content)`` — content only when it fits (#213).
+    def read_within(self, qml_name: str, max_bytes: int) -> HeadContentProbe:
+        """The head's version id, number and size — and its content only when it fits (#213).
 
         For a caller choosing between inlining the QML and handing back a
         reference to it: Portor's ``get_qml_content`` picks between the body and
@@ -207,9 +251,10 @@ class RepositoryQMLSource:
         round trips on the common under-threshold path, and lets a concurrent
         save leave the size describing one version and the body another.
 
-        One repository read answers both, so the returned size always describes
-        the returned content, and an oversized body is never transferred.
-        ``content`` is ``None`` exactly when ``size_bytes > max_bytes``.
+        One repository read answers all of it, so the returned size and the
+        returned version id always describe the returned content, and an
+        oversized body is never transferred. ``content`` is ``None`` exactly
+        when ``size_bytes > max_bytes``.
 
         Raises ``QMLDocumentMissingError`` on the same misses :meth:`read`
         does — a length of "no document" is not zero.
@@ -226,15 +271,14 @@ class RepositoryQMLSource:
             raise QMLDocumentMissingError(
                 f"QML document {document_id!r} for QML name {qml_name!r} has no content."
             )
-        content = probe.content
         # Same PyYAML-stream guard as `load_qml_content`: this is a second
         # document-store QML read path, so it needs the same chokepoint.
-        if content is not None and not isinstance(content, str):
+        if probe.content is not None and not isinstance(probe.content, str):
             raise TypeError(
-                f"QML document {document_id!r} resolved to {type(content).__name__}, "
+                f"QML document {document_id!r} resolved to {type(probe.content).__name__}, "
                 "not QML text — refusing before PyYAML reads it as a stream."
             )
-        return probe.size_bytes, content
+        return probe
 
     def list_names(self) -> list[str]:
         """Canonical names of every live QML document in the organization."""

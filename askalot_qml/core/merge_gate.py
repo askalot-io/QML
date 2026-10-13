@@ -1,34 +1,44 @@
 """
-Z3 validation gate in front of canonical QML merges (plan 2026-07-21-001, R16/KTD3).
+The publish gate applied to canonical QML merges.
 
 A merge result is content no human ever typed: diff3 stitched two authors'
 edits into a third document that neither of them reviewed. Two individually
 sound edits can compose into an unsound instrument — head gates an item on
-``q_region`` while the other workspace renames ``q_region`` in a distant block,
-and the merge is textually spotless yet references a name that no longer
-exists. Promoting that would field a questionnaire whose skip graph is broken,
-silently violating the product's "formally verified before fielding" invariant.
+``q_region`` while the other side renames ``q_region`` in a distant block, and
+the merge is textually spotless yet references a name that no longer exists.
+So every synthesised merge is judged by the publish gate, and there is no
+"clean but unjudged" merge: a candidate that cannot be analysed (unloadable
+YAML, a schema failure, an analysis crash) gets a failing verdict, inheriting
+the publish gate's fail-closed policy.
 
-So every synthesised merge runs the existing publish gate, and a gate failure
-**downgrades the merge to a conflict**. There is no "clean but unvalidated"
-outcome: a candidate that cannot be validated — unloadable YAML, schema
-failure, an analysis crash — is a conflict too, inheriting the publish gate's
-fail-CLOSED policy verbatim.
+Two merge functions share that judgement and differ in what a failing verdict
+means for the merge:
 
-The asymmetry (R16): a **fast-forward** and a **no-op** skip the gate. A
-fast-forward is the content the user just wrote and is looking at, promoted
-unchanged — gating it would apply publication-strength soundness to an ordinary
-save, which the publish gate deliberately does not do (a work-in-progress file
-is saveable with warnings; only publication requires soundness). A caller that
-wants a recorded verdict for such a save calls ``evaluate_merge_gate`` on the
-content directly and stamps the result itself.
+- ``merge_qml`` **refuses**. A failing verdict downgrades the merge to a
+  conflict whose content is the merged candidate, with a reason to show. It is
+  for a caller that must not make an unsound merge the head: workspace
+  promotion, where the merged text would replace a file a person is editing
+  and nobody asked for the combination.
+- ``merge_qml_judged`` **judges and never refuses**. The merge stays clean
+  whatever the verdict says, and the verdict travels with it so the caller
+  stores it on the version it writes. It is for a caller whose save must never
+  block on validation: an agent's save through the MCP surface, where a
+  work-in-progress questionnaire is saveable while broken and the publish door
+  is the hard gate.
+
+Both decide an overlap by the textual merge alone, and both skip the gate on a
+textual conflict (marker-annotated text is not QML; judging it would only
+produce a misleading second diagnosis), on a **fast-forward** and on a
+**no-op**. A fast-forward is the content the author just wrote, stored
+unchanged; gating it would apply publication-strength soundness to an ordinary
+save. A caller that wants a recorded verdict for such content calls
+``evaluate_merge_gate`` on it directly.
 
 The gate itself is not re-implemented here: ``evaluate_publish_gate_content``
 owns the severity policy, the ``deep=True`` hierarchy choice, the fail-closed
 branches, and the advisory quality report. Re-deriving any of that would fork
-the definition of "sound", which is exactly what a shared gate exists to
-prevent. This module only decides *when* the gate runs and what a failure
-means for a merge.
+the definition of "sound". This module only decides when the gate runs and
+what a failure means for a merge.
 """
 
 import logging
@@ -72,17 +82,18 @@ class MergeGateVerdict:
 
 @dataclass(frozen=True)
 class GatedMergeOutcome:
-    """A merge outcome plus the QML verdict that may have downgraded it.
+    """A merge outcome plus the gate's verdict on it.
 
-    ``merge`` is the generic outcome, already downgraded: when the gate refuses
+    From ``merge_qml``, ``merge`` is already downgraded: when the gate refuses
     a textually clean merge, its status is CONFLICT while ``conflict_count``
     stays 0 and ``content`` holds the merged candidate rather than
     marker-annotated text — nothing collided *textually*, so there are no
     markers to show. ``reason`` is the diagnostic to surface in that case.
+    From ``merge_qml_judged``, ``merge`` is the textual outcome untouched and
+    ``reason`` is always ``None``.
 
     ``verdict`` is ``None`` exactly when the gate did not run: a fast-forward, a
-    no-op, or a textual conflict (running Z3 on marker-annotated text would
-    only produce a misleading second diagnosis).
+    no-op, or a textual conflict.
     """
 
     merge: MergeOutcome
@@ -152,19 +163,44 @@ def merge_qml(
         fast-forward, or a merge that both reconciled textually and passed the
         gate.
     """
+    judged = merge_qml_judged(base=base, head=head, workspace=workspace, logger=logger)
+    if judged.verdict is None or judged.verdict.ok:
+        return judged
+
+    return GatedMergeOutcome(
+        merge=replace(judged.merge, status=MergeStatus.CONFLICT),
+        verdict=judged.verdict,
+        reason=_refusal_reason(judged.verdict),
+    )
+
+
+def merge_qml_judged(
+    *,
+    base: str,
+    head: str,
+    workspace: str,
+    logger: logging.Logger | None = None,
+) -> GatedMergeOutcome:
+    """Merge QML content 3-way and attach the gate's verdict without acting on it.
+
+    Args:
+        base: Content of the version the sender's content was written against.
+        head: Current canonical content.
+        workspace: Content the sender is saving.
+        logger: Optional logger threaded into the gate.
+
+    Returns:
+        GatedMergeOutcome — the textual merge as ``merge_document`` decided it.
+        A synthesised clean merge carries the gate's verdict, passing or
+        failing, and stays clean; a textual conflict, a fast-forward and a
+        no-op carry none.
+    """
     outcome = merge_document(base=base, head=head, workspace=workspace)
 
-    # R16 asymmetry plus the no-gate-on-markers rule: only a synthesised merge
-    # is machine-generated content that needs proving.
+    # Only a synthesised merge is machine-generated content that needs judging.
     if outcome.status is MergeStatus.CONFLICT or outcome.fast_forward or outcome.no_op:
         return GatedMergeOutcome(merge=outcome)
 
-    verdict = evaluate_merge_gate(outcome.content, logger=logger)
-    if verdict.ok:
-        return GatedMergeOutcome(merge=outcome, verdict=verdict)
-
     return GatedMergeOutcome(
-        merge=replace(outcome, status=MergeStatus.CONFLICT),
-        verdict=verdict,
-        reason=_refusal_reason(verdict),
+        merge=outcome, verdict=evaluate_merge_gate(outcome.content, logger=logger)
     )

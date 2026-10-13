@@ -20,7 +20,7 @@ questionnaire:
     - id: per_meal
       kind: Roster
       title: "Per-meal details"
-      iterateOver: "q_meals_eaten.outcome"
+      iterateOver: q_meals_eaten.outcome
       labels:
         1: "Breakfast"
         2: "Lunch"

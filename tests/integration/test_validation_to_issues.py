@@ -91,6 +91,15 @@ severity (error/warning), machine type, human message, and suggestion:
   breaks the skip graph is downgraded to a conflict and never promoted, a valid
   merge stamps the per-version validation verdict, a textual conflict never
   reaches Z3, and a fast-forward / no-op deliberately skips the gate (R16).
+- The judging merge (``merge_qml_judged``): the same textual merge with the
+  gate's verdict attached and never acted on — a clean merge that breaks the
+  skip graph stays clean and carries a failing verdict, a textual conflict, a
+  fast-forward and a no-op carry none.
+- The save ladder (``askalot_common.documents.save``) given ``merge_qml``: a
+  moved head with disjoint sound edits lands merged with the gate's verdict on
+  the version, an unsound merge ends ``LogicRefused`` with nothing written, and
+  a same-region edit is an overlap. Given ``merge_qml_judged``, the unsound
+  merge lands and the version stores the failing verdict.
 
 These integration tests run the real Z3 classification pipeline against the
 thesis/matrix fixtures, so they exercise the actual classification shapes the
@@ -2173,6 +2182,68 @@ questionnaire:
         assert result.promotable is True
         assert result.verdict is None
 
+    def test_the_judging_merge_attaches_a_passing_verdict_to_a_sound_merge(self):
+        from askalot_common.documents.merge import MergeStatus
+        from askalot_qml.core import merge_qml_judged
+
+        head = self._edit(self.BASE_QML, "            max: 1000\n", self._INCOME_GATE)
+        workspace = self._edit(self.BASE_QML, "            max: 99\n", "            max: 120\n")
+
+        result = merge_qml_judged(base=self.BASE_QML, head=head, workspace=workspace)
+
+        assert result.merge.status is MergeStatus.CLEAN, result.merge.content
+        assert "max: 120" in result.merge.content
+        assert "q_region.outcome == 1" in result.merge.content
+        assert result.verdict is not None and result.verdict.ok is True
+        assert result.verdict.validation["ok"] is True
+        assert result.verdict.validation["source"] == "merge_gate"
+        assert result.verdict.quality_report is not None
+        assert result.reason is None
+
+    def test_the_judging_merge_keeps_an_unsound_merge_clean(self):
+        """The verdict says the merge is unsound; the merge is not downgraded."""
+        from askalot_common.documents.merge import MergeStatus
+        from askalot_qml.core import merge_qml_judged
+
+        head = self._edit(self.BASE_QML, "            max: 1000\n", self._INCOME_GATE)
+        workspace = self._edit(self.BASE_QML, "        - id: q_region\n", "        - id: q_area\n")
+
+        result = merge_qml_judged(base=self.BASE_QML, head=head, workspace=workspace)
+
+        assert result.merge.status is MergeStatus.CLEAN
+        assert result.promotable is True
+        assert "- id: q_area" in result.merge.content
+        assert "q_region.outcome == 1" in result.merge.content
+        assert result.verdict is not None and result.verdict.ok is False
+        assert result.verdict.validation["ok"] is False
+        assert any(i["type"] == "undefined_name" for i in result.verdict.issues)
+        assert result.reason is None
+
+    def test_the_judging_merge_never_judges_marker_text(self):
+        from askalot_common.documents.merge import MergeStatus
+        from askalot_qml.core import merge_qml_judged
+
+        head = self._edit(self.BASE_QML, "            max: 99\n", "            max: 120\n")
+        workspace = self._edit(self.BASE_QML, "            max: 99\n", "            max: 65\n")
+
+        result = merge_qml_judged(base=self.BASE_QML, head=head, workspace=workspace)
+
+        assert result.merge.status is MergeStatus.CONFLICT
+        assert result.merge.conflict_count == 1
+        assert result.verdict is None
+        assert result.reason is None
+
+    def test_the_judging_merge_judges_neither_a_fast_forward_nor_a_no_op(self):
+        from askalot_qml.core import merge_qml_judged
+
+        edited = self._edit(self.BASE_QML, "            max: 99\n", "            max: 120\n")
+
+        fast_forward = merge_qml_judged(base=self.BASE_QML, head=self.BASE_QML, workspace=edited)
+        no_op = merge_qml_judged(base=self.BASE_QML, head=edited, workspace=edited)
+
+        assert fast_forward.merge.fast_forward is True and fast_forward.verdict is None
+        assert no_op.merge.no_op is True and no_op.verdict is None
+
     def test_gate_fails_closed_on_unloadable_candidate(self):
         """A candidate that cannot be validated is never reported as promotable."""
         from askalot_qml.core import evaluate_merge_gate
@@ -2204,6 +2275,147 @@ questionnaire:
         assert verdict.ok is True, verdict.issues
         assert any(i["severity"] == "warning" for i in verdict.issues)
         assert verdict.validation["ok"] is True
+
+
+@pytest.mark.integration
+class TestSaveLadderWithTheGatedMerge:
+    """What a save ends as when the ladder's merge function is ``merge_qml``.
+
+    The ladder lives in a module that cannot import this one, so its own tests
+    give it a stub with a gated merge's shape. These run it with the real gate
+    over the shared document-store fake, which is the pairing a caller that
+    must not store an unsound merge uses.
+    """
+
+    DOCUMENT_ID = "dddddddd-4444-4444-8444-dddddddddddd"
+
+    @pytest.fixture
+    def store(self):
+        from askalot_common.repository.document_store_fake import BASE_QML, FakeDocumentStore
+
+        store = FakeDocumentStore()
+        store.seed_document(
+            document_id=self.DOCUMENT_ID, kind="qml", mutability="user_editable", content=BASE_QML
+        )
+        return store
+
+    def _base_id(self, store) -> str:
+        return store.versions_of(self.DOCUMENT_ID)[0].id
+
+    def _move_head(self, store, content: str) -> str:
+        """Another author's version lands on the head."""
+        from askalot_common.repository.document_store_fake import OTHER_USER_ID
+
+        return store._insert(
+            self.DOCUMENT_ID,
+            content,
+            author_type="user",
+            origin="workspace_sync",
+            author_user_id=OTHER_USER_ID,
+        )
+
+    def _save(self, store, content: str, base_version_id: str, merge=None):
+        from askalot_common.documents.save import save_document_content
+        from askalot_common.repository.document_store_fake import USER_ID
+        from askalot_qml.core.merge_gate import merge_qml
+
+        return save_document_content(
+            store,
+            document_id=self.DOCUMENT_ID,
+            content=content,
+            base_version_id=base_version_id,
+            author_type="user",
+            author_user_id=USER_ID,
+            fast_forward_origin="workspace_sync",
+            merged_origin="merge",
+            merge=merge or merge_qml,
+        )
+
+    def test_disjoint_edits_land_merged_with_the_gates_verdict(self, store):
+        from askalot_common.documents.save import Landed
+        from askalot_common.repository.document_store_fake import HEAD_EDIT, WORKSPACE_EDIT
+
+        base_id = self._base_id(store)
+        self._move_head(store, HEAD_EDIT)
+
+        outcome = self._save(store, WORKSPACE_EDIT, base_id)
+
+        head = store.get_document_content(self.DOCUMENT_ID)
+        assert isinstance(outcome, Landed)
+        assert "How old are you?" in head.content
+        assert "Thanks for your time." in head.content
+        assert head.origin == "merge"
+        assert head.validation["ok"] is True
+        assert head.validation["source"] == "merge_gate"
+        assert (outcome.version_id, outcome.version_number) == (head.id, 3)
+        assert outcome.origin == "merge"
+        assert outcome.validation == head.validation
+        assert outcome.quality_report is not None
+        assert outcome.created is True
+        assert outcome.merged is True
+        assert outcome.content_changed is True
+        assert outcome.content == head.content
+
+    def test_the_same_region_is_an_overlap_and_writes_nothing(self, store):
+        from askalot_common.documents.save import Overlap
+        from askalot_common.repository.document_store_fake import (
+            HEAD_SAME_LINE,
+            WORKSPACE_SAME_LINE,
+        )
+
+        base_id = self._base_id(store)
+        moved_id = self._move_head(store, HEAD_SAME_LINE)
+
+        outcome = self._save(store, WORKSPACE_SAME_LINE, base_id)
+
+        assert isinstance(outcome, Overlap)
+        assert len(store.versions_of(self.DOCUMENT_ID)) == 2
+        assert (outcome.head_version_id, outcome.head_version_number) == (moved_id, 2)
+        assert outcome.head_content == HEAD_SAME_LINE
+        assert "<<<<<<<" in outcome.marker_text
+        assert "Please state your age." in outcome.marker_text
+        assert "How old are you (in years)?" in outcome.marker_text
+        assert outcome.conflict_count == 1
+
+    def test_an_unsound_merge_is_refused_and_writes_nothing(self, store):
+        from askalot_common.documents.save import LogicRefused
+        from askalot_common.repository.document_store_fake import HEAD_EDIT, WORKSPACE_UNSOUND
+
+        base_id = self._base_id(store)
+        moved_id = self._move_head(store, HEAD_EDIT)
+
+        outcome = self._save(store, WORKSPACE_UNSOUND, base_id)
+
+        assert isinstance(outcome, LogicRefused)
+        assert len(store.versions_of(self.DOCUMENT_ID)) == 2
+        assert (outcome.head_version_id, outcome.head_version_number) == (moved_id, 2)
+        assert outcome.head_content == HEAD_EDIT
+        assert "q_region.outcome == 1" in outcome.candidate
+        assert "Thanks for your time." in outcome.candidate
+        assert "<<<<<<<" not in outcome.candidate
+        assert "failed logic validation" in outcome.reason
+
+    def test_an_unsound_merge_lands_with_its_failing_verdict_under_the_judging_merge(self, store):
+        """A caller whose save must never block on validation passes the judging
+        merge: the same unsound merge is stored, and the version says so."""
+        from askalot_common.documents.save import Landed
+        from askalot_common.repository.document_store_fake import HEAD_EDIT, WORKSPACE_UNSOUND
+        from askalot_qml.core.merge_gate import merge_qml_judged
+
+        base_id = self._base_id(store)
+        self._move_head(store, HEAD_EDIT)
+
+        outcome = self._save(store, WORKSPACE_UNSOUND, base_id, merge=merge_qml_judged)
+
+        head = store.get_document_content(self.DOCUMENT_ID)
+        assert isinstance(outcome, Landed)
+        assert outcome.created is True and outcome.merged is True
+        assert len(store.versions_of(self.DOCUMENT_ID)) == 3
+        assert "q_region.outcome == 1" in head.content
+        assert "Thanks for your time." in head.content
+        assert head.validation["ok"] is False
+        assert head.validation["source"] == "merge_gate"
+        assert outcome.validation == head.validation
 
 
 @pytest.mark.integration

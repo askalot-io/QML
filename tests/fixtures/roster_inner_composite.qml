@@ -30,7 +30,7 @@ questionnaire:
     - id: per_trip
       kind: Roster
       title: "Per-trip detail"
-      iterateOver: "q_trips.outcome"
+      iterateOver: q_trips.outcome
       labels:
         1: "Commute"
         2: "Leisure"

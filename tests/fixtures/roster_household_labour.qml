@@ -109,7 +109,7 @@ questionnaire:
       kind: Roster
       title: "Member demographics"
       # Straight from the Checkbox outcome — the forward-tightening contract.
-      iterateOver: "q_members_present.outcome"
+      iterateOver: q_members_present.outcome
       labels:
         1: "Member 1"
         2: "Member 2"
@@ -157,7 +157,7 @@ questionnaire:
     - id: member_labour
       kind: Roster
       title: "Member labour force status"
-      iterateOver: "q_members_present.outcome"
+      iterateOver: q_members_present.outcome
       labels:
         1: "Member 1"
         2: "Member 2"
