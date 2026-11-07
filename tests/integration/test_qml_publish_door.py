@@ -17,8 +17,16 @@ but never blocked, while fielding refuses anything unvalidated.
   (AE6, publish half)
 - publishing again after an edit re-pins to the NEW head
 - a questionnaire with no document fails loud instead of publishing nothing
+- the page refusal names each blocking issue by its translated type, in the
+  reader's language, while agents keep the English detail (#2166)
 - the stamp→pin split runs the Z3 gate exactly ONCE per publish and reads the
-  document once (#212), and pinning a failing ticket raises rather than fielding
+  document once (#212), also when a caller composes the stamp's read, judge and
+  record halves itself and publishes with its ticket (#1696), and pinning a
+  failing ticket raises rather than fielding
+- the stamp carries every translation of the version's parent forward before
+  the pin, on the head branch and on the superseded branch, copying only text
+  whose source is unchanged; seeding twice inserts once, a saved row is never
+  overwritten, and content that cannot be parsed seeds nothing
 
 These integration tests run the real Z3 publish gate over real QML — the whole
 question is whether a genuinely broken questionnaire is refused at exactly one
@@ -26,7 +34,13 @@ door and welcomed at the other, which a stubbed gate could not answer. Only
 persistence is a fake, implementing the repository contract the primitive uses.
 """
 
+import copy
+
 import pytest
+from askalot_common.repository.mixins.qml_translation import (
+    TranslationSeedPlan,
+    TranslationSeedSource,
+)
 from askalot_qml.core import (
     QMLDocumentMissingError,
     evaluate_qml_content,
@@ -36,6 +50,8 @@ from askalot_qml.core import (
     stamp_questionnaire_validation,
     validation_record,
 )
+from askalot_qml.core.qml_loader import QMLLoader
+from askalot_qml.core.qml_translation import seed_translations, text_keys
 
 PROJECT_ID = "11111111-1111-1111-1111-111111111111"
 QUESTIONNAIRE_ID = "22222222-2222-2222-2222-222222222222"
@@ -102,10 +118,11 @@ UNPARSEABLE_QML = "this: is: not: valid: qml:\n  - [\n"
 
 
 class _FakeVersion:
-    def __init__(self, version_id: str, content: str):
+    def __init__(self, version_id: str, content: str, parent_version_id: str | None = None):
         self.id = version_id
         self.document_id = DOCUMENT_ID
         self.content = content
+        self.parent_version_id = parent_version_id
         self.validation: dict = {}
 
 
@@ -140,6 +157,10 @@ class _FakeRepo:
         #: create — the counter is what keeps a re-introduced redundant fetch
         #: (#212) from passing silently.
         self.content_reads = 0
+        #: (version id, locale) → {"texts", "untranslated"}: the translation rows.
+        self.translations: dict[tuple[str, str], dict] = {}
+        #: campaign id → the (version, locale) rows that existed when it was pinned.
+        self.rows_at_pin: dict[str, set[tuple[str, str]]] = {}
 
     def get_document_content(self, document_id, *, version_id=None):
         self.content_reads += 1
@@ -155,6 +176,19 @@ class _FakeRepo:
         self.upserts += 1
         return questionnaire.id
 
+    def record_qml_head_verdict(
+        self, document_id, *, expected_version_id, validation, record_row_verdict
+    ):
+        """``QMLDocumentMixin.record_qml_head_verdict``: both writes, or neither on a moved head."""
+        assert document_id == DOCUMENT_ID
+        if self.head_id != expected_version_id:
+            return "superseded"
+        self.versions[self.head_id].validation = dict(validation)
+        self.stored_row = copy.deepcopy(self.questionnaire)
+        record_row_verdict(self.stored_row)
+        self.upserts += 1
+        return "recorded"
+
     def pin_campaign_qml_version(self, campaign_id, version_id):
         version = self.versions[version_id]
         if not bool(dict(version.validation or {}).get("ok")):
@@ -163,6 +197,42 @@ class _FakeRepo:
                 "publish primitive must refuse before reaching the pin"
             )
         self.pins[campaign_id] = version_id
+        self.rows_at_pin[campaign_id] = set(self.translations)
+
+    def qml_translation_seed_plan(self, questionnaire_id, version_id):
+        """``QmlTranslationMixin.qml_translation_seed_plan``: nearest ancestor per missing locale."""
+        assert questionnaire_id == QUESTIONNAIRE_ID
+        held = {locale for (vid, locale) in self.translations if vid == version_id}
+        sources: dict[str, TranslationSeedSource] = {}
+        ancestor = self.versions[version_id].parent_version_id
+        while ancestor is not None:
+            for (vid, locale), row in self.translations.items():
+                if vid == ancestor and locale not in held and locale not in sources:
+                    sources[locale] = TranslationSeedSource(
+                        locale=locale,
+                        ancestor_version_id=ancestor,
+                        ancestor_content=self.versions[ancestor].content,
+                        texts=dict(row["texts"]),
+                        human_edited_at=None,
+                    )
+            ancestor = self.versions[ancestor].parent_version_id
+        return TranslationSeedPlan(
+            version_content=self.versions[version_id].content if sources else None,
+            sources=tuple(sources.values()),
+        )
+
+    def insert_seeded_translations(self, questionnaire_id, version_id, rows):
+        """``insert_seeded_translations``: insert what is absent, never overwrite."""
+        assert questionnaire_id == QUESTIONNAIRE_ID
+        inserted = []
+        for row in rows:
+            if (version_id, row.locale) not in self.translations:
+                self.translations[(version_id, row.locale)] = {
+                    "texts": dict(row.texts),
+                    "untranslated": list(row.untranslated),
+                }
+                inserted.append(row.locale)
+        return inserted
 
     def append_head(self, version):
         self.versions[version.id] = version
@@ -292,6 +362,41 @@ class TestPublishRefusesUnsoundHeads:
         assert "undefined_name" in message
         assert "q_does_not_exist" in message
 
+    def test_the_page_refusal_names_the_defect_in_the_readers_language(self):
+        """A page shows the issue's translated type and its item, never the English detail (#2166)."""
+        from askalot_qml.core import publish_refusal_text
+        from askalot_qml.core.publish_gate import ISSUE_TYPE_LABELS
+
+        version = _FakeVersion("v1", UNSOUND_QML)
+        questionnaire = _FakeQuestionnaire()
+        repo = _FakeRepo(questionnaire, [version])
+        result = publish_questionnaire_to_campaign(
+            repo, campaign_id=CAMPAIGN_ID, questionnaire=questionnaire
+        )
+
+        english = publish_refusal_text(result.gate, "en")
+        hungarian = publish_refusal_text(result.gate, "hu")
+        assert ISSUE_TYPE_LABELS["undefined_name"] in english
+        assert "undefined_name" not in english
+        assert hungarian != english
+        assert ISSUE_TYPE_LABELS["undefined_name"] not in hungarian
+
+    def test_the_page_refusal_keeps_the_loaders_reason_for_content_that_did_not_load(self):
+        """An unloadable head names why it failed: the reader may have no editor to look in (#2166)."""
+        from askalot_qml.core import publish_refusal_text
+        from askalot_qml.core.publish_gate import ISSUE_TYPE_LABELS
+
+        version = _FakeVersion("v1", UNPARSEABLE_QML)
+        questionnaire = _FakeQuestionnaire()
+        repo = _FakeRepo(questionnaire, [version])
+        result = publish_questionnaire_to_campaign(
+            repo, campaign_id=CAMPAIGN_ID, questionnaire=questionnaire
+        )
+
+        (issue,) = [i for i in result.gate.errors if i["type"] == "load_error"]
+        text = publish_refusal_text(result.gate, "en")
+        assert f"{ISSUE_TYPE_LABELS['load_error']}: {issue['message']}" in text
+
     def test_publish_of_an_unparseable_head_is_refused(self):
         version = _FakeVersion("v1", UNPARSEABLE_QML)
         questionnaire = _FakeQuestionnaire()
@@ -412,6 +517,50 @@ class TestStampThenPinRunsTheGateOnce:
         assert repo.content_reads == 1
         assert result.pinned is True
 
+    def test_the_three_halves_stamp_exactly_what_the_one_call_does(self, monkeypatch):
+        """#1696: a caller that runs the gate on its own thread composes the read,
+        the judgement and the record; publishing with that ticket gates nothing
+        again."""
+        from askalot_qml.core import head_version_to_stamp, judge_head_version, record_stamp
+
+        version = _FakeVersion("v1", SOUND_QML)
+        questionnaire = _FakeQuestionnaire()
+        repo = _FakeRepo(questionnaire, [version])
+        gate_calls = self._counting_gate(monkeypatch)
+
+        head = head_version_to_stamp(repo, questionnaire)
+        ticket = record_stamp(repo, questionnaire, head, judge_head_version(head, questionnaire))
+        result = publish_questionnaire_to_campaign(
+            repo, campaign_id=CAMPAIGN_ID, questionnaire=questionnaire, ticket=ticket
+        )
+
+        assert len(gate_calls) == 1
+        assert repo.content_reads == 1
+        assert (ticket.version_id, result.pinned) == ("v1", True)
+        assert repo.pins == {CAMPAIGN_ID: "v1"}
+        assert questionnaire.quality_report_version_id == "v1"
+
+    def test_a_head_that_moved_while_the_gate_ran_gets_no_row_write(self):
+        """#1696: the judged version is stamped alone (the pin reads it); the row
+        and the caller's copy stay with the head's own verdict."""
+        from askalot_qml.core import head_version_to_stamp, judge_head_version, record_stamp
+
+        questionnaire = _FakeQuestionnaire()
+        repo = _FakeRepo(questionnaire, [_FakeVersion("v1", SOUND_QML)])
+        judged = head_version_to_stamp(repo, questionnaire)
+        gate = judge_head_version(judged, questionnaire)
+        repo.append_head(_FakeVersion("v2", SOUND_QML))
+
+        ticket = record_stamp(repo, questionnaire, judged, gate)
+
+        assert ticket.version_id == "v1"
+        assert repo.versions["v1"].validation["ok"] is True
+        assert repo.versions["v2"].validation == {}
+        assert repo.upserts == 0
+        assert questionnaire.quality_report_version_id == "an-earlier-version"
+        pin_validated_version(repo, campaign_id=CAMPAIGN_ID, ticket=ticket)
+        assert repo.pins == {CAMPAIGN_ID: "v1"}
+
     def test_the_ticket_names_the_version_its_verdict_was_written_onto(self):
         """What makes a ticket redeemable: the pin's fail-closed floor re-reads
         that version's stored verdict, so the two must be the same row."""
@@ -454,6 +603,96 @@ class TestStampThenPinRunsTheGateOnce:
         pin_validated_version(repo, campaign_id=CAMPAIGN_ID, ticket=ticket)
 
         assert repo.pins == {CAMPAIGN_ID: "v1"}
+
+
+#: v3 → v4 edits one item's title; every other text is unchanged.
+SOUND_V4_QML = SOUND_QML.replace("Are you well?", "Are you feeling well?")
+
+
+def _hungarian(content: str) -> dict[str, str]:
+    """A complete Hungarian translation of ``content``."""
+    return {
+        key: f"HU {text}" for key, text in text_keys(QMLLoader().load_from_string(content)).items()
+    }
+
+
+def _translated_chain() -> tuple[_FakeQuestionnaire, _FakeRepo]:
+    """v3 with a complete Hungarian row, and its child v4 as head."""
+    questionnaire = _FakeQuestionnaire()
+    repo = _FakeRepo(
+        questionnaire,
+        [_FakeVersion("v3", SOUND_QML), _FakeVersion("v4", SOUND_V4_QML, parent_version_id="v3")],
+    )
+    repo.translations[("v3", "hu")] = {"texts": _hungarian(SOUND_QML), "untranslated": []}
+    return questionnaire, repo
+
+
+@pytest.mark.integration
+class TestTheStampCarriesTranslationsForward:
+    def test_a_version_stamped_and_pinned_before_any_verdict_job_gets_its_carried_row(self):
+        questionnaire, repo = _translated_chain()
+
+        result = publish_questionnaire_to_campaign(
+            repo, campaign_id=CAMPAIGN_ID, questionnaire=questionnaire
+        )
+
+        assert result.pinned and result.version_id == "v4"
+        carried = repo.translations[("v4", "hu")]
+        expected = {k: v for k, v in _hungarian(SOUND_QML).items() if k != "item:q_ok/title"}
+        assert carried["texts"] == expected
+        assert carried["untranslated"] == ["item:q_ok/title"]
+        assert ("v4", "hu") in repo.rows_at_pin[CAMPAIGN_ID]
+
+    def test_a_version_stamped_on_the_superseded_branch_gets_its_rows_before_the_pin(self):
+        from askalot_qml.core import head_version_to_stamp, judge_head_version, record_stamp
+
+        questionnaire, repo = _translated_chain()
+        judged = head_version_to_stamp(repo, questionnaire)
+        gate = judge_head_version(judged, questionnaire)
+        repo.append_head(_FakeVersion("v5", SOUND_V4_QML, parent_version_id="v4"))
+
+        ticket = record_stamp(repo, questionnaire, judged, gate)
+        pin_validated_version(repo, campaign_id=CAMPAIGN_ID, ticket=ticket)
+
+        assert repo.upserts == 0  # the superseded branch: the row was not written
+        assert repo.pins == {CAMPAIGN_ID: "v4"}
+        assert ("v4", "hu") in repo.rows_at_pin[CAMPAIGN_ID]
+        assert ("v5", "hu") not in repo.translations
+
+    def test_seeding_twice_inserts_once_and_leaves_a_saved_row_untouched(self):
+        _, repo = _translated_chain()
+
+        assert seed_translations(repo, QUESTIONNAIRE_ID, "v4") == ["hu"]
+        assert seed_translations(repo, QUESTIONNAIRE_ID, "v4") == []
+
+        saved = {"texts": {"questionnaire/title": "Saved"}, "untranslated": ["x"]}
+        repo.translations[("v4", "de")] = saved
+        repo.translations[("v3", "de")] = {"texts": _hungarian(SOUND_QML), "untranslated": []}
+        assert seed_translations(repo, QUESTIONNAIRE_ID, "v4") == []
+        assert repo.translations[("v4", "de")] is saved
+
+    def test_content_that_is_not_text_is_refused_rather_than_parsed(self):
+        """A mocked repository answers an object for the content; the loader
+        would read it as an endless YAML stream, so it must raise at once."""
+        from askalot_common.repository.mixins.qml_translation import TranslationSeedPlan
+
+        _, repo = _translated_chain()
+        plan = repo.qml_translation_seed_plan(QUESTIONNAIRE_ID, "v4")
+        repo.qml_translation_seed_plan = lambda *_a: TranslationSeedPlan(
+            version_content=object(), sources=plan.sources
+        )
+
+        with pytest.raises(TypeError, match="QML content must be text"):
+            seed_translations(repo, QUESTIONNAIRE_ID, "v4")
+
+    def test_content_that_cannot_be_parsed_seeds_nothing_and_still_stamps(self):
+        questionnaire, repo = _translated_chain()
+        repo.append_head(_FakeVersion("v5", UNPARSEABLE_QML, parent_version_id="v4"))
+
+        ticket = stamp_questionnaire_validation(repo, questionnaire)
+
+        assert (ticket.version_id, ticket.ok) == ("v5", False)
+        assert ("v5", "hu") not in repo.translations
 
 
 @pytest.mark.integration

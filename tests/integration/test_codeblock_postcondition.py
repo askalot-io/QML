@@ -215,8 +215,8 @@ class TestCodeBlockConstraintsSeparation(unittest.TestCase):
         """
         # codeblock_constraints should have the SSA assignments
         # var1_0 = 0 (from codeInit)
-        # var1_1 = item_q1 (from q1 codeBlock)
-        # var1_2 = var1_1 + item_q2 (from q2 codeBlock)
+        # var@var1@1 = item_q1 (from q1 codeBlock)
+        # var@var1@2 = var@var1@1 + item_q2 (from q2 codeBlock)
         self.assertEqual(
             len(self.builder.codeblock_constraints),
             3,
@@ -241,11 +241,11 @@ class TestCodeBlockConstraintsSeparation(unittest.TestCase):
         """
         full_base_str = str(self.builder.get_full_base())
 
-        # Should include SSA assignment var1_1 == item_q1
-        self.assertIn("var1_1", full_base_str, "full_base should reference var1_1")
+        # Should include SSA assignment var@var1@1 == item_q1
+        self.assertIn("var@var1@1", full_base_str, "full_base should reference var1 version 1")
 
-        # Should include SSA assignment var1_2 == var1_1 + item_q2
-        self.assertIn("var1_2", full_base_str, "full_base should reference var1_2")
+        # Should include SSA assignment var@var1@2 == var@var1@1 + item_q2
+        self.assertIn("var@var1@2", full_base_str, "full_base should reference var1 version 2")
 
 
 if __name__ == "__main__":

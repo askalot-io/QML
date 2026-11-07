@@ -97,7 +97,10 @@ class _FakeRepo:
         return self._questionnaire
 
     def get_campaign(self, campaign_id):
-        return None
+        """A fielding, unpinned campaign: every survey has one (``ck_surveys_campaign_present``)."""
+        if not campaign_id:
+            return None
+        return type("C", (), {"id": campaign_id, "status": "active", "qml_version_id": None})()
 
     def get_document_content(self, document_id, *, version_id=None):
         return _FakeVersion(_QML) if document_id == "doc-1" else None

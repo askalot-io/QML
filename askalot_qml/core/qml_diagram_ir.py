@@ -35,6 +35,21 @@ IR shape (top-level arrays, no flat `nodes[]` with a `type` discriminator):
       "metadata":   {has_cycles, topological_order, cycle_nodes, cycle_edges}
     }
 
+The guard tree (#1970) is not part of this IR: the branching structure the
+tree view draws (items grouped by effective guard and nested by Z3-proven
+implication) is built on demand by `ValidationProcessor.get_guard_tree()`
+(`core/qml_guard_tree.py`), served by `POST /guard-tree`, and placed at
+`metadata.guard_tree` by QML Explorer once it arrives. Its shape:
+
+    {"trunk": [item_id, ...],
+     "nodes": [{id, predicates, label, parent (node id | null = trunk), items,
+                depth, exact,
+                status ("conditional"|"always"|"never"|"undecided"),
+                exclusive_with, overlaps_with, undecided_with,
+                undecided_parents, also_under}, ...],
+     "budget_exhausted": bool, "checks": {run, undecided}}
+    # or {"error": "..."} when it could not be built
+
 `apply_validation_coloring()` inlines classification onto block/item entries
 directly (no separate `classes` map) — single-pass consumption for the client.
 """

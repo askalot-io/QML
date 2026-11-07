@@ -15,16 +15,23 @@ filesystem, and that a survey keeps the instrument it was fielded on:
 - a questionnaire with no document link fails loud (``QMLDocumentMissingError``,
   a ``FileNotFoundError``) instead of silently resolving to nothing
 - ``parse_qml_address`` reads the canonical and the bare address into their
-  ids and form, and answers nothing for any other layout
+  ids and form, and answers nothing for any other layout; the suffix-less
+  ``id`` form only when a caller opts in; one table holds every reader of the
+  grammar (plain, with the ``id`` form, the signed-link validator) (#1545)
 - ``RepositoryQMLSource`` resolves canonical questionnaire names and refuses
   non-canonical ones, the bare ``<questionnaire_id>.qml`` included; ``QMLLoader(content_source=...)`` runs the full
-  parse/validate pipeline over the resolved content and lists document names
+  parse/validate pipeline over the resolved content and lists document names;
+  ``read_version`` serves a named version, not head, and a version that does
+  not exist is missing (#1547)
 - ``RepositoryQMLSource.read_within`` returns a body with ITS OWN byte size,
   version id and version number in one read, withholds an oversized body while
   still reporting its size and version, and fails loud rather than reporting 0
   for a document that is not there (#213)
 - the SirWay flow blueprint, driven end-to-end over HTTP, serves the pinned
   questionnaire's first item after the head moved on
+- a loader reading a directory (fixtures, the CLI) refuses a name that resolves
+  outside it, absolute or by ``..``, and still loads one that normalises back
+  inside (#772)
 
 These integration tests exercise the real loader, the real ``FlowProcessor``,
 and the real Flask blueprint; only persistence is a fake, implementing the
@@ -107,6 +114,8 @@ class _FakeCampaign:
     def __init__(self, campaign_id: str, qml_version_id: str | None):
         self.id = campaign_id
         self.qml_version_id = qml_version_id
+        self.questionnaire_id = QUESTIONNAIRE_ID
+        self.status = "active"
 
 
 class _FakeSurvey:
@@ -162,6 +171,10 @@ class _FakeRepo:
 
     def get_campaign(self, campaign_id):
         return self._campaigns.get(campaign_id)
+
+    def offered_locales(self, questionnaire_id, version_id):
+        """A pinned version with no translation offers only its source language."""
+        return ["en"]
 
     def _is_preview(self) -> bool:
         return getattr(self._survey, "arrival", None) == "preview"
@@ -334,6 +347,50 @@ class TestQmlAddressParser:
     def test_any_other_layout_addresses_nothing(self, qml_name):
         assert parse_qml_address(qml_name) is None
 
+    @pytest.mark.parametrize(
+        ("qml_name", "plain", "with_id", "signed_link"),
+        [
+            (canonical_qml_rel_path(PROJECT_ID, QUESTIONNAIRE_ID), "canonical", "canonical", True),
+            (f"/{canonical_qml_rel_path(PROJECT_ID, QUESTIONNAIRE_ID)}/", "canonical", "canonical", False),
+            (canonical_qml_rel_path(PROJECT_ID.upper(), QUESTIONNAIRE_ID.upper()), "canonical", "canonical", True),
+            (f"projects/{PROJECT_ID}/questionnaires/not-a-uuid.qml", "canonical", "canonical", False),
+            (f"{QUESTIONNAIRE_ID}.qml", "bare", "bare", False),
+            (QUESTIONNAIRE_ID, None, "id", False),
+            (f"/{QUESTIONNAIRE_ID}", None, "id", False),
+            (f"{QUESTIONNAIRE_ID}.QML", None, None, False),
+            (f"projects/{PROJECT_ID}/questionnaires/{QUESTIONNAIRE_ID}", None, None, False),
+            (f"projects/{PROJECT_ID}/questionnaires/{QUESTIONNAIRE_ID}.QML", None, None, False),
+            ("shared/foo.qml", None, None, False),
+            ("", None, None, False),
+        ],
+    )
+    def test_each_reader_of_the_grammar_answers_from_one_table(
+        self, qml_name, plain, with_id, signed_link
+    ):
+        """Every reader of the address grammar, in one table (#1545): the parser
+        as reads and writes call it, the parser with the editor deep link's
+        ``id`` form, and the signed-link validator, which takes only a canonical
+        name of two UUIDs with nothing around it."""
+        from askalot_common.files.signed_links import mint_qml_link
+
+        def form(address):
+            return None if address is None else address.form
+
+        assert form(parse_qml_address(qml_name)) == plain
+        assert form(parse_qml_address(qml_name, accept_id=True)) == with_id
+        try:
+            mint_qml_link(DOCUMENT_ID, qml_name, version_id=DOCUMENT_ID, secret="table")
+            minted = True
+        except ValueError:
+            minted = False
+        assert minted is signed_link
+
+    def test_the_id_form_carries_the_id_and_no_project(self):
+        address = parse_qml_address(QUESTIONNAIRE_ID, accept_id=True)
+
+        assert address.project_id is None
+        assert address.questionnaire_id == QUESTIONNAIRE_ID
+
 
 @pytest.mark.integration
 class TestRepositoryQMLSource:
@@ -341,6 +398,20 @@ class TestRepositoryQMLSource:
         source = RepositoryQMLSource(repo)
 
         assert source.read(canonical_qml_rel_path(PROJECT_ID, QUESTIONNAIRE_ID)) == HEAD_QML
+
+    def test_a_named_version_resolves_that_versions_content_not_head(self, repo):
+        """A signed QML download serves the version its link names (#1547)."""
+        source = RepositoryQMLSource(repo)
+        name = canonical_qml_rel_path(PROJECT_ID, QUESTIONNAIRE_ID)
+
+        assert source.read_version(name, "v1") == PINNED_QML
+        assert source.read(name) == HEAD_QML
+
+    def test_a_version_that_does_not_exist_is_missing(self, repo):
+        with pytest.raises(QMLDocumentMissingError):
+            RepositoryQMLSource(repo).read_version(
+                canonical_qml_rel_path(PROJECT_ID, QUESTIONNAIRE_ID), "v-gone"
+            )
 
     def test_non_canonical_name_is_refused(self, repo):
         with pytest.raises(QMLDocumentMissingError):
@@ -437,14 +508,6 @@ class TestFlowBlueprintServesPinnedVersion:
         assert response.status_code == 200
         assert response.get_json()["title"] == "Pinned question"
 
-    def test_ad_hoc_survey_gets_head(self, repo):
-        client = self._client(repo, _FakeSurvey(campaign_id=None))
-
-        response = client.get("/api/flow/current-item?survey_id=survey-1")
-
-        assert response.status_code == 200
-        assert response.get_json()["title"] == "Head question"
-
     def test_preview_reset_picks_up_a_moved_head(self, repo):
         """#534: a preview is a walk of an instrument someone is editing.
 
@@ -507,3 +570,35 @@ class TestFlowBlueprintServesPinnedVersion:
         first_item = survey.qml_state.get_item("q_first")
         assert first_item.get("outcome") is None
         assert not first_item.get("visited")
+
+
+class TestTheQmlDirectoryIsABoundary:
+    """``qml_dir`` bounds what a name can read.
+
+    ``Path.__truediv__`` discards the left operand when the right one is
+    absolute, so an unchecked join reached the whole filesystem and answered a
+    name that exists differently from one that does not (#772).
+    """
+
+    @pytest.mark.parametrize(
+        "name",
+        [
+            "/etc/hostname",
+            "../../../../etc/hostname",
+            "../other-user/private.qml",
+        ],
+    )
+    def test_a_name_that_escapes_the_directory_is_refused(self, tmp_path, name):
+        (tmp_path / "ok.qml").write_text("questionnaire:\n  title: T\n  blocks: []\n", encoding="utf-8")
+        loader = QMLLoader(qml_dir=str(tmp_path), schema_path=None)
+
+        with pytest.raises(ValueError, match="outside the QML directory"):
+            loader.load_from_file(name)
+
+    def test_a_name_that_normalises_back_inside_still_loads(self, tmp_path):
+        """The check must bound the RESOLVED path, not ban the characters."""
+        (tmp_path / "ok.qml").write_text("questionnaire:\n  title: T\n  blocks: []\n", encoding="utf-8")
+        loader = QMLLoader(qml_dir=str(tmp_path), schema_path=None)
+        # The loader unwraps the questionnaire: root key, so the title is
+        # top-level in what it returns.
+        assert loader.load_from_file("sub/../ok.qml")["title"] == "T"

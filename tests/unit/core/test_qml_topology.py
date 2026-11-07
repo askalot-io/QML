@@ -34,6 +34,13 @@ This test suite verifies the QMLTopology class which handles:
 - Order respects all dependencies
 - Fallback when cycles exist
 
+### Accumulators are read in file order (#1891, D91)
+- The article's block counter (3 and 6 items) and item-level counter gates
+  are no cycle; a reader depends only on the writers before it
+- A counter read only after its writers keeps its dependencies
+- A cycle through answers, or through variables only the other item writes, is still a cycle
+- A later writer waits for an earlier reader (ordering edge)
+
 ### Dependency Analysis (3 tests)
 - Connected components identification
 - Dependency layers grouping
@@ -50,6 +57,8 @@ import pytest
 from askalot_qml.core.qml_topology import QMLTopology
 from askalot_qml.models.qml_state import QMLState
 from askalot_qml.z3.static_builder import StaticBuilder
+
+from tests.helpers.block_counter import NO_YES, counter_questionnaire
 
 
 def create_questionnaire(items_data: list, code_init: str = "") -> QMLState:
@@ -555,6 +564,127 @@ class TestQMLTopologyTransitiveDependencies(unittest.TestCase):
         # q3 must come after both q1 and q2
         self.assertLess(order.index("q1"), order.index("q3"))
         self.assertLess(order.index("q2"), order.index("q3"))
+
+
+def _topology(state: QMLState) -> QMLTopology:
+    return QMLTopology(state, StaticBuilder(state))
+
+
+@pytest.mark.unit
+@pytest.mark.topology
+class TestAccumulatorIsNotACycle(unittest.TestCase):
+    """A variable written by items and read by their (block's) preconditions is
+    an accumulator, read in file order (#1891, D91): a reader depends on the
+    writers before it in the file, so the article's counter is no cycle, and
+    the walk asks its items in file order. A cycle through answers stays one."""
+
+    def test_the_article_counter_is_no_cycle(self):
+        for count in (3, 6):
+            with self.subTest(count=count):
+                topology = _topology(counter_questionnaire(count))
+
+                self.assertFalse(topology.has_cycles, topology.get_cycles())
+                self.assertEqual(topology.get_topological_order(), [f"q{n}" for n in range(1, count + 1)])
+
+    def test_a_reader_depends_on_the_writers_before_it_only(self):
+        dependencies = _topology(counter_questionnaire(6)).get_dependency_chains()
+
+        self.assertEqual(dependencies["q1"], set())
+        self.assertEqual(dependencies["q4"], {"q1", "q2", "q3"})
+
+    def test_item_level_counter_gates_are_no_cycle(self):
+        topology = _topology(counter_questionnaire(6, block_gate=None, item_gate_from=4))
+
+        self.assertFalse(topology.has_cycles, topology.get_cycles())
+        self.assertEqual(topology.get_dependency_chains()["q4"], {"q1", "q2", "q3"})
+
+    def test_a_counter_read_only_after_its_writers_keeps_its_dependencies(self):
+        state = counter_questionnaire(
+            3,
+            block_gate=None,
+            extra_blocks=[{"id": "b2", "title": "Follow-up", "precondition": [{"predicate": "negative_count >= 3"}]}],
+            extra_items=[{"id": "q_why", "blockId": "b2", "kind": "Question", "title": "Why?", "input": NO_YES}],
+        )
+        builder = StaticBuilder(state)
+
+        self.assertEqual(builder.accumulator_variables(), set())
+        self.assertEqual(builder.get_item_dependencies()["q_why"], {"q1", "q2", "q3"})
+
+    def test_a_cycle_through_answers_is_still_a_cycle(self):
+        state = create_questionnaire(
+            [
+                {"id": "a", "input": NO_YES, "precondition": [{"predicate": "b.outcome == 1"}]},
+                {"id": "b", "input": NO_YES, "precondition": [{"predicate": "a.outcome == 1"}]},
+            ]
+        )
+
+        self.assertTrue(_topology(state).has_cycles)
+
+    def test_a_copy_of_the_counter_sees_it_where_it_was_copied(self):
+        """``w`` copies the counter after q1 and q2; q4 counts after ``w``. A
+        gate reading the copy depends on what ``w`` saw, not on q4."""
+        state = counter_questionnaire(
+            2,
+            extra_blocks=[{"id": "b2", "title": "Later"}],
+            extra_items=[
+                {"id": "w", "blockId": "b2", "kind": "Question", "title": "W", "input": NO_YES,
+                 "codeBlock": "snapshot = negative_count"},
+                {"id": "q4", "blockId": "b2", "kind": "Question", "title": "Q4", "input": NO_YES,
+                 "precondition": [{"predicate": "negative_count < 3"}],
+                 "codeBlock": "negative_count = negative_count + 1"},
+                {"id": "r", "blockId": "b2", "kind": "Question", "title": "R", "input": NO_YES,
+                 "precondition": [{"predicate": "snapshot >= 1"}]},
+            ],
+        )
+
+        self.assertEqual(StaticBuilder(state).get_item_dependencies()["r"], {"w", "q1", "q2"})
+
+    def test_a_self_reading_writer_with_no_cycle_keeps_dependency_order(self):
+        """q1 reads and writes ``x``, q2 sets it later, nothing waits for q1:
+        no cycle, so the walk still asks q2 first, as it did before #1891."""
+        state = create_questionnaire(
+            [
+                {"id": "q1", "input": NO_YES, "precondition": [{"predicate": "x < 3"}], "codeBlock": "x = x + 1"},
+                {"id": "q2", "input": NO_YES, "codeBlock": "x = 10"},
+            ],
+            code_init="x = 0",
+        )
+        builder = StaticBuilder(state)
+
+        self.assertEqual(builder.accumulator_variables(), set())
+        self.assertEqual(builder.topology.get_topological_order(), ["q2", "q1"])
+
+    def test_items_gated_on_what_only_the_other_writes_are_still_a_cycle(self):
+        """Neither item reads what it writes, so neither variable is an accumulator."""
+        state = create_questionnaire(
+            [
+                {"id": "a", "input": NO_YES, "precondition": [{"predicate": "pb == 1"}], "codeBlock": "pa = 1"},
+                {"id": "b", "input": NO_YES, "precondition": [{"predicate": "pa == 1"}], "codeBlock": "pb = 1"},
+            ],
+            code_init="pa = 0\npb = 0",
+        )
+
+        self.assertTrue(_topology(state).has_cycles)
+
+    def test_a_later_writer_waits_for_an_earlier_reader(self):
+        """An unrelated dependency must not let the walk ask a later writer of
+        the counter before an earlier reader: the reader would then see an
+        update D91 says it does not."""
+        state = counter_questionnaire(
+            2,
+            extra_blocks=[{"id": "b2", "title": "Unrelated"}],
+            extra_items=[
+                {"id": "q_reset", "blockId": "b2", "kind": "Question", "title": "Reset", "input": NO_YES,
+                 "codeBlock": "negative_count = 0\n"},
+                {"id": "q_z", "blockId": "b2", "kind": "Question", "title": "Z", "input": NO_YES},
+            ],
+        )
+        state.get_item("q1")["precondition"] = [{"predicate": "q_z.outcome is not None"}]
+        topology = _topology(state)
+        order = topology.get_topological_order()
+
+        self.assertFalse(topology.has_cycles, topology.get_cycles())
+        self.assertLess(order.index("q1"), order.index("q_reset"))
 
 
 if __name__ == "__main__":

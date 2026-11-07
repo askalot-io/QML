@@ -19,9 +19,18 @@ import logging
 from dataclasses import dataclass
 from typing import Any
 
-from z3 import Solver, sat, unsat
+from z3 import Solver, is_true, sat, unsat
 
 from askalot_qml.z3.static_builder import StaticBuilder
+
+
+def _witness_value(model: Any, expr: Any) -> int | str:
+    """A model's value for one variable: its integer, else its printed form."""
+    value = model.eval(expr, model_completion=True)
+    try:
+        return value.as_long()
+    except (AttributeError, ValueError):
+        return str(value)
 
 
 @dataclass
@@ -130,21 +139,56 @@ class GlobalFormula:
         """
         witness = {}
 
-        # Extract item outcome values
+        def chosen(choice: Any) -> bool:
+            return choice is not None and is_true(model.eval(choice, model_completion=True))
+
+        def none_answer(item_id: str) -> bool:
+            # Skipped (#1769) or shown and left blank (#1784): the item reads None.
+            return chosen(self.builder.skip_choice(item_id)) or chosen(self.builder.blank_choice(item_id))
+
+        def answer(item_id: str, cells: dict, *index: int) -> Any:
+            # One answer of a list: None where its slot read as unanswered
+            # (#184, #1780), a Range answer as its [low, high] pair.
+            if chosen(self.builder.slot_choice(item_id, *index)):
+                return None
+            if index in cells:
+                return _witness_value(model, cells[index])
+            return [_witness_value(model, cells[(*index, end)]) for end in (0, 1)]
+
         for item_id, z3_var in self.builder.item_vars.items():
-            value = model.eval(z3_var, model_completion=True)
-            try:
-                witness[f"{item_id}.outcome"] = value.as_long()
-            except (AttributeError, ValueError):
-                witness[f"{item_id}.outcome"] = str(value)
+            witness[f"{item_id}.outcome"] = None if none_answer(item_id) else _witness_value(model, z3_var)
+
+        # A Range Question's outcome is its [low, high] pair (#1474).
+        for item_id, pair in self.builder.item_pairs.items():
+            witness[f"{item_id}.outcome"] = (
+                None if none_answer(item_id) else [_witness_value(model, end) for end in pair]
+            )
+
+        # A QuestionGroup's outcome is its list of answers (#184), a matrix's
+        # its rows of cells (#1780).
+        for item_id in self.builder.question_groups:
+            details = self.builder.item_details[item_id]
+            cells = self.builder.item_cells[item_id]
+            witness[f"{item_id}.outcome"] = (
+                None
+                if none_answer(item_id)
+                else [answer(item_id, cells, i) for i in range(details["questions_len"])]
+            )
+        for item_id in self.builder.matrices:
+            details = self.builder.item_details[item_id]
+            cells = self.builder.item_cells[item_id]
+            witness[f"{item_id}.outcome"] = (
+                None
+                if none_answer(item_id)
+                else [
+                    [answer(item_id, cells, r, c) for c in range(details["cols_len"])]
+                    for r in range(details["rows_len"])
+                ]
+            )
 
         # Extract SSA variable values
         for var_name, z3_var in self.builder.z3_vars.items():
-            value = model.eval(z3_var, model_completion=True)
-            try:
-                witness[var_name] = value.as_long()
-            except (AttributeError, ValueError):
-                witness[var_name] = str(value)
+            witness[var_name] = _witness_value(model, z3_var)
 
         return witness
 

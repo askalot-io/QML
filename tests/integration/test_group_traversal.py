@@ -33,6 +33,9 @@ Architecture under test:
   drawn-and-answered item is EVICTED (absent from history AND outcome cleared).
 - AE14: all preconditions false → empty draw, block skipped, recap preserved.
 - AE15: false block-level precondition → whole block absent.
+- Block guard (#1971): an uncapped Group's block precondition alone gates
+  every item, composes with an item's own residual, and skips or admits a
+  whole Roster.
 - AE19: benign backward nav (no precondition change) preserves all answers
   (the eviction clear must NOT fire on an unchanged draw).
 - Projection: a cross-block dependency makes the Group's items NON-CONTIGUOUS
@@ -49,6 +52,17 @@ Architecture under test:
 - T4 (backward-nav clears group_asked): driving the FlowProcessor backward out
   of an incomplete capped-Group pass clears has_group_pass() so re-entry
   re-derives eligibility (the Group analogue of the retired Sample test).
+- Cap refusal (#1809): once the draw is full, a navigate-to-item jump to an
+  undrawn member and an API submit to it are refused (`group_cap_reached`;
+  the convenience save ignores it), a drawn member stays answerable (also
+  after Back took it off history), and a
+  forward jump past the Group passes over the undrawn member as the walk does.
+- Off-walk draw (#1845): a member an API submit or a forward jump puts on the
+  path while a slot is free takes that slot, so the walk never asks more than
+  `count`; a backward edit of a drawn member does not draw it again. Such a
+  member keeps its slot across Back out of the pass and an unchanged
+  re-answer (re-presented pre-filled, the first eligible member never asked),
+  and a backward edit that flips its own gate still evicts it.
 
 All tests drive the FlowProcessor through the shared
 ``tests/helpers/flow_walker.walk_and_answer`` driver (no per-file walker).
@@ -58,10 +72,18 @@ Where the Sample suite asserted "one of T! orderings" the Group suite asserts
 
 import unittest
 
+from askalot_qml.api import flow_service
+from askalot_qml.api.flow_service import FlowOutcome
 from askalot_qml.core.flow_processor import FlowProcessor
 from askalot_qml.core.qml_loader import QMLLoader
-from askalot_qml.models.qml_state import SOURCE_RESPONDENT, QMLState
+from askalot_qml.models.qml_state import (
+    CHANNEL_WEB,
+    SOURCE_RESPONDENT,
+    SOURCE_SYNTHETIC,
+    QMLState,
+)
 
+from tests.helpers.flow_walker import NavigationWalk
 from tests.helpers.flow_walker import walk_and_answer as _walk_and_answer
 
 
@@ -773,6 +795,94 @@ class TestAE15BlockPreconditionFalse(unittest.TestCase):
 
 
 # ---------------------------------------------------------------------------
+# Block guard (#1971) — a block precondition gates EVERY item of the block
+# ---------------------------------------------------------------------------
+
+# The branching idiom the authoring guidance teaches: a run of items sharing
+# one guard sits in its own block carrying it, with no copy on the items. The
+# second item adds an item-specific residual on top of the block guard. The
+# Roster block carries a guard too, which skips or admits the whole loop.
+QML_BLOCK_GUARD = """
+qmlVersion: "2.0"
+questionnaire:
+  title: "Block guard gates every item"
+  blocks:
+    - id: b_screen
+      items:
+        - id: q_adult
+          kind: Question
+          title: "Adult?"
+          input: {control: Switch}
+        - id: q_meals
+          kind: Question
+          title: "Meals?"
+          input:
+            control: Checkbox
+            labels: {1: "Breakfast", 2: "Lunch"}
+    - id: b_adult
+      precondition:
+        - predicate: "q_adult.outcome == 1"
+      items:
+        - id: q_a
+          kind: Question
+          title: "A?"
+          input: {control: Slider, min: 0, max: 10}
+        - id: q_b
+          kind: Question
+          title: "B?"
+          input: {control: Slider, min: 0, max: 10}
+        - id: q_c
+          kind: Question
+          title: "C?"
+          precondition:
+            - predicate: "q_b.outcome > 5"
+          input: {control: Slider, min: 0, max: 10}
+    - id: b_meals
+      kind: Roster
+      iterateOver: q_meals.outcome
+      labels: {1: "Breakfast", 2: "Lunch"}
+      precondition:
+        - predicate: "q_adult.outcome == 1"
+      items:
+        - id: q_rate
+          kind: Question
+          title: "Rate the meal"
+          input: {control: Slider, min: 0, max: 10}
+    - id: b_tail
+      items:
+        - id: q_tail
+          kind: Question
+          title: "Tail?"
+          input: {control: Switch}
+"""
+
+
+class TestBlockGuardGatesEveryItem(unittest.TestCase):
+    """A block-level precondition alone gates every item of an uncapped Group
+    and a whole Roster; an item precondition adds only its own residual."""
+
+    def test_false_guard_hides_every_item_and_the_roster(self):
+        processor, state = _load(QML_BLOCK_GUARD)
+        walked = _walk_and_answer(processor, state, {"q_adult": 0, "q_meals": 3, "q_tail": 1})
+        self.assertEqual(walked, ["q_adult", "q_meals", "q_tail"])
+        for iid in ("q_a", "q_b", "q_c", "q_rate"):
+            self.assertIsNone(state.get_item(iid).get("outcome"))
+            self.assertNotIn(iid, state.get_history())
+
+    def test_true_guard_asks_every_item_and_iterates_the_roster(self):
+        processor, state = _load(QML_BLOCK_GUARD)
+        answers = {"q_adult": 1, "q_meals": 3, "q_a": 1, "q_b": 9, "q_c": 2, "q_rate": 5, "q_tail": 1}
+        walked = _walk_and_answer(processor, state, answers)
+        self.assertEqual(walked, ["q_adult", "q_meals", "q_a", "q_b", "q_c", "q_rate", "q_rate", "q_tail"])
+
+    def test_item_residual_composes_with_the_block_guard(self):
+        processor, state = _load(QML_BLOCK_GUARD)
+        answers = {"q_adult": 1, "q_meals": 0, "q_a": 1, "q_b": 2, "q_tail": 1}
+        walked = _walk_and_answer(processor, state, answers)
+        self.assertEqual(walked, ["q_adult", "q_meals", "q_a", "q_b", "q_tail"])
+
+
+# ---------------------------------------------------------------------------
 # Projection (NOT positional slice) — non-contiguous Group items
 # ---------------------------------------------------------------------------
 
@@ -944,6 +1054,253 @@ class TestBackwardNavClearsGroupAsked(unittest.TestCase):
             state.has_group_pass(block_id),
             "group_asked must be re-populated after forward re-entry",
         )
+
+
+
+QML_CAP_ONE = """
+qmlVersion: "2.0"
+questionnaire:
+  title: "count: 1 over three eligible members"
+  blocks:
+    - id: pick
+      kind: Group
+      count: 1
+      items:
+        - {id: m1, kind: Question, title: "M1?", input: {control: Slider, min: 0, max: 10}}
+        - {id: m2, kind: Question, title: "M2?", input: {control: Slider, min: 0, max: 10}}
+        - {id: m3, kind: Question, title: "M3?", input: {control: Slider, min: 0, max: 10}}
+    - id: outro
+      items:
+        - {id: q_end, kind: Question, title: "End?", input: {control: Switch}}
+"""
+
+
+class TestCapRefusesUndrawnMembers(unittest.TestCase):
+    """A member the full draw left out is absent, not answered (#1809): with
+    `count: 1` and m1 asked, neither a navigate-to-item jump nor an API submit
+    can record m2, while m1, already drawn, stays answerable. A member that
+    joins the path off the walk while a slot is free takes it (#1845)."""
+
+    def _after_m1(self) -> tuple[FlowProcessor, QMLState]:
+        processor, state = _load(QML_CAP_ONE)
+        self.assertEqual(processor.get_current_item(state)["id"], "m1")
+        processor.process_item(state, "m1", 4, source=SOURCE_RESPONDENT)
+        return processor, state
+
+    def _jump(self, state: QMLState, target: str):
+        return flow_service.compute_navigate_to_item(
+            NavigationWalk(state), None, target_item_id=target, source=SOURCE_RESPONDENT,
+            channel=CHANNEL_WEB, external_input_resolver=None,
+        )
+
+    def test_a_jump_to_an_undrawn_member_is_refused(self):
+        _, state = self._after_m1()
+
+        step = self._jump(state, "m2")
+
+        self.assertIs(step.outcome, FlowOutcome.NAVIGATION_REFUSED)
+        self.assertNotIn("m2", state.get_history())
+
+    def test_a_submit_to_an_undrawn_member_is_refused_and_leaves_the_walk_untouched(self):
+        processor, state = self._after_m1()
+        history = list(state.get_history())
+        events = len(state.get_timing_events())
+
+        result = processor.process_item(state, "m2", 5, source=SOURCE_SYNTHETIC)
+
+        self.assertFalse(result["success"])
+        self.assertEqual(result["reason"], "group_cap_reached")
+        self.assertNotIn("5", result["message"])
+        self.assertIsNone(state.get_item("m2")["outcome"])
+        self.assertEqual(list(state.get_history()), history)
+        self.assertEqual(len(state.get_timing_events()), events)
+        self.assertEqual(state.get_group_asked("pick"), ["m1"])
+
+    def test_the_convenience_save_ignores_an_undrawn_member(self):
+        processor, state = self._after_m1()
+
+        ignored = processor.process_item(
+            state, "m2", 5, source=SOURCE_RESPONDENT, skip_postcondition=True
+        )
+
+        self.assertEqual(ignored, {"success": True, "ignored": "group_cap_reached"})
+        self.assertIsNone(state.get_item("m2")["outcome"])
+
+    def test_the_drawn_member_stays_answerable(self):
+        processor, state = self._after_m1()
+
+        result = processor.process_item(state, "m1", 6, source=SOURCE_RESPONDENT)
+
+        self.assertTrue(result["success"], result)
+        self.assertEqual(state.get_item("m1")["outcome"], 6)
+
+    def test_a_drawn_member_stepped_back_off_the_path_stays_answerable(self):
+        """With `count: 2`, Back from m2 takes it off history but not out of
+        the draw, so an answer to it is a backward edit, not an undrawn one."""
+        processor, state = _load(QML_CAP_ONE.replace("count: 1", "count: 2"))
+        processor.get_current_item(state)
+        processor.process_item(state, "m1", 4, source=SOURCE_RESPONDENT)
+        self.assertEqual(processor.get_current_item(state)["id"], "m2")
+        self.assertEqual(processor.get_current_item(state, backward=True)["id"], "m1")
+        self.assertEqual(state.get_group_asked("pick"), ["m1", "m2"])
+
+        result = processor.process_item(state, "m2", 5, source=SOURCE_SYNTHETIC)
+
+        self.assertTrue(result["success"], result)
+        self.assertEqual(state.get_item("m2")["outcome"], 5)
+
+    def test_a_jump_past_the_group_passes_over_the_undrawn_member(self):
+        """The walk itself skips m2, so a forward jump to q_end is not held
+        up by it."""
+        _, state = self._after_m1()
+
+        step = self._jump(state, "q_end")
+
+        self.assertIs(step.outcome, FlowOutcome.ITEM)
+        self.assertEqual(state.get_history(), ["m1", "q_end"])
+
+    def test_a_member_accepted_off_the_walk_takes_a_slot(self):
+        """With `count: 2`, an API submit to m3 while a slot is free draws m3
+        (#1845): the walk then finds the cap full and never asks m2."""
+        processor, state = _load(QML_CAP_ONE.replace("count: 1", "count: 2"))
+        processor.get_current_item(state)
+        processor.process_item(state, "m1", 4, source=SOURCE_RESPONDENT)
+
+        result = processor.process_item(state, "m3", 5, source=SOURCE_SYNTHETIC)
+
+        self.assertTrue(result["success"], result)
+        self.assertEqual(state.get_group_asked("pick"), ["m1", "m3"])
+        _walk_and_answer(processor, state, {"q_end": True})
+        self.assertEqual(state.get_history(), ["m1", "m3", "q_end"])
+        self.assertIsNone(state.get_item("m2")["outcome"])
+
+    def test_a_backward_edit_of_a_drawn_member_does_not_draw_it_twice(self):
+        """With a slot still free (`count: 3`), re-answering m1, which the
+        walk drew, leaves the draw as it was."""
+        processor, state = _load(QML_CAP_ONE.replace("count: 1", "count: 3"))
+        processor.get_current_item(state)
+        processor.process_item(state, "m1", 4, source=SOURCE_RESPONDENT)
+        processor.process_item(state, "m3", 5, source=SOURCE_SYNTHETIC)
+
+        result = processor.process_item(state, "m1", 6, source=SOURCE_SYNTHETIC)
+
+        self.assertTrue(result["success"], result)
+        self.assertEqual(state.get_group_asked("pick"), ["m1", "m3"])
+
+    def test_a_member_a_forward_jump_puts_on_the_path_takes_a_slot(self):
+        """With `count: 1` and m1 gated out, a jump to m2 while the slot is
+        free draws m2 (#1845): the walk then never asks m3."""
+        processor, state = _load(QML_CAP_ONE_GATED_FIRST)
+        processor.get_current_item(state)
+        processor.process_item(state, "q_start", False, source=SOURCE_RESPONDENT)
+
+        step = self._jump(state, "m2")
+
+        self.assertIs(step.outcome, FlowOutcome.ITEM)
+        self.assertEqual(state.get_group_asked("pick"), ["m2"])
+        processor.process_item(state, "m2", 3, source=SOURCE_RESPONDENT)
+        _walk_and_answer(processor, state, {"q_end": True})
+        self.assertEqual(state.get_history(), ["q_start", "m2", "q_end"])
+        self.assertIsNone(state.get_item("m3")["outcome"])
+
+
+QML_CAP_ONE_GATED_FIRST = """
+qmlVersion: "2.0"
+questionnaire:
+  title: "count: 1 whose first member is gated out"
+  blocks:
+    - id: intro
+      items:
+        - {id: q_start, kind: Question, title: "Start?", input: {control: Switch}}
+    - id: pick
+      kind: Group
+      count: 1
+      items:
+        - id: m1
+          kind: Question
+          title: "M1?"
+          precondition: [{predicate: "q_start.outcome == 1"}]
+          input: {control: Slider, min: 0, max: 10}
+        - {id: m2, kind: Question, title: "M2?", input: {control: Slider, min: 0, max: 10}}
+        - {id: m3, kind: Question, title: "M3?", input: {control: Slider, min: 0, max: 10}}
+    - id: outro
+      items:
+        - {id: q_end, kind: Question, title: "End?", input: {control: Switch}}
+"""
+
+# count: 1 over two eligible members, the second gated on the intro switch:
+# with q_start on both are eligible and the walk alone would draw m1.
+QML_CAP_ONE_GATED_SECOND = """
+qmlVersion: "2.0"
+questionnaire:
+  title: "count: 1 whose second member is gated"
+  blocks:
+    - id: intro
+      items:
+        - {id: q_start, kind: Question, title: "Start?", input: {control: Switch}}
+    - id: pick
+      kind: Group
+      count: 1
+      items:
+        - {id: m1, kind: Question, title: "M1?", input: {control: Slider, min: 0, max: 10}}
+        - id: m2
+          kind: Question
+          title: "M2?"
+          precondition: [{predicate: "q_start.outcome == 1"}]
+          input: {control: Slider, min: 0, max: 10}
+    - id: outro
+      items:
+        - {id: q_end, kind: Question, title: "End?", input: {control: Switch}}
+"""
+
+
+class TestOffWalkDrawSurvivesReentry(unittest.TestCase):
+    """A member accepted off the walk keeps its slot across a re-entry of the
+    Group's pass while its gate holds (#1845 follow-up): Back out of the pass
+    and an unchanged re-answer re-present it, pre-filled, rather than drawing
+    the first eligible member and evicting the accepted answer. A backward
+    edit that flips its own gate still evicts it."""
+
+    def _m2_accepted_then_back_to_intro(self) -> tuple[FlowProcessor, QMLState]:
+        processor, state = _load(QML_CAP_ONE_GATED_SECOND)
+        self.assertEqual(processor.get_current_item(state)["id"], "q_start")
+        processor.process_item(state, "q_start", True, source=SOURCE_RESPONDENT)
+        result = processor.process_item(state, "m2", 7, source=SOURCE_SYNTHETIC)
+        self.assertTrue(result["success"], result)
+        self.assertEqual(state.get_group_asked("pick"), ["m2"])
+        self.assertEqual(processor.get_current_item(state, backward=True)["id"], "q_start")
+        self.assertFalse(state.has_group_pass("pick"))
+        return processor, state
+
+    def test_an_unchanged_reanswer_re_presents_the_accepted_member(self):
+        processor, state = self._m2_accepted_then_back_to_intro()
+        m2_events = len(state.get_timing_events_for_item("m2"))
+
+        processor.process_item(state, "q_start", True, source=SOURCE_RESPONDENT)
+        presented = processor.get_current_item(state)
+
+        self.assertEqual(presented["id"], "m2")
+        self.assertEqual(presented["outcome"], 7)
+        processor.process_item(state, "m2", 7, source=SOURCE_RESPONDENT)
+        walked = _walk_and_answer(processor, state, {"q_end": True})
+        self.assertEqual(walked, ["q_end"])
+        self.assertEqual(state.get_history(), ["q_start", "m2", "q_end"])
+        self.assertEqual(state.get_item("m2")["outcome"], 7)
+        self.assertGreaterEqual(len(state.get_timing_events_for_item("m2")), m2_events)
+        self.assertIsNone(state.get_item("m1")["outcome"])
+        self.assertEqual(state.get_timing_events_for_item("m1"), [])
+
+    def test_a_backward_edit_flipping_its_gate_still_evicts_it(self):
+        processor, state = self._m2_accepted_then_back_to_intro()
+
+        processor.process_item(state, "q_start", False, source=SOURCE_RESPONDENT)
+        walked = _walk_and_answer(processor, state, {"m1": 3, "q_end": True})
+
+        self.assertEqual(walked, ["m1", "q_end"])
+        self.assertEqual(state.get_history(), ["q_start", "m1", "q_end"])
+        self.assertIsNone(state.get_item("m2")["outcome"])
+        self.assertEqual(state.get_timing_events_for_item("m2"), [])
+        self.assertNotIn("_group_asked", state.get_item("m2"))
 
 
 if __name__ == "__main__":

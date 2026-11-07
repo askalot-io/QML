@@ -61,6 +61,12 @@ Tests cover:
 These unit tests drive the real `PythonRunner` with no mocks. Sources are held as
 plain strings so this file parses on 3.12, where the syntax it exercises does not
 yet exist.
+
+QML arithmetic is whole numbers (#1813): the sandbox refuses every construct
+that can produce a fraction (`/`, a float literal, `float()`, a negative power,
+a float-valued module member), in a codeBlock and in a condition, so the
+runtime computes only what the Z3 model, which holds every value as an Int, can
+represent; `//`, `%`, `round()`, `int()` and `math.floor` keep running.
 """
 
 from __future__ import annotations
@@ -73,6 +79,7 @@ import types
 
 import pytest
 from askalot_qml.core.python_runner import CodeExecutionError, PythonRunner
+from askalot_qml.models.item_proxy import ItemProxy
 
 # 3.14 is the first interpreter that parses either construct. Below it the
 # parser refuses them, which is the equivalence this module exists to preserve.
@@ -367,19 +374,19 @@ class TestTheModuleSurfaceIsDeclaredHere:
     @pytest.mark.parametrize(
         ("source", "refused"),
         [
-            ("x = math.floor(3.7)", False),
-            ("x = statistics.mean([1, 2, 3])", False),
+            ("x = math.floor(7)", False),
+            ("x = statistics.median_low([1, 2, 3])", False),
             ("x = random.randint(1, 6)", False),
             ("x = len(list(itertools.combinations([1, 2, 3], 2)))", False),
             ("x = random.main(['--zz'])", True),
             ("x = functools.MethodType", True),
             ("x = collections.abc", True),
             ("x = statistics.Decimal('1')", True),
-            ("x = math.fma(1.0, 2.0, 3.0)", True),
+            ("x = math.fma(1, 2, 3)", True),
             ("x = itertools.cycle([1, 2])", True),
         ],
         ids=[
-            "math.floor", "statistics.mean", "random.randint", "itertools.combinations",
+            "math.floor", "statistics.median_low", "random.randint", "itertools.combinations",
             "random.main", "functools.MethodType", "collections.abc",
             "statistics.Decimal", "math.fma", "itertools.cycle",
         ],
@@ -421,8 +428,8 @@ class TestAnnotatedAssignmentStaysPersistable:
 
     @pytest.mark.parametrize(
         "source",
-        ['label: str = "years"', "count: int = 0", "ratio: float = 1.5"],
-        ids=["str", "int", "float"],
+        ['label: str = "years"', "count: int = 0", "items: list = [1, 2]"],
+        ids=["str", "int", "list"],
     )
     def test_an_annotated_assignment_leaves_a_serializable_environment(
         self, runner: PythonRunner, source: str
@@ -446,3 +453,107 @@ class TestAnnotatedAssignmentStaysPersistable:
         env = runner.run_code("count: int = 0")
 
         assert not [k for k in env if k.startswith("__") and k != "__output__"]
+
+
+@pytest.mark.unit
+class TestWholeNumberArithmetic:
+    """#1813: QML arithmetic is whole numbers. The sandbox refuses every
+    construct that can produce a fraction, in a codeBlock and in a condition,
+    and names the whole-number rewrite; whole-number forms still run."""
+
+    FRACTIONAL = {
+        "true division": "x = 7 / 2",
+        "augmented division": "x = 7\nx /= 2",
+        "float literal": "x = 0.5",
+        "complex literal": "x = 2j",
+        "float()": "x = float(3)",
+        "complex()": "x = complex(3)",
+        "negative power": "x = 2 ** -1",
+        "augmented negative power": "x = 2\nx **= -1",
+        "two-argument pow": "x = pow(2, -1)",
+        "keyword pow": "x = pow(base=2, exp=-1)",
+        "pow with a None modulus": "x = pow(2, -1, None)",
+        "unary plus over a negative power": "x = 2 ** +-1",
+        "negated variable power": "n = 1\nx = 2 ** -n",
+        "inverted power": "x = 2 ** ~0",
+        "pow passed on": "x = functools.reduce(pow, [2, -1])",
+        "float passed on": "x = list(map(float, ['1']))[0]",
+        "float aliased": "f = float\nx = f(1)",
+        "math.sqrt": "x = math.sqrt(4)",
+        "math.pi": "x = math.pi",
+        "statistics.mean": "x = statistics.mean([1, 2])",
+        "random.random": "x = random.random()",
+    }
+    WHOLE = [
+        "x = 7 // 2",
+        "x = 7 % 2",
+        "x = 2 ** 3",
+        "x = pow(2, -1, 5)",
+        "x = pow(2, exp=-1, mod=5)",
+        "x = pow(2, 3)",
+        "count = 3\nx = 2 ** count",
+        "x = round(7)",
+        "x = int('7')",
+        "x = math.floor(7)",
+        "x = random.randint(1, 6)",
+        "x = statistics.median_low([1, 2, 3])",
+    ]
+
+    @pytest.mark.parametrize("source", list(FRACTIONAL.values()), ids=list(FRACTIONAL))
+    def test_a_construct_that_makes_a_fraction_is_refused(self, runner: PythonRunner, source: str) -> None:
+        problem = runner.validate_code(source)
+        assert problem is not None and problem.startswith("QML arithmetic is whole numbers"), problem
+        assert "'//'" in problem
+
+    def test_a_condition_is_judged_by_the_same_rule(self, runner: PythonRunner) -> None:
+        assert runner.validate_expr("q.outcome / 2 > 1") is not None
+        assert runner.validate_expr("q.outcome // 2 > 1") is None
+        with pytest.raises(ValueError, match="whole numbers"):
+            runner.eval_expr("7 / 2 > 3")
+
+    @pytest.mark.parametrize("source", WHOLE)
+    def test_whole_number_forms_run(self, runner: PythonRunner, source: str) -> None:
+        assert runner.validate_code(source) is None
+        assert isinstance(runner.run_code(source)["x"], int)
+
+    def test_a_fraction_computed_at_runtime_fails_the_block(self, runner: PythonRunner) -> None:
+        """``2 ** n`` with a negative ``n`` has no spelling to refuse; what the
+        block leaves behind is checked, and the fractional variable is dropped
+        so it never becomes survey state."""
+        with pytest.raises(CodeExecutionError, match="whole numbers: 'x'") as caught:
+            runner.run_code("n = -1\nx = 2 ** n\nkept = 3")
+        assert "x" not in caught.value.local_env
+        assert caught.value.local_env["kept"] == 3
+
+    def test_a_fraction_written_into_an_outcome_in_place_fails_the_block(self, runner: PythonRunner) -> None:
+        m = ItemProxy(
+            {"id": "m", "kind": "MatrixQuestion", "rows": ["a"], "columns": ["b", "c"],
+             "input": {"control": "Slider", "min": 0, "max": 10}, "outcome": [[1, 2]]}
+        )
+        with pytest.raises(CodeExecutionError, match="'m'"):
+            runner.run_code("n = -1\nm.outcome[0][0] = 2 ** n", m=m)
+
+    def test_a_fraction_already_in_the_input_is_not_this_blocks_doing(self, runner: PythonRunner) -> None:
+        env = runner.run_code("y = 1", legacy=0.5)
+        assert env["y"] == 1 and env["legacy"] == 0.5
+
+    def test_a_fractional_value_expression_is_refused(self, runner: PythonRunner) -> None:
+        with pytest.raises(ValueError, match="whole numbers"):
+            runner.eval_value("2 ** n", n=-1)
+        assert runner.eval_value("2 ** n - 1", n=3) == 7
+
+    def test_a_fractional_member_is_not_bound_whatever_the_path(self, runner: PythonRunner) -> None:
+        """Reached through a container, a name the static check cannot follow,
+        ``math.sqrt`` is simply not in the namespace."""
+        with pytest.raises(CodeExecutionError, match="sqrt"):
+            runner.run_code("x = [math][0].sqrt(4)")
+
+    def test_the_sandbox_binds_nothing_that_makes_a_fraction(self, runner: PythonRunner) -> None:
+        """Defence beyond the spelling check: no builtin or module member a
+        fraction comes from is in reach under any name."""
+        from askalot_qml.core.python_runner import _FRACTIONAL_MEMBERS
+
+        assert not {"float", "complex"} & set(runner._safe_builtins)
+        for module, member in _FRACTIONAL_MEMBERS:
+            assert not hasattr(runner._safe_modules[module], member), f"{module}.{member}"
+

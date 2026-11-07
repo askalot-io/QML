@@ -1,0 +1,417 @@
+# Hungarian translations for askalot_qml.
+msgid ""
+msgstr ""
+"Project-Id-Version:  askalot_qml\n"
+"Report-Msgid-Bugs-To: EMAIL@ADDRESS\n"
+"POT-Creation-Date: 2026-11-03 07:08+0100\n"
+"PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
+"Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
+"Language: hu\n"
+"Language-Team: hu <LL@li.org>\n"
+"Plural-Forms: nplurals=2; plural=(n != 1);\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=utf-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Generated-By: Babel 2.18.0\n"
+
+#, python-format
+msgid "%(issue)s (%(item)s)"
+msgstr "%(issue)s (%(item)s)"
+
+#, python-format
+msgid "%(issue)s: %(detail)s"
+msgstr "%(issue)s: %(detail)s"
+
+#, python-format
+msgid "%(num)d more is not listed."
+msgid_plural "%(num)d more are not listed."
+msgstr[0] "További %(num)d nincs felsorolva."
+msgstr[1] "További %(num)d nincs felsorolva."
+
+msgid "A 'none' option that can be ticked with others"
+msgstr "Más válaszokkal együtt is bejelölhető „egyik sem” lehetőség"
+
+#, python-format
+msgid ""
+"A precondition reads answers as never given, because a backward edit took"
+" them off the current path: %(items)s"
+msgstr ""
+"Egy megjelenítési feltétel soha meg nem adottként olvas válaszokat, mert "
+"egy visszalépés utáni módosítás kivette őket a jelenlegi útvonalból: "
+"%(items)s"
+
+#, python-format
+msgid ""
+"An answer check reads answers as never given, because a backward edit "
+"took them off the current path: %(items)s"
+msgstr ""
+"Egy válaszellenőrzés soha meg nem adottként olvas válaszokat, mert egy "
+"visszalépés utáni módosítás kivette őket a jelenlegi útvonalból: "
+"%(items)s"
+
+msgid "Answer check could not be evaluated"
+msgstr "A válaszellenőrzés nem értékelhető ki"
+
+msgid "Answer check reads an answer that is off the path"
+msgstr "A válaszellenőrzés egy útvonalon kívüli választ olvasott"
+
+msgid "Answer check reads an unanswered item"
+msgstr "A válaszellenőrzés egy megválaszolatlan kérdést olvas"
+
+msgid "Answer check repeats the input limits"
+msgstr "A válaszellenőrzés a bevitel korlátait ismétli"
+
+msgid "Answer check that allows only one choice"
+msgstr "Csak egyetlen választást engedő válaszellenőrzés"
+
+msgid "Answer check that always fails"
+msgstr "Mindig sikertelen válaszellenőrzés"
+
+msgid "Answer check that every answer passes"
+msgstr "Válaszellenőrzés, amelyen minden válasz átmegy"
+
+msgid "Answer check that no answer can pass"
+msgstr "Válaszellenőrzés, amelyen egyetlen válasz sem mehet át"
+
+msgid "Cannot navigate to this item"
+msgstr "Ehhez a kérdéshez most nem lehet ugrani"
+
+msgid "Code block error"
+msgstr "Hiba a kódblokkban"
+
+msgid "Code that is not allowed"
+msgstr "Nem engedélyezett kód"
+
+msgid "Comment worded as a question"
+msgstr "Kérdésként megfogalmazott megjegyzés"
+
+msgid "Completion could not be proven"
+msgstr "A kitölthetőség nem bizonyítható"
+
+msgid "Condition on a value that never changes"
+msgstr "Soha nem változó értékre vonatkozó feltétel"
+
+msgid "Condition reads free text"
+msgstr "Szabad szöveget olvasó feltétel"
+
+msgid "Condition the logic check could not verify"
+msgstr "A logikai ellenőrzés által nem igazolható feltétel"
+
+msgid "Condition verified only approximately"
+msgstr "Csak közelítőleg igazolt feltétel"
+
+#, python-format
+msgid ""
+"Could not decide postcondition '%(expr)s'. Treating it as satisfied (the "
+"answer is accepted unchecked). Items it reads that were shown and left "
+"unanswered, or computed from one: %(items)s"
+msgstr ""
+"A(z) '%(expr)s' válaszellenőrzés nem dönthető el. A rendszer teljesültnek"
+" tekinti (a választ ellenőrzés nélkül elfogadja). Az általa olvasott, "
+"megjelent, de megválaszolatlanul hagyott vagy ilyenből számított "
+"kérdések: %(items)s"
+
+#, python-format
+msgid ""
+"Could not decide precondition '%(expr)s'. Treating it as unsatisfied (the"
+" gated item is skipped). Items it reads that were shown and left "
+"unanswered, or computed from one: %(items)s"
+msgstr ""
+"A(z) '%(expr)s' megjelenítési feltétel nem dönthető el. A rendszer nem "
+"teljesültnek tekinti (a feltételhez kötött kérdést kihagyja). Az általa "
+"olvasott, megjelent, de megválaszolatlanul hagyott vagy ilyenből "
+"számított kérdések: %(items)s"
+
+msgid "Display condition could not be evaluated"
+msgstr "A megjelenítési feltétel nem értékelhető ki"
+
+msgid "Display condition reads an answer that is off the path"
+msgstr "A megjelenítési feltétel egy útvonalon kívüli választ olvasott"
+
+msgid "Display condition reads an unanswered item"
+msgstr "A megjelenítési feltétel egy megválaszolatlan kérdést olvas"
+
+#, python-format
+msgid ""
+"External prefill declined for %(item)s: item is not declared `external: "
+"true`."
+msgstr ""
+"A(z) %(item)s külső előtöltése elutasítva: a kérdés nincs `external: "
+"true` jelöléssel ellátva."
+
+#, python-format
+msgid ""
+"External prefill declined for %(item)s: the item belongs to a Roster or a"
+" count-capped Group, so a single prefilled value has no well-defined "
+"iteration."
+msgstr ""
+"A(z) %(item)s külső előtöltése elutasítva: a kérdés egy Roster vagy egy "
+"darabszámkorlátos Group része, így egyetlen előtöltött értékhez nem "
+"rendelhető egyértelmű ismétlés."
+
+#, python-format
+msgid ""
+"External prefill declined for %(item)s: the item's precondition is false,"
+" so it is not asked at all."
+msgstr ""
+"A(z) %(item)s külső előtöltése elutasítva: a kérdés megjelenítési "
+"feltétele nem teljesül, így a kérdés egyáltalán nem hangzik el."
+
+#, python-format
+msgid ""
+"External prefill declined for %(item)s: the supplied value fails the "
+"item's postcondition (%(hint)s)."
+msgstr ""
+"A(z) %(item)s külső előtöltése elutasítva: a megadott érték nem megy át a"
+" kérdés válaszellenőrzésén (%(hint)s)."
+
+#, python-format
+msgid ""
+"External prefill declined for %(item)s: the supplied value is outside the"
+" item's declared domain."
+msgstr ""
+"A(z) %(item)s külső előtöltése elutasítva: a megadott érték kívül esik a "
+"kérdés deklarált értékkészletén."
+
+#, python-format
+msgid "Item %(item)s not found in questionnaire state"
+msgstr "A(z) %(item)s kérdés nem található a kérdőív állapotában"
+
+msgid "Item can never be shown"
+msgstr "Soha meg nem jeleníthető kérdés"
+
+msgid "Item not found"
+msgstr "A kérdés nem található"
+
+msgid "Item unreachable once earlier answers are given"
+msgstr "A korábbi válaszok után elérhetetlen kérdés"
+
+msgid "Items depend on each other in a cycle"
+msgstr "Körkörösen egymástól függő kérdések"
+
+msgid "Items in a capped group depend on each other"
+msgstr "Egymástól függő kérdések egy darabszámkorlátos csoportban"
+
+msgid "Name that refers to nothing"
+msgstr "Semmire sem hivatkozó név"
+
+msgid "No previous item available"
+msgstr "Nincs előző kérdés"
+
+msgid "No respondent can complete the questionnaire"
+msgstr "Egyetlen válaszadó sem tudja kitölteni a kérdőívet"
+
+msgid "Not graded: the logic check classified no items."
+msgstr "Nincs értékelve: a logikai ellenőrzés egyetlen kérdést sem sorolt be."
+
+msgid "Not graded: there are no numeric-input items to bound."
+msgstr "Nincs értékelve: nincsenek korlátozható numerikus beviteli kérdések."
+
+msgid ""
+"Open the questionnaire in the editor for the full report, fix it, then "
+"publish again."
+msgstr ""
+"A teljes jelentésért nyissa meg a kérdőívet a szerkesztőben, javítsa ki, "
+"majd tegye közzé újra."
+
+#, python-format
+msgid ""
+"Postcondition '%(expr)s' was refused (%(reason)s), so it never ran. "
+"Treating it as satisfied (the answer is accepted unchecked)."
+msgstr ""
+"A(z) '%(expr)s' válaszellenőrzést a rendszer elutasította (%(reason)s), "
+"így le sem futott. A rendszer teljesültnek tekinti (a választ ellenőrzés "
+"nélkül elfogadja)."
+
+#, python-format
+msgid ""
+"Precondition '%(expr)s' was refused (%(reason)s), so it never ran. "
+"Treating it as unsatisfied (the gated item is skipped)."
+msgstr ""
+"A(z) '%(expr)s' megjelenítési feltételt a rendszer elutasította "
+"(%(reason)s), így le sem futott. A rendszer nem teljesültnek tekinti (a "
+"feltételhez kötött kérdést kihagyja)."
+
+#, python-format
+msgid "Publishing was refused: %(num)d error must be fixed first: %(issues)s."
+msgid_plural "Publishing was refused: %(num)d errors must be fixed first: %(issues)s."
+msgstr[0] "A közzététel elutasítva: előbb %(num)d hibát kell kijavítani: %(issues)s."
+msgstr[1] "A közzététel elutasítva: előbb %(num)d hibát kell kijavítani: %(issues)s."
+
+msgid "Questionnaire-level condition that nothing reads"
+msgstr "Magára a kérdőívre vonatkozó feltétel, amelyet semmi sem olvas"
+
+msgid "Reads an answer that may be missing"
+msgstr "Esetleg hiányzó választ olvas"
+
+msgid "Repeated-question list could not be read"
+msgstr "Az ismétlődő kérdéslista nem olvasható"
+
+msgid "Repeated-question list names undeclared options"
+msgstr "Az ismétlődő kérdéslista nem deklarált lehetőségekre hivatkozik"
+
+msgid "Repeated-question subject that cannot be answered"
+msgstr "Az ismétlődő blokk megnevezését adó kérdés nem válaszolható meg"
+
+msgid "Supplied value ignored: it fails the answer check"
+msgstr "A megadott érték figyelmen kívül marad: nem megy át a válaszellenőrzésen"
+
+msgid "Supplied value ignored: it is not a valid answer"
+msgstr "A megadott érték figyelmen kívül marad: nem érvényes válasz"
+
+msgid "Supplied value ignored: the item is in a repeating block"
+msgstr "A megadott érték figyelmen kívül marad: a kérdés ismétlődő blokkban van"
+
+msgid "Supplied value ignored: the item is not shown"
+msgstr "A megadott érték figyelmen kívül marad: a kérdés nem jelenik meg"
+
+msgid "Supplied value ignored: the item takes no outside value"
+msgstr "A megadott érték figyelmen kívül marad: a kérdés nem fogad külső értéket"
+
+msgid "Survey completed"
+msgstr "A kérdőív kitöltése befejeződött"
+
+msgid "Survey finished successfully"
+msgstr "A kérdőívet sikeresen befejezte"
+
+msgid "Survey is already completed"
+msgstr "A kérdőív kitöltése már befejeződött"
+
+msgid "Survey is not completed, cannot resume"
+msgstr "A kérdőív nincs befejezve, ezért nem folytatható"
+
+msgid "Survey resumed but all items are completed"
+msgstr "A kérdőív kitöltése folytatható, de minden kérdésre válaszolt már"
+
+msgid "Survey resumed successfully"
+msgstr "A kérdőív kitöltése folytatható"
+
+#, python-format
+msgid ""
+"The code block could not start (%(error_type)s), so nothing ran and the "
+"context is unchanged."
+msgstr ""
+"A kódblokk nem tudott elindulni (%(error_type)s), így semmi sem futott "
+"le, és a környezet nem változott."
+
+#, python-format
+msgid ""
+"The code block ran to its end, but QML arithmetic is whole numbers and "
+"these names computed a fraction: %(variables)s. Each variable holding a "
+"fraction was dropped; downstream state may be wrong."
+msgstr ""
+"A kódblokk végigfutott, de a QML-aritmetika csak egész számokkal "
+"dolgozik, és a következő változók értéke tört lett: %(variables)s. A "
+"törtet tartalmazó változókat a rendszer elvetette; a későbbi állapot "
+"hibás lehet."
+
+#, python-format
+msgid ""
+"The code block stopped with %(error_type)s at line %(line)s. Variables "
+"assigned before the failure are kept; downstream state may be wrong."
+msgstr ""
+"A kódblokk %(error_type)s hibával leállt a(z) %(line)s. sorban. A hiba "
+"előtt beállított változók megmaradnak; a későbbi állapot hibás lehet."
+
+#, python-format
+msgid ""
+"The code block stopped with %(error_type)s. Variables assigned before the"
+" failure are kept; downstream state may be wrong."
+msgstr ""
+"A kódblokk %(error_type)s hibával leállt. A hiba előtt beállított "
+"változók megmaradnak; a későbbi állapot hibás lehet."
+
+#, python-format
+msgid ""
+"The code block was refused (%(reason)s), so nothing ran and the context "
+"is unchanged."
+msgstr ""
+"A kódblokkot a rendszer elutasította (%(reason)s), így semmi sem futott "
+"le, és a környezet nem változott."
+
+#, python-format
+msgid ""
+"The iterateOver expression %(expr)s did not resolve to a non-negative "
+"whole number, so the roster pass is skipped."
+msgstr ""
+"A(z) %(expr)s iterateOver kifejezés értéke nem nemnegatív egész szám, "
+"ezért az ismétlődő kérdéslista feldolgozása kimarad."
+
+#, python-format
+msgid ""
+"The iterateOver expression %(expr)s failed (%(error_type)s), so the "
+"roster pass is skipped."
+msgstr ""
+"A(z) %(expr)s iterateOver kifejezés nem sikerült (%(error_type)s), ezért "
+"az ismétlődő kérdéslista feldolgozása kimarad."
+
+#, python-format
+msgid ""
+"The iterateOver expression %(expr)s selects iterations that have no "
+"declared label, so those iterations are not traversed."
+msgstr ""
+"A(z) %(expr)s iterateOver kifejezés deklarált címke nélküli ismétléseket "
+"választ ki, ezért ezek az ismétlések kimaradnak."
+
+#, python-format
+msgid ""
+"The iterateOver expression %(expr)s was refused (%(reason)s), so the "
+"roster pass is skipped."
+msgstr ""
+"A(z) %(expr)s iterateOver kifejezést a rendszer elutasította "
+"(%(reason)s), ezért az ismétlődő kérdéslista feldolgozása kimarad."
+
+msgid "The logic check could not run"
+msgstr "A logikai ellenőrzés nem futtatható"
+
+msgid "The questionnaire could not be loaded"
+msgstr "A kérdőív nem tölthető be"
+
+msgid "This survey changed in another window. Reload to continue."
+msgstr ""
+"A kérdőív egy másik ablakban megváltozott. A folytatáshoz töltse be újra "
+"az oldalt."
+
+msgid ""
+"This survey is closed. Its organization has been sealed, so it is no "
+"longer accepting responses."
+msgstr ""
+"Ez a kérdőív lezárult. A szervezetét lezárták, ezért már nem fogad "
+"válaszokat."
+
+msgid ""
+"This survey was completed and cannot be reset. Use Back or Resume to "
+"change an answer."
+msgstr ""
+"Ezt a kérdőívet már kitöltötték, ezért nem állítható vissza. Egy válasz "
+"módosításához használja a Vissza vagy a Folytatás gombot."
+
+#, python-format
+msgid ""
+"Unable to evaluate postcondition '%(expr)s' (%(error_type)s). Treating it"
+" as satisfied (the answer is accepted unchecked)."
+msgstr ""
+"A(z) '%(expr)s' válaszellenőrzés nem értékelhető ki (%(error_type)s). A "
+"rendszer teljesültnek tekinti (a választ ellenőrzés nélkül elfogadja)."
+
+#, python-format
+msgid ""
+"Unable to evaluate precondition '%(expr)s' (%(error_type)s). Treating it "
+"as unsatisfied (the gated item is skipped)."
+msgstr ""
+"A(z) '%(expr)s' megjelenítési feltétel nem értékelhető ki "
+"(%(error_type)s). A rendszer nem teljesültnek tekinti (a feltételhez "
+"kötött kérdést kihagyja)."
+
+msgid "Variable assigned to itself"
+msgstr "Önmagának értékül adott változó"
+
+msgid "Variable read before it is set"
+msgstr "Beállítás előtt olvasott változó"
+
+msgid "Variable set but never read"
+msgstr "Beállított, de soha nem olvasott változó"
+
+msgid "Variable that only copies another"
+msgstr "Egy másikat csak lemásoló változó"
+

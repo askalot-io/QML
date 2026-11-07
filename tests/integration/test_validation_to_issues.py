@@ -21,13 +21,34 @@ severity (error/warning), machine type, human message, and suggestion:
 - A Textarea item's ``.outcome`` referenced in a precondition/postcondition or a
   codeBlock surfaces as a ``textarea_in_predicate`` ``warning`` naming the
   Textarea item and the referencing location; an unreferenced Textarea is silent.
+- Language neutrality (#1973 R10, #2106 R5): an ``en`` questionnaire and its
+  twin in every other supported locale (same ids, codes and conditions; every
+  title and label translated; a missing twin fails) get identical Z3
+  classifications and identical issues, including the two lints that read
+  item text — a "none" Checkbox option and an inscription-style Comment are
+  flagged in every language, and their negatives, the non-substantive
+  "don't know" / "no answer" options among them, in none.
 - Three Demo-instrument authoring warnings (#559): a codeBlock statement that
   assigns something to itself, a postcondition admitting exactly one answer of
   a choice control, and a Checkbox "none of the above" option that can be
   ticked beside the others — each beside the shapes it must leave alone.
+- A ``len(set([...])) == k`` over Questions that may be unanswered is a
+  ``skipped_condition`` naming them and the guard that proves it (#1799);
+  the guarded form raises no warning.
+- A condition that lowers wider than it is (a raise on None the model cannot
+  place) is an ``inexact_condition`` warning naming the item and the guard of
+  its kind, not repeated on a dead item's postcondition nor recorded for a
+  codeBlock guard; no item in any fixture, the B390 edge cases included, is
+  inexact without a warning or an error (#1815).
+- A block condition the builder records once per item is reported once,
+  against the block, naming every read any member finds wide, and counted
+  once by verification coverage (#1817).
+- An item id that conditions cannot name is refused by the loader (#1783).
 - A Checkbox's Z3 domain is a bitmask (#1140): a gate on a combination of
   ticked keys, or on nothing ticked, is reachable; one on an undeclared bit or
   above the sum of the keys is not.
+- A condition skipped for a division Z3 reads differently from Python (#1767)
+  names the operator and suggests multiplying out.
 - Postcondition coverage statistics count relational vs local postconditions and
   surface them in ``get_statistics()`` and the validation report text.
 - Issue dicts carry exactly the five contract keys (item_id, severity, type,
@@ -69,7 +90,8 @@ severity (error/warning), machine type, human message, and suggestion:
   / with-as is seen by the read/write census — so a legitimate second producer is
   not a pass-through alias, and a non-Name-only unread producer is still write-only.
 - Reserved sentinel item ids: item ids ``__init__`` and ``codeInit`` collide with
-  internal sentinels and are rejected by the loader.
+  internal sentinels and are rejected by the loader, as is an id no condition
+  can name (not an NFKC identifier, a keyword, or a sandbox builtin name).
 - None-unsafe reference lint (#659): a condition that ORDERS on an item not asked
   on every path reaching it surfaces as a ``none_unsafe_reference`` ``warning``,
   while equality against the same item, an explicit ``is not None`` guard, and
@@ -115,15 +137,23 @@ from unittest.mock import patch
 
 import pytest
 import yaml
+from askalot_common.i18n import SUPPORTED_LOCALES
 from askalot_qml.core.qml_loader import QMLLoader
 from askalot_qml.core.validation_processor import (
+    _CHECKBOX_NONE_LABEL,
+    _COMMENT_ASKS_INSCRIPTION,
     ValidationProcessor,
     _admitted_outcomes,
     _none_unsafe_item_references,
 )
 from askalot_qml.models.qml_state import QMLState
+from askalot_qml.z3.static_builder import StaticBuilder
 
 FIXTURES_DIR = Path(__file__).parent.parent / "fixtures"
+
+#: Every supported questionnaire language but the English reference; each has
+#: a ``language_neutral_<code>.qml`` twin compared against the English one.
+TRANSLATED_LOCALES = [code for code in SUPPORTED_LOCALES if code != "en"]
 
 
 def _dump_yaml(raw: dict[str, Any]) -> str:
@@ -872,6 +902,119 @@ class TestPostconditionCoverageStatistics:
 
 
 @pytest.mark.integration
+class TestLanguageNeutralVerdicts:
+    """#1973 R10 / #2106 R5: a questionnaire's language never changes a verdict.
+
+    ``language_neutral_en.qml`` and ``language_neutral_<code>.qml`` for every
+    other supported locale are one instrument in several languages. Z3 never
+    sees text, so its side holds by construction; the advisory lints read
+    titles and labels, so they hold only while every supported language has
+    its alternations, and while no "none" pattern catches a non-substantive
+    option ("No sé", "Keine Angabe", "Aucune idée") in any of them.
+    """
+
+    @staticmethod
+    @functools.cache
+    def _verdicts(language: str) -> tuple[dict[str, Any], list[tuple[str, str, str]]]:
+        processor = _processor(f"language_neutral_{language}.qml")
+        issues = [(i["item_id"], i["severity"], i["type"]) for i in processor.to_issues(deep=True)]
+        return processor.get_item_classifications(), issues
+
+    def test_every_supported_locale_has_a_twin(self):
+        """A locale added to SUPPORTED_LOCALES without its twin fixture fails
+        here, rather than leaving its lint coverage unproven."""
+        missing = [
+            code
+            for code in SUPPORTED_LOCALES
+            if not (FIXTURES_DIR / f"language_neutral_{code}.qml").is_file()
+        ]
+        assert not missing, f"no language_neutral_<code>.qml for: {missing}"
+
+    @pytest.mark.parametrize("language", TRANSLATED_LOCALES)
+    def test_z3_classifications_are_identical(self, language):
+        assert self._verdicts(language)[0] == self._verdicts("en")[0]
+
+    @pytest.mark.parametrize("language", TRANSLATED_LOCALES)
+    def test_issues_are_identical(self, language):
+        """Compared by item, severity and type: the messages quote the titles."""
+        assert self._verdicts(language)[1] == self._verdicts("en")[1]
+
+    @pytest.mark.parametrize("language", SUPPORTED_LOCALES)
+    def test_the_text_lints_fire_on_each_language(self, language):
+        """The comparison above is not vacuous: each language flags exactly the
+        fixture's positives and leaves its negatives (the non-substantive
+        options of q_channels and q_trust among them) alone."""
+        _, issues = self._verdicts(language)
+        flagged = {(item_id, kind) for item_id, _, kind in issues}
+        assert {item_id for item_id, kind in flagged if kind == "combinable_none_option"} == {
+            "q_insurance",
+            "q_symptoms",
+            "q_vehicles",
+        }
+        assert {item_id for item_id, kind in flagged if kind == "comment_titled_as_question"} == {
+            "c_postcode",
+            "c_contact",
+            "c_list",
+        }
+
+    @pytest.mark.parametrize(
+        ("label", "denies"),
+        [
+            ("No vehicle", True),
+            ("Ningún vehículo", True),
+            ("Aucun", True),
+            ("Kein Fahrzeug", True),
+            ("Don't know", False),
+            ("Prefer not to say", False),
+            ("Nem tudom", False),
+            ("No sé", False),
+            ("No lo sé", False),
+            ("No aplica", False),
+            ("Ne sais pas", False),
+            ("Sans opinion", False),
+            ("Aucune idée", False),
+            ("Weiß nicht", False),
+            ("Keine Angabe", False),
+            ("Keine Ahnung", False),
+            ("No estoy seguro", False),
+            ("No recuerdo", False),
+            ("No lo sabe", False),
+            ("No opina", False),
+            ("Ninguna opinión", False),
+            ("Aucun avis", False),
+            ("Aucune opinion", False),
+        ],
+    )
+    def test_none_label_reads_denials_not_non_answers(self, label, denies):
+        """A leading denial reads as "none" in every language; a "don't know"
+        or "no answer" option never does, though several share its stem."""
+        assert bool(_CHECKBOX_NONE_LABEL.search(label)) is denies
+
+    @pytest.mark.parametrize(
+        ("title", "asks"),
+        [
+            ("Fill in your name.", True),
+            ("Rellene su nombre.", True),
+            ("Introduzca su nombre.", True),
+            ("Remplissez le formulaire.", True),
+            ("Veuillez saisir votre nom.", True),
+            ("Füllen Sie das Formular aus.", True),
+            ("Geben Sie Ihr Alter ein.", True),
+            ("Hinweis: Geben Sie keine persönlichen Daten an.", False),
+            ("Tragen Sie hier nichts ein.", False),
+            ("Bitte tragen Sie ein Namensschild.", False),
+            ("Bitte tragen Sie Ihren Namen ein.", True),
+            ("Geben Sie an, wie oft Sie pendeln.", True),
+            ("Bitte lesen Sie die Anweisungen.", False),
+        ],
+    )
+    def test_inscription_verbs_cover_every_language(self, title, asks):
+        """"Fill in" and "enter" read as a request to write in every language;
+        an instruction NOT to write, or to read, does not."""
+        assert bool(_COMMENT_ASKS_INSCRIPTION.search(title)) is asks
+
+
+@pytest.mark.integration
 class TestAuthoringLints:
     """#532: a Comment titled as a request, and a Roster subject that cannot answer.
 
@@ -1458,7 +1601,8 @@ class TestCensusNonNameProducers:
 
 @pytest.mark.integration
 class TestReservedSentinelItemIds:
-    """Item ids ``__init__`` and ``codeInit`` collide with internal sentinels and
+    """Item ids ``__init__`` and ``codeInit`` collide with internal sentinels, and
+    an id that is not a Python identifier can be named by no condition; both
     are rejected by the loader (#3 full-base gating corruption / frozen-oracle
     pollution; #5 hygiene-owner misroute to item_id=None)."""
 
@@ -1487,6 +1631,435 @@ class TestReservedSentinelItemIds:
         loader = QMLLoader(schema_path=None)
         with pytest.raises(ValueError, match="reserved"):
             loader.load_from_string(_dump_yaml(raw))
+
+    @pytest.mark.parametrize("item_id", ["m@0@0", "q-1", "1q", "if", "\ufb01rst", "len", "math"])
+    def test_an_id_conditions_cannot_name_is_rejected(self, item_id):
+        """``m@0@0`` would share matrix ``m``'s Z3 cell (#1783); no condition
+        could read any of these as ``<id>.outcome``: Python parses
+        ``\ufb01rst.outcome`` (a ligature) as ``first``, and an item ``len`` or
+        ``math`` would shadow the sandbox builtin in every condition."""
+        raw = {
+            "questionnaire": {
+                "title": "bad-id",
+                "blocks": [
+                    {
+                        "id": "b",
+                        "kind": "Group",
+                        "title": "B",
+                        "items": [
+                            {
+                                "id": item_id,
+                                "kind": "Question",
+                                "title": "misnamed",
+                                "input": {"control": "Editbox", "min": 0, "max": 10},
+                            }
+                        ],
+                    }
+                ],
+            }
+        }
+        with pytest.raises(ValueError, match="not a name conditions can read"):
+            QMLLoader(schema_path=None).load_from_string(_dump_yaml(raw))
+
+
+@pytest.mark.integration
+class TestDistinctOverSkippableIsExplained:
+    """#1799: a ``len(set([...])) == k`` the Z3 model refuses because its
+    Questions may be unanswered (#1785) names those items and the guard that
+    keeps it proven, instead of a generic could-not-lower message."""
+
+    _SET = "len(set([q1.outcome, q2.outcome, q3.outcome])) == 3"
+    _GUARDED = (
+        "q1.outcome is not None and q2.outcome is not None and q3.outcome is not None and " + _SET
+    )
+
+    def _state(self, predicate: str) -> QMLState:
+        radio = {"control": "Radio", "labels": {1: "A", 2: "B", 3: "C"}}
+        items = [
+            {"id": "g", "blockId": "b", "kind": "Question", "title": "g",
+             "input": {"control": "Radio", "labels": {1: "y", 2: "n"}}},
+            *(
+                {"id": f"q{i}", "blockId": "b", "kind": "Question", "title": f"q{i}",
+                 "input": radio, "precondition": [{"predicate": "g.outcome == 1"}]}
+                for i in (1, 2, 3)
+            ),
+            {"id": "r", "blockId": "b", "kind": "Question", "title": "r", "input": radio,
+             "precondition": [{"predicate": predicate}]},
+        ]
+        return QMLState({"title": "t", "blocks": [{"id": "b", "title": "B"}], "items": items})
+
+    def _skipped(self, predicate: str) -> list[dict]:
+        return [
+            i for i in ValidationProcessor(self._state(predicate)).to_issues()
+            if i["type"] == "skipped_condition" and i["item_id"] == "r"
+        ]
+
+    def test_the_warning_names_the_items_and_the_guard(self):
+        issues = self._skipped(self._SET)
+
+        assert len(issues) == 1, issues
+        assert "'q1', 'q2', 'q3'" in issues[0]["message"]
+        assert "q1.outcome is not None and q2.outcome is not None" in issues[0]["suggestion"]
+
+    def test_the_suggested_guard_is_proven(self):
+        assert self._skipped(self._GUARDED) == []
+
+    def test_a_set_check_the_pattern_never_lowers_names_no_item(self):
+        """``>=`` is no distinct-values pattern, so a guard would not prove it."""
+        issues = self._skipped("len(set([q1.outcome, q2.outcome, q3.outcome])) >= 2")
+
+        assert issues and "distinct-values" not in issues[0]["message"], issues
+
+    @pytest.mark.parametrize("comparator", ["2", "x"])
+    def test_a_set_check_a_guard_would_not_prove_names_no_item(self, comparator):
+        """``== 2`` over three items is no all-distinct check and ``== x`` no
+        build-time count, so the guarded form fails too: no guard suggested."""
+        issues = self._skipped(f"len(set([q1.outcome, q2.outcome, q3.outcome])) == {comparator}")
+
+        assert issues and "distinct-values" not in issues[0]["message"], issues
+
+    @staticmethod
+    def _capped(state: QMLState, *item_ids: str) -> QMLState:
+        """Move *item_ids* into a ``count: 1`` Group block."""
+        state["blocks"].append({"id": "cg", "title": "CG", "kind": "Group", "count": 1})
+        for item in state["items"]:
+            if item["id"] in item_ids:
+                item.update(blockId="cg", _group_block_id="cg", _group_count=1)
+        return state
+
+    def test_a_code_block_refusal_is_not_blamed_on_a_condition(self):
+        """Codex on PR #1803: the capped-Group pass rebuilds a member's
+        conditions after its codeBlock was lowered, so the codeBlock's refused
+        distinct check must not be reported against a condition holding none."""
+        state = self._capped(self._state("r.outcome is not None"), "r")
+        state["items"][-1]["codeBlock"] = (
+            "x = 1 if len(set([q1.outcome, q2.outcome, q3.outcome])) == 3 else 0"
+        )
+
+        gaps = StaticBuilder(state).coverage_gaps.get("r", [])
+
+        assert not any(g.get("skippable_items") for g in gaps), gaps
+
+    def test_no_guard_is_suggested_for_capped_group_members(self):
+        """A None test on a Roster or capped-Group member never lowers, so a
+        guard on it would not prove the check: the items are not named."""
+        state = self._capped(self._state(self._SET), "q1", "q2", "q3")
+
+        gaps = StaticBuilder(state).coverage_gaps.get("r", [])
+
+        assert gaps and not any(g.get("skippable_items") for g in gaps), gaps
+
+    def test_a_guarded_set_is_not_blamed_when_something_else_fails(self):
+        """A guarded distinct check beside a division (which never lowers)
+        is a gap for the division; its guarded items are not named."""
+        issues = self._skipped(self._GUARDED + " and g.outcome / 2 > 0")
+
+        assert issues and "distinct-values" not in issues[0]["message"], issues
+
+
+@pytest.mark.integration
+class TestEveryInexactConditionIsVisible:
+    """#1815: a condition that lowers wider than it is (a raise on a skipped
+    item's None the model cannot place, #1775) makes the classifier withhold
+    ALWAYS / TAUTOLOGICAL, and the author is told so: an ``inexact_condition``
+    warning naming the item it reads. Over every fixture, each item whose
+    pre- or postcondition is inexact carries an ``inexact_condition`` or
+    ``skipped_condition`` warning, or an error.
+
+    Since #1779 a raise is placed exactly wherever a condition leaf certainly
+    evaluates it (under ``not``, in any ``or`` operand, in a postcondition);
+    a read through a call is not placed, so ``_WIDE`` is the wide example
+    (``abs(None)`` raises, so the wide formula is sound). A read through a
+    ternary branch is refused instead (#1867, a ``skipped_condition``)."""
+
+    _WIDE = "abs(q.outcome) >= 0"
+
+    def _state(self, predicate: str, kind: str = "precondition") -> QMLState:
+        items = [
+            {"id": "g", "blockId": "b", "kind": "Question", "title": "g",
+             "input": {"control": "Radio", "labels": {1: "y", 2: "n"}}},
+            {"id": "q", "blockId": "b", "kind": "Question", "title": "q",
+             "input": {"control": "Editbox", "min": 0, "max": 9},
+             "precondition": [{"predicate": "g.outcome == 1"}]},
+            {"id": "r", "blockId": "b", "kind": "Question", "title": "r",
+             "input": {"control": "Editbox", "min": 0, "max": 9},
+             kind: [{"predicate": predicate}]},
+        ]
+        return QMLState({"title": "t", "blocks": [{"id": "b", "title": "B"}], "items": items})
+
+    def _inexact(self, predicate: str, kind: str = "precondition") -> list[dict]:
+        return [
+            i for i in ValidationProcessor(self._state(predicate, kind)).to_issues()
+            if i["type"] == "inexact_condition" and i["item_id"] == "r"
+        ]
+
+    def test_a_raise_through_a_call_is_a_warning_naming_the_item(self):
+        issues = self._inexact(self._WIDE)
+
+        assert len(issues) == 1, issues
+        assert issues[0]["severity"] == "warning"
+        assert "'q'" in issues[0]["message"] and "ALWAYS" in issues[0]["message"]
+        assert "q.outcome is not None and" in issues[0]["suggestion"]
+
+    def test_a_raising_postcondition_through_a_call_is_a_warning(self):
+        issues = self._inexact("abs(q.outcome) + r.outcome < 20", kind="postcondition")
+
+        assert len(issues) == 1 and "'q'" in issues[0]["message"], issues
+
+    def test_a_group_slot_raise_names_the_group(self):
+        """The group is answered, but a slot may be blank: the raise sits in a
+        comprehension under ``not``, so the warning names the group."""
+        state = self._state("qg.outcome is not None and not all(qg.outcome[i] > 1 for i in range(2))")
+        state["items"].insert(2, {
+            "id": "qg", "blockId": "b", "kind": "QuestionGroup", "title": "qg",
+            "questions": ["A", "B"], "input": {"control": "Radio", "labels": {1: "y", 2: "n"}},
+        })
+        issues = [
+            i for i in ValidationProcessor(QMLState(dict(state))).to_issues()
+            if i["type"] == "inexact_condition" and i["item_id"] == "r"
+        ]
+
+        assert len(issues) == 1 and "'qg'" in issues[0]["message"], issues
+
+    def test_a_textarea_owner_is_warned_too(self):
+        """The build pass skips Textarea owners, so the gap
+        is recorded where exactness is decided, not where the model is built."""
+        state = self._state(self._WIDE)
+        state["items"][-1]["input"] = {"control": "Textarea"}
+        issues = [
+            i for i in ValidationProcessor(state).to_issues()
+            if i["type"] == "inexact_condition" and i["item_id"] == "r"
+        ]
+
+        assert len(issues) == 1, issues
+
+    def test_an_empty_group_fold_is_exact(self):
+        """A fold over a group with no questions reads no
+        slot, so nothing is waived and the postcondition stays TAUTOLOGICAL."""
+        state = self._state(
+            "qg.outcome is None or sum(qg.outcome[i] for i in range(len(qg.questions))) == 0",
+            kind="postcondition",
+        )
+        state["items"].insert(2, {
+            "id": "qg", "blockId": "b", "kind": "QuestionGroup", "title": "qg",
+            "questions": [], "input": {"control": "Radio", "labels": {1: "y", 2: "n"}},
+        })
+        processor = ValidationProcessor(QMLState(dict(state)))
+
+        assert processor.get_item_classifications()["r"]["postcondition"]["invariant"] == "TAUTOLOGICAL"
+        assert not any(i["type"] == "inexact_condition" for i in processor.to_issues())
+
+    def test_the_suggested_postcondition_guard_is_exact(self):
+        assert self._inexact("q.outcome is None or (q.outcome + r.outcome < 20)", kind="postcondition") == []
+
+    def test_a_proven_never_withholds_nothing(self):
+        """A wider formula still proves NEVER: the error speaks, no warning."""
+        processor = ValidationProcessor(self._state(f"{self._WIDE} and g.outcome == 3"))
+        issues = [i for i in processor.to_issues() if i["item_id"] == "r"]
+
+        assert [i["type"] for i in issues] == ["unreachable_item"], issues
+
+    def test_an_unreachable_items_postcondition_withholds_nothing(self):
+        """A dead item's postcondition is vacuous: ``unreachable_item`` speaks."""
+        state = self._state("abs(q.outcome) + r.outcome < 20", kind="postcondition")
+        state["items"][-1]["precondition"] = [{"predicate": "g.outcome == 3"}]
+        issues = [i for i in ValidationProcessor(state).to_issues() if i["item_id"] == "r"]
+
+        assert [i["type"] for i in issues] == ["unreachable_item"], issues
+
+    def test_the_postcondition_suggestion_is_the_waiving_guard(self):
+        """A postcondition that fails on None blocks the respondent, so the
+        guard suggested for one is ``is None or``, never ``is not None and``."""
+        issues = self._inexact("abs(q.outcome) + r.outcome < 20", kind="postcondition")
+
+        assert "q.outcome is None or (…)" in issues[0]["suggestion"], issues
+        assert "is not None and" not in issues[0]["suggestion"], issues
+
+    def test_a_skippable_read_through_a_ternary_is_a_warning_naming_the_item(self):
+        """#1867: the ternary passes q's None on to ``in``, which reads it
+        without raising, so the condition is refused (not proven NEVER) and
+        the ``skipped_condition`` warning names q and its guard."""
+        processor = ValidationProcessor(self._state("not ((q.outcome if g.outcome == 1 else 0) in [0, 1, 2])"))
+        issues = [i for i in processor.to_issues() if i["item_id"] == "r"]
+
+        assert [i["type"] for i in issues] == ["skipped_condition"], issues
+        assert "'q'" in issues[0]["message"] and "ternary" in issues[0]["message"]
+        assert "q.outcome is not None and (…)" in issues[0]["suggestion"]
+
+    def test_a_ternary_postcondition_is_guarded_the_way_it_fails(self):
+        """A postcondition is waived on None, so its guard is ``is None or``."""
+        processor = ValidationProcessor(
+            self._state("(q.outcome if g.outcome == 1 else 0) == r.outcome", kind="postcondition")
+        )
+        issues = [i for i in processor.to_issues() if i["item_id"] == "r" and i["type"] == "skipped_condition"]
+
+        assert issues and "q.outcome is None or (…)" in issues[0]["suggestion"], issues
+
+    def test_a_codeblock_guard_is_no_gap_on_its_item(self):
+        """The ``uninitialized_read`` lint compiles a codeBlock ``if`` guard under
+        its item's id; a wide guard is not the item's precondition #0."""
+        state = self._state("g.outcome == 1")
+        state["items"][-1]["codeBlock"] = f"if {self._WIDE}:\n    v = 1\n"
+        state["items"].append({
+            "id": "z", "blockId": "b", "kind": "Question", "title": "z",
+            "input": {"control": "Editbox", "min": 0, "max": 9},
+            "precondition": [{"predicate": "v == 1"}],
+        })
+        processor = ValidationProcessor(state)
+        processor.to_issues()
+
+        assert "r" not in processor.engine.static_builder.coverage_gaps
+
+    @pytest.mark.parametrize(
+        "predicate",
+        [
+            "q.outcome > 3",
+            "g.outcome == 1 and q.outcome > 3",
+            "g.outcome == 2 or q.outcome > 3",
+            "q.outcome is not None and not (q.outcome >= 0)",
+            "q.outcome > 3 or g.outcome == 2",
+            "not (q.outcome >= 0) or g.outcome == 2",
+            "0 <= q.outcome <= 9 or g.outcome == 2",
+            "q.outcome % 2 or g.outcome == 2",
+        ],
+    )
+    def test_an_exact_lowering_raises_no_warning(self, predicate):
+        """A raise placed exactly (#1779: under ``and``, ``not``, in any ``or``
+        operand, a chain, a truth-tested arithmetic leaf, or behind a None
+        guard) withholds nothing."""
+        assert self._inexact(predicate) == []
+
+    @pytest.mark.parametrize(
+        "filename", sorted(str(p.relative_to(FIXTURES_DIR)) for p in FIXTURES_DIR.rglob("*.qml"))
+    )
+    def test_every_inexact_condition_in_a_fixture_is_reported(self, filename):
+        try:
+            processor = _processor(filename)
+        except Exception:
+            pytest.skip(f"{filename} does not load (a load-failure fixture)")
+        # Only a finding that speaks to the condition's verification counts:
+        # another warning on the same item (none_unsafe_reference) must not
+        # stand in for the missing one.
+        flagged = {
+            i["item_id"] for i in processor.to_issues()
+            if i["severity"] == "error" or i["type"] in ("inexact_condition", "skipped_condition")
+        }
+        builder = processor.engine.static_builder
+        # Judged per condition, against its owner: a block's condition is
+        # reported on the block, and a finding on the block must not stand in
+        # for an item's own inexact condition.
+        silent = [
+            (item_id, kind, idx)
+            for item_id, details in builder.item_details.items()
+            for kind, key in (("precondition", "preconditions"), ("postcondition", "postconditions"))
+            for idx, condition in enumerate(details.get(key) or [])
+            if not builder._compile_conditions(item_id, [condition], kind, record_wide=False)[1]
+            and builder.condition_owner(item_id, kind, idx)[0] not in flagged
+        ]
+
+        assert silent == [], silent
+
+
+@pytest.mark.integration
+class TestABlockConditionIsReportedOnce:
+    """#1817: a block's condition is composed into each of its items, so the
+    builder records its gap per item; the finding is reported once, against the
+    block, and verification coverage counts it once."""
+
+    def _state(self, block_pre: str, item_pre: str | None = None) -> QMLState:
+        radio = {"control": "Radio", "labels": {1: "y", 2: "n"}}
+        items = [
+            {"id": "g", "blockId": "b1", "kind": "Question", "title": "g", "input": radio},
+            {"id": "q", "blockId": "b1", "kind": "Question", "title": "q",
+             "input": {"control": "Editbox", "min": 0, "max": 9},
+             "precondition": [{"predicate": "g.outcome == 1"}]},
+            *(
+                {"id": f"x{i}", "blockId": "b2", "kind": "Question", "title": f"x{i}", "input": radio,
+                 **({"precondition": [{"predicate": item_pre}]} if item_pre else {})}
+                for i in range(3)
+            ),
+        ]
+        blocks = [{"id": "b1", "title": "B1"},
+                  {"id": "b2", "title": "B2", "precondition": [{"predicate": block_pre}]}]
+        return QMLState({"title": "t", "blocks": blocks, "items": items})
+
+    _WIDE = TestEveryInexactConditionIsVisible._WIDE
+
+    @pytest.mark.parametrize(("block_pre", "issue_type"), [
+        (TestEveryInexactConditionIsVisible._WIDE, "inexact_condition"),
+        ("len(set([g.outcome, q.outcome])) >= 1", "skipped_condition"),
+    ])
+    def test_one_finding_against_the_block(self, block_pre, issue_type):
+        issues = [i for i in ValidationProcessor(self._state(block_pre)).to_issues() if i["type"] == issue_type]
+
+        assert [i["item_id"] for i in issues] == ["b2"], issues
+        assert issues[0]["message"].startswith("Block 'b2' has a precondition")
+
+    def test_items_that_disagree_on_it_still_give_one_finding(self):
+        """The same block predicate can lower differently per item (here q's
+        own outcome is a self-read for q, a skippable read for r): one finding,
+        the stronger, against the block."""
+        radio = {"control": "Radio", "labels": {1: "y", 2: "n"}}
+        editbox = {"control": "Editbox", "min": 0, "max": 9}
+        state = QMLState({
+            "title": "t",
+            "blocks": [{"id": "b0", "title": "B0"},
+                       {"id": "b", "title": "B", "precondition": [{"predicate": "g.outcome == 1"}],
+                        "postcondition": [{"predicate": "len(set([q.outcome])) == 1 and r.outcome > 0"}]}],
+            "items": [
+                {"id": "g", "blockId": "b0", "kind": "Question", "title": "g", "input": radio},
+                {"id": "q", "blockId": "b", "kind": "Question", "title": "q", "input": editbox},
+                {"id": "r", "blockId": "b", "kind": "Question", "title": "r", "input": editbox},
+            ],
+        })
+        found = [
+            (i["item_id"], i["type"]) for i in ValidationProcessor(state).to_issues()
+            if i["type"] in ("inexact_condition", "skipped_condition")
+        ]
+
+        assert found == [("b", "skipped_condition")], found
+
+    def test_the_block_finding_guards_every_read_any_item_finds_wide(self):
+        """Each member answers its own read, so q's gap names r and r's names
+        q; the block's one finding names and guards both."""
+        editbox = {"control": "Editbox", "min": 0, "max": 9}
+        state = QMLState({
+            "title": "t",
+            "blocks": [{"id": "b0", "title": "B0"},
+                       {"id": "b", "title": "B",
+                        "postcondition": [{"predicate": (
+                            "abs(q.outcome) + abs(r.outcome) > 6"
+                        )}]}],
+            "items": [
+                {"id": "g", "blockId": "b0", "kind": "Question", "title": "g",
+                 "input": {"control": "Radio", "labels": {1: "y", 2: "n"}}},
+                {"id": "q", "blockId": "b", "kind": "Question", "title": "q", "input": editbox,
+                 "precondition": [{"predicate": "g.outcome == 1"}]},
+                {"id": "r", "blockId": "b", "kind": "Question", "title": "r", "input": editbox,
+                 "precondition": [{"predicate": "g.outcome == 2"}]},
+            ],
+        })
+        issues = [i for i in ValidationProcessor(state).to_issues() if i["type"] == "inexact_condition"]
+
+        assert [i["item_id"] for i in issues] == ["b"], issues
+        assert "it reads 'r', 'q'" in issues[0]["message"] or "it reads 'q', 'r'" in issues[0]["message"]
+        assert "q.outcome is None" in issues[0]["suggestion"]
+        assert "r.outcome is None" in issues[0]["suggestion"]
+
+    def test_an_item_condition_beside_it_stays_the_items(self):
+        issues = [
+            i for i in ValidationProcessor(self._state("g.outcome == 1", self._WIDE)).to_issues()
+            if i["type"] == "inexact_condition"
+        ]
+
+        assert sorted(i["item_id"] for i in issues) == ["x0", "x1", "x2"], issues
+
+    def test_verification_coverage_counts_it_once(self):
+        report = ValidationProcessor(self._state(self._WIDE)).get_quality_report()
+        d4 = report["dimensions"]["verification_coverage"]
+
+        assert d4["metrics"]["degraded_predicates"] == 1, d4
+        assert [o["item_id"] for o in d4["offenders"]] == ["b2"]
 
 
 @pytest.mark.integration
@@ -1708,9 +2281,10 @@ class TestValidationHierarchy:
         assert gu[0]["item_id"] is None
         assert set(gu[0].keys()) == {"item_id", "severity", "type", "message", "suggestion"}
 
-    def test_dependency_cycle_is_error(self):
+    def test_dependency_cycle_is_error_naming_the_loop_closed_once(self):
         """Two items whose codeBlocks/preconditions read each other's produced
-        variable form a cycle → a ``dependency_cycle`` error naming the loop."""
+        variable form a cycle → a ``dependency_cycle`` error naming the loop,
+        its path closed once (``a → b → a``, #1979)."""
         state = QMLState(
             {
                 "title": "cycle",
@@ -1743,6 +2317,12 @@ class TestValidationHierarchy:
         for issue in cycle:
             assert issue["severity"] == "error"
             assert "q_a" in issue["message"] and "q_b" in issue["message"]
+        # The stored cycle is already closed (#1979): the message path names the
+        # first item twice, at its start and its end, never three times.
+        for issue in cycle:
+            first = issue["item_id"]
+            other = "q_b" if first == "q_a" else "q_a"
+            assert f"({first} → {other} → {first}):" in issue["message"], issue["message"]
 
     def test_accumulated_dead_code_is_deep_only(self):
         """thesis_dead_code_simple.qml has a CONDITIONAL-but-accumulated-dead item.
@@ -1945,9 +2525,8 @@ class TestSkippedConditionLint:
     The gap was RECORDED in ``coverage_gaps`` but no ``to_issues`` branch surfaced
     it, so the author saw a clean file while the item's classification fell back to
     a trivial default and only the runtime enforced the rule. The canonical
-    trigger is a QuestionGroup vector outcome ``qg.outcome[i]`` — QuestionGroups
-    carry a single scalar Z3 var (no per-question cells), so the subscript read has
-    no Z3 target in EITHER a precondition or a postcondition.
+    trigger is a call the lowering does not know (``min``). A QuestionGroup read
+    the model does not hold (#184) names the group and the forms that are proven.
     """
 
     def _state(self, gate: dict[str, Any]) -> QMLState:
@@ -1977,10 +2556,10 @@ class TestSkippedConditionLint:
         )
 
     def test_unlowerable_precondition_surfaces_warning(self):
-        """A precondition `qg_conditions.outcome[0] == 1` (Subscript over a
-        QuestionGroup vector) → one skipped_condition warning naming the item and
-        the unsupported node, never an error (runtime still enforces it)."""
-        state = self._state({"precondition": [{"predicate": "qg_conditions.outcome[0] == 1"}]})
+        """A precondition ``min(...) == 1`` → one skipped_condition warning
+        naming the item and the unsupported node, never an error (runtime still
+        enforces it)."""
+        state = self._state({"precondition": [{"predicate": "min(qg_conditions.outcome[0], 2) == 1"}]})
         issues = ValidationProcessor(state).to_issues()
         skipped = [i for i in issues if i["type"] == "skipped_condition"]
         assert len(skipped) == 1, f"expected one skipped_condition warning, got {issues}"
@@ -1988,18 +2567,39 @@ class TestSkippedConditionLint:
         assert issue["severity"] == "warning"
         assert issue["item_id"] == "q_followup"
         assert "precondition" in issue["message"]
-        assert "Subscript" in issue["message"]
+        assert "Call" in issue["message"]
         assert set(issue.keys()) == {"item_id", "severity", "type", "message", "suggestion"}
         assert [i for i in issues if i["severity"] == "error"] == []
 
+    def test_a_division_z3_reads_differently_says_how_to_rewrite_it(self):
+        """#1767: ``//`` by a negative divisor floors differently in Z3, so it
+        is not lowered; the warning names the operator and suggests
+        multiplying out instead."""
+        state = self._state({"precondition": [{"predicate": "qg_conditions.outcome[0] // -2 >= 1"}]})
+        (issue,) = [
+            i for i in ValidationProcessor(state).to_issues() if i["type"] == "skipped_condition"
+        ]
+        assert "FloorDiv" in issue["message"]
+        assert "multiply out" in issue["suggestion"]
+
     def test_lowerable_condition_yields_no_skipped_warning(self):
-        """A fully-supported precondition (a plain outcome comparison) is lowered,
-        so no skipped_condition warning is produced."""
-        state = self._state({"precondition": [{"predicate": "qg_conditions.outcome == 1"}]})
+        """A fully-supported precondition (one QuestionGroup answer, #184) is
+        lowered, so no skipped_condition warning is produced."""
+        state = self._state({"precondition": [{"predicate": "qg_conditions.outcome[0] == 1"}]})
         skipped = [
             i for i in ValidationProcessor(state).to_issues() if i["type"] == "skipped_condition"
         ]
         assert skipped == []
+
+    def test_a_whole_group_read_names_the_group_and_the_proven_form(self):
+        """#184: ``qg.outcome == 1`` compares a list with a number; it carries
+        no Subscript or Call, yet it is reported, naming the group."""
+        state = self._state({"precondition": [{"predicate": "qg_conditions.outcome == 1"}]})
+        (issue,) = [
+            i for i in ValidationProcessor(state).to_issues() if i["type"] == "skipped_condition"
+        ]
+        assert "QuestionGroup 'qg_conditions'" in issue["message"]
+        assert "qg.outcome[i]" in issue["suggestion"]
 
 
 @pytest.mark.integration
@@ -2316,7 +2916,7 @@ class TestSaveLadderWithTheGatedMerge:
 
     def _save(self, store, content: str, base_version_id: str, merge=None):
         from askalot_common.documents.save import save_document_content
-        from askalot_common.repository.document_store_fake import USER_ID
+        from askalot_common.repository.document_store_fake import PROJECT_ID, USER_ID
         from askalot_qml.core.merge_gate import merge_qml
 
         return save_document_content(
@@ -2329,6 +2929,7 @@ class TestSaveLadderWithTheGatedMerge:
             fast_forward_origin="workspace_sync",
             merged_origin="merge",
             merge=merge or merge_qml,
+            authorized_project_id=PROJECT_ID,
         )
 
     def test_disjoint_edits_land_merged_with_the_gates_verdict(self, store):

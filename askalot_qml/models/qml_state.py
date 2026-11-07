@@ -4,6 +4,8 @@ import time
 from collections.abc import Iterable
 from typing import Any, NotRequired, TypedDict
 
+from askalot_common.i18n import N_, Paragraph, Sentence, gettext
+
 
 def _now_ms() -> int:
     """Wall-clock epoch milliseconds — the timing log's only clock.
@@ -15,6 +17,53 @@ def _now_ms() -> int:
     so a per-process monotonic reference would not be comparable.
     """
     return int(time.time() * 1000)
+
+
+#: Every degradation-warning type ``add_warning`` records, with the words a
+#: page shows for it (#2166). The code is the stored identifier, read by
+#: rollups and agents in English; the label is a msgid, translated where a page
+#: prints it (:func:`warning_type_label`). ``add_warning`` refuses a type
+#: missing here, so a new kind of degradation is named before it can be shown.
+WARNING_TYPE_LABELS: dict[str, str] = {
+    "codeblock": N_("Code block error"),
+    "precondition": N_("Display condition could not be evaluated"),
+    "postcondition": N_("Answer check could not be evaluated"),
+    "precondition_unanswered_dependency": N_("Display condition reads an unanswered item"),
+    "postcondition_unanswered_dependency": N_("Answer check reads an unanswered item"),
+    "precondition_orphaned_answer": N_("Display condition reads an answer that is off the path"),
+    "postcondition_orphaned_answer": N_("Answer check reads an answer that is off the path"),
+    "item_missing": N_("Item not found"),
+    "roster_iterate_over": N_("Repeated-question list could not be read"),
+    "roster_mask_undeclared": N_("Repeated-question list names undeclared options"),
+    "external_prefill_not_external": N_("Supplied value ignored: the item takes no outside value"),
+    "external_prefill_block_kind": N_("Supplied value ignored: the item is in a repeating block"),
+    "external_prefill_precondition": N_("Supplied value ignored: the item is not shown"),
+    "external_prefill_domain": N_("Supplied value ignored: it is not a valid answer"),
+    "external_prefill_postcondition": N_("Supplied value ignored: it fails the answer check"),
+}
+
+
+def warning_type_label(locale: str, warning_type: str) -> str:
+    """The words a page shows for a stored warning type, in ``locale``.
+
+    A warning stored before a type was renamed keeps its old code, so a code
+    outside :data:`WARNING_TYPE_LABELS` reads as itself, never as a guess.
+    """
+    label = WARNING_TYPE_LABELS.get(warning_type)
+    return gettext(locale, label) if label is not None else warning_type
+
+
+def warning_message_text(warning: dict[str, Any], locale: str) -> str:
+    """A stored warning's detail as a page shows it, in ``locale`` (#2177).
+
+    The ``Sentence`` :meth:`QMLState.add_warning` recorded is rebuilt from its
+    stored ``message_msgid`` / ``message_vars`` and shown in ``locale``; a
+    warning stored before they existed reads as its stored English ``message``.
+    """
+    msgid = warning.get("message_msgid")
+    if not msgid:
+        return warning.get("message", "")
+    return Sentence(msgid, **(warning.get("message_vars") or {})).in_locale(locale)
 
 
 # Degradation-warning severities, ordered by data consequence (see add_warning).
@@ -46,6 +95,7 @@ def worst_severity(severities: Iterable[str]) -> str | None:
     column all rank through here rather than re-deriving the scale.
     """
     return max(severities, key=SEVERITY_RANK.__getitem__, default=None)
+
 
 # Timing-event source discriminators (R9) — what produced the answer being
 # timed. Declared here, beside the log that validates them, so the drivers
@@ -579,11 +629,30 @@ class QMLState(dict):
         An outcome that no longer holds the value the codeBlock wrote was
         replaced since — by a respondent's answer or a later entry's codeBlock —
         and is left alone: the undo rolls back the write, not what followed it.
+
+        A Roster entry's write to an item of its own block also landed in that
+        iteration's `roster_outcomes` cell (the snapshot after `process_item`),
+        so the cell is rolled back the same way; otherwise re-entering the
+        iteration restored the undone write from it. The live `item['outcome']`
+        may show another iteration; whoever re-enters an iteration afterwards
+        reloads it from the cells (`FlowProcessor._resume_roster_iteration`).
         """
         entry = self["history_state"][idx]
+        iter_key = self["history_iter_key"][idx]
+        entry_item = self.get_item(self["history"][idx])
+        roster_block = entry_item.get("_roster_block_id") if entry_item else None
         for item_id, (outcome, visited, written) in entry["outcome_undo"].items():
             item = self.get_item(item_id)
-            if item is not None and item.get("outcome") == written:
+            if item is None:
+                continue
+            if (
+                iter_key is not None
+                and roster_block is not None
+                and item.get("_roster_block_id") == roster_block
+            ):
+                if self.get_roster_outcome(roster_block, iter_key, item_id) == written:
+                    self._put_roster_cell(roster_block, iter_key, item_id, outcome)
+            if item.get("outcome") == written:
                 item["outcome"] = outcome
                 item["visited"] = visited
         entry["outcome_undo"] = {}
@@ -784,6 +853,14 @@ class QMLState(dict):
         block_bucket = self.setdefault("roster_outcomes", {}).setdefault(block_id, {})
         iter_bucket = block_bucket.setdefault(iter_key, {})
         iter_bucket[item_id] = value
+
+    def _put_roster_cell(self, block_id: str, iter_key: int, item_id: str, value: Any) -> None:
+        """Set one cell, or drop it for ``None``: the snapshot stores no empty
+        cell, so an undone write to an item the iteration left empty leaves none."""
+        if value is None:
+            self.get("roster_outcomes", {}).get(block_id, {}).get(iter_key, {}).pop(item_id, None)
+        else:
+            self.set_roster_outcome(block_id, iter_key, item_id, value)
 
     def get_roster_outcome(self, block_id: str, iter_key: int, item_id: str) -> Any:
         """Read one (block, iter, item) cell. Returns None if any level is missing."""
@@ -1143,7 +1220,14 @@ class QMLState(dict):
     # on which subsystem raised it, so a cosmetic label drop never ranks beside
     # a corrupted branch.
 
-    def add_warning(self, item_id: str, warning_type: str, message: str, *, severity: str) -> bool:
+    def add_warning(
+        self,
+        item_id: str,
+        warning_type: str,
+        message: Sentence,
+        *,
+        severity: str,
+    ) -> bool:
         """
         Record a degradation the engine absorbed during flow processing.
 
@@ -1166,8 +1250,14 @@ class QMLState(dict):
                 a backward edit took off the path as None),
                 'codeblock', 'roster_iterate_over', 'roster_mask_undeclared',
                 'item_missing', or an 'external_prefill_<gate>' decline.
-            message: Human-readable description; never carries a respondent's
-                answer value.
+            message: The description as a ``Sentence`` (#2191): its English
+                text is stored as ``message`` (what agents, logs and rollups
+                read) and its msgid and variables as ``message_msgid`` /
+                ``message_vars``, so a page shows it in its reader's language
+                (:func:`warning_message_text`). A plain ``str`` is refused, so
+                no writer can store a warning a page cannot translate. Its
+                variables are JSON-safe and never a respondent's answer value
+                (an exception is named by its class, never its text, #2190).
             severity: Data consequence, one of ``WARNING_SEVERITIES``.
                 'critical' — the accepted data may be wrong (a code block that
                 raised part-way); this is what excludes a survey from dataset
@@ -1179,6 +1269,22 @@ class QMLState(dict):
             True when this is a new record, False when it only counted a repeat
             — so a caller logs an occurrence once rather than on every pass.
         """
+        if not isinstance(message, Sentence):
+            raise TypeError("add_warning takes a Sentence, so a page can translate the message")
+        if message.plural_msgid is not None or any(
+            isinstance(value, (Sentence, Paragraph)) for value in message.variables.values()
+        ):
+            # Only msgid + JSON variables are stored and warning_message_text
+            # rebuilds a singular Sentence from them: a counted form would lose
+            # its plural (and ``num``), a nested Sentence or Paragraph the
+            # msgids it translates by.
+            raise TypeError("add_warning takes a singular Sentence with plain variables")
+        if warning_type not in WARNING_TYPE_LABELS:
+            # A type with no label would print as its raw code on every page
+            # that shows warnings; name it in WARNING_TYPE_LABELS first.
+            raise ValueError(
+                f"Unknown warning type {warning_type!r}; add it to WARNING_TYPE_LABELS"
+            )
         if severity not in WARNING_SEVERITIES:
             # Loud, because severity is what a dataset-exclusion gate reads: a
             # typo would silently downgrade a corrupted survey to noise.
@@ -1206,19 +1312,20 @@ class QMLState(dict):
                 existing["last_seen"] = now
                 return False
 
-        warnings.append(
-            {
-                "item_id": item_id,
-                "block_id": block_id,
-                "iter_key": iter_key,
-                "type": warning_type,
-                "severity": severity,
-                "message": message,
-                "count": 1,
-                "first_seen": now,
-                "last_seen": now,
-            }
-        )
+        record: dict[str, Any] = {
+            "item_id": item_id,
+            "block_id": block_id,
+            "iter_key": iter_key,
+            "type": warning_type,
+            "severity": severity,
+            "message": str(message),
+            "message_msgid": message.msgid,
+            "message_vars": dict(message.variables),
+            "count": 1,
+            "first_seen": now,
+            "last_seen": now,
+        }
+        warnings.append(record)
         return True
 
     def get_warnings(self) -> list[dict[str, Any]]:

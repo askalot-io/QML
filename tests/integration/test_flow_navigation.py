@@ -11,6 +11,19 @@ Tests survey flow including:
   does not count as an attempt, a re-answer records a second event beside the
   first, and a Roster item answered under two iterations records two
   independent events
+- `process_item` refuses an answer outside the item's declared domain (#1757)
+  before it touches the walk: no timing event, no history rewind, and an item
+  Z3 proved unreachable is never presented; a Range end, a matrix cell and a
+  group's length are judged too (#1616); the convenience save is not refused
+  but ignores an out-of-domain value; a codeBlock's malformed matrix write
+  fails in its block instead of wedging the walk
+- `process_item` refuses an answer to an item whose gate decides False
+  (#1768), its block's gate included, and leaves the walk untouched; an
+  undecided gate lets it through, a conjunct deciding False refuses after an
+  undecided one (and records no warning claiming the item was skipped), the
+  convenience save ignores it, an item already on the
+  path is never refused, and a forward jump cannot put a gated-out item on
+  the path
 - `process_item` refuses to record an untagged answer — `source` is required
 - The variable state is a chain (#1021): a re-answer that no longer assigns a
   variable or writes an outcome leaves it absent downstream; answering an
@@ -23,9 +36,18 @@ from pathlib import Path
 from typing import Any, Optional
 
 import pytest
+from askalot_qml.api import flow_service
+from askalot_qml.api.flow_service import FlowOutcome
 from askalot_qml.core.flow_processor import FlowProcessor
 from askalot_qml.core.qml_loader import QMLLoader
-from askalot_qml.models.qml_state import SOURCE_RESPONDENT, SOURCE_SYNTHETIC, QMLState
+from askalot_qml.models.qml_state import (
+    CHANNEL_WEB,
+    SOURCE_RESPONDENT,
+    SOURCE_SYNTHETIC,
+    QMLState,
+)
+
+from tests.helpers.flow_walker import NavigationWalk
 
 FIXTURES_DIR = Path(__file__).parent.parent / "fixtures"
 
@@ -602,8 +624,8 @@ class TestPreconditionErrorHandling:
             current = processor.get_current_item(state)
             assert current["id"] == "q_last"
 
-            # Check that a warning was logged about the malformed precondition
-            assert any("Unable to evaluate" in record.message for record in caplog.records)
+            # A call to an unknown function is refused before it runs; the log names it
+            assert any("was refused" in record.message for record in caplog.records)
 
             # Verify warning is also collected in QMLState for data analysis
             assert state.has_warnings()
@@ -880,6 +902,259 @@ questionnaire:
             labels:
               1: Done
 """
+
+
+_QML_DOMAIN = """
+qmlVersion: "2.5"
+questionnaire:
+  title: Domain
+  blocks:
+    - id: b1
+      items:
+        - {id: q_r, kind: Question, title: R, input: {control: Radio, labels: {1: A, 2: B}}}
+        - {id: q_s, kind: Question, title: S, input: {control: Slider, min: 0, max: 10}}
+        - id: q_never
+          kind: Question
+          title: N
+          precondition: [{predicate: "q_s.outcome > 10"}]
+          input: {control: Radio, labels: {1: A}}
+        - {id: q_span, kind: Question, title: Span, input: {control: Range, min: 0, max: 4}}
+        - id: m
+          kind: MatrixQuestion
+          title: Matrix
+          rows: [R1, R2]
+          columns: [C1, C2]
+          input: {control: Slider, min: 0, max: 5}
+        - id: qg
+          kind: QuestionGroup
+          title: Group
+          questions: ["One?", "Two?"]
+          input: {control: Radio, labels: {1: A, 2: B}}
+        - {id: q_end, kind: Question, title: End, input: {control: Switch}}
+"""
+
+
+class TestSubmitRefusesOutOfDomain:
+    """#1757: Z3 proves reachability over the declared domain, so an answer
+    outside it is refused before it reaches the walk."""
+
+    def _state(self) -> tuple[QMLState, FlowProcessor]:
+        state = QMLState(QMLLoader().load_from_string(_QML_DOMAIN))
+        processor = FlowProcessor(state)
+        processor.get_current_item(state)
+        return state, processor
+
+    def test_an_out_of_domain_answer_never_reaches_an_unreachable_item(self):
+        state, processor = self._state()
+
+        refused_radio = processor.process_item(state, "q_r", 7, source=SOURCE_SYNTHETIC)
+        processor.process_item(state, "q_r", 1, source=SOURCE_SYNTHETIC)
+        processor.get_current_item(state)
+        refused_slider = processor.process_item(state, "q_s", 99, source=SOURCE_SYNTHETIC)
+
+        for result in (refused_radio, refused_slider):
+            assert result["success"] is False
+            assert result["reason"] == "answer_out_of_domain"
+        assert state.get_item("q_s")["outcome"] is None
+        processor.process_item(state, "q_s", 10, source=SOURCE_SYNTHETIC)
+        assert processor.get_current_item(state)["id"] == "q_span"
+
+    def test_a_refusal_leaves_the_walk_untouched(self):
+        state, processor = self._state()
+        processor.process_item(state, "q_r", 1, source=SOURCE_SYNTHETIC)
+        processor.get_current_item(state)
+        processor.process_item(state, "q_s", 3, source=SOURCE_SYNTHETIC)
+        history = list(state.get_history())
+        events = len(state.get_timing_events())
+
+        result = processor.process_item(state, "q_r", 9, source=SOURCE_SYNTHETIC)
+
+        assert result["success"] is False
+        assert list(state.get_history()) == history
+        assert len(state.get_timing_events()) == events
+        assert state.get_item("q_r")["outcome"] == 1
+
+    def test_range_matrix_and_group_answers_are_judged(self):
+        state, processor = self._state()
+        for item_id, bad, good in (
+            ("q_span", [1, 9], [1, 3]),
+            ("m", [[1, 2], [3, 6]], [[1, 2], [3, 5]]),
+            ("qg", [1, 2, 1], [1, 2]),
+        ):
+            assert processor.process_item(state, item_id, bad, source=SOURCE_SYNTHETIC)["success"] is False
+            assert processor.process_item(state, item_id, good, source=SOURCE_SYNTHETIC)["success"] is True
+
+    def test_the_convenience_save_ignores_an_out_of_domain_value(self):
+        """Back always works, but the client sets skip_postcondition itself,
+        so a value outside the domain sent with it is ignored: the answer the
+        item held stays."""
+        state, processor = self._state()
+        kept = processor.process_item(state, "q_s", 7, source=SOURCE_RESPONDENT, skip_postcondition=True)
+        assert kept["success"] is True and state.get_item("q_s")["outcome"] == 7
+
+        ignored = processor.process_item(
+            state, "q_s", 99, source=SOURCE_RESPONDENT, skip_postcondition=True
+        )
+
+        assert ignored == {"success": True, "ignored": "answer_out_of_domain"}
+        assert state.get_item("q_s")["outcome"] == 7
+
+    def test_a_code_block_writing_a_malformed_matrix_cannot_wedge_the_walk(self):
+        """The shape is checked at the codeBlock's write: the block fails
+        (critical) and the matrix keeps its answer, so the next step builds
+        every proxy as before."""
+        qml = _QML_DOMAIN.replace(
+            "        - {id: q_end, kind: Question, title: End, input: {control: Switch}}",
+            "        - id: q_end\n"
+            "          kind: Question\n"
+            "          title: End\n"
+            "          codeBlock: \"m.outcome = [[1, 2]]\"\n"
+            "          input: {control: Switch}",
+        )
+        state = QMLState(QMLLoader().load_from_string(qml))
+        processor = FlowProcessor(state)
+        processor.get_current_item(state)
+        processor.process_item(state, "m", [[1, 2], [3, 4]], source=SOURCE_SYNTHETIC)
+
+        result = processor.process_item(state, "q_end", True, source=SOURCE_SYNTHETIC)
+
+        assert result["success"] is True
+        assert state.get_item("m")["outcome"] == [[1, 2], [3, 4]]
+        assert [w["type"] for w in state.get_warnings() if w["item_id"] == "q_end"] == ["codeblock"]
+        processor.get_current_item(state)
+
+
+_QML_GATED = """
+qmlVersion: "2.5"
+questionnaire:
+  title: Gated
+  blocks:
+    - id: b1
+      items:
+        - {id: q_a, kind: Question, title: A, input: {control: Radio, labels: {1: A, 2: B}}}
+        - {id: q_opt, kind: Question, title: Optional, input: {control: Slider, min: 0, max: 10}}
+        - id: q_b
+          kind: Question
+          title: B
+          precondition: [{predicate: "q_a.outcome == 1"}]
+          input: {control: Slider, min: 0, max: 10}
+        - id: q_u
+          kind: Question
+          title: Undecided
+          precondition: [{predicate: "q_opt.outcome > 3"}]
+          input: {control: Slider, min: 0, max: 10}
+        - id: q_v
+          kind: Question
+          title: Undecided then no
+          precondition:
+            - {predicate: "q_opt.outcome > 3"}
+            - {predicate: "q_a.outcome == 1"}
+          input: {control: Slider, min: 0, max: 10}
+        - id: q_w
+          kind: Question
+          title: Rewrites A
+          codeBlock: "q_a.outcome = 2"
+          input: {control: Switch}
+    - id: b2
+      precondition: [{predicate: "q_a.outcome == 1"}]
+      items:
+        - {id: q_in, kind: Question, title: In block, input: {control: Slider, min: 0, max: 10}}
+"""
+
+
+@pytest.mark.integration
+@pytest.mark.flow
+class TestSubmitRefusesAGatedOutItem:
+    """#1768: the API takes any item id, so an answer to an item whose gate
+    decides False is refused before it reaches the walk; an undecided gate
+    lets it through, as the owner decided."""
+
+    def _state(self, a: int) -> tuple[QMLState, FlowProcessor]:
+        state = QMLState(QMLLoader().load_from_string(_QML_GATED))
+        processor = FlowProcessor(state)
+        processor.get_current_item(state)
+        processor.process_item(state, "q_a", a, source=SOURCE_SYNTHETIC)
+        return state, processor
+
+    def test_an_answer_to_a_gated_out_item_is_refused_and_leaves_the_walk_untouched(self):
+        state, processor = self._state(2)
+        history = list(state.get_history())
+        events = len(state.get_timing_events())
+
+        for item_id in ("q_b", "q_in"):
+            result = processor.process_item(state, item_id, 5, source=SOURCE_SYNTHETIC)
+            assert result["success"] is False
+            assert result["reason"] == "precondition_not_met"
+            assert "5" not in result["message"]
+            assert state.get_item(item_id)["outcome"] is None
+        assert list(state.get_history()) == history
+        assert len(state.get_timing_events()) == events
+
+    def test_an_answer_to_an_item_whose_gate_holds_is_accepted(self):
+        state, processor = self._state(1)
+        for item_id in ("q_b", "q_in"):
+            assert processor.process_item(state, item_id, 5, source=SOURCE_SYNTHETIC)["success"] is True
+
+    def test_an_undecided_gate_lets_the_answer_through(self):
+        """q_opt was shown and left blank, so q_u's gate decides nothing (#1023)."""
+        state, processor = self._state(2)
+        processor.get_current_item(state)
+        processor.process_item(state, "q_opt", None, source=SOURCE_SYNTHETIC)
+
+        warnings = [dict(w) for w in state.get_warnings()]
+
+        assert processor.process_item(state, "q_u", 5, source=SOURCE_SYNTHETIC)["success"] is True
+        assert [w for w in state.get_warnings() if w["item_id"] == "q_u"] == [], (
+            "the judgement recorded the accepted item as skipped"
+        )
+        assert [dict(w) for w in state.get_warnings() if w["item_id"] != "q_u"] == warnings
+
+    def test_a_conjunct_deciding_false_refuses_after_an_undecided_one(self):
+        state, processor = self._state(2)
+        processor.get_current_item(state)
+        processor.process_item(state, "q_opt", None, source=SOURCE_SYNTHETIC)
+
+        result = processor.process_item(state, "q_v", 5, source=SOURCE_SYNTHETIC)
+
+        assert result["reason"] == "precondition_not_met"
+
+    def test_the_convenience_save_ignores_a_gated_out_item(self):
+        state, processor = self._state(2)
+
+        ignored = processor.process_item(
+            state, "q_b", 5, source=SOURCE_RESPONDENT, skip_postcondition=True
+        )
+
+        assert ignored == {"success": True, "ignored": "precondition_not_met"}
+        assert state.get_item("q_b")["outcome"] is None
+
+    def test_an_item_already_on_the_path_is_never_refused(self):
+        """q_b passed its gate when answered; a later codeBlock moving q_a
+        must not lock the respondent out of editing it."""
+        state, processor = self._state(1)
+        processor.process_item(state, "q_b", 5, source=SOURCE_SYNTHETIC)
+        processor.process_item(state, "q_w", True, source=SOURCE_SYNTHETIC)
+        assert state.get_item("q_a")["outcome"] == 2
+
+        assert processor.process_item(state, "q_b", 6, source=SOURCE_SYNTHETIC)["success"] is True
+
+    def test_a_forward_jump_cannot_put_a_gated_out_item_on_the_path(self):
+        """A forward navigate-to-item puts its target in history, where no
+        gate is judged again, so the jump judges the target's own gate."""
+        state, processor = self._state(2)
+        processor.get_current_item(state)
+        processor.process_item(state, "q_opt", 4, source=SOURCE_SYNTHETIC)
+
+        step = flow_service.compute_navigate_to_item(
+            NavigationWalk(state), None, target_item_id="q_b", source=SOURCE_RESPONDENT,
+            channel=CHANNEL_WEB, external_input_resolver=None,
+        )
+
+        assert step.outcome is FlowOutcome.NAVIGATION_REFUSED
+        assert "q_b" not in state.get_history()
+        assert processor.process_item(state, "q_b", 5, source=SOURCE_SYNTHETIC)["reason"] == (
+            "precondition_not_met"
+        )
 
 
 def _conditional_state(init: str = "") -> QMLState:

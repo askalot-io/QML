@@ -47,6 +47,24 @@ answering an earlier item rewinds the walk (B256), which ``process_item`` does
 for every driver. Items handed back to callers are shallow copies, so the
 per-response decoration (navigation progress, roster banner fields) never
 lands in the stored state.
+
+A survey's language is chosen before its first answer (``choose_language``).
+The pick re-materializes the walk from the campaign's current pin with the
+translation's text overlaid (``apply_translation``), so every later text exit
+reads translated text from state and a re-pin never changes what a survey in
+progress shows. It records the translation row it copied in
+``qml_state[LANGUAGE_PICK_KEY]``, which the repository compares at the first
+answer (see ``askalot_common.repository.mixins.survey``). The first committed
+answer locks the pick; only a complete translation is offered
+(``offered_languages``), so nothing falls back to source text item by item.
+
+An answer names the pick it was shown under (``pick_token``, the record's id
+from ``language_pick_token``, ``None`` for a walk no pick re-materialized).
+Every presentation carries it to the driver's page or view, and
+``compute_evaluate_item`` refuses an answer whose token is not the stored
+walk's (``PICK_CHANGED``, nothing written): another tab picked a language
+after this page rendered, and the answer would otherwise land on, and freeze,
+text the respondent never saw (#2127).
 """
 
 from __future__ import annotations
@@ -57,9 +75,20 @@ from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import Any
 
+from askalot_common.campaign_admission import has_committed_answer
+from askalot_common.i18n.locale import require_locale
+from askalot_common.repository.mixins.survey import (
+    LANGUAGE_PICK_KEY,
+    SurveyLanguageLockedError,
+    SurveyLanguagePinMovedError,
+    language_pick_record,
+    language_pick_token,
+)
+
 from askalot_qml.core.flow_processor import FlowProcessor
 from askalot_qml.core.qml_loader import QMLLoader
-from askalot_qml.core.qml_source import load_fielded_qml_content
+from askalot_qml.core.qml_source import load_fielded_qml_content, load_qml_content
+from askalot_qml.core.qml_translation import apply_translation, seed_translations
 from askalot_qml.models.qml_state import (
     SOURCE_INTERVIEWER,
     SOURCE_RESPONDENT,
@@ -158,6 +187,7 @@ class FlowOutcome(StrEnum):
     AT_END = "at_end"  # Nothing left to present, walk not completed (reading only)
     ACCEPTED = "accepted"  # The answer was recorded
     REJECTED = "rejected"  # The answer was refused (``message`` holds the hint)
+    PICK_CHANGED = "pick_changed"  # The answer was shown under an earlier language pick
     NO_PREVIOUS = "no_previous"  # Backward navigation from the first item
     ITEM_NOT_FOUND = "item_not_found"  # The navigation target is not in the instrument
     NAVIGATION_REFUSED = "navigation_refused"  # The target is not reachable yet
@@ -194,6 +224,10 @@ class FlowStep:
 # ---------------------------------------------------------------------------
 # Load phase
 # ---------------------------------------------------------------------------
+
+
+#: The ``qml_state`` key ``close_walk`` sets: this walk was completed at least once.
+WALK_ONCE_COMPLETED = "completed_once"
 
 
 def prepare_walk(walk):
@@ -268,17 +302,24 @@ def processor_for(state, force_full: bool = False) -> FlowProcessor:
 
 
 def materialize_walk_state(
-    walk, instrument: str, external_input_resolver: ExternalInputResolver | None
+    walk,
+    instrument: str,
+    external_input_resolver: ExternalInputResolver | None,
+    translation: dict[str, str] | None = None,
 ) -> FlowProcessor:
     """Build ``walk.qml_state`` from the instrument text and return a processor.
 
-    Parses the QML, runs the full (Z3) initialization, and applies the
-    external-input prefill. No write and no audit event: a first
+    Parses the QML, overlays ``translation`` (a translation row's ``texts``)
+    when given, runs the full (Z3) initialization, and applies the
+    external-input prefill. The overlay changes text only, so the flow and
+    the answer codes are the source's. No write and no audit event: a first
     initialization records ``started``, while a preview's reset (which also
     re-materializes) records ``reset``.
     """
     parsed = QMLLoader(logger=logger).load_from_string(instrument)
     logger.info("QML loaded and validated successfully.")
+    if translation:
+        parsed = apply_translation(parsed, translation)
     walk.qml_state = QMLState(parsed)
     processor = processor_for(walk.qml_state)
     # Pre-answer external items from the respondent record before the flow is
@@ -287,6 +328,149 @@ def materialize_walk_state(
     if external_input_resolver is not None:
         external_input_resolver(walk, processor)
     return processor
+
+
+class LanguageChoiceOutcome(StrEnum):
+    """What a language pick concluded."""
+
+    CHOSEN = "chosen"  # The walk is materialized in the language and the pick stored
+    LOCKED = "locked"  # The survey already holds a committed answer
+    NOT_OFFERED = "not_offered"  # The campaign's pin does not offer it (``offered``)
+
+
+@dataclass
+class LanguageChoice:
+    outcome: LanguageChoiceOutcome
+    #: The languages the campaign's current pin offers, source first.
+    offered: list[str] = field(default_factory=list)
+
+
+def walk_pin(walk, campaign) -> str | None:
+    """The pinned version a walk's translations come from, or None when it has none.
+
+    None for no campaign, an unpinned campaign, or a campaign since rebound to
+    another questionnaire (``update_campaign_questionnaire`` leaves existing
+    surveys on the old one): the pin is a version of the campaign's
+    questionnaire, so it holds no translation of this walk's.
+    """
+    version_id = getattr(campaign, "qml_version_id", None) if campaign else None
+    if not version_id or str(campaign.questionnaire_id) != str(walk.questionnaire_id):
+        return None
+    return version_id
+
+
+def offered_languages(repository, walk) -> list[str]:
+    """The languages a fielded walk may be answered in, its source language first.
+
+    Read from the campaign's current pin (``offered_locales``: the source and
+    every complete translation). A walk with no pin of its own (``walk_pin``)
+    offers only the source, since a translation belongs to a version.
+    """
+    questionnaire = repository.get_questionnaire(walk.questionnaire_id)
+    campaign = repository.get_campaign(walk.campaign_id) if walk.campaign_id else None
+    version_id = walk_pin(walk, campaign)
+    if not version_id:
+        return [questionnaire.language]
+    return list(repository.offered_locales(walk.questionnaire_id, version_id))
+
+
+@dataclass(frozen=True)
+class LanguagePick:
+    """What a pick re-materializes a walk from: read on the caller's thread, no Z3."""
+
+    locale: str
+    version_id: str
+    #: The pinned version's QML content.
+    instrument: str
+    #: The translation row's texts, ``None`` for the source language.
+    texts: dict | None
+    #: The translation row's ``updated_at``, ``None`` for the source language.
+    updated_at: Any
+
+
+def read_language_pick(
+    repository, walk, questionnaire, version_id: str, locale: str
+) -> LanguagePick | None:
+    """Read the pinned version and, for a translated ``locale``, its translation row.
+
+    None when that row is gone or incomplete (deleted, or a text emptied, after
+    the offered set was read): the locale is no longer offered, and a pick of a
+    partial row would show mixed languages and then freeze it at the first answer.
+    """
+    texts = None
+    updated_at = None
+    if locale != questionnaire.language:
+        row = repository.get_qml_translation(walk.questionnaire_id, version_id, locale)
+        if row is None or row.untranslated:
+            return None
+        texts, updated_at = row.texts, row.updated_at
+    instrument = load_qml_content(repository, questionnaire, version_id=version_id)
+    return LanguagePick(locale, version_id, instrument, texts, updated_at)
+
+
+def apply_language_pick(
+    walk, pick: LanguagePick, external_input_resolver: ExternalInputResolver | None
+) -> None:
+    """Re-materialize ``walk`` from ``pick`` (QML parse plus Z3), record it and clear the position.
+
+    Touches no repository, so a caller on an event loop runs it on a worker thread.
+    """
+    materialize_walk_state(walk, pick.instrument, external_input_resolver, translation=pick.texts)
+    walk.qml_state[LANGUAGE_PICK_KEY] = language_pick_record(
+        pick.locale, pick.version_id, pick.updated_at
+    )
+    update_position(walk, None)
+
+
+def choose_language(
+    repository,
+    walk,
+    locale: str,
+    *,
+    external_input_resolver: ExternalInputResolver | None,
+) -> LanguageChoice:
+    """Pick the language a fielded survey is answered in, before its first answer.
+
+    Re-reads the campaign's pin, and when it offers ``locale``,
+    re-materializes the walk from that version with the translation's text,
+    records the row copied (``LANGUAGE_PICK_KEY``: locale, version, the row's
+    ``updated_at``; ``None`` for the source language) and stores both through
+    ``choose_survey_language``, which refuses under the survey row's lock once
+    an answer is committed or when the pin moved since it was read here. The
+    walk's position is cleared, so the next presentation starts from its first
+    item. An unsupported ``locale`` raises ``UnsupportedLocale``.
+    """
+    locale = require_locale(locale)
+    if has_committed_answer(walk.qml_state):
+        return LanguageChoice(LanguageChoiceOutcome.LOCKED)
+    questionnaire = repository.get_questionnaire(walk.questionnaire_id)
+    campaign = repository.get_campaign(walk.campaign_id)
+    version_id = walk_pin(walk, campaign)
+    if not version_id:
+        offered = [questionnaire.language]
+    else:
+        # A version can be pinned before the verdict job carried its
+        # translations forward; seeding is idempotent.
+        seed_translations(repository, walk.questionnaire_id, version_id)
+        offered = list(repository.offered_locales(walk.questionnaire_id, version_id))
+    if locale not in offered:
+        return LanguageChoice(LanguageChoiceOutcome.NOT_OFFERED, offered)
+
+    pick = read_language_pick(repository, walk, questionnaire, version_id, locale)
+    if pick is None:
+        return LanguageChoice(LanguageChoiceOutcome.NOT_OFFERED, offered_languages(repository, walk))
+    apply_language_pick(walk, pick, external_input_resolver)
+    try:
+        stored = repository.choose_survey_language(
+            walk.id, locale, qml_state=walk.qml_state, version_id=version_id
+        )
+    except SurveyLanguageLockedError:
+        return LanguageChoice(LanguageChoiceOutcome.LOCKED)
+    except SurveyLanguagePinMovedError:
+        return LanguageChoice(LanguageChoiceOutcome.NOT_OFFERED, offered_languages(repository, walk))
+    walk.language = locale
+    walk.modified_at = stored.modified_at
+    return LanguageChoice(LanguageChoiceOutcome.CHOSEN, offered)
 
 
 def update_position(walk, item: dict[str, Any] | None) -> None:
@@ -438,8 +622,7 @@ def _current_item(
                     persist=initialized,
                     audit_actions=audit_actions,
                 )
-            update_position(walk, None)
-            walk.status = "completed"
+            close_walk(walk)
             return FlowStep(
                 FlowOutcome.JUST_COMPLETED,
                 was_completed=was_completed,
@@ -520,9 +703,14 @@ def compute_evaluate_item(
     skip_postcondition: bool,
     source: str,
     channel: str,
+    pick_token: str | None,
     external_input_resolver: ExternalInputResolver | None,
 ) -> FlowStep:
     """Record an answer for ``item_id`` without moving the walk's position.
+
+    ``pick_token`` is the language pick the answerer was shown the item under
+    (module docstring); another than the walk's is ``PICK_CHANGED``, with
+    nothing computed or written.
 
     ``skip_postcondition`` is the backward-navigation convenience save: the
     answer is kept so it is restored when the answerer returns, validation is
@@ -531,6 +719,8 @@ def compute_evaluate_item(
     item that later entries were built on rewinds the walk to it (B256).
     """
     _require_channel(channel)
+    if pick_token != language_pick_token(walk.qml_state):
+        return FlowStep(FlowOutcome.PICK_CHANGED)
     processor, initialized = _initialize_if_needed(
         walk, instrument, external_input_resolver, itemless_counts=False
     )
@@ -668,8 +858,16 @@ def compute_navigate_to_item(
     """Jump to ``target_item_id`` when the rules allow it, and present it.
 
     Allowed when the target is in history (a jump back), or when every item
-    before it in the navigation path is visited or gated out (a jump forward
-    over a path already settled).
+    before it in the navigation path is visited, gated out or left out by a
+    full capped-Group draw, and the target's own gate holds and no full draw
+    leaves it out (a jump forward over a path already settled, onto an item
+    the walk would present, #1809), and a Roster target is inside its pass
+    (#1846). A forward jump puts the target in history, under its live
+    Roster iteration, a capped-Group target with its slot of the draw
+    (#1845), and ``process_item`` judges no gate of an item already there
+    (#1768). A jump
+    back lands on the target's first history entry, in that entry's Roster
+    iteration (#1808).
     """
     _require_channel(channel)
     processor, initialized = _initialize_if_needed(
@@ -697,19 +895,37 @@ def compute_navigate_to_item(
                 preceding_item = walk.qml_state.get_item(navigation_path[i])
                 if preceding_item:
                     is_visited = preceding_item.get("visited", False)
-                    is_precondition_skipped = not processor._check_preconditions(
-                        preceding_item, all_items
-                    )
-                    if not is_visited and not is_precondition_skipped:
+                    # Skipped by its gate, or a capped-Group member the full
+                    # draw left out (#1809): the walk passes over both.
+                    is_skipped = processor.is_undrawn_past_cap(
+                        preceding_item
+                    ) or not processor._check_preconditions(preceding_item, all_items)
+                    if not is_visited and not is_skipped:
                         has_valid_path = False
                         break
+            if has_valid_path and (
+                processor.is_undrawn_past_cap(target_item)
+                or not processor._check_preconditions(target_item, all_items)
+            ):
+                has_valid_path = False
+            # The walk presents a Roster item only inside its pass, so a
+            # forward jump onto one with no live iteration would put it on
+            # the path under none (#1846).
+            if (
+                has_valid_path
+                and target_item.get("_roster_block_id")
+                and walk.qml_state.current_iter_key(target_item_id) is None
+            ):
+                has_valid_path = False
 
     if not is_in_history and not has_valid_path:
         return FlowStep(
             FlowOutcome.NAVIGATION_REFUSED,
             message=(
-                "Item is not in history and does not have a valid path "
-                "(prerequisites not completed)"
+                "Item is not in history and the walk would not present it now "
+                "(an earlier item is unanswered, its own condition is not met, "
+                "its group already asked as many questions as it asks, or it "
+                "repeats per iteration and none of its iterations is in progress)"
             ),
             persist=initialized,
             audit_actions=audit_actions,
@@ -719,17 +935,22 @@ def compute_navigate_to_item(
     close_open_timing_event(walk)
 
     if is_in_history:
-        # Truncate history to end at the target. The state chain goes with it:
-        # the target's successors' variables and codeBlock-written outcomes
-        # are rolled back (#1021).
-        history_index = navigation_history.index(target_item_id)
-        removed = walk.qml_state.truncate_history(history_index + 1)
-        for removed_item_id, _ in removed:
-            removed_item = walk.qml_state.get_item(removed_item_id)
-            if removed_item:
-                removed_item["visited"] = False
-    elif target_item_id not in navigation_history:
-        walk.qml_state.add_to_history(target_item_id)
+        # Truncate history to end at the target's FIRST entry, which for a
+        # Roster item undoes every later iteration. The state chain goes with
+        # it: the target's successors' variables and codeBlock-written
+        # outcomes (Roster cells included) are rolled back (#1021). The
+        # target is re-entered the way Back does: a Roster item gets its
+        # pass, that entry's iteration, its outcomes and its visited flags
+        # back (#1808), so a re-answer stays one `(item, iteration)` entry.
+        processor.rewind_to_first_entry(walk.qml_state, target_item_id)
+    else:
+        # A forward jump: the target joins the path in its live Roster
+        # iteration (None outside a Roster), and a capped-Group target takes
+        # its slot of the draw, as the walk's own reach does (#1845).
+        walk.qml_state.add_to_history(
+            target_item_id, iter_key=walk.qml_state.current_iter_key(target_item_id)
+        )
+        processor.draw_group_member(target_item)
 
     update_position(walk, target_item)
     # The jump re-presents the target, and the web client renders this
@@ -744,18 +965,45 @@ def compute_navigate_to_item(
     )
 
 
-def compute_finish(walk) -> FlowStep:
-    """Complete the walk early, keeping every answer given so far."""
+def close_walk(walk) -> None:
+    """End the walk: the one sequence every driver completes a walk with (#1294).
+
+    The order is load-bearing. An item still on screen is being left
+    unanswered, so its event is closed while the position still says which
+    item that was; clearing the position first would strand the event open,
+    and a later resume would then measure the whole absence as answer time.
+    Pure state manipulation, so a driver may run it off its event loop.
+
+    It also records ``WALK_ONCE_COMPLETED`` in the walk's state, which a Resume
+    does not clear: a fielded survey that was ever completed is never reset
+    (#1293), even after it was reopened.
+    """
+    walk.status = "completed"
+    close_open_timing_event(walk)
+    update_position(walk, None)
+    if walk.qml_state is not None:
+        walk.qml_state[WALK_ONCE_COMPLETED] = True
+
+
+def walk_was_completed(walk) -> bool:
+    """Whether the walk is completed now or was before a Resume reopened it."""
+    return walk.status == "completed" or bool((walk.qml_state or {}).get(WALK_ONCE_COMPLETED))
+
+
+def compute_finish(walk, *, at_end: bool) -> FlowStep:
+    """Complete the walk, keeping every answer given so far.
+
+    ``at_end`` says the driver found every reachable item answered: that is a
+    completion (``completed``), as the respondent lane's Finish on its end
+    screen is. Otherwise the walk ends early (``finished_early``), as the web's
+    Finish button may at any item.
+    """
     if walk.status == "completed":
         return FlowStep(FlowOutcome.ALREADY_COMPLETED, was_completed=True)
 
-    walk.status = "completed"
-    # The item on screen is being left unanswered — close its event while the
-    # position still says which item that was. Clearing the position first
-    # would strand the event open, and a later resume would then measure the
-    # whole absence as answer time.
-    close_open_timing_event(walk)
-    update_position(walk, None)
+    close_walk(walk)
+    if at_end:
+        return FlowStep(FlowOutcome.JUST_COMPLETED, persist=True, audit_actions=["completed"])
     return FlowStep(FlowOutcome.FINISHED, persist=True, audit_actions=["finished_early"])
 
 
@@ -815,7 +1063,8 @@ def emit_audit(audit_callback: AuditCallback | None, walk, action: str) -> None:
             {"questionnaire_id": walk.questionnaire_id, "campaign_id": walk.campaign_id},
         )
     except Exception as error:
-        logger.warning("Failed to log audit event (survey.%s): %s", action, error)
+        # The class, never the text: the step that failed may carry an answer (#2193).
+        logger.warning("Failed to log audit event (survey.%s): %s", action, type(error).__name__)
 
 
 def persist_step(
@@ -889,6 +1138,7 @@ def evaluate_item(
     skip_postcondition: bool,
     source: str,
     channel: str,
+    pick_token: str | None,
     audit_callback: AuditCallback | None,
     external_input_resolver: ExternalInputResolver | None,
 ) -> FlowStep:
@@ -903,6 +1153,7 @@ def evaluate_item(
         skip_postcondition=skip_postcondition,
         source=source,
         channel=channel,
+        pick_token=pick_token,
         external_input_resolver=external_input_resolver,
     )
     persist_step(store, walk, step, audit_callback)
@@ -960,8 +1211,8 @@ def navigate_to_item(
 
 
 def finish(store: FlowStore, walk, *, audit_callback: AuditCallback | None) -> FlowStep:
-    """Complete the walk early (emits ``finished_early``)."""
-    step = compute_finish(walk)
+    """Complete the walk early (emits ``finished_early``): the web's Finish button."""
+    step = compute_finish(walk, at_end=False)
     persist_step(store, walk, step, audit_callback)
     return step
 

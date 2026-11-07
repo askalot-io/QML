@@ -9,7 +9,8 @@ init from a service-supplied `{item_id: value}` injection map:
   hides it from the flow (AE1 / R9).
 - Missing: an external item with no injection is asked in the normal flow (AE2 / R10).
 - Out-of-domain: a value outside the item's declared domain is rejected and the
-  item is asked (AE3 / R11).
+  item is asked (AE3 / R11); a single number for a Range item is declined the
+  same way, since a Range answer is a pair (#1474).
 - Provenance: an auto-answered outcome carries the externally-supplied marker;
   an answer that replaces the value drops it, one re-submitting it keeps it (R12).
 - Precondition-false: a precondition-false external stays absent despite a value.
@@ -69,6 +70,33 @@ questionnaire:
               1: "Yes"
           codeBlock: |
             rotate_flag = q_rotate_out.outcome
+        - id: q_followup
+          kind: Question
+          title: Follow-up
+          input:
+            control: Radio
+            labels:
+              1: A
+              2: B
+"""
+
+
+# One external Range item (0–10): its answer is a pair [low, high] (#1474).
+_QML_RANGE_EXTERNAL = """
+questionnaire:
+  title: External range
+  blocks:
+    - id: main
+      kind: Group
+      items:
+        - id: q_budget
+          kind: Question
+          title: Budget band
+          external: true
+          input:
+            control: Range
+            min: 0
+            max: 10
         - id: q_followup
           kind: Question
           title: Follow-up
@@ -161,6 +189,22 @@ class TestApplyExternalInputs:
         assert "declared domain" in warning["message"]
         # The rejected value is respondent data and never appears in the record.
         assert "7" not in warning["message"]
+
+    def test_range_scalar_is_declined_as_out_of_domain(self):
+        """#1474: a Range answer is a pair; a single in-bounds number is not one
+        and is declined at the domain gate, while the pair is applied."""
+        state = _state(_QML_RANGE_EXTERNAL)
+        summary = FlowProcessor(state).apply_external_inputs(state, {"q_budget": 5})
+
+        assert summary["applied"] == 0
+        assert state.get_item("q_budget").get("outcome") is None
+        assert _decline_warning(state, "q_budget", "domain")["severity"] == "degraded"
+
+        state = _state(_QML_RANGE_EXTERNAL)
+        summary = FlowProcessor(state).apply_external_inputs(state, {"q_budget": [2, 8]})
+
+        assert summary["applied"] == 1
+        assert state.get_item("q_budget")["outcome"] == [2, 8]
 
     def test_provenance_marker_recorded(self):
         """R12 (write): an auto-answered item carries the externally-supplied marker."""

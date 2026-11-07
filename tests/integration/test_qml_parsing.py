@@ -3,11 +3,20 @@
 
 Tests the complete pipeline from QML files to Z3 constraints:
 - QMLLoader parses YAML files and flattens nested block/item structure
+- A document whose root is not a mapping is refused naming the root's shape (#1819)
 - Block-level preconditions propagate to enclosed items during flattening
 - Items with existing preconditions receive block preconditions prepended
-- Scalar predicates (bool, int, float) at block level are normalized to strings
+- Scalar predicates (bool, int) at block level are normalized to strings; a
+  float predicate, and any code unit that can produce a fraction, is refused
+  with the unit named and the whole-number fix (#1813)
 - Switch label keys YAML read as booleans reach readers as "on"/"off", and
   boolean, numeric and empty label values still load (#186)
+- A Range `default` is a two-number pair, a Slider's a single integer (#1474)
+- Every control `default` lies in the item's answer domain (#1823): a reversed
+  Range, a Range or Slider past `max`, an Editbox below `min`, a Radio /
+  Dropdown default that is no label key and a Checkbox default with an
+  undeclared bit are refused naming the item and the domain; in-domain
+  defaults load unchanged
 - QMLState is initialized with correct flat structure and blockId references
 - StaticBuilder generates Z3 constraints including inherited block preconditions
 - QMLTopology discovers dependencies from block-inherited preconditions
@@ -127,11 +136,6 @@ questionnaire:
           title: Integer predicate
           precondition:
             - predicate: 1
-        - id: q4
-          kind: Question
-          title: Float predicate
-          precondition:
-            - predicate: 1.5
         - id: q5
           kind: Question
           title: String predicate
@@ -155,14 +159,28 @@ questionnaire:
         self.assertEqual(q3["precondition"][0]["predicate"], "1")
         self.assertIsInstance(q3["precondition"][0]["predicate"], str)
 
-        # Check that float predicate was converted
-        q4 = state.get_item("q4")
-        self.assertEqual(q4["precondition"][0]["predicate"], "1.5")
-        self.assertIsInstance(q4["precondition"][0]["predicate"], str)
-
         # String predicates should remain unchanged
         q5 = state.get_item("q5")
         self.assertEqual(q5["precondition"][0]["predicate"], "q1.outcome > 0")
+
+    def test_a_float_predicate_is_refused_as_a_fraction(self):
+        """A bare ``1.5`` normalizes to the string ``"1.5"``, which QML's
+        whole-number arithmetic refuses (#1813)."""
+        loader = QMLLoader(schema_path=None)
+        qml_content = """
+questionnaire:
+  title: Float Predicate
+  blocks:
+    - id: main
+      items:
+        - id: q4
+          kind: Question
+          title: Float predicate
+          precondition:
+            - predicate: 1.5
+"""
+        with self.assertRaisesRegex(ValueError, r"whole numbers: the number 1.5 in a precondition of 'q4'"):
+            loader.load_from_string(qml_content)
 
     def test_complex_predicate_raises_error(self):
         """Test that complex type predicates (list, dict) raise ValueError."""
@@ -190,6 +208,74 @@ questionnaire:
         self.assertIn("Invalid predicate type", str(ctx.exception))
         self.assertIn("list", str(ctx.exception))
 
+
+
+_WHOLE_DOC = """
+qmlVersion: "2.6.1"
+questionnaire:
+  title: Whole numbers
+  codeInit: "total = 0"
+  blocks:
+    - id: b
+      postcondition:
+        - predicate: "total >= 0"
+      items:
+        - id: q
+          kind: Question
+          title: Count
+          precondition:
+            - predicate: "total % 2 == 0"
+          codeBlock: "total = q.outcome // 2"
+          input: {control: Editbox, min: 0, max: 10}
+    - id: r
+      kind: Roster
+      iterateOver: "2 ** total - 1"
+      labels: {1: One, 2: Two}
+      items:
+        - id: p
+          kind: Question
+          title: Each
+          input: {control: Switch}
+"""
+
+
+class TestTheRootIsAMapping(unittest.TestCase):
+    """#1819: a document whose root is not a mapping is refused with a sentence
+    naming the root's shape, before anything reads it as one."""
+
+    def test_each_non_mapping_root_is_named(self):
+        for content, shape in (("123", "a number"), ("- a\n- b", "a list"), ("hello", "a line of text"),
+                               ("# only a comment", "empty"), ("true", "a true/false value")):
+            with self.subTest(content=content):
+                with self.assertRaisesRegex(ValueError, f"must be a YAML mapping .* its root is {shape}\\."):
+                    QMLLoader(schema_path=None).load_from_string(content)
+
+
+class TestWholeNumberArithmetic(unittest.TestCase):
+    """#1813: the loader refuses a document whose code can produce a fraction,
+    naming the construct, the code unit and the whole-number rewrite."""
+
+    CASES = {
+        "codeInit": ('codeInit: "total = 0"', 'codeInit: "total = 1 / 2"', "in codeInit"),
+        "codeBlock": ('codeBlock: "total = q.outcome // 2"', 'codeBlock: "total = q.outcome / 2"', "in the codeBlock of 'q'"),
+        "item precondition": ('predicate: "total % 2 == 0"', 'predicate: "total * 0.5 == 0"', "in a precondition of 'q'"),
+        "block postcondition": ('predicate: "total >= 0"', 'predicate: "math.sqrt(total) >= 0"', "in a postcondition of block 'b'"),
+        "iterateOver": ('iterateOver: "2 ** total - 1"', 'iterateOver: "2 ** -1"', "in the iterateOver of block 'r'"),
+    }
+
+    def test_the_whole_number_document_loads(self):
+        QMLLoader().load_from_string(_WHOLE_DOC)
+
+    def test_each_code_unit_is_refused_with_where_and_the_fix(self):
+        for name, (whole, fractional, where) in self.CASES.items():
+            with self.subTest(unit=name):
+                assert _WHOLE_DOC.count(whole) == 1
+                with self.assertRaises(ValueError) as caught:
+                    QMLLoader().load_from_string(_WHOLE_DOC.replace(whole, fractional))
+                message = str(caught.exception)
+                self.assertIn("QML arithmetic is whole numbers", message)
+                self.assertIn(where, message)
+                self.assertIn("'//'", message)
 
 @pytest.mark.integration
 class TestQMLStateInitialization(unittest.TestCase):
@@ -803,10 +889,8 @@ class TestSchemaClosedObjects(unittest.TestCase):
     `unevaluatedProperties: false` (schema 2.1.1), so a typo'd key is rejected at
     load time (against the bundled schema) instead of silently attaching nothing.
 
-    `Input` is deliberately left OPEN. The loader now gives Switch labels their
-    `on`/`off` names back (TestSwitchLabelNormalization), but closing `Input`
-    would also reject a key a live campaign's pinned version carries
-    (`minLength`), and that trade-off is still undecided (#186, D6).
+    `Input` is closed too, since schema 2.6.0 (#186): Textarea `minLength` and
+    Switch `left` / `right` were declared first, because pinned versions carry them.
 
     Uses the DEFAULT loader (bundled schema on), unlike the `schema_path=None`
     helper the rest of this module uses.
@@ -866,6 +950,107 @@ class TestSchemaClosedObjects(unittest.TestCase):
         with self.assertRaises(Exception) as ctx:
             QMLLoader().load_from_string(self._doc(item))
         self.assertIn("hnt", str(ctx.exception))
+
+
+@pytest.mark.integration
+class TestRangeDefaultSchema(unittest.TestCase):
+    """#1474: a Range answer is a pair, so its `default` (where the two thumbs
+    rest) is a two-number list; a Slider keeps a single integer default.
+
+    Uses the DEFAULT loader (bundled schema on).
+    """
+
+    _doc = TestSchemaClosedObjects._doc
+
+    @staticmethod
+    def _item(control: str, default) -> dict:
+        return {
+            "id": "q",
+            "kind": "Question",
+            "title": "Q",
+            "input": {"control": control, "min": 0, "max": 10, "default": default},
+        }
+
+    def test_a_pair_default_validates(self):
+        data = QMLLoader().load_from_string(self._doc(self._item("Range", [2, 8])))
+        self.assertEqual(data["items"][0]["input"]["default"], [2, 8])
+
+    def test_a_scalar_default_is_refused(self):
+        with self.assertRaises(ValidationError):
+            QMLLoader().load_from_string(self._doc(self._item("Range", 5)))
+
+    def test_a_malformed_pair_default_is_refused(self):
+        for bad in ([2], [2, 8, 9], ["a", 8]):
+            with self.subTest(bad=bad), self.assertRaises(ValidationError):
+                QMLLoader().load_from_string(self._doc(self._item("Range", bad)))
+
+    def test_a_slider_keeps_an_integer_default(self):
+        QMLLoader().load_from_string(self._doc(self._item("Slider", 5)))  # no exception
+        with self.assertRaises(ValidationError):
+            QMLLoader().load_from_string(self._doc(self._item("Slider", [2, 8])))
+
+
+_BOUNDED = {"min": 0, "max": 10}
+_LABELLED = {"labels": {1: "One", 2: "Two"}}
+
+
+@pytest.mark.integration
+class TestADefaultIsInItsDomain(unittest.TestCase):
+    """#1823: a control's `default` is judged by the answer-domain rule, so a
+    resting position no answer could match is refused at load, naming the
+    item and the domain. A default stays a hint (#1166): one inside the
+    domain loads unchanged.
+
+    Uses the DEFAULT loader (bundled schema on): the schema passes every
+    refused default here, so the refusal is the loader's.
+    """
+
+    _doc = TestSchemaClosedObjects._doc
+
+    @staticmethod
+    def _item(control: str, default, **spec) -> dict:
+        return {
+            "id": "q_rest",
+            "kind": "Question",
+            "title": "Q",
+            "input": {"control": control, "default": default, **spec},
+        }
+
+    def test_a_default_outside_its_domain_is_refused_naming_item_and_domain(self):
+        cases = [
+            ("Range", [8, 2], _BOUNDED, "0 <= low <= high <= 10"),
+            ("Range", [0, 50], _BOUNDED, "0 <= low <= high <= 10"),
+            ("Slider", 11, _BOUNDED, "a whole number between 0 and 10"),
+            ("Editbox", -1, _BOUNDED, "a whole number between 0 and 10"),
+            ("Radio", 3, _LABELLED, "one of its label keys (1, 2)"),
+            ("Dropdown", 0, _LABELLED, "one of its label keys (1, 2)"),
+            ("Checkbox", 4, _LABELLED, "a sum of distinct label keys (1, 2)"),
+        ]
+        for control, default, spec, domain in cases:
+            with self.subTest(control=control, default=default):
+                with self.assertRaises(ValueError) as caught:
+                    QMLLoader().load_from_string(self._doc(self._item(control, default, **spec)))
+                self.assertNotIsInstance(caught.exception, ValidationError)
+                self.assertIn("'q_rest'", str(caught.exception))
+                self.assertIn(f"{control} default", str(caught.exception))
+                self.assertIn(domain, str(caught.exception))
+
+    def test_a_default_inside_its_domain_loads(self):
+        cases = [
+            ("Range", [0, 10], _BOUNDED),
+            ("Range", [4, 4], _BOUNDED),
+            ("Slider", 10, _BOUNDED),
+            ("Editbox", 0, _BOUNDED),
+            ("Radio", 2, _LABELLED),
+            ("Dropdown", 1, _LABELLED),
+            ("Checkbox", 3, _LABELLED),
+            ("Checkbox", 0, _LABELLED),
+            ("Switch", 1, {}),
+        ]
+        for control, default, spec in cases:
+            with self.subTest(control=control, default=default):
+                data = QMLLoader().load_from_string(self._doc(self._item(control, default, **spec)))
+                self.assertEqual(data["items"][0]["input"]["default"], default)
 
 
 @pytest.mark.integration

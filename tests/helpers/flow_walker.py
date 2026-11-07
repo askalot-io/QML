@@ -1,5 +1,6 @@
 """
-Shared FlowProcessor drive-and-answer helper for integration tests.
+Shared FlowProcessor drive-and-answer helper for integration tests, and the
+minimal walk object the flow service's compute steps read and position.
 
 Extracted from the duplicated per-file walk drivers that existed in
 test_group_traversal.py and test_group_e2e_chain.py.
@@ -51,3 +52,15 @@ def walk_and_answer(
     else:
         raise AssertionError(f"Walked >{max_steps} items — likely a loop: {walked!r}")
     return walked
+
+
+class NavigationWalk:
+    """The walk surface a flow-service step (``compute_navigate_to_item``)
+    reads and positions: a state, a status, an id and the position fields."""
+
+    def __init__(self, state: QMLState):
+        self.qml_state = state
+        self.status = "in_progress"
+        self.id = "walk"
+        self.current_item_id = None
+        self.current_block_id = None

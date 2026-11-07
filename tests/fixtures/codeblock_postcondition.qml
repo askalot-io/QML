@@ -18,6 +18,11 @@
 #
 # Expected: q4 postcondition should be INFEASIBLE (never satisfiable)
 #
+# q1's and q2's own postconditions refuse a blank answer, so both are always
+# answered when q4's check runs: a blank q2 would make it unknown and waive it
+# (#1784), and a blank q1 leaves var1 None, so q2's codeBlock raises and q4's
+# check raises and is waived (#1776).
+#
 # Bug scenario: If Z3 doesn't track var1's relationship to q1+q2 outcomes,
 # it treats var1 as unconstrained and reports CONSTRAINING instead.
 
@@ -41,6 +46,9 @@ questionnaire:
             control: Editbox
             min: 0
             max: 10
+          postcondition:
+            - predicate: q1.outcome is not None
+              hint: "Please answer"
           codeBlock: |
             var1 = q1.outcome
 
@@ -51,6 +59,9 @@ questionnaire:
             control: Editbox
             min: 10
             max: 20
+          postcondition:
+            - predicate: q2.outcome is not None
+              hint: "Please answer"
           codeBlock: |
             var1 = var1 + q2.outcome
 

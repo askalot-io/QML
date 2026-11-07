@@ -1,0 +1,421 @@
+# Spanish translations for askalot_qml.
+# Copyright (C) 2026 ORGANIZATION
+# This file is distributed under the same license as the askalot_qml
+# project.
+# FIRST AUTHOR <EMAIL@ADDRESS>, 2026.
+#
+msgid ""
+msgstr ""
+"Project-Id-Version: askalot_qml VERSION\n"
+"Report-Msgid-Bugs-To: EMAIL@ADDRESS\n"
+"POT-Creation-Date: 2026-11-03 17:04+0100\n"
+"PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
+"Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
+"Language: es\n"
+"Language-Team: es <LL@li.org>\n"
+"Plural-Forms: nplurals=2; plural=(n != 1);\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=utf-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Generated-By: Babel 2.18.0\n"
+
+#, python-format
+msgid "%(issue)s (%(item)s)"
+msgstr "%(issue)s (%(item)s)"
+
+#, python-format
+msgid "%(issue)s: %(detail)s"
+msgstr "%(issue)s: %(detail)s"
+
+#, python-format
+msgid "%(num)d more is not listed."
+msgid_plural "%(num)d more are not listed."
+msgstr[0] "%(num)d más no se muestra en la lista."
+msgstr[1] "%(num)d más no se muestran en la lista."
+
+msgid "A 'none' option that can be ticked with others"
+msgstr "Opción «ninguna» que se puede marcar junto con otras"
+
+#, python-format
+msgid ""
+"A precondition reads answers as never given, because a backward edit took"
+" them off the current path: %(items)s"
+msgstr ""
+"Una precondición lee respuestas como no dadas, porque una modificación "
+"hacia atrás las dejó fuera de la ruta actual: %(items)s"
+
+#, python-format
+msgid ""
+"An answer check reads answers as never given, because a backward edit "
+"took them off the current path: %(items)s"
+msgstr ""
+"Una comprobación de respuesta lee respuestas como no dadas, porque una "
+"modificación hacia atrás las dejó fuera de la ruta actual: %(items)s"
+
+msgid "Answer check could not be evaluated"
+msgstr "Comprobación de respuesta que no se pudo evaluar"
+
+msgid "Answer check reads an answer that is off the path"
+msgstr "Comprobación de respuesta que leyó una respuesta fuera de la ruta"
+
+msgid "Answer check reads an unanswered item"
+msgstr "Comprobación de respuesta que lee un elemento sin responder"
+
+msgid "Answer check repeats the input limits"
+msgstr "Comprobación de respuesta que repite los límites de la entrada"
+
+msgid "Answer check that allows only one choice"
+msgstr "Comprobación de respuesta que solo admite una opción"
+
+msgid "Answer check that always fails"
+msgstr "Comprobación de respuesta que siempre falla"
+
+msgid "Answer check that every answer passes"
+msgstr "Comprobación de respuesta que cualquier respuesta supera"
+
+msgid "Answer check that no answer can pass"
+msgstr "Comprobación de respuesta que ninguna respuesta puede superar"
+
+msgid "Cannot navigate to this item"
+msgstr "No se puede ir a este elemento"
+
+msgid "Code block error"
+msgstr "Error en el bloque de código"
+
+msgid "Code that is not allowed"
+msgstr "Código no permitido"
+
+msgid "Comment worded as a question"
+msgstr "Comentario redactado como pregunta"
+
+msgid "Completion could not be proven"
+msgstr "No se pudo demostrar que se pueda completar"
+
+msgid "Condition on a value that never changes"
+msgstr "Condición sobre un valor que nunca cambia"
+
+msgid "Condition reads free text"
+msgstr "Condición que lee texto libre"
+
+msgid "Condition the logic check could not verify"
+msgstr "Condición que la comprobación lógica no pudo verificar"
+
+msgid "Condition verified only approximately"
+msgstr "Condición verificada solo de forma aproximada"
+
+#, python-format
+msgid ""
+"Could not decide postcondition '%(expr)s'. Treating it as satisfied (the "
+"answer is accepted unchecked). Items it reads that were shown and left "
+"unanswered, or computed from one: %(items)s"
+msgstr ""
+"No se pudo resolver la poscondición «%(expr)s». Se considera cumplida (la"
+" respuesta se acepta sin comprobar). Elementos que lee que se mostraron y"
+" quedaron sin responder, o que se calculan a partir de uno de ellos: "
+"%(items)s"
+
+#, python-format
+msgid ""
+"Could not decide precondition '%(expr)s'. Treating it as unsatisfied (the"
+" gated item is skipped). Items it reads that were shown and left "
+"unanswered, or computed from one: %(items)s"
+msgstr ""
+"No se pudo resolver la precondición «%(expr)s». Se considera no cumplida "
+"(el elemento condicionado se omite). Elementos que lee que se mostraron y"
+" quedaron sin responder, o que se calculan a partir de uno de ellos: "
+"%(items)s"
+
+msgid "Display condition could not be evaluated"
+msgstr "Condición de visualización que no se pudo evaluar"
+
+msgid "Display condition reads an answer that is off the path"
+msgstr "Condición de visualización que leyó una respuesta fuera de la ruta"
+
+msgid "Display condition reads an unanswered item"
+msgstr "Condición de visualización que lee un elemento sin responder"
+
+#, python-format
+msgid ""
+"External prefill declined for %(item)s: item is not declared `external: "
+"true`."
+msgstr ""
+"Se ha rechazado la precarga externa de %(item)s: el elemento no está "
+"declarado como `external: true`."
+
+#, python-format
+msgid ""
+"External prefill declined for %(item)s: the item belongs to a Roster or a"
+" count-capped Group, so a single prefilled value has no well-defined "
+"iteration."
+msgstr ""
+"Se ha rechazado la precarga externa de %(item)s: el elemento pertenece a "
+"un Roster o a un Group limitado por count, así que un único valor "
+"precargado no corresponde a ninguna iteración concreta."
+
+#, python-format
+msgid ""
+"External prefill declined for %(item)s: the item's precondition is false,"
+" so it is not asked at all."
+msgstr ""
+"Se ha rechazado la precarga externa de %(item)s: la precondición del "
+"elemento es falsa, así que no se formula."
+
+#, python-format
+msgid ""
+"External prefill declined for %(item)s: the supplied value fails the "
+"item's postcondition (%(hint)s)."
+msgstr ""
+"Se ha rechazado la precarga externa de %(item)s: el valor proporcionado "
+"no cumple la poscondición del elemento (%(hint)s)."
+
+#, python-format
+msgid ""
+"External prefill declined for %(item)s: the supplied value is outside the"
+" item's declared domain."
+msgstr ""
+"Se ha rechazado la precarga externa de %(item)s: el valor proporcionado "
+"está fuera del dominio declarado del elemento."
+
+#, python-format
+msgid "Item %(item)s not found in questionnaire state"
+msgstr "No se encontró el elemento %(item)s en el estado del cuestionario"
+
+msgid "Item can never be shown"
+msgstr "Elemento que nunca se puede mostrar"
+
+msgid "Item not found"
+msgstr "Elemento no encontrado"
+
+msgid "Item unreachable once earlier answers are given"
+msgstr "Elemento inalcanzable tras las respuestas anteriores"
+
+msgid "Items depend on each other in a cycle"
+msgstr "Elementos con dependencias circulares"
+
+msgid "Items in a capped group depend on each other"
+msgstr "Elementos de un grupo con límite que dependen entre sí"
+
+msgid "Name that refers to nothing"
+msgstr "Nombre que no hace referencia a nada"
+
+msgid "No previous item available"
+msgstr "No hay ningún elemento anterior"
+
+msgid "No respondent can complete the questionnaire"
+msgstr "Ningún encuestado puede completar el cuestionario"
+
+msgid "Not graded: the logic check classified no items."
+msgstr "Sin evaluar: la comprobación lógica no clasificó ningún elemento."
+
+msgid "Not graded: there are no numeric-input items to bound."
+msgstr "Sin evaluar: no hay elementos de entrada numérica que acotar."
+
+msgid ""
+"Open the questionnaire in the editor for the full report, fix it, then "
+"publish again."
+msgstr ""
+"Abra el cuestionario en el editor para ver el informe completo, corríjalo"
+" y vuelva a publicarlo."
+
+#, python-format
+msgid ""
+"Postcondition '%(expr)s' was refused (%(reason)s), so it never ran. "
+"Treating it as satisfied (the answer is accepted unchecked)."
+msgstr ""
+"La poscondición «%(expr)s» se rechazó (%(reason)s), así que nunca se "
+"ejecutó. Se considera cumplida (la respuesta se acepta sin comprobar)."
+
+#, python-format
+msgid ""
+"Precondition '%(expr)s' was refused (%(reason)s), so it never ran. "
+"Treating it as unsatisfied (the gated item is skipped)."
+msgstr ""
+"La precondición «%(expr)s» se rechazó (%(reason)s), así que nunca se "
+"ejecutó. Se considera no cumplida (el elemento condicionado se omite)."
+
+#, python-format
+msgid "Publishing was refused: %(num)d error must be fixed first: %(issues)s."
+msgid_plural "Publishing was refused: %(num)d errors must be fixed first: %(issues)s."
+msgstr[0] ""
+"Se ha rechazado la publicación: primero debe corregir %(num)d error: "
+"%(issues)s."
+msgstr[1] ""
+"Se ha rechazado la publicación: primero debe corregir %(num)d errores: "
+"%(issues)s."
+
+msgid "Questionnaire-level condition that nothing reads"
+msgstr "Condición sobre el propio cuestionario, que nada lee"
+
+msgid "Reads an answer that may be missing"
+msgstr "Lee una respuesta que puede faltar"
+
+msgid "Repeated-question list could not be read"
+msgstr "Lista de preguntas repetidas que no se pudo leer"
+
+msgid "Repeated-question list names undeclared options"
+msgstr "Lista de preguntas repetidas que nombra opciones no declaradas"
+
+msgid "Repeated-question subject that cannot be answered"
+msgstr "Sujeto de preguntas repetidas que no se puede responder"
+
+msgid "Supplied value ignored: it fails the answer check"
+msgstr "Valor proporcionado ignorado: no supera la comprobación de respuesta"
+
+msgid "Supplied value ignored: it is not a valid answer"
+msgstr "Valor proporcionado ignorado: no es una respuesta válida"
+
+msgid "Supplied value ignored: the item is in a repeating block"
+msgstr "Valor proporcionado ignorado: el elemento está en un bloque repetido"
+
+msgid "Supplied value ignored: the item is not shown"
+msgstr "Valor proporcionado ignorado: el elemento no se muestra"
+
+msgid "Supplied value ignored: the item takes no outside value"
+msgstr "Valor proporcionado ignorado: el elemento no admite valores externos"
+
+msgid "Survey completed"
+msgstr "Encuesta completada"
+
+msgid "Survey finished successfully"
+msgstr "Encuesta finalizada correctamente"
+
+msgid "Survey is already completed"
+msgstr "La encuesta ya está completada"
+
+msgid "Survey is not completed, cannot resume"
+msgstr "La encuesta no está completada; no se puede reanudar"
+
+msgid "Survey resumed but all items are completed"
+msgstr "Encuesta reanudada, pero todos los elementos están completados"
+
+msgid "Survey resumed successfully"
+msgstr "Encuesta reanudada correctamente"
+
+#, python-format
+msgid ""
+"The code block could not start (%(error_type)s), so nothing ran and the "
+"context is unchanged."
+msgstr ""
+"El bloque de código no pudo iniciarse (%(error_type)s), así que no se "
+"ejecutó nada y el contexto no cambia."
+
+#, python-format
+msgid ""
+"The code block ran to its end, but QML arithmetic is whole numbers and "
+"these names computed a fraction: %(variables)s. Each variable holding a "
+"fraction was dropped; downstream state may be wrong."
+msgstr ""
+"El bloque de código se ejecutó hasta el final, pero la aritmética de QML "
+"trabaja con números enteros y estos nombres dieron una fracción: "
+"%(variables)s. Se descartó toda variable que contenía una fracción; el "
+"estado posterior puede ser incorrecto."
+
+#, python-format
+msgid ""
+"The code block stopped with %(error_type)s at line %(line)s. Variables "
+"assigned before the failure are kept; downstream state may be wrong."
+msgstr ""
+"El bloque de código se detuvo con %(error_type)s en la línea %(line)s. Se"
+" conservan las variables asignadas antes del fallo; el estado posterior "
+"puede ser incorrecto."
+
+#, python-format
+msgid ""
+"The code block stopped with %(error_type)s. Variables assigned before the"
+" failure are kept; downstream state may be wrong."
+msgstr ""
+"El bloque de código se detuvo con %(error_type)s. Se conservan las "
+"variables asignadas antes del fallo; el estado posterior puede ser "
+"incorrecto."
+
+#, python-format
+msgid ""
+"The code block was refused (%(reason)s), so nothing ran and the context "
+"is unchanged."
+msgstr ""
+"El bloque de código se rechazó (%(reason)s), así que no se ejecutó nada y"
+" el contexto no cambia."
+
+#, python-format
+msgid ""
+"The iterateOver expression %(expr)s did not resolve to a non-negative "
+"whole number, so the roster pass is skipped."
+msgstr ""
+"La expresión iterateOver %(expr)s no dio como resultado un número entero "
+"no negativo, así que se omite el recorrido del roster."
+
+#, python-format
+msgid ""
+"The iterateOver expression %(expr)s failed (%(error_type)s), so the "
+"roster pass is skipped."
+msgstr ""
+"La expresión iterateOver %(expr)s falló (%(error_type)s), así que se "
+"omite el recorrido del roster."
+
+#, python-format
+msgid ""
+"The iterateOver expression %(expr)s selects iterations that have no "
+"declared label, so those iterations are not traversed."
+msgstr ""
+"La expresión iterateOver %(expr)s selecciona iteraciones sin etiqueta "
+"declarada, así que esas iteraciones no se recorren."
+
+#, python-format
+msgid ""
+"The iterateOver expression %(expr)s was refused (%(reason)s), so the "
+"roster pass is skipped."
+msgstr ""
+"La expresión iterateOver %(expr)s se rechazó (%(reason)s), así que se "
+"omite el recorrido del roster."
+
+msgid "The logic check could not run"
+msgstr "No se pudo ejecutar la comprobación lógica"
+
+msgid "The questionnaire could not be loaded"
+msgstr "No se pudo cargar el cuestionario"
+
+msgid "This survey changed in another window. Reload to continue."
+msgstr "Esta encuesta cambió en otra ventana. Vuelva a cargar para continuar."
+
+msgid ""
+"This survey is closed. Its organization has been sealed, so it is no "
+"longer accepting responses."
+msgstr ""
+"Esta encuesta está cerrada. Su organización ha sido sellada, por lo que "
+"ya no acepta respuestas."
+
+msgid ""
+"This survey was completed and cannot be reset. Use Back or Resume to "
+"change an answer."
+msgstr ""
+"Esta encuesta se completó y no se puede restablecer. Utilice Atrás o "
+"Reanudar para cambiar una respuesta."
+
+#, python-format
+msgid ""
+"Unable to evaluate postcondition '%(expr)s' (%(error_type)s). Treating it"
+" as satisfied (the answer is accepted unchecked)."
+msgstr ""
+"No se pudo evaluar la poscondición «%(expr)s» (%(error_type)s). Se "
+"considera cumplida (la respuesta se acepta sin comprobar)."
+
+#, python-format
+msgid ""
+"Unable to evaluate precondition '%(expr)s' (%(error_type)s). Treating it "
+"as unsatisfied (the gated item is skipped)."
+msgstr ""
+"No se pudo evaluar la precondición «%(expr)s» (%(error_type)s). Se "
+"considera no cumplida (el elemento condicionado se omite)."
+
+msgid "Variable assigned to itself"
+msgstr "Variable asignada a sí misma"
+
+msgid "Variable read before it is set"
+msgstr "Variable leída antes de asignarle un valor"
+
+msgid "Variable set but never read"
+msgstr "Variable asignada pero nunca leída"
+
+msgid "Variable that only copies another"
+msgstr "Variable que solo copia otra"
+

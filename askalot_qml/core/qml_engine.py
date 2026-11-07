@@ -46,7 +46,7 @@ class QMLEngine:
 
         # Step 2: Build topology using the static builder
         self.logger.debug("Building topology from static builder...")
-        self.topology = QMLTopology(questionnaire_state, self.static_builder)
+        self.topology: QMLTopology = self.static_builder.topology
 
         self.logger.info(
             f"QML Engine initialized: {len(self.topology.items)} items, "

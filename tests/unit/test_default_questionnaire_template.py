@@ -2,12 +2,15 @@
 Guard: every committed catalog questionnaire template is publish-gate valid.
 
 Tests the templates ``askalot_common`` ships under
-``askalot_common/assets/questionnaires/*.qml``:
+``askalot_common/assets/questionnaires/``:
 - the new-Project starter (``starter.qml``) that every newly inserted Project
   receives, and the three samples (``SAMPLE_QUESTIONNAIRES``) that seed the
   Demo showcase and heal existing clones, are all present
 - every committed template passes the publish gate with no issues
 - the starter is one block holding exactly one Comment and nothing else
+- every template in the questionnaire template library
+  (``templates/<category>/*.qml``, ``askalot_common.questionnaire_templates``)
+  passes the publish gate with no issues, and the library is not empty
 
 ``Repository.create_catalog_questionnaire`` stamps each created questionnaire
 ``logic_validated=True`` WITHOUT re-running Z3 at request time
@@ -55,6 +58,12 @@ def _assets_dir() -> Path:
     )
 
 
+def _library_templates() -> list[Path]:
+    templates = sorted((_assets_dir() / "templates").glob("*/*.qml"))
+    assert templates, "no questionnaire template library .qml files found"
+    return templates
+
+
 def _committed_templates() -> list[Path]:
     templates = sorted(_assets_dir().glob("*.qml"))
     assert templates, "no committed .qml catalog templates found"
@@ -92,4 +101,20 @@ class TestSampleQuestionnaireTemplates:
             "create_catalog_questionnaire would stamp logic_validated=True falsely. issues="
             f"{result.issues}"
         )
+        assert result.issues == []
+
+
+@pytest.mark.unit
+class TestQuestionnaireTemplateLibrary:
+    """A questionnaire created from a library template is stamped publish-valid
+    without re-running Z3 at request time, so each committed file must pass."""
+
+    @pytest.mark.parametrize(
+        "template", _library_templates(), ids=lambda p: f"{p.parent.name}/{p.name}"
+    )
+    def test_library_template_passes_publish_gate(self, template: Path):
+        result = evaluate_publish_gate_content(
+            template.read_text(encoding="utf-8"), source_label=template.name
+        )
+        assert result.ok, f"library template {template.name!r} fails the publish gate: {result.issues}"
         assert result.issues == []

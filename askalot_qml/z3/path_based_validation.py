@@ -121,7 +121,7 @@ class PathBasedValidator:
         base = self.builder.get_domain_base()
         compiled_conditions: dict[str, tuple[BoolRef, BoolRef]] = {
             iid: (
-                self.builder.compile_conditions(iid, details["preconditions"]),
+                self.builder.compile_conditions(iid, details["preconditions"], kind="precondition"),
                 self.builder.item_implication(iid),
             )
             for iid, details in self.builder.item_details.items()

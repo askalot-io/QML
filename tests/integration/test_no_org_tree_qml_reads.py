@@ -17,8 +17,8 @@ Tests that, across the whole monorepo's non-test Python:
   onto a QML target, or the retired ``create_questionnaire_file`` family
 - the allowlist itself stays honest — every entry names a file that exists and
   carries a written reason
-- the allowlist admits only the two sanctioned surfaces: Armiger's ephemeral
-  workspace layer (files there are derived copies by design) and the loader
+- the allowlist admits only one sanctioned QML-reading surface: the loader's
+  own filesystem branch (fixtures and the CLI)
 - the ``shared/modules`` + ``services`` production trees are actually reached by
   the scan, so a mis-rooted run cannot pass vacuously
 
@@ -59,102 +59,27 @@ _QML_WRITE_SIGNATURES = (
 #: Files permitted to read QML from a directory, each with the reason it is not
 #: a document-store read. Paths are repo-relative.
 ALLOWLIST: dict[str, str] = {
-    # Armiger workspace layer — a workspace IS a materialized copy of documents;
-    # reading its files is how promotion sees the user's edits (U8/U9/U10).
-    "services/tenant/armiger/app/core/workspace_manager.py": (
-        "workspace materialization — ephemeral copies, not canonical content"
-    ),
-    "services/tenant/armiger/app/core/project_summary_stitcher.py": (
-        "reads uploaded reference documents (binary artifacts) off the org "
-        "volume; the summary it produces is written to the document store"
-    ),
-    "services/tenant/armiger/app/core/work_surface.py": (
-        "enumerates a SESSION WORKSPACE's materialized copies to decide which "
-        "editor tabs to open (R15). Reads names, never content — and reads the "
-        "filesystem deliberately: it runs in a Flask-free background thread "
-        "after the redirect, so it has no request or organization context to "
-        "query the document store with, and a DB-derived list could name a file "
-        "the editor cannot open"
-    ),
-    "services/tenant/armiger/app/core/slug_sanitizer.py": "docstring reference only",
-    "services/tenant/armiger/app/config.py": "declares the org volume for the workspace layer",
-    "services/tenant/armiger/app/app.py": "startup logging of the org volume",
-    # The loader's own filesystem branch — fixtures, the CLI, workspaces.
+    # The loader's own filesystem branch — fixtures and the CLI.
     "shared/modules/askalot_qml/askalot_qml/core/qml_loader.py": (
-        "the filesystem branch itself — used by fixtures, the CLI, and workspaces"
-    ),
-    "shared/modules/askalot_common/askalot_common/workspace/sync.py": (
-        "resolves the artifact store for the documents tier — uploaded "
-        "reference documents are BINARY artifacts on the org volume (R8), the "
-        "one thing that legitimately still lives there; no QML is read"
-    ),
-    # Non-QML uses of the org volume: datasets, exports, uploads, briefs,
-    # summaries — explicitly out of the QML read swap's scope.
-    "services/tenant/balansor/app/helpers.py": "dataset/export artifact paths",
-    "services/tenant/balansor/app/config.py": "dataset/export artifact paths",
-    "services/tenant/balansor/app/blueprints/bundle_api.py": "dataset artifact paths",
-    "services/tenant/balansor/app/blueprints/export_api.py": "export artifact paths",
-    "services/tenant/balansor/app/blueprints/quality_api.py": "dataset artifact paths",
-    "services/tenant/balansor/app/core/agent/analyst.py": "dataset artifact paths",
-    "services/tenant/portor/app/config.py": "declares the org volume",
-    "services/tenant/portor/app/app.py": "startup logging",
-    "services/tenant/portor/app/mcp_server.py": "startup logging",
-    "services/tenant/portor/app/api/dataset_api.py": "dataset artifact paths",
-    "services/tenant/portor/app/api/upload_api.py": "upload staging paths",
-    "services/tenant/portor/app/api/signed_download.py": "signed-download artifact root",
-    "services/tenant/portor/app/mcp_tools/upload_tools.py": "upload staging paths",
-    "services/tenant/portor/app/mcp_tools/dataset_tools.py": "dataset artifact paths",
-    "services/tenant/portor/app/mcp_tools/bundle_tools.py": "dataset artifact paths",
-    "services/tenant/portor/app/capabilities/bundle.py": "dataset artifact paths",
-    "services/tenant/portor/app/capability_layer/extensions/signed_url.py": (
-        "signed-URL org-prefix convention"
-    ),
-    "services/tenant/seneschal/app/seneschal/config.py": "declares the org volume",
-    # The binary-artifact storage driver (#203). This entry is a stronger claim
-    # than the others: the rest are files that happen to touch the org volume
-    # for a non-QML reason, whereas this one is the module the whole seam exists
-    # to concentrate that access INTO — "no module outside the store composes an
-    # org-volume path" is the invariant, and the store is the stated exception.
-    # It resolves opaque ArtifactRef(org, lane, key) triples to local paths and
-    # contains traversal to the lane; an object-store driver would replace this
-    # file and need no allowlist entry at all.
-    "shared/modules/askalot_common/askalot_common/files/artifact_store.py": (
-        "the artifact-storage driver — the single sanctioned composer of "
-        "org-volume paths; binary lanes only, never QML content"
+        "the filesystem branch itself — used by fixtures and the CLI"
     ),
 }
 
-#: Only these two surfaces may hold a QML-reading allowlist entry. Anything else
-#: must be a non-QML use of the org volume.
-_QML_READ_ALLOWED_PREFIXES = (
-    "services/tenant/armiger/app/core/",
-    "shared/modules/askalot_qml/askalot_qml/",
-)
+#: Only this surface may hold a QML-reading allowlist entry. Anything else must
+#: be a non-QML use of the org volume.
+_QML_READ_ALLOWED_PREFIXES = ("shared/modules/askalot_qml/askalot_qml/",)
 
-#: Files permitted to WRITE a ``.qml`` path, with the reason. Only Armiger's
-#: workspace layer qualifies: a workspace file is a materialized copy the user
-#: edits, and the promotion pipeline (U8–U10) is what turns those edits into
-#: attributed versions. There is deliberately no canonical-write entry — the
-#: canonical write is ``Repository.save_questionnaire_qml``, which touches no
-#: filesystem at all.
-#: Empty, and that is the point (U11). Every filesystem QML write in the
-#: monorepo has been retired: authored content lands as an attributed version
-#: row, and a workspace copy is produced by the materializer from that row.
-#: The remaining ``.qml`` writes in the tree are the materializer's own and the
-#: promotion job's merge write-back, neither of which matches a signature above
-#: because both write a workspace path derived from a document version rather
-#: than an ``ORGANIZATIONS_DIR``-rooted one. If an entry ever needs to come
+#: Files permitted to WRITE a ``.qml`` path, with the reason. Empty, and that
+#: is the point: authored content lands as an attributed version row, and the
+#: canonical write touches no filesystem at all. If an entry ever needs to come
 #: back here, it needs a reason that survives the question "why is this not a
 #: version row?".
 WRITE_ALLOWLIST: dict[str, str] = {}
 
 _SCANNED_TREES = ("shared/modules", "services")
-#: Directories that are not production source: virtualenvs, build output, tests,
-#: and ``.shared-extract`` — the QML Explorer extension's build-time copy of the
-#: askalot_common wheel, which duplicates already-scanned modules.
+#: Directories that are not production source: virtualenvs, build output, tests.
 _SKIP_DIR_PARTS = {
     ".venv",
-    ".shared-extract",
     "node_modules",
     "__pycache__",
     "tests",
@@ -263,7 +188,7 @@ class TestNoOrgTreeQMLReads:
 
         allowed_samples = [
             'summary_path.write_text(body, encoding="utf-8")',
-            'repo.save_questionnaire_qml(qid, content, author_type="user")',
+            'repo.save_questionnaire_qml(qid, content, author_type="system", origin="create")',
             "os.replace(tmp, brief_path)",
         ]
         for sample in allowed_samples:
@@ -324,7 +249,7 @@ class TestNoOrgTreeQMLReads:
         assert unreasoned == [], f"Allowlist entries without a real reason: {unreasoned}"
 
     def test_only_sanctioned_surfaces_may_read_qml_files(self, sources):
-        """An allowlisted *QML* read must be workspace-layer or loader-internal."""
+        """An allowlisted *QML* read must be loader-internal."""
         by_path = dict(sources)
         qml_readers = sorted(
             rel for rel in ALLOWLIST if rel in by_path and _QML_GLOB.search(by_path[rel])
@@ -334,6 +259,6 @@ class TestNoOrgTreeQMLReads:
         ]
 
         assert unsanctioned == [], (
-            "Only Armiger's workspace layer and the loader itself may scan for "
+            "Only the loader itself may scan for "
             f"QML files: {unsanctioned}"
         )

@@ -21,6 +21,13 @@ Tests what now authorizes a flow request, and what does not:
   from the 401 for "nothing authorized you".
 - A blueprint registered with no session resolver at all serves authenticated
   callers only: there is no path back to the parameter.
+- A session bound to the requested survey outranks an organization a JWT
+  already set (#1605): a signed-in visitor walking a link into another
+  organization reads the survey in the link's organization. A session bound to
+  a DIFFERENT survey changes nothing, and the JWT's organization stands.
+- A signed-in caller's JWT sets the organization only when the whole session
+  check passes (``verified_session``): a token revoked by a logout chooses
+  nothing and the request is refused like one with no credential (#2184).
 - The refusal fires BEFORE the endpoint body, so it arrives as a 401/403 rather
   than as the 500 the endpoints' broad exception handler would produce.
 
@@ -67,7 +74,7 @@ class _FakeSurvey:
         self.id = survey_id
         self.questionnaire_id = "q-1"
         self.respondent_id = "r-1"
-        self.campaign_id = None
+        self.campaign_id = "camp-1"
         self.interviewer_user_id = None
         self.status = "in_progress"
         self.qml_state = {}
@@ -88,11 +95,17 @@ class _FakeRepo:
     """
 
     def __init__(self):
+        #: The organization context each survey read ran under.
+        self.read_in: list[str | None] = []
         self._questionnaire = type(
             "Q", (), {"id": "q-1", "name": "Session Binding", "document_id": "doc-1"}
         )()
 
     def get_survey(self, survey_id):
+        from askalot_common.repository import get_organization_context
+
+        ctx = get_organization_context()
+        self.read_in.append(ctx.id if ctx else None)
         if survey_id in (SURVEY_A, SURVEY_B):
             return _FakeSurvey(survey_id)
         return None
@@ -101,7 +114,10 @@ class _FakeRepo:
         return self._questionnaire
 
     def get_campaign(self, campaign_id):
-        return None
+        """A fielding, unpinned campaign: every survey has one (``ck_surveys_campaign_present``)."""
+        if not campaign_id:
+            return None
+        return type("C", (), {"id": campaign_id, "status": "active", "qml_version_id": None})()
 
     def get_document_content(self, document_id, *, version_id=None):
         return _FakeVersion(_QML) if document_id == "doc-1" else None
@@ -113,12 +129,24 @@ class _FakeRepo:
         return survey.id
 
 
-def _app(session=None):
-    """A client plus a probe that reports the organization context the request ran under."""
+def _app(session=None, *, repo=None, jwt_org=None):
+    """A client plus a probe that reports the organization context the request ran under.
+
+    ``jwt_org`` stands in for the JWT middleware, which sets the signed-in
+    caller's active organization before the flow blueprint runs.
+    """
     app = Flask(__name__)
+    if jwt_org is not None:
+
+        @app.before_request
+        def _jwt_middleware():
+            from askalot_common.repository import set_organization_context
+
+            set_organization_context(jwt_org, "jwt-slug")
+
     app.register_blueprint(
         create_flow_blueprint(
-            repository=_FakeRepo(),
+            repository=repo or _FakeRepo(),
             url_prefix="/api/flow",
             session_resolver=(lambda: session) if session is not None else None,
         )
@@ -153,9 +181,7 @@ class TestTheParameterIsNoLongerAuthority:
         """AE17. The parameter used to be enough; now it is not read at all."""
         client = _app()
 
-        resp = client.get(
-            f"/api/flow/current-item?survey_id={SURVEY_A}&organization_id=org-1"
-        )
+        resp = client.get(f"/api/flow/current-item?survey_id={SURVEY_A}&organization_id=org-1")
 
         assert resp.status_code == 401
         assert "credential" in resp.get_json()["error"]
@@ -188,9 +214,7 @@ class TestTheParameterIsNoLongerAuthority:
         authenticated callers only. It must not silently re-open the fallback."""
         client = _app()
 
-        resp = client.get(
-            f"/api/flow/current-item?survey_id={SURVEY_A}&organization_id=org-1"
-        )
+        resp = client.get(f"/api/flow/current-item?survey_id={SURVEY_A}&organization_id=org-1")
 
         assert resp.status_code == 401
 
@@ -223,6 +247,38 @@ class TestTheSessionIsTheAuthority:
 
 @pytest.mark.integration
 @pytest.mark.flow
+class TestABoundSessionOutranksTheJWT:
+    """#1605. A signed-in visitor opened a link into another organization."""
+
+    def test_the_survey_is_read_in_the_sessions_organization(self):
+        repo = _FakeRepo()
+        client = _app(("org-link", "link-slug", SURVEY_A), repo=repo, jwt_org="org-visitor")
+
+        resp = client.get(f"/api/flow/current-item?survey_id={SURVEY_A}")
+
+        assert resp.status_code == 200
+        assert repo.read_in and set(repo.read_in) == {"org-link"}
+
+    def test_a_non_object_json_body_is_not_a_500(self):
+        """A bare JSON list names no survey; reading it must not raise."""
+        client = _app(("org-link", "link-slug", SURVEY_A), jwt_org="org-visitor")
+
+        resp = client.open(f"/api/flow/current-item?survey_id={SURVEY_A}", method="GET", json=[1])
+
+        assert resp.status_code != 500
+
+    def test_a_session_for_another_survey_leaves_the_jwt_in_charge(self):
+        repo = _FakeRepo()
+        client = _app(("org-link", "link-slug", SURVEY_A), repo=repo, jwt_org="org-visitor")
+
+        resp = client.get(f"/api/flow/current-item?survey_id={SURVEY_B}")
+
+        assert resp.status_code == 200
+        assert repo.read_in and set(repo.read_in) == {"org-visitor"}
+
+
+@pytest.mark.integration
+@pytest.mark.flow
 class TestTheSessionNamesOneSurvey:
     def test_a_session_for_another_survey_is_refused(self):
         """The whole reason the session names a survey: a leaked survey id is
@@ -250,9 +306,7 @@ class TestTheSessionNamesOneSurvey:
     def test_the_binding_is_checked_on_a_json_body_request_too(self):
         client = _app(session=("org-session", "session-slug", SURVEY_A))
 
-        resp = client.post(
-            "/api/flow/evaluate-item", json={"survey_id": SURVEY_B, "outcome": 1}
-        )
+        resp = client.post("/api/flow/evaluate-item", json={"survey_id": SURVEY_B, "outcome": 1})
 
         assert resp.status_code == 403
 
@@ -298,3 +352,59 @@ class TestTheSessionNamesOneSurvey:
         resp = client.get("/api/flow/current-item")
 
         assert resp.status_code == 401
+
+
+@pytest.mark.integration
+@pytest.mark.flow
+class TestOnlyALiveSessionChoosesTheOrganization:
+    """The JWT branch checks revocation, not the signature alone (#2184)."""
+
+    _PAYLOAD = {
+        "sub": "user-1",
+        "jti": "jti-1",
+        "sid": "sid-1",
+        "role_memberships": {"tenant": [], "organization": []},
+        "organization_id": "org-jwt",
+        "organization_slug": "jwt-slug",
+    }
+
+    def _client_with_token(self, *, revoked):
+        from unittest.mock import MagicMock, patch
+
+        user_service = MagicMock()
+        user_service.repository.is_token_blacklisted.return_value = revoked
+        user_service.load_user_by_id.return_value = {"id": "user-1"}
+        repo = _FakeRepo()
+        patches = [
+            patch("askalot_common.auth.extract_jwt_token", return_value="a-signed-token"),
+            patch("askalot_common.auth.get_auth_config", return_value=object()),
+            patch("askalot_common.auth.verify_jwt_token", return_value=dict(self._PAYLOAD)),
+            patch("askalot_common.auth.middleware.verify_jwt_token", return_value=dict(self._PAYLOAD)),
+            patch("askalot_common.auth.user_service.get_user_service", return_value=user_service),
+        ]
+        return _app(repo=repo), repo, patches
+
+    def test_a_revoked_token_sets_no_organization(self):
+        client, repo, patches = self._client_with_token(revoked=True)
+        for p in patches:
+            p.start()
+        try:
+            resp = client.get(f"/api/flow/current-item?survey_id={SURVEY_A}")
+        finally:
+            for p in patches:
+                p.stop()
+
+        assert resp.status_code == 401
+        assert repo.read_in == []
+
+    def test_a_live_token_serves_its_organization(self):
+        client, repo, patches = self._client_with_token(revoked=False)
+        for p in patches:
+            p.start()
+        try:
+            client.get(f"/api/flow/current-item?survey_id={SURVEY_A}")
+        finally:
+            for p in patches:
+                p.stop()
+
+        assert repo.read_in and repo.read_in[0] == "org-jwt"

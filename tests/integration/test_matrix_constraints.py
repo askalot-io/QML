@@ -17,6 +17,10 @@ For each pattern the test submits:
 - a matrix that violates the constraint → ``process_item`` returns
   ``{'success': False, 'message': <hint>}``.
 
+``TestDeclaredListLengthsRuntime`` (#1782) checks that ``len(m.rows)``,
+``len(m.columns)`` and ``len(qg.questions)`` evaluate at runtime to the bounds
+the static builder unrolls, through ``FlowProcessor`` and ``ItemClassifier``.
+
 These tests exercise the RUNTIME path only (Python ``eval`` via
 ``PythonRunner``, which supports list comprehensions, ``all``, ``sum``,
 ``len``, ``set``, two-arg ``range``, and subscript reads). The
@@ -172,6 +176,113 @@ class TestMatrixRankingRuntime:
         result = processor.process_item(state, self.ITEM_ID, ranks, source=SOURCE_RESPONDENT)
         assert result["success"] is False
         assert "rank" in result["message"].lower() or "once" in result["message"].lower()
+
+def _declared_lists_state() -> QMLState:
+    """A 2 x 3 Editbox matrix ``m`` whose postcondition bounds every cell
+    through ``range(len(m.rows))`` / ``range(len(m.columns))``, a three-question
+    group ``qg``, and ``q_after``, gated on folds over all three declared
+    lengths."""
+    return QMLState(
+        {
+            "title": "Declared lists",
+            "blocks": [{"id": "b1", "title": "B"}],
+            "items": [
+                {
+                    "id": "m",
+                    "blockId": "b1",
+                    "kind": "MatrixQuestion",
+                    "title": "M",
+                    "rows": ["r1", "r2"],
+                    "columns": ["c1", "c2", "c3"],
+                    "input": {"control": "Editbox", "min": 0, "max": 10},
+                    "postcondition": [
+                        {
+                            "predicate": "all([m.outcome[j][k] <= 5 for j in range(len(m.rows)) "
+                            "for k in range(len(m.columns))])",
+                            "hint": "at most 5",
+                        }
+                    ],
+                },
+                {
+                    "id": "qg",
+                    "blockId": "b1",
+                    "kind": "QuestionGroup",
+                    "title": "G",
+                    "questions": ["a", "b", "c"],
+                    "input": {"control": "Radio", "labels": {1: "y", 2: "n"}},
+                },
+                {
+                    "id": "q_after",
+                    "blockId": "b1",
+                    "kind": "Question",
+                    "title": "After",
+                    "input": {"control": "Editbox", "min": 0, "max": 10},
+                    "precondition": [
+                        {
+                            "predicate": "sum([m.outcome[j][k] for j in range(len(m.rows)) "
+                            "for k in range(len(m.columns))]) <= 30 and "
+                            "all([qg.outcome[i] != 9 for i in range(len(qg.questions))])"
+                        }
+                    ],
+                },
+            ],
+        }
+    )
+
+
+@pytest.mark.integration
+@pytest.mark.flow
+class TestDeclaredListLengthsRuntime:
+    """``len(m.rows)``, ``len(m.columns)`` and ``len(qg.questions)`` evaluate
+    at runtime to what the Z3 builder unrolled (#1782): ItemProxy exposes the
+    declared lists, so a gate the validator proves is not a raise for every
+    respondent."""
+
+    def test_a_postcondition_over_the_declared_lengths_is_enforced(self):
+        state = _declared_lists_state()
+        processor = FlowProcessor(state)
+        processor.get_current_item(state)
+
+        over = processor.process_item(state, "m", [[1, 2, 3], [4, 5, 9]], source=SOURCE_RESPONDENT)
+        assert over["success"] is False, over
+        assert processor.process_item(
+            state, "m", [[1, 2, 3], [4, 5, 5]], source=SOURCE_RESPONDENT
+        )["success"] is True
+
+    def test_a_gate_on_the_declared_lengths_holds(self):
+        state = _declared_lists_state()
+        processor = FlowProcessor(state)
+        processor.get_current_item(state)
+        processor.process_item(state, "m", [[1, 1, 1], [1, 1, 1]], source=SOURCE_RESPONDENT)
+        processor.process_item(state, "qg", [1, 2, 1], source=SOURCE_RESPONDENT)
+
+        assert processor.get_current_item(state)["id"] == "q_after"
+        assert not state.get("warnings")
+
+    def test_the_validator_proves_what_the_runtime_runs(self):
+        from askalot_qml.core.qml_engine import QMLEngine
+        from askalot_qml.z3 import ItemClassifier
+
+        builder = QMLEngine(_declared_lists_state()).static_builder
+        classified = ItemClassifier(builder).classify_all_items()
+
+        assert classified["m"]["postcondition"]["invariant"] == "CONSTRAINING"
+        assert not [g for gaps in builder.coverage_gaps.values() for g in gaps if "wide_items" not in g]
+
+    def test_a_comprehension_variable_shadowing_an_item_has_no_declared_list(self):
+        """``for qg in range(1)`` rebinds ``qg`` to an int, so
+        ``len(qg.questions)`` raises at runtime; Z3 must not read the group's
+        declared length through the shadowing name (a comprehension whose
+        target names an item does not lower)."""
+        from askalot_qml.core.qml_engine import QMLEngine
+
+        state = _declared_lists_state()
+        state["items"][2]["precondition"] = [
+            {"predicate": "all([len(set([1])) == len(qg.questions) for qg in range(1)])"}
+        ]
+        builder = QMLEngine(state).static_builder
+
+        assert builder.coverage_gaps.get("q_after")
 
 
 if __name__ == "__main__":

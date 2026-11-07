@@ -39,11 +39,23 @@ import logging
 from collections.abc import Mapping, Sequence
 from typing import Any
 
+from askalot_common.i18n import N_
+
 from askalot_qml.core.qml_topology import QMLTopology
 from askalot_qml.models.qml_state import QMLState
 from askalot_qml.z3.static_builder import StaticBuilder
 
 logger = logging.getLogger(__name__)
+
+# Why a dimension declined to grade. The stored ``reason`` is this English
+# text, which agents and the persisted report read as written; a page shows
+# the whole sentence keyed to it, in the reader's language (#2166).
+REASON_NO_CLASSIFICATIONS = "no Z3 classifications"
+REASON_NO_NUMERIC_INPUTS = "no numeric-input items to bound"
+UNGRADED_REASON_SENTENCES: dict[str, str] = {
+    REASON_NO_CLASSIFICATIONS: N_("Not graded: the logic check classified no items."),
+    REASON_NO_NUMERIC_INPUTS: N_("Not graded: there are no numeric-input items to bound."),
+}
 
 # Grade vocabulary — the only values a dimension's ``grade`` field may take.
 GRADE_STRONG = "strong"
@@ -305,7 +317,7 @@ def _quality_gate_density(
     a ``weak`` it could not escape by any amount of good authoring.
     """
     if not classifications:
-        return _dimension("D3", GRADE_NA, {"reason": "no Z3 classifications"}, [])
+        return _dimension("D3", GRADE_NA, {"reason": REASON_NO_CLASSIFICATIONS}, [])
 
     gateable = _gateable_item_ids(items)
     invariant_counts: dict[str, int] = {}
@@ -360,7 +372,7 @@ def _quality_gate_density(
     }
 
     if not gateable:
-        metrics["reason"] = "no numeric-input items to bound"
+        metrics["reason"] = REASON_NO_NUMERIC_INPUTS
         return _dimension("D3", GRADE_NA, metrics, weak_gate_offenders)
 
     bound_coverage = len(bounded) / len(gateable)
@@ -398,19 +410,34 @@ def _verification_coverage(state: QMLState, builder: StaticBuilder) -> dict[str,
         total_predicates += len(block.get("postcondition") or [])
 
     degraded: list[dict[str, Any]] = []
+    # A block's condition is composed into each of its items, so its gap is
+    # recorded per item; it is one authored predicate, counted once (#1817).
+    seen_block_conditions: set[tuple[str, str, int]] = set()
+    block_reads = builder.block_condition_reads()
     for owner_id, gaps in builder.coverage_gaps.items():
         for gap in gaps:
             kind = gap.get("kind", "")
             if kind == "group_dependency":
                 continue
+            idx = gap.get("condition_idx", 0)
+            condition_owner, scope = builder.condition_owner(owner_id, kind, idx)
+            wide_items = gap.get("wide_items")
+            if scope == "block":
+                key = (condition_owner, kind, idx)
+                if key in seen_block_conditions:
+                    continue
+                seen_block_conditions.add(key)
+                wide_items = wide_items and block_reads[key]["wide_items"]
             detail = kind
             if gap.get("unsupported_nodes"):
                 detail = f"{kind} fell back to runtime: {', '.join(gap['unsupported_nodes'])}"
+            elif wide_items:
+                detail = f"{kind} only partly verified: may read None of {', '.join(wide_items)}"
             elif kind == "undefined_name":
                 detail = f"phantom identifier '{gap.get('identifier', '?')}'"
             elif kind == "textarea_in_predicate":
                 detail = "free-text outcome in predicate (no Z3 variable)"
-            degraded.append({"item_id": owner_id, "detail": detail})
+            degraded.append({"item_id": condition_owner, "detail": detail})
 
     if total_predicates == 0:
         return _dimension(
@@ -601,7 +628,7 @@ def _path_diversity(
     inputs: how many items branch, and how many independent sources gate them.
     """
     if not classifications:
-        return _dimension("D7", GRADE_NA, {"reason": "no Z3 classifications"}, [])
+        return _dimension("D7", GRADE_NA, {"reason": REASON_NO_CLASSIFICATIONS}, [])
 
     status_counts: dict[str, int] = {}
     conditional_items: list[str] = []

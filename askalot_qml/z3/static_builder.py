@@ -12,7 +12,8 @@ import ast
 import itertools
 import logging
 from collections.abc import Callable
-from typing import Any
+from dataclasses import dataclass
+from typing import Any, Literal
 
 from askalot_common.profiling import profile_block
 from z3 import (
@@ -36,28 +37,863 @@ from z3 import (
 )
 
 from askalot_qml.models.qml_state import QMLState
-from askalot_qml.predicate_ast import outcome_ref_name
+from askalot_qml.predicate_ast import (
+    name_reads,
+    none_guarded_outcomes,
+    none_test_of,
+    none_test_operands,
+    none_tested_names,
+    none_tested_outcomes,
+    outcome_reads,
+    outcome_ref_name,
+    outcome_value_reads,
+)
 
-# Lazily-computed, process-wide cache of the names available in the predicate /
-# code evaluation namespace. Single source of truth: the ``PythonRunner`` sandbox
-# that actually evaluates preconditions/postconditions/codeBlocks at runtime — so
-# the undefined-name lint's "known name" set can never drift from what the runner
-# exposes. Names only (values discarded); computed once because the sandbox's
-# allowed builtins/modules are fixed for the process lifetime.
-_SAFE_EVAL_NAMES: frozenset[str] | None = None
+#: The prefix of the Bool a None test mints per predicate (``_lower_none_test``):
+#: ``answered@{item_id}#{n}``; ``StaticBuilder.answered_mint`` says what each was minted for.
+ANSWERED_PREFIX = "answered@"
+
+
+def _is_str_literal(node: ast.AST) -> bool:
+    """Whether ``node`` is a string constant: an Int in the model only for
+    equality (its hash), never an arithmetic, bitwise or ordering operand
+    (#2048)."""
+    return isinstance(node, ast.Constant) and isinstance(node.value, str)
+
+
+def _computes_or_orders_a_string(node: ast.AST) -> bool:
+    """Whether ``node`` takes a string literal as an arithmetic, bitwise or
+    ordering operand, the uses ``_ast_to_z3`` and ``_ast_to_z3_bool`` refuse
+    (#2048), so a predicate left unlowered by one is reported, not dropped
+    silently (``_unsupported_node_kinds``)."""
+    if isinstance(node, ast.BinOp):
+        return _is_str_literal(node.left) or _is_str_literal(node.right)
+    if isinstance(node, ast.UnaryOp) and not isinstance(node.op, ast.Not):
+        return _is_str_literal(node.operand)
+    if isinstance(node, ast.Compare):
+        operands = [node.left, *node.comparators]
+        return any(
+            isinstance(op, _ORDERING_OPS) and (_is_str_literal(operands[i]) or _is_str_literal(operands[i + 1]))
+            for i, op in enumerate(node.ops)
+        )
+    return False
+
+
+def _int_literal(node: ast.AST) -> int | None:
+    """The value of an integer literal (not a bool), else ``None``."""
+    if isinstance(node, ast.Constant) and type(node.value) is int:
+        return node.value
+    return None
+
+
+def _z3_division_agrees(op: ast.operator, divisor: ast.AST) -> bool:
+    """Whether Z3's Int reading of ``op`` agrees with Python's (#1767).
+
+    Python's ``//`` / ``%`` floor toward the divisor's sign while Z3's div /
+    mod are Euclidean (``1 // -2`` is -1 in Python, 0 in Z3); the two agree
+    only for a positive divisor, so they lower only by a positive integer
+    literal. ``/`` never lowers: the loader refuses it (#1813), and a model
+    built without the loader reports it as a gap rather than reading it as
+    Int division. Every other operator is no division and agrees.
+    """
+    if isinstance(op, ast.Div):
+        return False
+    if isinstance(op, (ast.FloorDiv, ast.Mod)):
+        value = _int_literal(divisor)
+        return value is not None and value > 0
+    return True
+
+
+
+def _masked(value: ExprRef, mask: int) -> ExprRef:
+    """``value & mask`` for a non-negative ``mask``, as linear arithmetic
+    (#2037): the sum over the mask's set bits ``j`` of
+    ``((value / 2**j) % 2) * 2**j``. Z3's div / mod by a positive literal
+    floor as Python does, so each term reads the bit Python's two's-complement
+    ``&`` reads, also for a negative ``value``."""
+    weights = [1 << j for j in range(mask.bit_length()) if mask >> j & 1]
+    return Sum([((value / w) % 2) * w for w in weights]) if weights else IntVal(0, value.ctx)
+
+
+def _gated_write(
+    current: ExprRef, value: ExprRef | None, before: ExprRef | None, ran: BoolRef
+) -> list[BoolRef]:
+    """One codeBlock write of SSA version ``current`` as the walk sees it
+    (#1994): ``value`` where the block ran, ``before`` (the version it found)
+    where it did not. A side the model does not know (an unlowered value, no
+    earlier version) is left free; an ungated writer (``ran`` True) always
+    writes. Shared by the full base and ``_accumulator_reachability``."""
+    if is_true(ran):
+        return [current == value] if value is not None else []
+    if value is not None and before is not None:
+        return [current == If(ran, value, before)]
+    if value is not None:
+        return [Implies(ran, current == value)]
+    if before is not None:
+        return [Implies(Not(ran), current == before)]
+    return []
+
+
+def _scoped_name(item_id: str, *scope: object) -> str:
+    """Z3 name of one part of an item's answer: ``item_{id}@{scope…}``.
+
+    ``@`` cannot appear in a Python identifier, and the loader refuses any
+    other item id (``_validate_reserved_item_ids``). Separating the id and
+    every scope part with it keeps every derived name apart from every item's
+    own scalar ``item_{id}`` and from every other item's derived names: a
+    matrix ``m``'s cell ``item_m@0@0`` cannot alias a Question ``m_0_0``
+    (``item_m_0_0``), nor a Roster ``q``'s iteration
+    ``item_q@iter2`` a Question ``q_iter2`` (#1783). The forms are
+    ``item_m@{r}@{c}`` (matrix cell), ``item_qg@{i}`` (QuestionGroup answer),
+    ``item_q@iter{K}`` (Roster iteration) and ``item_q@group0`` (capped Group).
+    """
+    return "@".join(["item_" + item_id, *(str(part) for part in scope)])
+
+
+# The declared list an item attribute names, and the ``item_details`` key
+# holding its length: what ``len(m.rows)`` is at build time. ItemProxy exposes
+# the same three lists at runtime (#1782), only on the kind that declares them.
+_DECLARED_LIST_LENGTHS = {"rows": "rows_len", "columns": "cols_len", "questions": "questions_len"}
+
+
+def _ssa_symbol(var_name: str, version: int) -> str:
+    """Z3 name of one SSA version of a codeInit / codeBlock variable:
+    ``var@{name}@{n}``.
+
+    Z3 ``Int``s of one name are one variable, and a variable may be named
+    anything an identifier can be, ``item_q`` included, so ``{name}_{n}`` would
+    make version 0 of a variable ``item_q`` Question ``q_0``'s answer
+    ``item_q_0`` (#1798). ``@`` cannot occur in an identifier. ``z3_vars``
+    stays keyed ``{name}_{n}``, the name a witness shows the author.
+    """
+    return f"var@{var_name}@{version}"
+
+
+def _ssa_key(var_name: str, version: int) -> str:
+    """``z3_vars`` key of one SSA version, ``{name}_{n}``: what a witness
+    shows the author, never a Z3 name (``_ssa_symbol``)."""
+    return f"{var_name}_{version}"
+
+
+def _range_end_names(item_id: str, *scope: object) -> tuple[str, str]:
+    """Z3 names of a Range pair's two ends: ``item_{id}@{scope…}@lo`` / ``@hi``.
+
+    The pair of ``_scoped_name``: ``item_q@lo`` (Question), ``item_q@iter2@lo``
+    (Roster iteration), ``item_q@group0@lo`` (capped Group), ``item_m@1@2@lo``
+    (matrix cell), so a Range end aliases neither an independent item ``q_lo``
+    nor the ends of another Range shape.
+    """
+    base = _scoped_name(item_id, *scope)
+    return f"{base}@lo", f"{base}@hi"
+
+
+class _UnmodelledAnswerRead(Exception):
+    """A QuestionGroup answer (#184), matrix cell (#1780) or skippable scalar
+    Question (#1867) read the None model cannot place: the predicate is left
+    unlowered, a coverage gap (``_unlowered_group_reads`` /
+    ``_unlowered_matrix_reads`` / ``_ternary_refusals``)."""
+
+
+class _CodeReads:
+    """How one item's codeBlock reads the items that may be ``None`` when it
+    runs (#1776): a gated or scoped Question it was skipped
+    (``_skipped_choice``), any Question left blank (``_blank_choice``, the
+    block's own item included: it runs after the item was submitted). Both
+    read Python's ``None`` there, but the runtime marks a variable computed
+    from a blank item unknown (#1044, ``_unknown_after``), so a later leaf
+    reading it is unknown: under the blank choice such a variable is a fresh
+    unconstrained Int (``guarded``, #1848), and the mark itself is modelled
+    by ``_UnknownMarks`` (#1844). A world with both choices true is blank, as in
+    conditions. A Textarea's text is opaque here (no Int holds it), but it is
+    ``None`` when blank or skipped, so its reads are classed too, under a free
+    choice: ``len(t.outcome)`` may stop the block. An annotation
+    (``x: <expr> = v``) is never evaluated (deferred on Python 3.14, stripped
+    by the runner), so it reads nothing.
+
+    Each read of such an item is classed by what Python does with its
+    ``None`` (``_effect``):
+
+    - ``safe``: ``==`` / ``!=`` / ``in`` a literal list / a truth test, which
+      the value's lowering answers with the item's None choice
+      (``choices``, read by ``_skip_aware_equality`` / ``_skipped_operand``);
+    - ``copy``: the read is (a ternary branch of) the assigned value, so the
+      target may hold ``None``;
+    - ``raise``: an ordering or arithmetic read, which raises
+      ``CodeExecutionError``; the block stops there and keeps what it
+      assigned before (``FlowProcessor._execute_code_block``);
+    - ``other``: the ``None`` flows into a call, a container, a subscript or
+      a comprehension, which may raise or not; a ternary branch whose value
+      is read the ``safe`` way is ``other`` too, since only a direct read's
+      ``None`` is lowered Python's way (#1847).
+    - ``flow``: a variable this block assigned a ``None`` (``_none_vars``)
+      read the ``safe`` way: Python compares the ``None`` (``None == None``
+      holds), the model an unconstrained Int, so the value is not trusted.
+
+    A variable assigned a ``copy`` / ``other`` read may hold ``None``
+    (``_none_vars``, #1847), so a later read of it in this block is classed
+    like an item read, under the choices that put the ``None`` there.
+
+    An assignment then lowers as ``If(stop, old, If(flows, unknown, value))``
+    (``guarded``), inside ``If(tainted, unknown, ...)`` for a variable target:
+    ``tainted`` is a blank choice of an item its value or an enclosing
+    ``if`` / ``while`` / ``for`` test reads, what ``_unknown_after`` marks
+    (a mark is set even when the assignment raised). ``stop`` is a raise in an earlier top-level statement or
+    in its own; ``flows`` a ``copy`` / ``other`` read in its value, whose
+    ``None`` no Int holds, so the target is a fresh unconstrained Int there.
+    A raise is exact (its Bool is the reads' None choices) only for a read in
+    a simple top-level statement that is certainly evaluated
+    (``_certainly_evaluated``); anywhere else its statement gets a free Bool
+    bounded by the choices that may cause it, wider and never narrower. A
+    raise is ordered by the top-level statement holding it; which branch of a
+    compound statement ran is the builder's path condition (#1843,
+    ``_lower_code_statements``), not this class's.
+
+    codeInit gets no model: no item is answered when it runs.
+    """
+
+    _COMPOUND = (ast.If, ast.For, ast.AsyncFor, ast.While, ast.With, ast.AsyncWith, ast.Try, ast.Match)
+    _TRUTH_STATEMENTS = (ast.If, ast.While, ast.Assert)
+
+    def __init__(self, builder: StaticBuilder, tree: ast.Module, context_id: str, parents: dict):
+        self._builder = builder
+        self._context = context_id
+        self._parents = parents
+        self.choices: dict[str, BoolRef] = {}
+        self._blank: dict[str, BoolRef] = {}
+        # id(statement) -> [(read, effect, certainly evaluated, None choice)]
+        self._reads: dict[int, list[tuple[ast.AST, str, bool, BoolRef]]] = {}
+        # Variables this block assigned a value that may be ``None`` -> when.
+        self._none_vars: dict[str, BoolRef] = {}
+        # id(nested marking statement) -> the Bool its branch path is tied to.
+        self._mark_ran: dict[int, BoolRef] = {}
+        self._top: dict[int, int] = {}
+        self._raised: dict[int, BoolRef | None] = {}
+        # id(compound statement) -> whether it raised (``_top_level_raise``).
+        self._compound_raised: dict[int, BoolRef | None] = {}
+        self._top_level = {id(statement) for statement in tree.body}
+        if context_id == "__init__":
+            self._halted_before: list[BoolRef | None] = [None] * len(tree.body)
+            return
+        none_tested = {id(operand) for operand in none_test_operands(tree)}
+        loads = [
+            (node, item_id)
+            for node in ast.walk(tree)
+            if (item_id := outcome_ref_name(node)) is not None
+            and isinstance(node.ctx, ast.Load)
+            and (item_id in builder.item_vars or builder._is_textarea(item_id))
+            and id(node) not in none_tested
+            and not self._in_annotation(node)
+        ]
+        for item_id in sorted({item_id for _, item_id in loads}):
+            choice = self._none_choice(item_id)
+            if choice is not None:
+                self.choices[item_id] = choice
+        for index, statement in enumerate(tree.body):
+            for node in ast.walk(statement):
+                self._top[id(node)] = index
+        for node, item_id in loads:
+            if item_id not in self.choices:
+                continue
+            statement = self._statement_of(node)
+            self._reads.setdefault(id(statement), []).append(
+                (node, self._effect(node), self._certainly_evaluated(node), self.choices[item_id])
+            )
+        if self.choices:
+            self._read_none_vars(tree, none_tested)
+        halted: list[BoolRef | None] = []
+        before: BoolRef | None = None
+        for statement in tree.body:
+            halted.append(before)
+            raised = self._top_level_raise(statement)
+            if raised is not None:
+                before = raised if before is None else Or(before, raised)
+        self._halted_before = halted
+
+    def _read_none_vars(self, tree: ast.Module, none_tested: set[int]) -> None:
+        """Record, in source order, the variables a statement assigns a value
+        that may be ``None`` (a ``copy`` / ``other`` read in it), and every
+        later read of one in this block as a read under the choices that put
+        the ``None`` there (#1847), a nested one only on the path it ran
+        (``mark_ran``). A top-level reassignment from a value that
+        carries no ``None`` clears the mark (it always runs once reached, and a
+        block that raised before it runs nothing later); one nested in a
+        branch or loop keeps it, since which branch ran is not tracked here.
+        An augmented assignment reads its target: a raise where it may be
+        ``None``, and the mark stays."""
+        statements = sorted(
+            (n for n in ast.walk(tree) if isinstance(n, ast.stmt)), key=lambda n: (n.lineno, n.col_offset)
+        )
+        for statement in statements:
+            if self._none_vars:
+                for node in ast.walk(statement):
+                    if (
+                        isinstance(node, ast.Name)
+                        and isinstance(node.ctx, ast.Load)
+                        and node.id in self._none_vars
+                        and id(node) not in none_tested
+                        and self._statement_of(node) is statement
+                        and not self._in_annotation(node)
+                    ):
+                        effect = self._effect(node)
+                        self._reads.setdefault(id(statement), []).append(
+                            (
+                                node,
+                                "flow" if effect == "safe" else effect,
+                                self._certainly_evaluated(node),
+                                self._none_vars[node.id],
+                            )
+                        )
+            if not isinstance(statement, (ast.Assign, ast.AnnAssign, ast.AugAssign)) or statement.value is None:
+                continue
+            if isinstance(statement, ast.AugAssign):
+                # ``x += 1`` reads ``x``: on a ``None`` it raises (the block
+                # stops), and on success ``x`` is a number again only where it
+                # was one, so the mark stays.
+                target = statement.target
+                if isinstance(target, ast.Name) and target.id in self._none_vars:
+                    self._reads.setdefault(id(statement), []).append(
+                        (target, "raise", True, self._none_vars[target.id])
+                    )
+                continue
+            carried = [
+                choice
+                for node, effect, _, choice in self._reads.get(id(statement), [])
+                if effect in ("copy", "other") and self._within(node, statement.value)
+            ]
+            targets = statement.targets if isinstance(statement, ast.Assign) else [statement.target]
+            names = [name.id for target in targets for name in ast.walk(target) if isinstance(name, ast.Name)]
+            if not carried:
+                if id(statement) in self._top_level:
+                    for name in names:
+                        self._none_vars.pop(name, None)
+                continue
+            mark = self._builder._disjoin(carried)
+            if id(statement) not in self._top_level:
+                # Nested: the mark holds only where the assignment ran, its
+                # branch path, which the lowering ties to ``ran`` once it is
+                # known (``mark_ran``); never lowered (inside a loop), ``ran``
+                # stays free, wider.
+                self._builder._code_raise_count += 1
+                ran = Bool(f"marked@{self._context}#{self._builder._code_raise_count}", self._builder.ctx)
+                self._mark_ran[id(statement)] = ran
+                mark = And(ran, mark)
+            for name in names:
+                earlier = self._none_vars.get(name)
+                self._none_vars[name] = mark if earlier is None else Or(earlier, mark)
+
+    def mark_ran(self, statement: ast.stmt, path: BoolRef | None) -> None:
+        """Tie a nested statement's ``None`` mark to the path it ran on
+        (``_lower_code_statements``): ``if False: x = q.outcome`` marks nothing."""
+        ran = self._mark_ran.get(id(statement))
+        if ran is not None:
+            self._builder.codeblock_constraints.append(ran == (path if path is not None else BoolVal(True, self._builder.ctx)))
+
+    def _none_choice(self, item_id: str) -> BoolRef | None:
+        """When ``item_id`` reads ``None`` in this block: skipped or blank. A
+        Textarea's text is opaque (``StaticBuilder._lowering_code``), so only
+        its raises need the choice: a free Bool, the block's own Textarea
+        included (it may be submitted blank)."""
+        builder = self._builder
+        if builder._is_textarea(item_id):
+            builder._code_raise_count += 1
+            # ``@`` cannot occur in an item id, so no item or variable shares the name.
+            return Bool(f"none@{item_id}#{builder._code_raise_count}", builder.ctx)
+        parts = []
+        if builder._may_be_skipped(item_id, self._context):
+            parts.append(builder._skipped_choice(item_id))
+        if builder._blank_candidate(item_id):
+            self._blank[item_id] = builder._blank_choice(item_id)
+            parts.append(self._blank[item_id])
+        return builder._disjoin(parts) if parts else None
+
+    def _in_annotation(self, node: ast.AST) -> bool:
+        """Whether ``node`` is inside an ``AnnAssign`` annotation."""
+        child, parent = node, self._parents.get(node)
+        while parent is not None:
+            if isinstance(parent, ast.AnnAssign) and parent.annotation is child:
+                return True
+            child, parent = parent, self._parents.get(parent)
+        return False
+
+    def _statement_of(self, node: ast.AST) -> ast.stmt:
+        while not isinstance(node, ast.stmt):
+            node = self._parents[node]
+        return node
+
+    def _effect(self, node: ast.AST) -> str:
+        """``safe`` / ``copy`` / ``raise`` / ``other``: what Python does with
+        ``node``'s ``None`` (see the class docstring)."""
+        parent = self._parents.get(node)
+        if isinstance(parent, ast.BinOp) or (isinstance(parent, ast.UnaryOp) and not isinstance(parent.op, ast.Not)):
+            return "raise"
+        if isinstance(parent, ast.AugAssign):
+            return "raise" if parent.value is node else "other"
+        if isinstance(parent, (ast.Assign, ast.AnnAssign)):
+            return "copy" if parent.value is node else "other"
+        if isinstance(parent, self._TRUTH_STATEMENTS):
+            return "safe" if parent.test is node else "other"
+        if isinstance(parent, ast.IfExp) and parent.test is not node:
+            # A branch's value is the ternary's; only a direct read's None is
+            # lowered Python's way, so one compared or truth-tested through
+            # the ternary is not (#1847).
+            effect = self._effect(parent)
+            return "other" if effect == "safe" else effect
+        if isinstance(parent, ast.BoolOp):
+            # ``a or b`` yields an operand's value unless its truth is all that is read.
+            top = parent
+            while isinstance(self._parents.get(top), ast.BoolOp):
+                top = self._parents[top]
+            holder = self._parents.get(top)
+            truth = (
+                (isinstance(holder, (ast.IfExp, *self._TRUTH_STATEMENTS)) and holder.test is top)
+                or (isinstance(holder, ast.UnaryOp) and isinstance(holder.op, ast.Not))
+            )
+            return "safe" if truth else "other"
+        if isinstance(parent, ast.stmt):
+            return "other"
+        if StaticBuilder._none_safe_read(node, self._parents):
+            return "safe"
+        if isinstance(parent, ast.Compare):
+            chain = [parent.left, *parent.comparators]
+            position = next(i for i, operand in enumerate(chain) if operand is node)
+            touching = parent.ops[max(position - 1, 0) : position + 1]
+            if all(isinstance(op, (ast.Lt, ast.LtE, ast.Gt, ast.GtE)) for op in touching):
+                return "raise"
+        return "other"
+
+    def _certainly_evaluated(self, node: ast.AST) -> bool:
+        """Whether Python evaluates ``node`` whenever its statement runs: not
+        in a ternary branch, a later ``and`` / ``or`` operand, a later link of
+        a comparison chain, a comprehension or a lambda."""
+        child, parent = node, self._parents.get(node)
+        while parent is not None and not isinstance(parent, ast.stmt):
+            if isinstance(parent, ast.IfExp) and parent.test is not child:
+                return False
+            if isinstance(parent, ast.BoolOp) and parent.values[0] is not child:
+                return False
+            if isinstance(parent, ast.Compare) and child is not parent.left and child is not parent.comparators[0]:
+                return False
+            if isinstance(
+                parent, (ast.comprehension, ast.ListComp, ast.SetComp, ast.DictComp, ast.GeneratorExp, ast.Lambda)
+            ):
+                return False
+            child, parent = parent, self._parents.get(parent)
+        return True
+
+    def _bounded_raise(self, certain: list[BoolRef], possible: list[BoolRef]) -> BoolRef | None:
+        """A raise that holds whenever ``certain`` does and only when one of
+        ``certain + possible`` does: their disjunction when ``possible`` is
+        empty (exact), else a fresh Bool between the two."""
+        builder = self._builder
+        if not possible:
+            return builder._disjoin(certain) if certain else None
+        builder._code_raise_count += 1
+        # ``@`` cannot occur in an item id, so no item or variable shares the name.
+        raised = Bool(f"raised@{self._context}#{builder._code_raise_count}", builder.ctx)
+        if certain:
+            builder.codeblock_constraints.append(Implies(builder._disjoin(certain), raised))
+        builder.codeblock_constraints.append(Implies(raised, builder._disjoin(certain + possible)))
+        return raised
+
+    def _statement_raise(self, statement: ast.stmt) -> BoolRef | None:
+        """Whether a simple statement raised on a ``None`` read."""
+        if id(statement) not in self._raised:
+            certain_ok = id(statement) in self._top_level
+            certain, possible = [], []
+            for _, effect, evaluated, choice in self._reads.get(id(statement), []):
+                if effect == "raise" and evaluated and certain_ok:
+                    certain.append(choice)
+                elif effect in ("raise", "other"):
+                    possible.append(choice)
+            self._raised[id(statement)] = self._bounded_raise(certain, possible)
+        return self._raised[id(statement)]
+
+    def _top_level_raise(self, statement: ast.stmt) -> BoolRef | None:
+        """Whether top-level ``statement`` stopped the block: its own raise for
+        a simple one; for a compound one, a free Bool bounded by every read
+        inside it that may raise (which of its statements ran is not
+        modelled)."""
+        if not isinstance(statement, self._COMPOUND):
+            return self._statement_raise(statement)
+        if id(statement) not in self._compound_raised:
+            possible = [
+                choice
+                for node_statement in ast.walk(statement)
+                if isinstance(node_statement, ast.stmt)
+                for _, effect, _, choice in self._reads.get(id(node_statement), [])
+                if effect in ("raise", "other")
+            ]
+            self._compound_raised[id(statement)] = self._bounded_raise([], possible)
+        return self._compound_raised[id(statement)]
+
+    def _halted_within(self, statement: ast.stmt) -> list[BoolRef]:
+        """The raises of the statements that run before ``statement`` inside the
+        compound statements holding it: its earlier siblings in each enclosing
+        body (a raise aborts the whole block, ``CodeExecutionError``, so a
+        statement after a raising one in the same branch does not run). The
+        enclosing ``if`` test's own raise needs nothing here: a test that may
+        raise is a free branch Bool (``_code_branch_test``)."""
+        raises: list[BoolRef] = []
+        child, parent = statement, self._parents.get(statement)
+        while isinstance(parent, ast.stmt):
+            for field in ("body", "orelse", "finalbody", "handlers"):
+                siblings = getattr(parent, field, None)
+                if isinstance(siblings, list) and any(sibling is child for sibling in siblings):
+                    for sibling in siblings:
+                        if sibling is child:
+                            break
+                        if isinstance(sibling, ast.stmt):
+                            raised = self._top_level_raise(sibling)
+                            if raised is not None:
+                                raises.append(raised)
+                    break
+            child, parent = parent, self._parents.get(parent)
+        return raises
+
+    def old_value(self, var_name: str) -> ExprRef | None:
+        """The value variable ``var_name`` keeps when the assignment is not
+        reached: its current version, or a fresh Int when it has none yet (an
+        unbound name; no version is created, so the numbering stays).
+        ``None`` when the block reads no item that may be ``None``."""
+        builder = self._builder
+        if not self.choices:
+            return None
+        if var_name in builder.version_map:
+            return builder._get_current_z3_var(var_name)
+        return self._unknown()
+
+    def _unknown(self) -> ExprRef:
+        builder = self._builder
+        builder._code_raise_count += 1
+        return Int(f"unknown@{self._context}#{builder._code_raise_count}", builder.ctx)
+
+    def guarded(
+        self, statement: ast.stmt, value: ExprRef | None, old: ExprRef | None, *, variable: bool = True
+    ) -> ExprRef | None:
+        """``value`` as the assignment ``statement`` leaves its target:
+        ``old`` where the block stopped before it or at it, a fresh Int where
+        its value reads a ``None`` no Int holds or, for a ``variable`` target
+        (an outcome write carries no #1044 mark), where it is computed from a
+        blank item; ``value`` itself when none can happen."""
+        if value is None or old is None or not self.choices:
+            return value
+        stops = [
+            part
+            for part in (
+                self._halted_before[self._top[id(statement)]],
+                *self._halted_within(statement),
+                self._statement_raise(statement),
+            )
+            if part is not None
+        ]
+        stop = self._builder._disjoin(stops) if stops else None
+        value_node = statement.value
+        flowing = [
+            choice
+            for node, effect, _, choice in self._reads.get(id(statement), [])
+            if effect in ("copy", "other", "flow") and self._within(node, value_node)
+        ]
+        tainted = self._tainting_blanks(statement) if variable else []
+        if (stop is not None or flowing or tainted) and value.sort() != old.sort():
+            return None
+        if flowing:
+            value = If(self._builder._disjoin(flowing), self._unknown(), value)
+        if stop is not None:
+            value = If(stop, old, value)
+        if tainted:
+            value = If(self._builder._disjoin(tainted), self._unknown(), value)
+        return value
+
+    def _tainting_blanks(self, statement: ast.stmt) -> list[BoolRef]:
+        """The blank choices that make ``statement``'s target unknown at
+        runtime (``_unknown_after``): of the items its value reads, and those
+        the test of an enclosing ``if`` / ``while`` (or a ``for`` iterable)
+        reads."""
+        sources = [(statement, statement.value)]
+        child, parent = statement, self._parents.get(statement)
+        while parent is not None:
+            if isinstance(parent, (ast.If, ast.While)) and child is not parent.test:
+                sources.append((parent, parent.test))
+            elif isinstance(parent, (ast.For, ast.AsyncFor)) and child is not parent.iter:
+                sources.append((parent, parent.iter))
+            child, parent = parent, self._parents.get(parent)
+        items = {
+            outcome_ref_name(node)
+            for holder, root in sources
+            for node, _, _, _ in self._reads.get(id(holder), [])
+            if self._within(node, root)
+        }
+        return [self._blank[item_id] for item_id in sorted(items - {None}) if item_id in self._blank]
+
+    def _within(self, node: ast.AST, root: ast.AST) -> bool:
+        while node is not None:
+            if node is root:
+                return True
+            node = self._parents.get(node)
+        return False
+
+
+def _any(*parts: BoolRef | None) -> BoolRef | None:
+    """Disjunction with ``None`` as False (``_UnknownMarks``)."""
+    kept = [part for part in parts if part is not None and not is_false(part)]
+    for part in kept:
+        if is_true(part):
+            return part
+    if not kept:
+        return None
+    return kept[0] if len(kept) == 1 else Or(*kept)
+
+
+def _all(*parts: BoolRef | None) -> BoolRef | None:
+    """Conjunction with ``None`` as False (``_UnknownMarks``)."""
+    if any(part is None or is_false(part) for part in parts):
+        return None
+    kept = [part for part in parts if not is_true(part)]
+    if not kept:
+        return parts[0]
+    return kept[0] if len(kept) == 1 else And(*kept)
+
+
+class _UnknownMarks:
+    """Which variables one item's codeBlock marks unknown (#1044, #1844), as
+    formulas: ``FlowProcessor``'s ``_unknown_after`` rule for rule, each of
+    its sets replaced by a formula over the world's blank choices and the
+    marks the variables carry into the block (``None`` is False, so a block
+    that reads nothing that may be blank builds no formula at all).
+
+    The runtime walks the statements statically, in order: a name assigned
+    from an expression reading a blank item's ``.outcome`` or a marked
+    variable (neither tested against None) is marked, any other assignment
+    clears it; an assignment under an ``if`` / ``while`` test or a ``for``
+    iterable reading such data is marked too; the bodies of an ``if`` /
+    ``while`` / ``for`` / ``try`` are walked from the same marks and merged, a
+    mark in ANY body staying whichever ran; a container mutated with such data
+    is marked, never cleared. ``marked`` / ``cleared`` are the block's result;
+    the caller keeps an incoming mark unless the block cleared it AND changed
+    the value (``StaticBuilder._settle_marks``), as the runtime does.
+    """
+
+    def __init__(
+        self,
+        tree: ast.Module,
+        entry: Callable[[str], BoolRef | None],
+        blank: Callable[[str], BoolRef | None],
+        true: BoolRef,
+    ):
+        self._entry = entry
+        self._blank = blank
+        self._true = true
+        self.current: dict[str, BoolRef | None] = {}
+        self.marked: dict[str, BoolRef | None] = {}
+        self.cleared: dict[str, BoolRef | None] = {}
+        self._walk(tree.body, None)
+
+    def _not(self, part: BoolRef | None) -> BoolRef | None:
+        if part is None or is_false(part):
+            return self._true
+        return None if is_true(part) else Not(part)
+
+    def _current(self, name: str) -> BoolRef | None:
+        return self.current[name] if name in self.current else self._entry(name)
+
+    def _tainted(self, expr: ast.AST) -> BoolRef | None:
+        items = outcome_reads(expr) - none_tested_outcomes(expr)
+        names = name_reads(expr) - none_tested_names(expr)
+        return _any(*(self._blank(item) for item in sorted(items)), *(self._current(n) for n in sorted(names)))
+
+    @staticmethod
+    def _stores(node: ast.AST) -> set[str]:
+        return {n.id for n in ast.walk(node) if isinstance(n, ast.Name) and isinstance(n.ctx, ast.Store)}
+
+    @staticmethod
+    def _mutated(node: ast.AST) -> set[str]:
+        while isinstance(node, (ast.Subscript, ast.Attribute)):
+            node = node.value
+        return {node.id} if isinstance(node, ast.Name) else set()
+
+    def _assign(self, names: set[str], tainted: BoolRef | None) -> None:
+        for name in names:
+            self.current[name] = tainted
+            self.marked[name] = tainted
+            self.cleared[name] = self._not(tainted)
+
+    def _mutate(self, names: set[str], tainted: BoolRef | None) -> None:
+        if tainted is None:
+            return
+        for name in names:
+            self.current[name] = _any(self._current(name), tainted)
+            self.marked[name] = _any(self.marked.get(name), tainted)
+            self.cleared[name] = _all(self.cleared.get(name), self._not(tainted))
+
+    def _alternatives(self, bodies: list[list[ast.stmt]], under: BoolRef | None) -> None:
+        start = (dict(self.current), dict(self.marked), dict(self.cleared))
+        results = []
+        for body in bodies:
+            self.current, self.marked, self.cleared = dict(start[0]), dict(start[1]), dict(start[2])
+            self._walk(body, under)
+            results.append((self.current, self.marked, self.cleared))
+        names = set().union(*(set(r[0]) | set(r[1]) | set(r[2]) for r in results))
+        current, marked, cleared = {}, {}, {}
+        for name in names:
+            current[name] = _any(*(r[0][name] if name in r[0] else self._entry(name) for r in results))
+            marked[name] = _any(*(r[1].get(name) for r in results))
+            cleared[name] = _all(_any(*(r[2].get(name) for r in results)), self._not(marked[name]))
+        self.current, self.marked, self.cleared = current, marked, cleared
+
+    def _walk(self, statements: list[ast.stmt], under: BoolRef | None) -> None:
+        for st in statements:
+            if isinstance(st, (ast.Assign, ast.AnnAssign)):
+                targets = st.targets if isinstance(st, ast.Assign) else [st.target]
+                tainted = _any(under, self._tainted(st.value) if st.value is not None else None)
+                self._assign(set().union(*(self._stores(t) for t in targets)), tainted)
+                self._mutate(set().union(*(self._mutated(t) for t in targets)), tainted)
+            elif isinstance(st, ast.AugAssign):
+                names = self._stores(st.target)
+                self._assign(names, _any(under, *(self._current(n) for n in sorted(names)), self._tainted(st.value)))
+                self._mutate(self._mutated(st.target), _any(under, self._tainted(st.value)))
+            elif isinstance(st, ast.Expr) and isinstance(st.value, ast.Call) and isinstance(st.value.func, ast.Attribute):
+                self._mutate(self._mutated(st.value.func.value), _any(under, self._tainted(st.value)))
+            elif isinstance(st, (ast.If, ast.While)):
+                self._alternatives([st.body, st.orelse], _any(under, self._tainted(st.test)))
+            elif isinstance(st, ast.For):
+                branch = _any(under, self._tainted(st.iter))
+                self._assign(self._stores(st.target), branch)
+                self._alternatives([st.body, st.orelse], branch)
+            elif isinstance(st, ast.With):
+                self._walk(st.body, under)
+            elif isinstance(st, ast.Try):
+                self._alternatives([st.body + st.orelse, *(handler.body for handler in st.handlers)], under)
+                self._walk(st.finalbody, under)
 
 
 def _safe_eval_names() -> frozenset[str]:
-    """Return the builtin + module names the ``PythonRunner`` sandbox exposes."""
-    global _SAFE_EVAL_NAMES
-    if _SAFE_EVAL_NAMES is None:
-        # Local import avoids a core↔z3 import cycle at module load; by the time
-        # a build runs, both packages are fully imported.
-        from askalot_qml.core.python_runner import PythonRunner
+    """The builtin + module names the ``PythonRunner`` sandbox exposes, so the
+    undefined-name lint's known names never drift from what the runner binds."""
+    # Local import avoids a core↔z3 import cycle at module load; by the time
+    # a build runs, both packages are fully imported.
+    from askalot_qml.core.python_runner import sandbox_names
 
-        runner = PythonRunner()
-        _SAFE_EVAL_NAMES = frozenset(runner._safe_builtins) | frozenset(runner._safe_modules)
-    return _SAFE_EVAL_NAMES
+    return sandbox_names()
+
+
+# The two named ends of a Range answer, in pair order (#1755): the fields of
+# ``core.controls.RangeValue``, which this module cannot import at load time
+# (``askalot_qml.core`` imports the engine, which imports this builder).
+# ``TestRangeNamedEnds`` holds the two in step.
+_RANGE_ENDS = ("low", "high")
+
+# A condition's kind decides how a raise on a skipped item's None counts:
+# False for a precondition, waived for a postcondition (#1775).
+ConditionKind = Literal["precondition", "postcondition"]
+
+
+_ORDERING_OPS = (ast.Lt, ast.LtE, ast.Gt, ast.GtE)
+
+
+@dataclass(frozen=True)
+class _Outcome:
+    """How one node of a condition evaluates at runtime, two-valued (#1779).
+
+    The runtime (``FlowProcessor._evaluate_three_valued``) gives each node one
+    of four results: True, False, unknown (a leaf reads a blank item, #1784)
+    or a raise (a read of a skipped item's None, #1775). ``true`` and
+    ``accepted`` (not False: True, unknown or a raise) say which, with
+    ``raises`` the raise itself (``None``: the node cannot raise). A part
+    reached only after an unknown sibling does not raise there, it is unknown
+    too, so a junction that may raise also carries ``lenient``: its
+    ``(true, accepted)`` evaluated that way; ``None`` when it equals the strict
+    pair (a leaf, or nothing below can raise).
+
+    The kind applies once, at the root: a precondition holds on ``true``
+    (unknown and a raise fail it), a postcondition on ``accepted`` (both waive it).
+    """
+
+    true: BoolRef
+    accepted: BoolRef
+    raises: BoolRef | None = None
+    lenient: tuple[BoolRef, BoolRef] | None = None
+
+    @property
+    def lenient_true(self) -> BoolRef:
+        return self.true if self.lenient is None else self.lenient[0]
+
+    @property
+    def lenient_accepted(self) -> BoolRef:
+        return self.accepted if self.lenient is None else self.lenient[1]
+
+
+def _outcome_not(operand: _Outcome) -> _Outcome:
+    """``not A``: True and False swap, a raise passes through."""
+    lenient = None
+    if operand.lenient is not None:
+        lenient = (Not(operand.lenient_accepted), Not(operand.lenient_true))
+    return _Outcome(Not(operand.accepted), Not(operand.true), operand.raises, lenient)
+
+
+def _outcome_junction(is_and: bool, parts: list[_Outcome]) -> _Outcome:
+    """``and`` / ``or`` over ``parts``, left to right as the runtime
+    short-circuits: a raise ends the evaluation, a part reached after an
+    unknown one is evaluated leniently (its raise is unknown too), and
+    ``and`` is settled by a False part, ``or`` by a True one, after an
+    unknown part as well (Kleene)."""
+    if all(part.raises is None and part.lenient is None for part in parts):
+        join = And if is_and else Or
+        return _Outcome(join(*[p.true for p in parts]), join(*[p.accepted for p in parts]))
+    acc = parts[0]
+    for part in parts[1:]:
+        acc = _outcome_pair(is_and, acc, part)
+    return acc
+
+
+def _outcome_pair(is_and: bool, a: _Outcome, b: _Outcome) -> _Outcome:
+    """``a and b`` / ``a or b`` (``_outcome_junction``). With F = not accepted
+    and U = neither True, False nor a raise: ``and`` is True on T(a) ∧ T(b),
+    False on F(a) ∨ (T(a) ∧ F(b)) ∨ (U(a) ∧ lenient F(b)), and raises on
+    R(a) ∨ (T(a) ∧ R(b)); ``or`` is the dual (True on T(a) ∨ (F(a) ∧ T(b)) ∨
+    (U(a) ∧ lenient T(b)), False on F(a) ∧ F(b), raising on R(a) ∨ (F(a) ∧ R(b)))."""
+    ctx = a.true.ctx
+    a_raises = a.raises if a.raises is not None else BoolVal(False, ctx)
+    a_unknown = And(Not(a.true), a.accepted, Not(a_raises))
+    if is_and:
+        true = And(a.true, b.true)
+        false = Or(Not(a.accepted), And(a.true, Not(b.accepted)), And(a_unknown, Not(b.lenient_accepted)))
+        accepted = Not(false)
+        continued = a.true
+        lenient = (And(a.lenient_true, b.lenient_true), And(a.lenient_accepted, b.lenient_accepted))
+    else:
+        true = Or(a.true, And(Not(a.accepted), b.true), And(a_unknown, b.lenient_true))
+        accepted = Or(a.accepted, b.accepted)
+        continued = Not(a.accepted)
+        lenient = (Or(a.lenient_true, b.lenient_true), Or(a.lenient_accepted, b.lenient_accepted))
+    raised = [r for r in (a.raises, None if b.raises is None else And(continued, b.raises)) if r is not None]
+    raises = None if not raised else raised[0] if len(raised) == 1 else Or(*raised)
+    return _Outcome(true, accepted, raises, lenient)
+
+
+def _require_condition_kind(kind: str) -> None:
+    """Refuse an unknown condition kind. Called outside the lowering's
+    ``except Exception`` guards, which would turn it into a silent drop."""
+    if kind not in ("precondition", "postcondition"):
+        raise ValueError(f"unknown condition kind {kind!r}")
+
+
+def _is_call_to(node: ast.Call, names: tuple[str, ...]) -> bool:
+    """Whether ``node`` calls one of the builtins ``names`` by its bare name."""
+    return isinstance(node.func, ast.Name) and node.func.id in names and not node.keywords
+
+
+def _is_boolean_valued(node: ast.AST) -> bool:
+    """Whether Python evaluates ``node`` to a bool: a comparison, a ``not``, a
+    bool literal, or ``and`` / ``or`` over those (which otherwise return an operand)."""
+    if isinstance(node, ast.Compare) or (
+        isinstance(node, ast.UnaryOp) and isinstance(node.op, ast.Not)
+    ):
+        return True
+    if isinstance(node, ast.Constant):
+        return isinstance(node.value, bool)
+    if isinstance(node, ast.BoolOp):
+        return all(_is_boolean_valued(value) for value in node.values)
+    return False
 
 
 class StaticBuilder:
@@ -77,7 +913,13 @@ class StaticBuilder:
         """Initialize StaticBuilder with questionnaire state and build constraints."""
         self.logger = logging.getLogger(__name__)
         self.state = questionnaire_state
+        self._reset_build_state()
+        self._build()
 
+    def _reset_build_state(self) -> None:
+        """Every field one build fills, empty. ``_build`` calls it again before
+        a second build in navigation order (#1989), so nothing of the first
+        build (its Z3 context, versions, constraints, graph) survives into it."""
         # Isolated Z3 context for thread safety.
         # Z3's global context (main_ctx) is not thread-safe — background threads
         # (watchdog, IPC) can trigger Python GC which corrupts shared AST state.
@@ -96,11 +938,114 @@ class StaticBuilder:
         # Item outcome variables (special handling)
         self.item_vars: dict[str, ExprRef] = {}  # item_id -> z3_var
 
-        # MatrixQuestion per-cell variables — flat per-cell Int representation.
-        # Matrix items have NO scalar in self.item_vars; their outcome is
-        # the List[List[Any]] of cell values, one Z3 Int per (row, col).
-        # Subscript lowering (X.outcome[j][k]) reads from this dict.
-        self.item_cells: dict[str, dict[tuple[int, int], ExprRef]] = {}
+        # Per-answer variables of a list outcome; such an item has NO scalar in
+        # self.item_vars. A MatrixQuestion holds one Z3 Int per (row, col),
+        # read by ``X.outcome[j][k]``; a QuestionGroup one per question,
+        # ``item_{id}@{i}`` keyed (i,), read by ``X.outcome[i]`` (#184). A
+        # Range answer is a [low, high] pair (#1474), so a Range matrix cell is
+        # keyed (row, col, end) and a Range group answer (i, end), with end
+        # 0 / 1 named by ``_range_end_names``; a read that stops at the pair
+        # finds no cell, which is what makes a bare Range cell (or a fold over
+        # Range cells) a coverage gap.
+        self.item_cells: dict[str, dict[tuple[int, ...], ExprRef]] = {}
+        self.question_groups: set[str] = set()
+        # MatrixQuestion ids, so ``_unlowered_matrix_reads`` walks only when one exists.
+        self.matrices: set[str] = set()
+        # Questions a refused ``len(set([...])) == k`` held that may read
+        # ``None`` (#1785), per condition owner, for the coverage gap (#1799).
+        self._distinct_refusals: dict[str, list[str]] = {}
+        # Skippable Questions a refused condition read through a ternary branch
+        # (#1867, ``_skippable_reads``), per condition owner, for the coverage gap.
+        self._ternary_refusals: dict[str, list[str]] = {}
+
+        # Range Question ends (#1474). A Range answer is a ``[low, high]``
+        # pair, so a Range Question holds two Ints, ``item_{id}@lo`` and
+        # ``item_{id}@hi`` (see ``_range_end_names``), here instead of a scalar in ``item_vars``. Only
+        # ``X.outcome.low`` / ``X.outcome.high`` lower onto them (#1755); a bare
+        # ``X.outcome`` has no number to stand for and stays unlowered.
+        self.item_pairs: dict[str, tuple[ExprRef, ExprRef]] = {}
+
+
+        # The visited-sentinel floor of each Range Question: ``lo >= min``
+        # when the control declares a numeric ``min`` (see _visited_sentinel).
+        self._pair_floor: dict[str, int | float] = {}
+
+        # Answeredness (#1250), see ``_lower_none_test``: the items the predicate
+        # being lowered may None-test, and its answered Bool per item.
+        self._none_guarded: set[str] = set()
+        self._predicate_answered: dict[str, BoolRef] = {}
+        self._predicate_value_reads: set[str] = set()
+        self._predicate_reads_variables = False
+        self._answered_count = 0
+        # Each minted ``answered@X#n``: (X, the item whose condition minted it),
+        # for ``answered_mint``; and ``answered_by_world`` per (item, skippable).
+        self._answered_minted: dict[str, tuple[str, str]] = {}
+        self._answered_by_world: dict[tuple[str, bool], BoolRef | None] = {}
+        # The item whose condition ``_lower_predicate`` is lowering.
+        self._predicate_context = ""
+        # Skipped reads (#1769), see ``_lower_predicate``: the items whose
+        # unasked ``None`` the predicate being lowered can see, with their skip
+        # choice, and the one choice per item (``_skipped_choice``).
+        self._predicate_skipped: dict[str, BoolRef] = {}
+        # #1775: the skip choices each comparison of the precondition being
+        # lowered raises on, and (#184, #1780) the answer-list reads whose
+        # unanswered slot it raises on, for the raises the two-sided lowering
+        # cannot place (``_wrap_unplaced``).
+        self._predicate_raising: dict[int, tuple[list[BoolRef], list[ast.AST]]] = {}
+        # #184 / #1780: whether a predicate is being lowered (a QuestionGroup
+        # answer lowers only there, ``_group_cells``); the answer-list reads
+        # of the predicate that are None-safe on an unanswered slot; the
+        # QuestionGroups and matrices its None tests may model, with their
+        # None choice; and the one unanswered choice per group answer or
+        # matrix cell (``_slot_choice``).
+        self._lowering_predicate = False
+        self._predicate_slot_safe: set[int] = set()
+        self._predicate_list_none: dict[str, BoolRef] = {}
+        self._slot_choices: dict[tuple[str | int, ...], BoolRef] = {}
+        self._skip_choices: dict[str, BoolRef] = {}
+        self._skipped_count = 0
+        self._fresh_skip_choices: dict[str, list[BoolRef]] = {}
+        self._code_written: set[str] | None = None
+        # Blank answers (#1784), see ``_blank_choice``: the one choice per item,
+        # a code-written item's per-predicate choices, the choices of the
+        # predicate being lowered, and whether that predicate models a blank at
+        # all (a codeBlock ``if`` guard runs plain Python and does not).
+        self._blank_choices: dict[str, BoolRef] = {}
+        self._fresh_blank_choices: dict[str, list[BoolRef]] = {}
+        self._blank_count = 0
+        self._predicate_blank: dict[str, BoolRef] = {}
+        self._model_blank = True
+        # Admissibility of a blank (``_blank_acceptance``): the item whose own
+        # postconditions are being lowered with its outcome ``None``, and each
+        # item's acceptance formula (``None`` while it is being computed).
+        self._own_none: str | None = None
+        self._blank_acceptances: dict[str, BoolRef | None] = {}
+        # Each item's ``version_map`` at its submission, before its own
+        # codeBlock runs: the variable versions its postconditions read, at
+        # the build and in its acceptance. Acceptance is computed only once the
+        # build is complete.
+        self._submission_versions: dict[str, dict[str, int]] = {}
+        # Variables an own-condition compile reads as a fresh Int, and the
+        # navigation order it judges against (``_runtime_versions``).
+        self._open_reads: dict[str, ExprRef] = {}
+        self._navigation_positions: dict[str, int] | None = None
+        # Per item, computed once: an open variable is one Int for every
+        # compile of that item's conditions (its pre- and postcondition alike).
+        self._runtime_version_cache: dict[str, tuple[dict[str, int], dict[str, ExprRef]]] = {}
+        self._topology = None
+        self._built = False
+        # Whether a codeBlock is being lowered: a Textarea's text is opaque
+        # there (#2003), no Int stands for it (``_CodeReads``).
+        self._lowering_code = False
+        # #1844: per SSA version (``_ssa_key``), when the runtime may mark it
+        # unknown (computed from a blank answer, #1044), as ``_UnknownMarks``
+        # builds it; a version missing here is never marked.
+        self._marks: dict[str, BoolRef] = {}
+        # Fresh raise Bools and unknown Ints of codeBlock reads (#1776, ``_CodeReads``).
+        self._code_raise_count = 0
+        # Fresh lenient outcomes of condition leaves holding a raise the
+        # two-sided lowering cannot place (#1779, ``_lower_kleene``).
+        self._loose_count = 0
 
         # Domain constraints D_i(S_i) - only min/max and enumeration constraints
         # These define the valid value space for each item variable
@@ -134,6 +1079,17 @@ class StaticBuilder:
         # Keys: item_id or "var:variable_name"
         # Values: set of dependencies (items or variables)
         self.dependency_graph: dict[str, set[str]] = {}
+
+        # The same ``var:`` edges split by writer (#1891): per variable, each
+        # assignment's context (``"__init__"`` or the item id) and the
+        # dependencies of the value it assigns. An accumulator is resolved
+        # through the writers before its reader in file order only
+        # (``get_item_dependencies``), and its versions are modelled at each
+        # position for precondition reachability (``_accumulator_reachability``).
+        self._variable_writers: dict[str, list[tuple[str, frozenset[str]]]] = {}
+        self._assignment_values: list[tuple[str, int, str, ExprRef | None, frozenset[str]]] = []
+        self._accumulators: set[str] | None = None
+        self._accumulator_constraints: list[BoolRef] | None = None
 
         # Track which item defines each variable version
         self.variable_definitions: dict[tuple[str, int], str] = {}
@@ -198,7 +1154,7 @@ class StaticBuilder:
         # ``_conditionally_present`` is the classification-safety tag set:
         # any (item_id, k) registered here is "absent because not drawn / bit
         # unset" — ItemClassifier / PathBasedValidator MUST NOT report it
-        # NEVER / dead-code. With no registrations (every path off Sample /
+        # NEVER / dead-code. With no registrations (every path off a capped Group /
         # Roster, i.e. all of U2 standalone) the antecedent degrades to the
         # literal True and the primitive is a proven no-op.
         #
@@ -224,15 +1180,18 @@ class StaticBuilder:
         # SAME domain spec can be re-emitted against the canonical
         # ``item_var`` (``k is None`` — the U2 no-op path, byte-equivalent
         # logically to pre-U2) AND against per-iteration Roster vars
-        # (``item_{id}_iter{K}``) without re-extracting min/max/enum from the
+        # (``item_{id}@iter{K}``) without re-extracting min/max/enum from the
         # input spec. The single extraction site stays
         # ``_extract_domain_constraints``; only the binding target varies.
         self._pending_domain_constraints: dict[
             str, list[Callable[[ExprRef], BoolRef]]
         ] = {}
-
-        # Build SSA and constraints
-        self._build()
+        # The pair form of the same bucket, for Range Questions:
+        # ``(lo, hi) -> BoolRef``. A separate map, so a scalar control can
+        # never be bound to a pair or a pair to one variable.
+        self._pending_pair_domain_constraints: dict[
+            str, list[Callable[[ExprRef, ExprRef], BoolRef]]
+        ] = {}
 
     def _domain_constraint_builders(
         self, item_id: str, item: dict[str, Any]
@@ -250,7 +1209,7 @@ class StaticBuilder:
         Returns builders ``(var) -> BoolRef`` rather than pre-bound
         ``BoolRef``s so the SAME spec can be bound to the canonical scalar
         ``item_var`` (U2 ``k is None`` path), to each Roster per-iteration var
-        ``item_{id}_iter{K}`` (U3), or to a matrix cell var — without
+        ``item_{id}@iter{K}`` (U3), or to a matrix cell var — without
         re-reading min/max/enum from the input spec at every binding site.
         This is the single domain-extraction site; only the bind target and
         the present-gate vary across callers.
@@ -259,23 +1218,14 @@ class StaticBuilder:
         control = input_spec.get("control", "")
         builders: list[Callable[[ExprRef], BoolRef]] = []
 
-        if control in ("Editbox", "Slider", "Range"):
-            # Min/max constraints for numeric controls
-            min_val = input_spec.get("min")
-            max_val = input_spec.get("max")
-
-            if min_val is not None and isinstance(min_val, (int, float)):
+        if control in ("Editbox", "Slider"):
+            # Min/max constraints for numeric controls. Range is not here: its
+            # answer is a pair, bound by ``_pair_domain_builders``.
+            min_val, max_val = self._numeric_bounds(item_id, input_spec)
+            if min_val is not None:
                 builders.append(lambda v, _m=min_val: v >= _m)
-            elif min_val is not None:
-                self.logger.warning(
-                    f"Unsupported min value type for {item_id}: {type(min_val).__name__}"
-                )
-            if max_val is not None and isinstance(max_val, (int, float)):
+            if max_val is not None:
                 builders.append(lambda v, _m=max_val: v <= _m)
-            elif max_val is not None:
-                self.logger.warning(
-                    f"Unsupported max value type for {item_id}: {type(max_val).__name__}"
-                )
 
         elif control == "Checkbox":
             # A Checkbox answers the SUM of its ticked keys (the loader holds
@@ -339,6 +1289,78 @@ class StaticBuilder:
                 )
 
         return builders
+
+    def _numeric_bounds(
+        self, item_id: str, input_spec: dict[str, Any]
+    ) -> tuple[int | float | None, int | float | None]:
+        """The control's numeric ``(min, max)``; a missing or non-numeric bound is None.
+
+        A non-numeric bound is logged and left out of the domain rather than
+        guessed at.
+        """
+        return (
+            self._numeric_bound(item_id, input_spec, "min"),
+            self._numeric_bound(item_id, input_spec, "max"),
+        )
+
+    def _numeric_bound(
+        self, item_id: str, input_spec: dict[str, Any], key: str
+    ) -> int | float | None:
+        """One numeric bound of the control, or None when missing or non-numeric."""
+        value = input_spec.get(key)
+        if value is not None and not isinstance(value, (int, float)):
+            self.logger.warning(f"Unsupported {key} value type for {item_id}: {type(value).__name__}")
+            return None
+        return value
+
+    def _pair_domain_builders(
+        self, item_id: str, item: dict[str, Any]
+    ) -> list[Callable[[ExprRef, ExprRef], BoolRef]]:
+        """The domain of a Range answer, ``min <= lo <= hi <= max``, as pair builders.
+
+        A Range answer is a ``[low, high]`` pair (#1474), so its domain binds
+        two variables. ``lo <= hi`` holds whether or not the control declares
+        bounds: the engine refuses a pair whose low end exceeds its high end.
+        Same ``(lo, hi) -> BoolRef`` shape for the canonical pair, a Roster
+        iteration's pair, a capped-Group pair and a Range matrix cell.
+        """
+        min_val, max_val = self._numeric_bounds(item_id, item.get("input", {}))
+        builders: list[Callable[[ExprRef, ExprRef], BoolRef]] = [lambda lo, hi: lo <= hi]
+        if min_val is not None:
+            builders.append(lambda lo, hi, _m=min_val: lo >= _m)
+        if max_val is not None:
+            builders.append(lambda lo, hi, _m=max_val: hi <= _m)
+        return builders
+
+    def _range_cell(
+        self, item_id: str, pair_builders: list[Callable[[ExprRef, ExprRef], BoolRef]], *scope: int
+    ) -> tuple[ExprRef, ExprRef]:
+        """A Range cell's two ends (``_range_end_names``), bound unconditionally
+        by *pair_builders*: a matrix cell or a QuestionGroup answer."""
+        lo_name, hi_name = _range_end_names(item_id, *scope)
+        lo, hi = Int(lo_name, self.ctx), Int(hi_name, self.ctx)
+        for build in pair_builders:
+            self.domain_constraints.append(build(lo, hi))
+        return lo, hi
+
+    def _question_group_cells(
+        self, item_id: str, item: dict[str, Any], questions_len: int, control: str
+    ) -> dict[tuple[int, ...], ExprRef]:
+        """One variable per answer of a QuestionGroup (#184), bound by the
+        group's one control domain: ``item_{id}@{i}`` keyed ``(i,)``, or for a
+        Range group the pair ``_range_end_names(id, i)`` keyed ``(i, 0)`` /
+        ``(i, 1)``. The ``@`` keeps a cell from aliasing the scalar of an item
+        named ``{id}_{i}``."""
+        cells: dict[tuple[int, ...], ExprRef] = {}
+        if control == "Range":
+            pair_builders = self._pair_domain_builders(item_id, item)
+            for i in range(questions_len):
+                cells[(i, 0)], cells[(i, 1)] = self._range_cell(item_id, pair_builders, i)
+            return cells
+        for i in range(questions_len):
+            cell = cells[(i,)] = Int(_scoped_name(item_id, i), self.ctx)
+            self._extract_domain_constraints(item_id, cell, item, is_cell=True)
+        return cells
 
     def _extract_domain_constraints(
         self,
@@ -405,6 +1427,12 @@ class StaticBuilder:
                 self.domain_constraints.append(
                     self._wrap_present(item_id, None, build(item_var))
                 )
+        for item_id, pair_builders in self._pending_pair_domain_constraints.items():
+            lo, hi = self.item_pairs[item_id]
+            for build in pair_builders:
+                self.domain_constraints.append(
+                    self._wrap_present(item_id, None, build(lo, hi))
+                )
 
     def _visited_sentinel(self, item_id: str) -> BoolRef:
         """Return the antecedent for 'item has been visited' in pre/postcondition implications.
@@ -416,18 +1444,106 @@ class StaticBuilder:
         the implication degenerates to its consequent, which matches the
         runtime semantics that a matrix's pre/postcondition is checked once at
         item processing time, not once per cell.
+
+        A Range Question (#1474) is visited when its low end sits on the
+        scale, ``lo >= min``; with no numeric ``min`` there is nothing to
+        compare, so it is unconditional like a matrix.
         """
         if item_id in self.item_vars:
             return self.item_vars[item_id] >= 0
-        # Matrix items (and any future kind without a scalar var): unconditional.
+        if item_id in self.item_pairs and item_id in self._pair_floor:
+            return self.item_pairs[item_id][0] >= self._pair_floor[item_id]
+        # Matrix and QuestionGroup items (cells) and a Range Question without
+        # a min: unconditional.
         return BoolVal(True, self.ctx)
+
+    def _answerable(self, item_id: str) -> bool:
+        """Whether a None test on ``item_id`` can be modelled (#1250): a scalar
+        or Textarea Question that is always present. A matrix, QuestionGroup or
+        Range item holds a list or a pair whatever variable the model gives it,
+        and a Roster or capped-Group member's presence is per iteration or draw.
+        """
+        details = self.item_details.get(item_id)
+        item = self.state.get_item(item_id)
+        if details is None or item is None or details.get("kind") != "Question":
+            return False
+        if item_id not in self.item_vars and details.get("control") != "Textarea":
+            return False
+        return not self._is_scoped(item_id)
+
+    def _lower_none_test(self, node: ast.Compare) -> BoolRef | None:
+        """``X.outcome is None`` / ``is not None`` (and ``== None`` / ``!= None``,
+        either operand order) as ``Not(answered)`` / ``answered``, #1250.
+
+        ``answered`` is a fresh Bool per predicate (``_lower_predicate``),
+        shared by that predicate's tests on X and tied to nothing else. A
+        predicate is evaluated at one moment, so its tests agree with each
+        other; across predicates X's answeredness can change (code sets it, an
+        undecided gate lets an answer through, X's own gate runs before it is
+        answered and its postcondition after), so nothing is carried over. Nor
+        is ``answered ⇒ P_X`` (#1768): an out-of-order API answer to an item
+        P_X reads can falsify it after X was answered, without taking X off
+        the path.
+
+        ``None`` when the comparison is not one such test, when the predicate
+        reads X's value, or any variable, where X may be unanswered
+        (``none_guarded_outcomes``: the model holds an unanswered X, and a
+        variable computed from it, as an in-domain number), or when X is not
+        ``_answerable``.
+        """
+        found = none_test_of(node)
+        if found is not None and found[0] == self._own_none:
+            # The item whose blank is being admitted reads ``None`` for certain.
+            return BoolVal(not found[1], self.ctx)
+        if found is None or found[0] not in self._none_guarded:
+            return None
+        item_id, tests_answered = found
+        list_none = self._predicate_list_none.get(item_id)
+        if list_none is not None:
+            # A QuestionGroup or matrix is None when skipped or left blank
+            # (``_answer_list_none``).
+            return Not(list_none) if tests_answered else list_none
+        if not self._answerable(item_id):
+            return None
+        # Free text lowers to a sentinel, so a predicate that also reads the
+        # text, directly or through a variable that may hold it, would be
+        # proven against a constant (#1250).
+        if self.item_details[item_id].get("control") == "Textarea" and (
+            item_id in self._predicate_value_reads or self._predicate_reads_variables
+        ):
+            return None
+        answered = self._predicate_answered.get(item_id)
+        if answered is None:
+            self._answered_count += 1
+            # ``@`` cannot occur in an item id, so no item or variable shares the name.
+            answered = Bool(f"{ANSWERED_PREFIX}{item_id}#{self._answered_count}", self.ctx)
+            self._predicate_answered[item_id] = answered
+            self._answered_minted[answered.decl().name()] = (item_id, self._predicate_context)
+        return answered if tests_answered else Not(answered)
+
+    def _has_outcome_model(self, item_id: str) -> bool:
+        """Whether the model holds ``item_id``'s outcome in any form.
+
+        True for a scalar item, a Range Question's pair, and a matrix's or a
+        QuestionGroup's cells. Only Textarea items and
+        non-items are left out. Every site that once asked ``item_id in
+        self.item_vars`` to decide whether an item's conditions, codeBlock or
+        dependency edges count asks this instead, so a Range item's
+        conditions and codeBlock never vanish from the model.
+        """
+        return item_id in self.item_vars or item_id in self.item_pairs or item_id in self.item_cells
+
+    def _is_range_item(self, item_id: str) -> bool:
+        """Whether ``item_id`` is a Range item of any kind (Question, matrix, group)."""
+        details = self.item_details.get(item_id)
+        return details is not None and details.get("control") == "Range"
 
     # ------------------------------------------------------------------
     # U2: shared conditionally-present primitive
     #
-    # Public API consumed by U3 (Roster bit-guarded unroll) and U4 (Sample
+    # Public API consumed by U3 (Roster bit-guarded unroll) and U4 (capped-Group
     # conditional-presence + ordering). U2 itself only wires the always-True
-    # degrade path, proving the primitive is a no-op off Sample/Roster.
+    # degrade path, proving the primitive is a no-op off a capped Group/Roster.
     # ------------------------------------------------------------------
 
     def _present_var(self, item_id: str, k: int | None) -> BoolRef:
@@ -451,7 +1567,7 @@ class StaticBuilder:
         """Register ``(item_id, k)`` as conditionally-present (R5/R7).
 
         Called by U3/U4 for items whose presence is gated by a Roster bit or
-        a Sample draw. Two effects:
+        a capped-Group draw. Two effects:
 
         1. ``_present_antecedent`` stops degrading to True for this key — the
            gating Bool becomes the real antecedent, so domain/pre/post
@@ -469,7 +1585,7 @@ class StaticBuilder:
         The classification-safety query. ItemClassifier and
         PathBasedValidator call this to decide whether an unsatisfiable
         precondition means "dead code" (normal item) or "merely not drawn in
-        this selection" (Sample/Roster item — must not be NEVER/dead-code).
+        this selection" (capped-Group/Roster item — must not be NEVER/dead-code).
         Keyed on item_id only: an item that is conditionally-present for any
         selection index is sampling-absent, never dead.
         """
@@ -496,7 +1612,7 @@ class StaticBuilder:
 
         ``Implies(present(item, k), constraint)``. When the antecedent
         degrades to True (no registration) this is logically just
-        ``constraint`` — the primitive contributes nothing off Sample/Roster.
+        ``constraint`` — the primitive contributes nothing off a capped Group/Roster.
         """
         return Implies(self._present_antecedent(item_id, k), constraint)
 
@@ -506,12 +1622,11 @@ class StaticBuilder:
         k: int,
         effective_pre: list,
         effective_post: list,
-        scoped_var,
-        canonical_var,
+        scoped: ExprRef | tuple[ExprRef, ExprRef],
     ) -> None:
         """Emit per-iteration pre/postcondition constraints, present-gated.
 
-        Roster bit-guarded unroll (Pass 3.5) and Sample conditional-presence
+        Roster bit-guarded unroll (Pass 3.5) and capped-Group conditional-presence
         (Pass 3.6) both re-emit each inner item's preconditions and
         postconditions per (item, k) selection, swapping ``self.item_vars[item_id]``
         to a per-iteration var so ``self.outcome`` references in predicates
@@ -519,12 +1634,16 @@ class StaticBuilder:
         behind the presence antecedent. The two call sites were verbatim
         duplicates of each other; this helper holds the shared body.
 
-        ``scoped_var`` is the per-iteration variable to swap in for the
-        duration of the emit; ``canonical_var`` is restored in ``finally`` so
-        the canonical single-pass model the caller's outer loop assumes is
-        unchanged on exit.
+        ``scoped`` is the per-iteration outcome to swap in for the duration of
+        the emit: one variable for a scalar item (swapped into ``item_vars``),
+        a ``(lo, hi)`` pair for a Range Question (swapped into ``item_pairs``,
+        so ``self.outcome.low`` / ``.high`` lower to this iteration's ends). The
+        canonical entry is restored in ``finally`` so the canonical
+        single-pass model the caller's outer loop assumes is unchanged on exit.
         """
-        self.item_vars[item_id] = scoped_var
+        outcomes: dict[str, Any] = self.item_pairs if item_id in self.item_pairs else self.item_vars
+        canonical = outcomes[item_id]
+        outcomes[item_id] = scoped
         try:
             for idx, cond in enumerate(effective_pre):
                 predicate = cond.get("predicate", "")
@@ -557,7 +1676,7 @@ class StaticBuilder:
                         )
                     )
         finally:
-            self.item_vars[item_id] = canonical_var
+            outcomes[item_id] = canonical
 
     def _extract_dependencies_from_ast(self, node: ast.AST) -> set[str]:
         """Extract all dependency references (items AND variables) from AST.
@@ -572,12 +1691,12 @@ class StaticBuilder:
                 # Handle q1.outcome pattern (scalar items AND matrix items)
                 if isinstance(child.value, ast.Name) and child.attr == "outcome":
                     name = child.value.id
-                    if name in self.item_vars or name in self.item_cells:
+                    if self._has_outcome_model(name):
                         dependencies.add(name)
             elif isinstance(child, ast.Name):
                 name = child.id
-                if name in self.item_vars or name in self.item_cells:
-                    # Direct item reference (scalar or matrix)
+                if self._has_outcome_model(name):
+                    # Direct item reference (scalar, Range, or matrix)
                     dependencies.add(name)
                 elif name in self.version_map:
                     # Variable reference - track as var: node
@@ -605,13 +1724,105 @@ class StaticBuilder:
         effective_post = block_post + list(item.get("postcondition", []) or [])
         return effective_pre, effective_post
 
-    def _build(self):
-        """Build SSA versioning and Z3 constraints from questionnaire state."""
-        with profile_block("z3_static_builder_build"):
-            self._build_internal()
+    def condition_owner(self, item_id: str, kind: str, condition_idx: int) -> tuple[str, str]:
+        """``(owner id, "block" | "item")`` of condition ``condition_idx`` of
+        ``item_id``'s composed ``kind`` list (#1817).
 
-    def _build_internal(self):
-        """Internal build implementation."""
+        Block conditions come first in every composed list
+        (``_compose_effective_conditions``), so an index below the block's own
+        count is the block's condition, shared by each of its items: a finding
+        about it belongs to the block, once. ``kind`` is ``"precondition"`` or
+        ``"postcondition"``; anything else is the item's.
+        """
+        if kind not in ("precondition", "postcondition"):
+            return item_id, "item"
+        item = self.state.get_item(item_id) or {}
+        block_id = item.get("blockId")
+        block = self.state.get_block(block_id) if block_id else None
+        if block is not None and condition_idx < len(block.get(kind) or []):
+            return block_id, "block"
+        return item_id, "item"
+
+    def block_condition_reads(self) -> dict[tuple[str, str, int], dict[str, list[str]]]:
+        """``{(block id, kind, condition_idx): {field: items}}``: for each block
+        condition with a coverage gap, the union over its items of the items
+        each gap names in ``wide_items``, ``skippable_items`` and
+        ``ternary_items`` (#1817).
+
+        The block predicate lowers in each item's own context, where the item's
+        own outcome is answered and another member's may not be, so each item's
+        gap names a different subset. The one finding reported against the
+        block names them all, or the guard it suggests leaves a read unguarded.
+        """
+        merged: dict[tuple[str, str, int], dict[str, list[str]]] = {}
+        for item_id, gaps in self.coverage_gaps.items():
+            for gap in gaps:
+                idx = gap.get("condition_idx", 0)
+                owner, scope = self.condition_owner(item_id, gap.get("kind", ""), idx)
+                if scope != "block":
+                    continue
+                reads = merged.setdefault((owner, gap["kind"], idx), {})
+                for field in ("wide_items", "skippable_items", "ternary_items"):
+                    names = reads.setdefault(field, [])
+                    names.extend(n for n in gap.get(field) or [] if n not in names)
+        return merged
+
+    def _build(self):
+        """Build SSA versioning and Z3 constraints from questionnaire state.
+
+        Conditions and codeBlocks are lowered in the walk's navigation order
+        (#1989): SSA versions are numbered in the order the build lowers
+        assignments, and a read sees the version current at that point, so a
+        build in file order would give an item the stale value of a variable
+        a later-in-file item writes but the walk asks first. The order is
+        ``topology``'s, which needs the dependency graph the build itself
+        produces, so the first build runs in file order and, only when the
+        navigation order puts the code-state items in a different order
+        (``_navigation_build_order``), the state is reset and the build runs
+        again in that order. One lowering produces the graph in both builds,
+        so no second description of reads and writes can drift from it.
+
+        The second build reproduces the first one's order: Kahn's min-heap on
+        file index yields the lexicographically smallest topological order,
+        and the second build can only add edges that order already satisfies
+        (a reader now sees a variable its writer set before it). Removing an
+        edge would need a cycle, and a graph with cycles keeps file order.
+        """
+        with profile_block("z3_static_builder_build"):
+            self._build_internal(None)
+            order = self._navigation_build_order()
+            if order is not None:
+                self._reset_build_state()
+                self._build_internal(order)
+
+    def _navigation_build_order(self) -> list[str] | None:
+        """The item order the second build lowers in, or ``None`` when the file
+        order already is the walk's order for every item that touches code
+        state (a codeBlock, or a condition reading a variable): only their
+        relative order numbers SSA versions, so a questionnaire whose other
+        items move builds exactly as before. ``None`` too on a dependency
+        cycle: the topology is only an order of an acyclic graph, and a cycle
+        keeps its refusal (#1979) on the file-order build."""
+        code_state = [
+            item_id
+            for item_id in self.item_order
+            if self.item_details[item_id].get("code_block")
+            or any(dep.startswith("var:") for dep in self.dependency_graph.get(item_id, ()))
+        ]
+        if len(code_state) < 2:
+            return None
+        topology = self.topology
+        if topology.has_cycles:
+            return None
+        order = topology.get_topological_order()
+        members = set(code_state)
+        if [item_id for item_id in order if item_id in members] == code_state:
+            return None
+        return order
+
+    def _build_internal(self, order: list[str] | None):
+        """Internal build implementation; ``order`` is the item order of the
+        condition and codeBlock pass (``None``: file order, see ``_build``)."""
         # First pass: create item outcome variables, extract domain constraints, populate item details
         # Textarea controls have string outcomes — no Z3 integer variable is created for them.
         for item in self.state.get_all_items():
@@ -624,6 +1835,7 @@ class StaticBuilder:
 
                 rows_len: int | None = None
                 cols_len: int | None = None
+                questions_len: int | None = None
 
                 if control == "Textarea":
                     # Text items have string outcomes — skip Z3 variable creation
@@ -631,24 +1843,64 @@ class StaticBuilder:
                 elif kind == "MatrixQuestion":
                     # Matrix outcome is List[List[Any]] — one Z3 Int per cell.
                     # No scalar item_var: the matrix has no single outcome to constrain.
-                    # rows/columns are top-level item keys (NOT under input_spec; see
-                    # item_proxy.py:62-65 for a latent bug that uses input_config —
-                    # do not copy that pattern here).
+                    # rows/columns are top-level item keys, not under input_spec.
                     rows = item.get("rows", []) or []
                     columns = item.get("columns", []) or []
                     rows_len = len(rows)
                     cols_len = len(columns)
-                    cells: dict[tuple[int, int], ExprRef] = {}
+                    cells: dict[tuple[int, ...], ExprRef] = {}
+                    pair_builders = (
+                        self._pair_domain_builders(item_id, item) if control == "Range" else []
+                    )
                     for r in range(rows_len):
                         for c in range(cols_len):
-                            cell_var = Int(f"item_{item_id}_{r}_{c}", self.ctx)
+                            if control == "Range":
+                                # A Range cell is a [low, high] pair: two
+                                # Ints keyed (r, c, end), bound unconditionally
+                                # like every matrix cell.
+                                cells[(r, c, 0)], cells[(r, c, 1)] = self._range_cell(
+                                    item_id, pair_builders, r, c
+                                )
+                                continue
+                            cell_var = Int(_scoped_name(item_id, r, c), self.ctx)
                             cells[(r, c)] = cell_var
                             # Apply cell-level domain constraints (min/max or labels)
                             self._extract_domain_constraints(
                                 item_id, cell_var, item, is_cell=True
                             )
                     self.item_cells[item_id] = cells
+                    self.matrices.add(item_id)
                     self.dependency_graph[item_id] = set()
+                elif kind == "QuestionGroup":
+                    # A list with one answer per question (#184): one Int per
+                    # answer, or a Range pair, bound unconditionally like a
+                    # matrix cell. Whether the group or one answer is None is
+                    # a choice of the predicate that reads it (skip, blank or
+                    # slot, ``_answer_list_reads``), never a value of the cell.
+                    # Imported here, like ``checkbox_mask``: ``askalot_qml.core``
+                    # imports the engine, which imports this module.
+                    from askalot_qml.core.controls import answer_shape
+
+                    shape = answer_shape(item)
+                    questions_len = shape[0] if shape else 0
+                    self.item_cells[item_id] = self._question_group_cells(
+                        item_id, item, questions_len, control
+                    )
+                    self.question_groups.add(item_id)
+                    self.dependency_graph[item_id] = set()
+                elif control == "Range":
+                    # A Range answer is a [low, high] pair (#1474): two Ints in
+                    # item_pairs, bound by the pair domain in the present-gated
+                    # flush, and no scalar in item_vars.
+                    lo_name, hi_name = _range_end_names(item_id)
+                    self.item_pairs[item_id] = (Int(lo_name, self.ctx), Int(hi_name, self.ctx))
+                    self.dependency_graph[item_id] = set()
+                    self._pending_pair_domain_constraints[item_id] = self._pair_domain_builders(
+                        item_id, item
+                    )
+                    floor, _ = self._numeric_bounds(item_id, input_spec)
+                    if floor is not None:
+                        self._pair_floor[item_id] = floor
                 else:
                     # Item outcomes are integers (representing selected option/value)
                     item_var = Int(f"item_{item_id}", self.ctx)
@@ -684,6 +1936,7 @@ class StaticBuilder:
                     "kind": kind,
                     "rows_len": rows_len,
                     "cols_len": cols_len,
+                    "questions_len": questions_len,
                 }
                 self.item_order.append(item_id)
 
@@ -698,16 +1951,25 @@ class StaticBuilder:
         if init_code:
             self._process_code_block("__init__", init_code)
 
-        # Process each item (skip Text items — no Z3 variables to constrain)
-        for item in self.state.get_all_items():
+        # Process each item in the build order (``_build``; Textarea items
+        # have no Z3 variable to constrain).
+        items = self.state.get_all_items() if order is None else [self.state.get_item(i) for i in order]
+        for item in items:
             item_id = item.get("id")
             if not item_id:
                 continue
 
-            # Textarea controls have string outcomes — skip Z3 constraint processing.
-            # MatrixQuestion items have NO scalar in item_vars but DO have item_cells;
-            # they still need precondition/postcondition processing.
-            if item_id not in self.item_vars and item_id not in self.item_cells:
+            # Textarea controls have string outcomes: no Z3 constraint for their
+            # conditions. Their codeBlock still runs at runtime, so it is
+            # lowered (#2003), every Textarea's text opaque in it. MatrixQuestion
+            # and QuestionGroup items (item_cells) and Range Questions
+            # (item_pairs) hold no scalar in item_vars but still need
+            # precondition/postcondition/codeBlock processing.
+            if not self._has_outcome_model(item_id):
+                # Its conditions are still classified at this point of the walk.
+                self._submission_versions[item_id] = dict(self.version_map)
+                if item.get("codeBlock"):
+                    self._process_code_block(item_id, item["codeBlock"])
                 continue
 
             # R25: block-level pre/postconditions are no longer prepended to
@@ -729,7 +1991,7 @@ class StaticBuilder:
                         # Precondition implies item can be reached.
                         # U2: outer-gated by ``present`` — Implies(present,
                         # Implies(visited, P)). present composes with the
-                        # existing visited sentinel; off Sample/Roster present
+                        # existing visited sentinel; off a capped Group/Roster present
                         # degrades to True so this is exactly the pre-U2
                         # ``Implies(visited, P)``.
                         self.constraints.append(
@@ -768,6 +2030,8 @@ class StaticBuilder:
                             )
                         )
 
+            self._submission_versions[item_id] = dict(self.version_map)
+
             # Process code blocks (state transitions) — AFTER postconditions
             if "codeBlock" in item and item["codeBlock"]:
                 self._process_code_block(item_id, item["codeBlock"])
@@ -778,8 +2042,8 @@ class StaticBuilder:
         # Done as a SEPARATE post-pass — after pass 2's per-item loop — for
         # two reasons:
         #
-        # 1. Pass 2 skips Textarea-controlled items entirely (no Z3 var to
-        #    constrain). But roster inner items can still be Textarea (see
+        # 1. Pass 2 lowers no condition of a Textarea-controlled item (no Z3
+        #    var to constrain). But roster inner items can still be Textarea (see
         #    Canonical Example A's `q_notes`), and they need their iterateOver
         #    dependency registered for topology to order them correctly.
         # 2. Doing the walk after the full pass 2 guarantees `version_map`
@@ -868,6 +2132,12 @@ class StaticBuilder:
         # ------------------------------------------------------------------
         self._detect_undefined_names_and_census()
 
+        # Pass 6 (#1784): a blank answer is admitted only where the item's own
+        # postconditions accept its None, read at its submission versions
+        # (recorded per item in pass 2), so it runs once the build is done.
+        self._built = True
+        self._emit_blank_admissibility()
+
     def _roster_label_keys(self, raw_labels: Any) -> list[int]:
         """Return the sorted power-of-2 label-key universe for a Roster item.
 
@@ -901,7 +2171,7 @@ class StaticBuilder:
         iterateOver expression ``E``:
 
         - For each label-key ``K`` (a compile-time literal power of 2) a
-          per-iteration outcome var ``item_{id}_iter{K}`` is created and
+          per-iteration outcome var ``item_{id}@iter{K}`` is created and
           ``(item_id, K)`` is registered conditionally-present (U2 primitive
           — keeps ItemClassifier / PathBasedValidator from flagging a
           bit-unset iteration NEVER / dead-code).
@@ -983,9 +2253,6 @@ class StaticBuilder:
             block = self.state.get_block(block_id) if block_id else None
             effective_pre, effective_post = self._compose_effective_conditions(block, item)
 
-            domain_builders = self._pending_domain_constraints.get(item_id, [])
-            canonical_var = self.item_vars.get(item_id)
-
             for k in label_keys:
                 # Register the (item, k) presence gate (U2 primitive). This
                 # flips ``_present_antecedent`` from True to the real Bool for
@@ -1001,27 +2268,22 @@ class StaticBuilder:
                 bit_set = ((iter_z3 / k) % 2) == 1
                 self.constraints.append(self._present_var(item_id, k) == bit_set)
 
-                # Per-iteration outcome var. Scalar items get a fresh Int;
-                # Textarea / matrix inner roster items have no scalar var (no
-                # numeric domain, no self-outcome predicate lowering) — the
-                # presence gate + dependency edges still apply, but there is
-                # no per-iteration var to bind, so skip the var-bound emit.
-                if canonical_var is None:
+                # Per-iteration outcome, its domain re-emitted present-gated:
+                # a fresh Int for a scalar item, a fresh (lo, hi) pair for a
+                # Range Question. Textarea / matrix / QuestionGroup inner
+                # roster items have neither (no self-outcome predicate
+                # lowering) — the presence gate + dependency edges still
+                # apply, but there is nothing to bind, so skip the emit.
+                iter_outcome = self._bind_scoped_outcome(item_id, k, f"iter{k}")
+                if iter_outcome is None:
                     continue
-                iter_var = Int(f"item_{item_id}_iter{k}", self.ctx)
-
-                # Re-emit domain for this iteration, present-gated.
-                for build in domain_builders:
-                    self.domain_constraints.append(
-                        self._wrap_present(item_id, k, build(iter_var))
-                    )
 
                 # Re-emit pre/post for this iteration via the shared helper:
-                # scoped swap of the canonical item var → ``self.outcome``
-                # references lower to THIS iteration's var; restored in
-                # ``finally`` so Pass-3.5 leaves item_vars untouched on exit.
+                # scoped swap of the canonical outcome → ``self.outcome``
+                # references lower to THIS iteration's var(s); restored in
+                # ``finally`` so Pass-3.5 leaves the canonical model untouched.
                 self._emit_pre_post_under_present(
-                    item_id, k, effective_pre, effective_post, iter_var, canonical_var
+                    item_id, k, effective_pre, effective_post, iter_outcome
                 )
 
     def _capped_group_blocks(self) -> dict[str, list[dict[str, Any]]]:
@@ -1094,28 +2356,19 @@ class StaticBuilder:
                 # not NEVER / dead-code). Called exactly once per inner item.
                 self.mark_conditionally_present(item_id, 0)
 
-                canonical_var = self.item_vars.get(item_id)
-                domain_builders = self._pending_domain_constraints.get(item_id, [])
-
                 effective_pre, effective_post = self._compose_effective_conditions(block, item)
 
-                if canonical_var is None:
-                    # Textarea / matrix capped-Group item: no scalar var to
-                    # bind. The presence registration above still tags it
-                    # classification-safe; self.outcome-free predicates lower
-                    # without a per-selection var, so skip the var-bound emit
-                    # (mirrors the Roster Textarea branch in Pass 3.5).
+                # Per-item presence-scoped outcome (one var, or a Range pair)
+                # so the drawn item's typing/feasibility check is independent
+                # of its unconditional canonical-pass outcome.
+                sel_outcome = self._bind_scoped_outcome(item_id, 0, "group0")
+                if sel_outcome is None:
+                    # Textarea / matrix / QuestionGroup capped-Group
+                    # item: nothing to bind. The presence registration above
+                    # still tags it classification-safe; self.outcome-free
+                    # predicates lower without a per-selection var, so skip
+                    # the emit (mirrors the Roster Textarea branch in Pass 3.5).
                     continue
-
-                # Per-item presence-scoped outcome var so the drawn item's
-                # typing/feasibility check is independent of its unconditional
-                # canonical-pass var.
-                sel_var = Int(f"item_{item_id}_group0", self.ctx)
-
-                for build in domain_builders:
-                    self.domain_constraints.append(
-                        self._wrap_present(item_id, 0, build(sel_var))
-                    )
 
                 # Re-emit pre/post present-gated via the shared helper. Block
                 # precondition gates the whole block; composed with the item
@@ -1124,8 +2377,35 @@ class StaticBuilder:
                 # gate (``effective_pre``/``effective_post`` already include the
                 # block-level conditions per the composition above).
                 self._emit_pre_post_under_present(
-                    item_id, 0, effective_pre, effective_post, sel_var, canonical_var
+                    item_id, 0, effective_pre, effective_post, sel_outcome
                 )
+
+    def _bind_scoped_outcome(
+        self, item_id: str, k: int, suffix: str
+    ) -> ExprRef | tuple[ExprRef, ExprRef] | None:
+        """Create the ``(item, k)``-scoped copy of an item's outcome and emit
+        its domain gated by ``present(item, k)``.
+
+        Shared by the Roster unroll (``suffix`` ``iter{K}``) and the
+        capped-Group pass (``group0``). A scalar item gets one Int,
+        ``item_{id}@{suffix}``, bound by its scalar domain builders; a Range
+        Question gets a pair, ``item_{id}@{suffix}@lo`` / ``@hi``, bound by its
+        pair builders. Anything else (Textarea, matrix, QuestionGroup) has no
+        scoped outcome and returns None: a condition that reads a scoped
+        QuestionGroup is a coverage gap instead (``_unlowered_group_reads``).
+        """
+        if item_id in self.item_pairs:
+            lo_name, hi_name = _range_end_names(item_id, suffix)
+            pair = (Int(lo_name, self.ctx), Int(hi_name, self.ctx))
+            for build in self._pending_pair_domain_constraints.get(item_id, []):
+                self.domain_constraints.append(self._wrap_present(item_id, k, build(*pair)))
+            return pair
+        if item_id in self.item_vars:
+            var = Int(_scoped_name(item_id, suffix), self.ctx)
+            for build in self._pending_domain_constraints.get(item_id, []):
+                self.domain_constraints.append(self._wrap_present(item_id, k, build(var)))
+            return var
+        return None
 
     def _emit_capped_group_independence_gaps(self) -> None:
         """U8 validation-time layer: flag intra-Group dependency edges in
@@ -1232,89 +2512,395 @@ class StaticBuilder:
     def _process_code_block(self, context_id: str, code: str):
         """Process code block and create SSA versions for assignments.
 
-        Handles ast.Assign, ast.AugAssign, and ast.Attribute targets.
-        Tracks Variable → Item/Variable dependencies in the dependency graph.
-        Also tracks dependencies from enclosing if-conditions for nested assignments.
+        Handles ast.Assign, ast.AugAssign, and ast.Attribute targets, in
+        statement order under the path of the branches holding them (#1843,
+        ``_lower_code_statements``). Tracks Variable → Item/Variable
+        dependencies in the dependency graph, including those from enclosing
+        if-conditions for nested assignments.
+
+        An item's codeBlock reads an item that may be ``None`` the way Python
+        does (#1776, ``_CodeReads``): each assigned value is lowered with the
+        item's None choice, and an assignment the block may not reach (a read
+        raised first) keeps its target's old value.
         """
         try:
             tree = ast.parse(code)
 
             # Build parent map so we can find enclosing if-conditions
             parent_map = self._build_parent_map(tree)
+            outer_blank, self._predicate_blank = self._predicate_blank, {}
+            try:
+                reads = _CodeReads(self, tree, context_id, parent_map)
+                entry = dict(self.version_map)
+                marks = None
+                if context_id != "__init__":
+                    marks = _UnknownMarks(
+                        tree, self._version_mark, lambda item_id: self._code_blank(item_id, reads), BoolVal(True, self.ctx)
+                    )
+                self._lowering_code = True
+                try:
+                    self._lower_code_assignments(tree, context_id, parent_map, reads)
+                finally:
+                    self._lowering_code = False
+                if marks is not None:
+                    self._settle_marks(marks, entry)
+            finally:
+                self._predicate_skipped, self._predicate_blank = {}, outer_blank
 
-            for node in ast.walk(tree):
-                if isinstance(node, ast.Assign):
-                    # Collect dependencies from enclosing if-conditions
-                    enclosing_deps = self._get_enclosing_if_deps(node, parent_map)
-
-                    for target in node.targets:
-                        if isinstance(target, ast.Name):
-                            var_name = target.id
-                            if var_name not in self.item_vars:
-                                rhs_deps = self._extract_dependencies_from_ast(node.value)
-                                rhs_deps.update(enclosing_deps)
-                                z3_value = self._ast_to_z3(node.value, context_id)
-                                self._register_variable_assignment(
-                                    var_name, z3_value, rhs_deps, context_id
-                                )
-                        elif isinstance(target, ast.Attribute) and target.attr == "outcome":
-                            # Handle item.outcome = expr (e.g., q_total.outcome = q1.outcome + q2.outcome)
-                            if isinstance(target.value, ast.Name):
-                                self._register_outcome_assignment(
-                                    target.value.id, node.value, enclosing_deps, context_id
-                                )
-
-                elif isinstance(node, ast.AugAssign):
-                    # Handle augmented assignments: score += q1.outcome
-                    enclosing_deps = self._get_enclosing_if_deps(node, parent_map)
-                    target = node.target
-
-                    if isinstance(target, ast.Name):
-                        var_name = target.id
-                        if var_name not in self.item_vars:
-                            # Dependencies: RHS + current variable value + enclosing conditions
-                            rhs_deps = self._extract_dependencies_from_ast(node.value)
-                            rhs_deps.update(enclosing_deps)
-                            if var_name in self.version_map:
-                                rhs_deps.add(f"var:{var_name}")
-
-                            # Build Z3 value: old_value OP rhs
-                            rhs_z3 = self._ast_to_z3(node.value, context_id)
-                            old_z3 = self._get_current_z3_var(var_name)
-                            z3_value = self._apply_aug_op(node.op, old_z3, rhs_z3)
-
-                            self._register_variable_assignment(
-                                var_name, z3_value, rhs_deps, context_id
-                            )
-                    elif isinstance(target, ast.Attribute) and target.attr == "outcome":
-                        # Handle item.outcome += expr
-                        if isinstance(target.value, ast.Name):
-                            item_id = target.value.id
-                            if item_id in self.item_vars:
-                                rhs_deps = self._extract_dependencies_from_ast(node.value)
-                                rhs_deps.update(enclosing_deps)
-                                rhs_deps.add(item_id)
-                                # Track dependency: context_id depends on the items in RHS
-                                if context_id in self.dependency_graph:
-                                    self.dependency_graph[context_id].update(
-                                        d
-                                        for d in rhs_deps
-                                        if not d.startswith("var:") and d != context_id
-                                    )
+            for item_id in self._stored_outcomes(tree):
+                if item_id is not None and self._is_question_group(item_id):
+                    self._record_group_write(item_id, context_id)
 
         except SyntaxError as e:
             self.logger.error(f"Syntax error in code block for {context_id}: {e}")
+
+    def _code_blank(self, item_id: str, reads: _CodeReads) -> BoolRef | None:
+        """When ``item_id`` is blank as a codeBlock reads it, for the #1044
+        mark (``_UnknownMarks``): the choice the block's values read (a scalar
+        Question, ``_CodeReads``), else the item's blank choice when it may be
+        left blank at all (``_blank_candidate``)."""
+        choice = reads._blank.get(item_id)
+        if choice is None and self._blank_candidate(item_id):
+            choice = self._blank_choice(item_id)
+        return choice
+
+    def _version_mark(self, var_name: str) -> BoolRef | None:
+        """When the version of ``var_name`` the build reads now is marked
+        unknown (``_marks``), ``None`` when never."""
+        version = self.version_map.get(var_name)
+        return None if version is None else self._marks.get(_ssa_key(var_name, version))
+
+    def _settle_marks(self, marks: _UnknownMarks, entry: dict[str, int]) -> None:
+        """Record the marks one codeBlock leaves (#1844), as the runtime
+        settles ``_unknown_after``'s result: a variable it marked is marked;
+        one it cleared keeps its incoming mark unless its value changed (the
+        runtime compares the value before and after the block). A mark on a
+        variable the block gave no new version (a container it mutated) joins
+        that version's mark: wider for a read before the block, never
+        narrower. A new version the walk neither marked nor cleared (a
+        ``match`` body, a walrus: ``_unknown_after`` does not walk them, so
+        the runtime keeps the mark) carries its incoming mark on."""
+        versioned = {name for name, version in self.version_map.items() if entry.get(name) != version}
+        for name in sorted(set(marks.marked) | set(marks.cleared) | versioned):
+            before, after = entry.get(name), self.version_map.get(name)
+            incoming = None if before is None else self._marks.get(_ssa_key(name, before))
+            if after is None:
+                continue
+            if after == before:
+                mark = _any(incoming, marks.marked.get(name))
+            else:
+                changed: BoolRef | None = BoolVal(True, self.ctx)
+                if before is not None:
+                    old, new = self.z3_vars.get(_ssa_key(name, before)), self.z3_vars.get(_ssa_key(name, after))
+                    # Values of two sorts cannot be compared; keeping the
+                    # incoming mark is the wider reading.
+                    changed = None if old is None or new is None or old.sort() != new.sort() else old != new
+                cleared = marks.cleared.get(name)
+                kept = _all(incoming, marks._not(_all(cleared, changed)))
+                mark = _any(marks.marked.get(name), kept)
+            if mark is not None:
+                self._marks[_ssa_key(name, after)] = mark
+
+    def _variable_mark(self, var_name: str) -> BoolRef | None:
+        """Whether a condition leaf reading ``var_name`` now reads a value the
+        runtime marked unknown (#1044, #1844): a fresh ``mark@`` Bool under the
+        version's mark formula, or ``None`` when it is never marked.
+
+        The fresh Bool makes the mark a possibility, never a certainty, so a
+        world without it always remains: the mark only withholds ALWAYS /
+        TAUTOLOGICAL (the runtime may skip the item, or waive the check), and
+        never produces NEVER / INFEASIBLE where the model without it had none.
+        An open read (``_runtime_versions``) may be any version, so it takes
+        any version's mark."""
+        if var_name in self._open_reads:
+            upper = _any(
+                *(self._marks.get(_ssa_key(var_name, version)) for version, _ in self.version_history.get(var_name, []))
+            )
+            label = f"{var_name}@{self._open_reads[var_name]}"
+        else:
+            version = self.version_map.get(var_name)
+            if version is None:
+                return None
+            upper = self._marks.get(_ssa_key(var_name, version))
+            label = f"{var_name}@{version}"
+        if upper is None:
+            return None
+        # ``@`` cannot occur in an item id, so no item or variable shares the name.
+        return And(Bool(f"mark@{label}", self.ctx), upper)
+
+    # Statements whose control flow the codeBlock lowering does not follow: a
+    # variable they assign is widened to a fresh unconstrained version (#1843).
+    _UNFOLLOWED_STATEMENTS = (
+        ast.For,
+        ast.AsyncFor,
+        ast.While,
+        ast.With,
+        ast.AsyncWith,
+        ast.Try,
+        ast.TryStar,
+        ast.Match,
+        ast.FunctionDef,
+        ast.AsyncFunctionDef,
+        ast.ClassDef,
+    )
+
+    def _lower_code_assignments(
+        self, tree: ast.Module, context_id: str, parent_map: dict, reads: _CodeReads
+    ) -> None:
+        """Lower one codeBlock's assignments in statement order, each under the
+        path condition of the ``if`` / ``elif`` / ``else`` branches holding it
+        (#1843), its value read through ``reads`` (#1776)."""
+        self._lower_code_statements(tree.body, None, context_id, parent_map, reads)
+
+    def _lower_code_statements(
+        self,
+        statements: list[ast.stmt],
+        path: BoolRef | None,
+        context_id: str,
+        parent_map: dict,
+        reads: _CodeReads,
+    ) -> None:
+        """Lower ``statements`` in order under ``path`` (``None``: always run).
+
+        An assignment under a path is ``new == If(path, value, old)``: where the
+        path is not taken the variable keeps its version, so an ``if`` / ``else``
+        pair needs no join (the ``else`` assignment's ``old`` is the ``if``
+        one's, equal to the version before both off its path) and ``if False:``
+        changes nothing. A branch test is lowered as the codeBlock reads it
+        (``_code_branch_test``). A loop, ``with``, ``try``, ``match`` or nested
+        definition is not followed: every variable assigned in it gets a fresh
+        unconstrained version (``_widen_code_statement``), wider than the
+        runtime, never a wrong constant."""
+        for statement in statements:
+            self._widen_walrus_targets(statement, context_id, parent_map)
+            if isinstance(statement, ast.Assign) or (isinstance(statement, ast.AnnAssign) and statement.value is not None):
+                self._lower_code_assign(statement, path, context_id, parent_map, reads)
+            elif isinstance(statement, ast.AugAssign):
+                self._lower_code_aug_assign(statement, path, context_id, parent_map, reads)
+            elif isinstance(statement, ast.If):
+                test = self._code_branch_test(statement, context_id, reads)
+                # A test that raises runs neither branch (the block stops,
+                # ``CodeExecutionError``); later statements see it through
+                # ``_CodeReads`` (``_halted_within`` / ``_halted_before``).
+                raised = reads._statement_raise(statement)
+                ran = [p for p in (path, Not(raised) if raised is not None else None) if p is not None]
+                taken = And(*ran, test) if ran else test
+                skipped = And(*ran, Not(test)) if ran else Not(test)
+                self._lower_code_statements(statement.body, taken, context_id, parent_map, reads)
+                self._lower_code_statements(statement.orelse, skipped, context_id, parent_map, reads)
+            elif isinstance(statement, self._UNFOLLOWED_STATEMENTS):
+                self._widen_code_statement(statement, context_id, parent_map)
+
+    def _code_branch_test(self, statement: ast.If, context_id: str, reads: _CodeReads) -> BoolRef:
+        """An ``if`` test as the codeBlock reads it: lowered with the items'
+        None choices (``_skip_aware_equality``), so ``if q.outcome != 1:`` is
+        taken for everyone who skipped ``q``. A free Bool where it does not
+        lower, or where a read in it may raise or carries a ``None`` the
+        lowering does not hold (``_CodeReads``: ``raise`` / ``other`` /
+        ``flow``): either branch may then be taken, wider than the runtime."""
+        unheld = any(
+            effect in ("raise", "other", "flow") and reads._within(node, statement.test)
+            for node, effect, _, _ in reads._reads.get(id(statement), [])
+        )
+        test = None
+        if not unheld:
+            self._predicate_skipped = reads.choices
+            try:
+                test = self._ast_to_z3_bool(statement.test, context_id)
+            finally:
+                self._predicate_skipped = {}
+        if test is None:
+            self._code_raise_count += 1
+            # ``@`` cannot occur in an item id, so no item or variable shares the name.
+            test = Bool(f"branch@{context_id}#{self._code_raise_count}", self.ctx)
+        return test
+
+    @staticmethod
+    def _on_path(path: BoolRef | None, value: ExprRef | None, old: ExprRef) -> ExprRef | None:
+        """``value`` where ``path`` holds, ``old`` elsewhere (``_lower_code_statements``);
+        ``None`` (unconstrained) when the two cannot be one variable's value."""
+        if path is None or value is None:
+            return value
+        if value.sort() != old.sort():
+            return None
+        return If(path, value, old)
+
+    def _path_old_value(self, var_name: str, context_id: str) -> ExprRef:
+        """What ``var_name`` holds off an assignment's path: its current version,
+        or a fresh Int when it has none (unbound there; no version 0 is seeded,
+        so the SSA numbering does not move)."""
+        if var_name in self.version_map:
+            return self._get_current_z3_var(var_name)
+        self._code_raise_count += 1
+        return Int(f"unbound@{context_id}#{self._code_raise_count}", self.ctx)
+
+    def _lower_code_assign(
+        self,
+        node: ast.Assign | ast.AnnAssign,
+        path: BoolRef | None,
+        context_id: str,
+        parent_map: dict,
+        reads: _CodeReads,
+    ) -> None:
+        """One ``=`` statement of a codeBlock under ``path`` (an annotated one,
+        ``x: int = v``, binds like ``x = v``; its annotation is never
+        evaluated): a variable target gets a new SSA version, an
+        ``item.outcome`` target a write constraint, and each name an unpacking
+        target binds is widened."""
+        enclosing_deps = self._get_enclosing_if_deps(node, parent_map)
+        reads.mark_ran(node, path)
+        for target in node.targets if isinstance(node, ast.Assign) else [node.target]:
+            if isinstance(target, ast.Name):
+                var_name = target.id
+                if var_name not in self.item_vars:
+                    rhs_deps = self._extract_dependencies_from_ast(node.value)
+                    rhs_deps.update(enclosing_deps)
+                    old = reads.old_value(var_name)
+                    z3_value = reads.guarded(node, self._lower_code_value(node.value, context_id, reads), old)
+                    if path is not None:
+                        z3_value = self._on_path(path, z3_value, self._path_old_value(var_name, context_id))
+                    self._register_variable_assignment(var_name, z3_value, rhs_deps, context_id)
+            elif isinstance(target, ast.Attribute) and target.attr == "outcome":
+                # Handle item.outcome = expr (e.g., q_total.outcome = q1.outcome + q2.outcome)
+                if isinstance(target.value, ast.Name):
+                    self._register_outcome_assignment(
+                        target.value.id, node.value, enclosing_deps, context_id, reads, node, path
+                    )
+            elif isinstance(target, (ast.Tuple, ast.List)):
+                # Unpacking is not lowered: each name it binds is widened.
+                deps = self._extract_dependencies_from_ast(node.value) | enclosing_deps
+                for name in ast.walk(target):
+                    if isinstance(name, ast.Name) and name.id not in self.item_vars:
+                        self._register_variable_assignment(name.id, None, set(deps), context_id)
+
+    def _lower_code_aug_assign(
+        self, node: ast.AugAssign, path: BoolRef | None, context_id: str, parent_map: dict, reads: _CodeReads
+    ) -> None:
+        """One augmented assignment (``score += q1.outcome``) under ``path``."""
+        enclosing_deps = self._get_enclosing_if_deps(node, parent_map)
+        target = node.target
+        if isinstance(target, ast.Name):
+            var_name = target.id
+            if var_name not in self.item_vars:
+                # Dependencies: RHS + current variable value + enclosing conditions
+                rhs_deps = self._extract_dependencies_from_ast(node.value)
+                rhs_deps.update(enclosing_deps)
+                if var_name in self.version_map:
+                    rhs_deps.add(f"var:{var_name}")
+                # Build Z3 value: old_value OP rhs
+                rhs_z3 = self._lower_code_value(node.value, context_id, reads)
+                old_z3 = self._get_current_z3_var(var_name)
+                z3_value = reads.guarded(node, self._apply_aug_op(node.op, old_z3, rhs_z3, node.value), old_z3)
+                z3_value = self._on_path(path, z3_value, old_z3)
+                self._register_variable_assignment(var_name, z3_value, rhs_deps, context_id)
+        elif isinstance(target, ast.Attribute) and target.attr == "outcome":
+            # Handle item.outcome += expr
+            if isinstance(target.value, ast.Name):
+                item_id = target.value.id
+                if item_id in self.item_vars:
+                    rhs_deps = self._extract_dependencies_from_ast(node.value)
+                    rhs_deps.update(enclosing_deps)
+                    rhs_deps.add(item_id)
+                    self._add_code_write_dependencies(context_id, rhs_deps)
+
+    def _add_code_write_dependencies(self, context_id: str, deps: set[str]) -> None:
+        """The item whose codeBlock writes an outcome depends on the items the
+        written value reads."""
+        if context_id in self.dependency_graph:
+            self.dependency_graph[context_id].update(
+                d for d in deps if not d.startswith("var:") and d != context_id
+            )
+
+    def _widen_code_statement(self, statement: ast.stmt, context_id: str, parent_map: dict) -> None:
+        """Every variable ``statement`` may assign (an assignment, augmented
+        assignment or loop target anywhere in it) gets one fresh unconstrained
+        version, in place of what it computes (#1843); an outcome it writes
+        keeps only its dependency edges."""
+        widened: dict[str, set[str]] = {}
+        for node in ast.walk(statement):
+            if isinstance(node, (ast.Assign, ast.AugAssign, ast.AnnAssign)):
+                targets = node.targets if isinstance(node, ast.Assign) else [node.target]
+                value_deps = (
+                    self._extract_dependencies_from_ast(node.value) if node.value is not None else set()
+                ) | self._get_enclosing_if_deps(node, parent_map)
+                for target in targets:
+                    if isinstance(target, ast.Attribute) and target.attr == "outcome" and isinstance(target.value, ast.Name):
+                        self._add_code_write_dependencies(context_id, value_deps)
+                    for name in ast.walk(target):
+                        if isinstance(name, ast.Name):
+                            widened.setdefault(name.id, set()).update(value_deps)
+            elif isinstance(node, (ast.For, ast.AsyncFor)):
+                widened_deps = self._extract_dependencies_from_ast(node.iter)
+                for name in ast.walk(node.target):
+                    if isinstance(name, ast.Name):
+                        widened.setdefault(name.id, set()).update(widened_deps)
+        for name in self._bound_names(statement):
+            widened.setdefault(name, set())
+        for var_name, deps in widened.items():
+            if var_name not in self.item_vars:
+                self._register_variable_assignment(var_name, None, deps, context_id)
+
+    @staticmethod
+    def _bound_names(node: ast.AST) -> set[str]:
+        """Every name ``node`` may bind: a store-context name (any target,
+        ``with … as``, a walrus, a comprehension target), an ``except … as``
+        name, a ``match`` capture, and a nested definition's own name."""
+        names: set[str] = set()
+        for child in ast.walk(node):
+            if isinstance(child, ast.Name) and isinstance(child.ctx, ast.Store):
+                names.add(child.id)
+            elif isinstance(child, ast.ExceptHandler) and child.name:
+                names.add(child.name)
+            elif isinstance(child, (ast.MatchAs, ast.MatchStar)) and child.name:
+                names.add(child.name)
+            elif isinstance(child, ast.MatchMapping) and child.rest:
+                names.add(child.rest)
+            elif isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+                names.add(child.name)
+        return names
+
+    def _widen_walrus_targets(self, statement: ast.stmt, context_id: str, parent_map: dict) -> None:
+        """A walrus (``(y := v)``) in a statement's own expressions binds ``y``
+        before the statement completes; it is not lowered, so ``y`` gets a
+        fresh unconstrained version. Expressions of nested statements are
+        theirs (``_lower_code_statements`` reaches them)."""
+        own = [
+            child
+            for field, value in ast.iter_fields(statement)
+            if field not in ("body", "orelse", "finalbody", "handlers", "cases")
+            for child in (value if isinstance(value, list) else [value])
+            if isinstance(child, ast.AST)
+        ]
+        names = {
+            node.target.id
+            for expression in own
+            for node in ast.walk(expression)
+            if isinstance(node, ast.NamedExpr) and isinstance(node.target, ast.Name)
+        }
+        for name in sorted(names - set(self.item_vars)):
+            self._register_variable_assignment(name, None, set(), context_id)
+
+    def _lower_code_value(self, node: ast.AST, context_id: str, reads: _CodeReads) -> ExprRef | None:
+        """Lower one codeBlock value with the None choices of the items it
+        reads (#1776): ``==`` / ``!=`` / ``in`` / truth tests see ``None``
+        under them (``_skip_aware_equality``, ``_skipped_operand``)."""
+        self._predicate_skipped = reads.choices
+        try:
+            return self._ast_to_z3(node, context_id)
+        finally:
+            self._predicate_skipped = {}
 
     def _register_variable_assignment(
         self, var_name: str, z3_value: ExprRef | None, deps: set[str], context_id: str
     ):
         """Register an SSA variable assignment with dependencies and Z3 constraint."""
+        before_version = self.version_map.get(var_name)
         new_version = self._get_next_version(var_name)
-        versioned_name = f"{var_name}_{new_version}"
+        versioned_name = _ssa_key(var_name, new_version)
         var_node = f"var:{var_name}"
 
         # Create Z3 variable for this version
-        z3_var = Int(versioned_name, self.ctx)
+        z3_var = Int(_ssa_symbol(var_name, new_version), self.ctx)
         self.z3_vars[versioned_name] = z3_var
 
         # Initialize variable node in dependency graph if needed
@@ -1323,13 +2909,15 @@ class StaticBuilder:
 
         # Add dependencies from RHS to the variable node
         self.dependency_graph[var_node].update(deps)
+        self._variable_writers.setdefault(var_name, []).append((context_id, frozenset(deps)))
+        self._assignment_values.append((var_name, new_version, context_id, z3_value, frozenset(deps)))
 
         # Track definition source
         self.variable_definitions[(var_name, new_version)] = context_id
 
         # Variable depends on the item that defines it
         # (if defined in an item's codeBlock, not in __init__)
-        if context_id != "__init__" and context_id in self.item_vars:
+        if self._item_code(context_id):
             self.dependency_graph[var_node].add(context_id)
 
         # Update version tracking AFTER evaluating RHS
@@ -1339,50 +2927,169 @@ class StaticBuilder:
         self.version_history[var_name].append((new_version, context_id))
 
         # Build constraint for assignment - store in codeblock_constraints.
-        if z3_value is not None:
-            if context_id != "__init__":
-                self.codeblock_constraints.append(
-                    Implies(self.item_vars[context_id] >= 0, z3_var == z3_value)
+        if context_id != "__init__":
+            # A Roster member's codeBlock runs once per iteration (any number of
+            # times) and a capped-Group member's only when drawn; one SSA
+            # version holds neither, so such a write stays free (wider, never a
+            # false INFEASIBLE), as ``_accumulator_reachability`` leaves it.
+            if self._plain_writer(context_id):
+                before = self.z3_vars[_ssa_key(var_name, before_version)] if before_version is not None else None
+                self.codeblock_constraints.extend(
+                    _gated_write(z3_var, z3_value, before, self._code_visited(context_id))
                 )
-            else:
-                # codeInit assignment: unconditional ``var_i == value``. Recorded
-                # separately (U2) so ``get_reachability_base`` can propagate the
-                # constant IFF this variable turns out to be frozen (no codeBlock
-                # ever reassigns it — decided at accessor time against
-                # ``version_history``).
-                init_constraint = z3_var == z3_value
-                self.codeblock_constraints.append(init_constraint)
-                self.codeinit_constant_constraints.setdefault(var_name, []).append(init_constraint)
+        elif z3_value is not None:
+            # codeInit assignment: unconditional ``var_i == value``. Recorded
+            # separately (U2) so ``get_reachability_base`` can propagate the
+            # constant IFF this variable turns out to be frozen (no codeBlock
+            # ever reassigns it — decided at accessor time against
+            # ``version_history``).
+            init_constraint = z3_var == z3_value
+            self.codeblock_constraints.append(init_constraint)
+            self.codeinit_constant_constraints.setdefault(var_name, []).append(init_constraint)
 
     def _register_outcome_assignment(
-        self, item_id: str, value_node: ast.AST, enclosing_deps: set[str], context_id: str
+        self,
+        item_id: str,
+        value_node: ast.AST,
+        enclosing_deps: set[str],
+        context_id: str,
+        reads: _CodeReads,
+        statement: ast.stmt,
+        path: BoolRef | None = None,
     ):
-        """Register item.outcome = expr, tracking dependencies without creating SSA."""
-        if item_id not in self.item_vars:
+        """Register item.outcome = expr, tracking dependencies without creating SSA.
+
+        Under a branch ``path`` (#1843) the write holds only where the path does.
+
+        The dependency edges count for any modelled target. The value is
+        equated for a scalar target, and for a Range Question when the RHS is
+        a two-element list/tuple literal whose elements lower: each end is
+        equated with its element. Any other write to a Range item (another
+        RHS shape, a Range matrix or QuestionGroup target) is recorded as a
+        ``codeBlock`` coverage gap naming the Range item — the runtime still
+        writes the pair, so dropping it silently would leave later conditions
+        on it proven against a wider model than the real one. A non-Range
+        matrix target stays unconstrained.
+        """
+        if not self._has_outcome_model(item_id):
             return
 
         rhs_deps = self._extract_dependencies_from_ast(value_node)
         rhs_deps.update(enclosing_deps)
 
         # The item that contains this codeBlock depends on the RHS items
-        if context_id in self.dependency_graph:
-            self.dependency_graph[context_id].update(
-                d for d in rhs_deps if not d.startswith("var:") and d != context_id
-            )
+        self._add_code_write_dependencies(context_id, rhs_deps)
 
         # Build Z3 constraint for the outcome assignment
-        z3_value = self._ast_to_z3(value_node, context_id)
-        if z3_value is not None and context_id in self.item_vars:
+        if self._is_question_group(item_id):
+            return
+        if self._is_range_item(item_id):
+            self._register_range_outcome_assignment(item_id, value_node, context_id, reads, statement, path)
+            return
+        if item_id not in self.item_vars:
+            return
+        target = self.item_vars[item_id]
+        z3_value = reads.guarded(
+            statement, self._lower_code_value(value_node, context_id, reads), target, variable=False
+        )
+        if z3_value is not None and self._item_code(context_id):
             self.codeblock_constraints.append(
-                Implies(self.item_vars[context_id] >= 0, self.item_vars[item_id] == z3_value)
+                Implies(self._code_ran(context_id, path), self.item_vars[item_id] == z3_value)
             )
+
+    def _code_ran(self, context_id: str, path: BoolRef | None) -> BoolRef:
+        """When a write of ``context_id``'s codeBlock happens: the item was
+        visited and, inside a branch, its path was taken (#1843)."""
+        sentinel = self._code_visited(context_id)
+        return sentinel if path is None else And(sentinel, path)
+
+    def _item_code(self, context_id: str) -> bool:
+        """Whether ``context_id`` is an item's codeBlock (not codeInit): every
+        item's, a Textarea's included (#2003), since the runtime runs them all."""
+        return context_id in self.item_details
+
+    def _code_visited(self, context_id: str) -> BoolRef:
+        """When ``context_id``'s codeBlock runs, the antecedent of its writes.
+
+        An item asked at most once per walk (``_plain_writer``) runs its
+        codeBlock on every walk when it has no effective precondition, and
+        otherwise only when its gate let it through: ``_writer_ran``, a free
+        ``ran@{id}`` Bool (#1994). The visited sentinel cannot stand for that:
+        the answer domain makes ``item >= 0`` hold for every choice, so it
+        would model a gated writer's codeBlock as always running, and a check
+        holding exactly when the writer was skipped as INFEASIBLE.
+        Only the outcome writes of a Roster or capped-Group member ask here
+        (its variable writes stay free, ``_register_variable_assignment``):
+        one with an outcome model keeps its visited sentinel, one without (a
+        Textarea, #2003) gets a free ``ran@{id}``."""
+        if self._plain_writer(context_id):
+            return self._writer_ran(context_id)
+        if self._has_outcome_model(context_id):
+            return self._visited_sentinel(context_id)
+        # ``@`` cannot occur in an item id, so no item or variable shares the name.
+        return Bool(f"ran@{context_id}", self.ctx)
+
+    def _record_group_write(self, item_id: str, context_id: str) -> None:
+        """A codeBlock write to a QuestionGroup outcome (the list, one answer,
+        or anything else) is a ``codeBlock`` coverage gap naming the group
+        (#184, KD3): nothing writes one today, and conditions read later are
+        proven without it."""
+        for gap in self.coverage_gaps.get(context_id, []):
+            if gap.get("kind") == "codeBlock":
+                if item_id not in gap.setdefault("group_items", []):
+                    gap["group_items"].append(item_id)
+                return
+        self._record_coverage_gap(context_id, "codeBlock", 0, [], group_items=[item_id])
+
+    def _register_range_outcome_assignment(
+        self,
+        item_id: str,
+        value_node: ast.AST,
+        context_id: str,
+        reads: _CodeReads,
+        statement: ast.stmt,
+        path: BoolRef | None = None,
+    ) -> None:
+        """Equate a Range Question's ends with a ``[a, b]`` literal write, or
+        record the write as a coverage gap when the model cannot hold it.
+
+        Under the same gate as the scalar path: a codeBlock of an item with no
+        outcome model (codeInit included) contributes no constraint.
+        """
+        ends: list[ExprRef | None] = []
+        if (
+            item_id in self.item_pairs
+            and isinstance(value_node, (ast.List, ast.Tuple))
+            and len(value_node.elts) == 2
+        ):
+            lo, hi = self.item_pairs[item_id]
+            ends = [
+                reads.guarded(statement, self._lower_code_value(elt, context_id, reads), old, variable=False)
+                for elt, old in ((value_node.elts[0], lo), (value_node.elts[1], hi))
+            ]
+        if len(ends) == 2 and all(end is not None for end in ends):
+            if self._item_code(context_id):
+                lo, hi = self.item_pairs[item_id]
+                sentinel = self._code_ran(context_id, path)
+                self.codeblock_constraints.append(Implies(sentinel, lo == ends[0]))
+                self.codeblock_constraints.append(Implies(sentinel, hi == ends[1]))
+            return
+        for gap in self.coverage_gaps.get(context_id, []):
+            if gap.get("kind") == "codeBlock":
+                if item_id not in gap["range_items"]:
+                    gap["range_items"].append(item_id)
+                return
+        self._record_coverage_gap(context_id, "codeBlock", 0, [], [item_id])
 
     @staticmethod
     def _apply_aug_op(
-        op: ast.operator, left: ExprRef | None, right: ExprRef | None
+        op: ast.operator, left: ExprRef | None, right: ExprRef | None, right_node: ast.AST
     ) -> ExprRef | None:
-        """Apply augmented assignment operator to Z3 expressions."""
-        if left is None or right is None:
+        """Apply augmented assignment operator to Z3 expressions, under the
+        same rule as ``_ast_to_z3``: ``//=`` and ``%=`` only by a positive
+        literal, ``/=`` never (#1767), ``&=`` only by a literal (#2037), and
+        never by a string literal (#2048)."""
+        if left is None or right is None or _is_str_literal(right_node):
             return None
         if isinstance(op, ast.Add):
             return left + right
@@ -1390,10 +3097,12 @@ class StaticBuilder:
             return left - right
         elif isinstance(op, ast.Mult):
             return left * right
-        elif isinstance(op, ast.FloorDiv):
+        elif isinstance(op, ast.FloorDiv) and _z3_division_agrees(op, right_node):
             return left / right
-        elif isinstance(op, ast.Mod):
+        elif isinstance(op, ast.Mod) and _z3_division_agrees(op, right_node):
             return left % right
+        elif isinstance(op, ast.BitAnd) and (mask := _int_literal(right_node)) is not None:
+            return _masked(left, mask)
         return None
 
     @staticmethod
@@ -1425,15 +3134,17 @@ class StaticBuilder:
         """Get current Z3 variable for a given variable name."""
         if var_name in self.item_vars:
             return self.item_vars[var_name]
+        if var_name in self._open_reads:
+            return self._open_reads[var_name]
 
         current_version = self.version_map.get(var_name)
         if current_version is not None:
-            versioned_name = f"{var_name}_{current_version}"
+            versioned_name = _ssa_key(var_name, current_version)
             return self.z3_vars.get(versioned_name)
 
         # Variable not yet defined - create version 0
-        z3_var = Int(f"{var_name}_0", self.ctx)
-        self.z3_vars[f"{var_name}_0"] = z3_var
+        z3_var = Int(_ssa_symbol(var_name, 0), self.ctx)
+        self.z3_vars[_ssa_key(var_name, 0)] = z3_var
         self.version_map[var_name] = 0
         return z3_var
 
@@ -1443,44 +3154,115 @@ class StaticBuilder:
         Empty list means "the predicate body is fully within the supported
         subset" — used as the silent-drop guard so we only WARN when the
         predicate clearly intended a real constraint (some Call / ListComp /
-        GeneratorExp / Subscript was present).
+        GeneratorExp / Subscript was present, or a None test the author can
+        make provable by moving it first, #1250: ``Is``).
+
+        ``Is`` is reported only for a test on an item ``_answerable`` that
+        ``none_guarded_outcomes`` rejected, because that is the one a rewrite
+        clears; a None test on a variable or on a list or pair item was never
+        modelled, and a warning there could not be cleared.
+
+        A division Z3 reads differently from Python is reported by its operator
+        (``Div``, ``FloorDiv``, ``Mod``; ``_z3_division_agrees``). No variable
+        can hold a fraction: the loader refuses every construct that makes one
+        (#1813).
         """
         unsupported: list[str] = []
+        guarded = none_guarded_outcomes(tree)
         for node in ast.walk(tree):
             if isinstance(node, (ast.Call, ast.ListComp, ast.GeneratorExp, ast.Subscript)):
                 kind_name = type(node).__name__
-                if kind_name not in unsupported:
-                    unsupported.append(kind_name)
+            elif _computes_or_orders_a_string(node):
+                kind_name = "Str"
+            elif isinstance(node, ast.BinOp) and not _z3_division_agrees(node.op, node.right):
+                kind_name = type(node.op).__name__
+            elif (
+                (found := none_test_of(node)) is not None
+                and found[0] not in guarded
+                and self._answerable(found[0])
+            ):
+                kind_name = "Is"
+            else:
+                continue
+            if kind_name not in unsupported:
+                unsupported.append(kind_name)
         return unsupported
 
     def _record_coverage_gap(
-        self, item_id: str, kind: str, condition_idx: int, unsupported_nodes: list[str]
+        self,
+        item_id: str,
+        kind: str,
+        condition_idx: int,
+        unsupported_nodes: list[str],
+        range_items: list[str] | None = None,
+        group_items: list[str] | None = None,
+        matrix_items: list[str] | None = None,
+        skippable_items: list[str] | None = None,
+        wide_items: list[str] | None = None,
+        ternary_items: list[str] | None = None,
     ) -> None:
         """Record a coverage gap (R13) and emit a one-shot WARNING (R7).
 
-        ``kind`` is ``"precondition"`` or ``"postcondition"``. WARNING is
+        ``kind`` is ``"precondition"``, ``"postcondition"`` or ``"codeBlock"``
+        (a Range outcome write the model cannot hold). WARNING is
         emitted exactly once per (item_id, kind, condition_idx) — duplicate
-        calls for the same triple are a no-op.
+        calls for the same triple are a no-op. ``range_items`` names the Range
+        items the condition read in a form the model does not represent; the
+        gap carries the key only when there are any, so the message can name
+        the Range cause. ``group_items`` likewise names the QuestionGroups it
+        read, or a codeBlock wrote, in a form the model does not hold (#184),
+        ``matrix_items`` the MatrixQuestions it read other than cell by
+        cell (#1781), and ``skippable_items`` the Questions a refused
+        ``len(set([...])) == k`` holds that may read ``None`` (#1799), and
+        ``ternary_items`` the skippable Questions it read through a ternary
+        branch (#1867).
+        ``wide_items`` marks a condition that DID lower, but wider than it is:
+        the items whose raise on ``None`` the lowering could not place (#1775),
+        so the classifier withholds the verdicts only a narrower formula proves
+        (#1815).
         """
         gaps = self.coverage_gaps.setdefault(item_id, [])
         # Deduplicate by (kind, condition_idx) — same condition shouldn't log twice.
         for existing in gaps:
             if existing.get("kind") == kind and existing.get("condition_idx") == condition_idx:
                 return
-        gaps.append(
-            {
-                "kind": kind,
-                "condition_idx": condition_idx,
-                "unsupported_nodes": list(unsupported_nodes),
-            }
-        )
+        gap: dict[str, Any] = {
+            "kind": kind,
+            "condition_idx": condition_idx,
+            "unsupported_nodes": list(unsupported_nodes),
+        }
+        if range_items:
+            gap["range_items"] = list(range_items)
+        if group_items:
+            gap["group_items"] = list(group_items)
+        if matrix_items:
+            gap["matrix_items"] = list(matrix_items)
+        if skippable_items:
+            gap["skippable_items"] = list(skippable_items)
+        if ternary_items:
+            gap["ternary_items"] = list(ternary_items)
+        if wide_items:
+            gap["wide_items"] = list(wide_items)
+        gaps.append(gap)
+        if wide_items:
+            self.logger.warning(
+                "static validator lowered %s on %s #%d wider than it is: a raise on None of %s "
+                "is not placed, so only NEVER / INFEASIBLE are proven",
+                kind,
+                item_id,
+                condition_idx,
+                wide_items,
+            )
+            return
         self.logger.warning(
-            "static validator skipped %s on %s #%d: unsupported AST node(s) %s — "
-            "runtime enforcement still applies, but classification falls back to NONE",
+            "static validator skipped %s on %s #%d: unsupported AST node(s) %s, "
+            "Range outcome(s) the model does not hold %s — runtime enforcement still applies, but "
+            "classification falls back to NONE",
             kind,
             item_id,
             condition_idx,
             unsupported_nodes,
+            range_items or [],
         )
 
     # ------------------------------------------------------------------
@@ -1748,9 +3530,11 @@ class StaticBuilder:
         item; else None. The shape check reuses ``predicate_ast.outcome_ref_name``; the control
         lookup reads ``item_details`` (populated in pass 1)."""
         name = outcome_ref_name(node)
-        if name is not None and self.item_details.get(name, {}).get("control") == "Textarea":
-            return name
-        return None
+        return name if name is not None and self._is_textarea(name) else None
+
+    def _is_textarea(self, item_id: str) -> bool:
+        """Whether ``item_id`` is a Textarea-controlled item (a string outcome, no Z3 Int)."""
+        return self.item_details.get(item_id, {}).get("control") == "Textarea"
 
     def _census_read(self, name: str) -> None:
         """Count a Load reference to ``name`` if it is a tracked variable."""
@@ -1847,11 +3631,13 @@ class StaticBuilder:
         # Census reads: scope-aware, so a comprehension/lambda-local Load is not
         # counted as a read of a same-named tracked variable.
         self._count_census_reads(tree)
+        # A None test reads answeredness, which is modelled (#1250), not the text.
+        none_tested = {id(operand) for operand in none_test_operands(tree)}
         for node in ast.walk(tree):
             # A Textarea outcome reference has no verified Z3 model — flag it
             # (WARNING) regardless of the Name-Load census/undefined-name path.
             textarea = self._is_textarea_outcome_ref(node)
-            if textarea is not None:
+            if textarea is not None and id(node) not in none_tested:
                 self._record_textarea_in_predicate(owner_id, textarea, condition_kind)
             if not (isinstance(node, ast.Name) and isinstance(node.ctx, ast.Load)):
                 continue
@@ -2094,7 +3880,10 @@ class StaticBuilder:
                 continue
             input_spec = item.get("input", {}) or {}
             control = input_spec.get("control", "")
-            numeric = control in ("Editbox", "Slider", "Range")
+            # Range is not here: its answer is a pair (#1474), so a scalar
+            # restatement of its bounds (`own.outcome >= min`) is no
+            # restatement at all. GATEABLE_CONTROLS still keeps Range.
+            numeric = control in ("Editbox", "Slider")
             lo = input_spec.get("min")
             hi = input_spec.get("max")
             for idx, cond in enumerate(item.get("postcondition", []) or []):
@@ -2239,14 +4028,15 @@ class StaticBuilder:
         return restated_min or restated_max
 
     def _build_condition_constraint(
-        self, kind: str, predicate: str, item_id: str, condition_idx: int = 0
+        self, kind: ConditionKind, predicate: str, item_id: str, condition_idx: int = 0
     ) -> tuple[BoolRef | None, set[str]]:
         """Build a Z3 constraint for one pre/postcondition AND track dependencies.
 
-        ``kind`` is ``"precondition"`` or ``"postcondition"`` — it differs only
-        in the coverage-gap label (R7/R13) and the error-log text; the parse →
-        extract deps → wire dependency graph → lower-to-Z3 → record-gap-on-None
-        body is identical for both. Self-references are excluded from the
+        ``kind`` is ``"precondition"`` or ``"postcondition"``: it labels the
+        coverage gap (R7/R13) and the error log, and it decides how a read that
+        raises on a skipped item lowers (``_lower_predicate``, #1775); the
+        parse → extract deps → wire dependency graph → lower-to-Z3 →
+        record-gap-on-None body is otherwise identical for both. Self-references are excluded from the
         dependency graph for both kinds: a precondition self-loop is invalid,
         and a postcondition validating its own item's outcome (``q1.outcome > 0``)
         is legitimate and not a dependency.
@@ -2254,6 +4044,7 @@ class StaticBuilder:
         Returns ``(constraint_or_None, item_dependencies)``; ``var:`` nodes are
         stripped from the returned dep set for backward compatibility.
         """
+        _require_condition_kind(kind)
         try:
             tree = ast.parse(predicate, mode="eval")
 
@@ -2265,13 +4056,33 @@ class StaticBuilder:
                 if dep != item_id:  # Exclude self-reference
                     self.dependency_graph[item_id].add(dep)
 
-            constraint = self._ast_to_z3_bool(tree.body, item_id)
+            # Drop refusals a re-lowering outside the build left behind.
+            self._distinct_refusals.pop(item_id, None)
+            self._ternary_refusals.pop(item_id, None)
+            constraint, _ = self._lower_predicate(tree.body, item_id, kind)
+            skippable_items = self._distinct_refusals.pop(item_id, [])
+            ternary_items = self._ternary_refusals.pop(item_id, [])
 
             # R7/R13: surface silent drops on constraint-bearing predicates.
+            # A Range read the model cannot represent is a gap even when it
+            # carries no Subscript / Call node (a bare ``q.outcome >= 3``).
             if constraint is None:
                 unsupported = self._unsupported_node_kinds(tree.body)
-                if unsupported:
-                    self._record_coverage_gap(item_id, kind, condition_idx, unsupported)
+                range_items = self._unlowered_range_reads(tree.body)
+                group_items = self._unlowered_group_reads(tree.body)
+                matrix_items = self._unlowered_matrix_reads(tree.body)
+                if unsupported or range_items or group_items or matrix_items or skippable_items or ternary_items:
+                    self._record_coverage_gap(
+                        item_id,
+                        kind,
+                        condition_idx,
+                        unsupported,
+                        range_items,
+                        group_items,
+                        matrix_items,
+                        skippable_items,
+                        ternary_items=ternary_items,
+                    )
 
             # Return only item dependencies for backward compatibility
             item_deps = {d for d in all_deps if not d.startswith("var:")}
@@ -2303,7 +4114,8 @@ class StaticBuilder:
 
         Accepts integer literals, names bound via ``local_bindings``, and the
         compile-time-known forms ``len(<item>.rows)`` / ``len(<item>.columns)``
-        where ``<item>`` is a MatrixQuestion in the questionnaire. Anything
+        where ``<item>`` is a MatrixQuestion and ``len(<item>.questions)`` where
+        it is a QuestionGroup in the questionnaire. Anything
         else (BinOp, arbitrary calls, runtime variables) returns ``None``.
         """
         if (
@@ -2320,19 +4132,19 @@ class StaticBuilder:
                 return None
             return -inner if isinstance(node.op, ast.USub) else inner
         if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id == "len":
-            # len(<matrix_id>.rows) / len(<matrix_id>.columns) only.
+            # len(<matrix>.rows) / len(<matrix>.columns) / len(<group>.questions)
+            # only: the declared lists ItemProxy exposes at runtime (#1782).
             if len(node.args) != 1:
                 return None
             arg = node.args[0]
             if (
                 isinstance(arg, ast.Attribute)
                 and isinstance(arg.value, ast.Name)
-                and arg.attr in ("rows", "columns")
+                and arg.attr in _DECLARED_LIST_LENGTHS
             ):
                 item_id = arg.value.id
                 if item_id in self.item_details:
-                    detail_key = "rows_len" if arg.attr == "rows" else "cols_len"
-                    val = self.item_details[item_id].get(detail_key)
+                    val = self.item_details[item_id].get(_DECLARED_LIST_LENGTHS[arg.attr])
                     if isinstance(val, int):
                         return val
         return None
@@ -2342,9 +4154,7 @@ class StaticBuilder:
     ) -> range | None:
         """Resolve a ``range(...)`` call to a Python ``range`` object at build time.
 
-        Static-builder bounds policy: no upper-cap, ``len(<item>.rows|columns)``
-        accepted. (The pragmatic_compiler's ``visit_For`` keeps its own stricter
-        policy — caps at 0–20, no len() — and is not changed by this plan.)
+        Bounds policy: no upper cap, ``len(<item>.rows|columns)`` accepted.
 
         Returns ``None`` if the call shape is unsupported (e.g., 3-arg range
         with non-trivial step, non-resolvable bounds, BinOp on the start arg).
@@ -2372,38 +4182,264 @@ class StaticBuilder:
     def _lower_subscript(
         self, node: ast.Subscript, context: str, local_bindings: dict[str, int]
     ) -> ExprRef | None:
-        """Lower ``X.outcome[j][k]`` to ``item_cells[X][(j, k)]``.
+        """Lower a subscripted outcome read to the variable it names.
 
-        Two-level subscript over a matrix: lowered to the cell variable.
-        One-level subscript over a matrix: returns ``None`` here — the only
-        supported one-level form is inside a fold, which goes through
-        ``_unroll_list_arg`` and bypasses this scalar lowering.
-        Anything else (subscripting a scalar item, a Python variable, etc.)
-        returns ``None``.
+        - ``X.outcome[j][k]`` on a non-Range matrix → ``item_cells[X][(j, k)]``;
+          ``j`` / ``k`` may be literals or comprehension loop variables.
+
+        - ``qg.outcome[i]`` on a non-Range QuestionGroup → ``item_cells[qg][(i,)]``
+          (#184), in a predicate only (``_group_cells``).
+
+        A Range item never lowers here (#1755): its ends are named, so a Range
+        read lowers through ``_lower_range_end`` from ``X.outcome.low``,
+        ``X.outcome[j][k].low`` or ``qg.outcome[i].low``, and a positional read
+        (``q.outcome[0]``) is a coverage gap like any other Range read the
+        model does not hold. One-index reads of a matrix (a row slice only
+        lowers inside a fold, via ``_unroll_list_arg``), two-index reads of a
+        group, a scalar item and a Python variable return ``None`` too.
         """
-        # Check for X.outcome[j][k] (two-level)
-        outer = node
-        # outer.value should be another Subscript: X.outcome[j]
-        # outer.slice is the inner index: k
-        if isinstance(outer.value, ast.Subscript):
-            inner = outer.value
-            # inner.value should be X.outcome
-            if (
-                isinstance(inner.value, ast.Attribute)
-                and isinstance(inner.value.value, ast.Name)
-                and inner.value.attr == "outcome"
-            ):
-                item_id = inner.value.value.id
-                cells = self.item_cells.get(item_id)
-                if cells is None:
-                    return None
-                j = self._resolve_int_const(inner.slice, local_bindings)
-                k = self._resolve_int_const(outer.slice, local_bindings)
-                if j is None or k is None:
-                    return None
-                return cells.get((j, k))
-        # Single-level subscript on X.outcome (no fold context) is unsupported.
+        item_id, indices = self._outcome_subscript(node)
+        if item_id is None or self._is_range_item(item_id):
+            return None
+        if self._is_question_group(item_id):
+            cells = self._group_cells(item_id)
+            if cells is None or len(indices) != 1:
+                return None
+            i = self._resolve_int_const(indices[0], local_bindings)
+            return None if i is None else cells.get((i,))
+        cells = self.item_cells.get(item_id)
+        if cells is None or len(indices) != 2:
+            return None
+        j = self._resolve_int_const(indices[0], local_bindings)
+        k = self._resolve_int_const(indices[1], local_bindings)
+        if j is None or k is None:
+            return None
+        return cells.get((j, k))
+
+    def _is_question_group(self, item_id: str) -> bool:
+        return item_id in self.question_groups
+
+    def _group_cells(self, item_id: str) -> dict[tuple[int, ...], ExprRef] | None:
+        """A QuestionGroup's answer cells, where a read of them may lower: in
+        a predicate (``_lower_predicate``) and outside a Roster or capped
+        Group. A codeBlock read stays unlowered: a sum over an unanswered
+        slot raises and leaves its variable as it was, and the codeBlock None
+        model (``_CodeReads``, #1776) covers scalar Question reads only. A scoped
+        group has no cells per iteration or draw, so one canonical cell would
+        tie answers the runtime keeps apart, and a group a codeBlock writes can
+        hold any value between two conditions, which one cell per answer
+        cannot (``_unlowered_group_reads``)."""
+        if not self._lowering_predicate or self._is_scoped(item_id) or item_id in self._code_written_items():
+            return None
+        return self.item_cells.get(item_id)
+
+    def _is_scoped(self, item_id: str) -> bool:
+        item = self.state.get_item(item_id)
+        return bool(item and (item.get("_roster_block_id") or item.get("_group_block_id")))
+
+    def _answer_read(self, node: ast.AST) -> tuple[str, list[ast.expr]] | None:
+        """``(item, index nodes)`` iff ``node`` is one answer read of an
+        answer list: ``qg.outcome[i]`` of a QuestionGroup or ``m.outcome[r][c]``
+        of a MatrixQuestion, or its ``.low`` / ``.high`` on a Range item (the
+        whole read node, so a raise walks from it)."""
+        if isinstance(node, ast.Attribute) and node.attr in _RANGE_ENDS:
+            inner = node.value
+            if not isinstance(inner, ast.Subscript):
+                return None
+            item_id, indices = self._outcome_subscript(inner)
+            ok = item_id is not None and self._is_range_item(item_id)
+        elif isinstance(node, ast.Subscript):
+            item_id, indices = self._outcome_subscript(node)
+            ok = item_id is not None and not self._is_range_item(item_id)
+        else:
+            return None
+        if not ok:
+            return None
+        if self._is_question_group(item_id):
+            return (item_id, indices) if len(indices) == 1 else None
+        if item_id in self.matrices:
+            return (item_id, indices) if len(indices) == 2 else None
         return None
+
+    @staticmethod
+    def _outcome_subscript(node: ast.Subscript) -> tuple[str | None, list[ast.expr]]:
+        """``(X, [i, j, ...])`` for ``X.outcome[i][j]...``; ``(None, [])`` otherwise."""
+        indices: list[ast.expr] = []
+        base: ast.expr = node
+        while isinstance(base, ast.Subscript):
+            indices.append(base.slice)
+            base = base.value
+        indices.reverse()
+        item_id = outcome_ref_name(base)
+        return (item_id, indices) if item_id is not None else (None, [])
+
+    def _lower_range_end(self, node: ast.Attribute) -> ExprRef | None:
+        """Lower a named Range end to its variable (#1755, D89).
+
+        - ``X.outcome.low`` / ``.high`` on a Range Question → ``item_pairs[X]``'s
+          end (the current Roster iteration's or capped-Group presence's pair
+          while those are emitted, since they swap ``item_pairs``).
+        - ``m.outcome[j][k].low`` / ``.high`` on a Range matrix →
+          ``item_cells[m][(j, k, end)]``, with literal ``j`` / ``k`` only: a fold
+          over Range cells is not modelled and stays a coverage gap.
+        - ``qg.outcome[i].low`` / ``.high`` on a Range QuestionGroup →
+          ``item_cells[qg][(i, end)]`` (#184), with a literal ``i``, in a
+          predicate only (``_group_cells``).
+
+        Anything else (a non-Range item, another attribute) returns ``None``.
+        """
+        if node.attr not in _RANGE_ENDS:
+            return None
+        end = _RANGE_ENDS.index(node.attr)
+        item_id = outcome_ref_name(node.value)
+        if item_id is not None:
+            pair = self.item_pairs.get(item_id)
+            return pair[end] if pair is not None else None
+        if not isinstance(node.value, ast.Subscript):
+            return None
+        item_id, indices = self._outcome_subscript(node.value)
+        if item_id is None or not self._is_range_item(item_id):
+            return None
+        if self._is_question_group(item_id):
+            cells = self._group_cells(item_id)
+            i = self._resolve_int_const(indices[0], {}) if len(indices) == 1 else None
+            return None if cells is None or i is None else cells.get((i, end))
+        if len(indices) != 2:
+            return None
+        cells = self.item_cells.get(item_id)
+        if cells is None:
+            return None
+        j = self._resolve_int_const(indices[0], {})
+        k = self._resolve_int_const(indices[1], {})
+        return None if j is None or k is None else cells.get((j, k, end))
+
+    def _unlowered_range_reads(self, tree: ast.AST) -> list[str]:
+        """Range items the tree reads in a form the model does not represent.
+
+        A Range outcome lowers only as ``X.outcome.low|high`` (Range Question)
+        or ``X.outcome[j][k].low|high`` (Range matrix) with constant indices
+        (#1755). Every other read of a Range item's outcome — bare ``X.outcome``
+        compared as a number, a positional ``X.outcome[0]``, any Range
+        QuestionGroup read, a whole Range cell, a fold over Range cells — has no
+        variable to lower to. Naming those items lets a dropped condition's
+        coverage gap say it was the Range read (R7, #1474), including a bare
+        read, which carries no Subscript / Call node.
+        """
+        parents = self._build_parent_map(tree)
+        found: list[str] = []
+        # Asked about a condition, so a Range QuestionGroup end of the
+        # lowerable shape is not named (``_group_cells``).
+        outer, self._lowering_predicate = self._lowering_predicate, True
+        try:
+            for node in ast.walk(tree):
+                item_id = outcome_ref_name(node)
+                if item_id is None or not self._is_range_item(item_id) or item_id in found:
+                    continue
+                top, _ = self._subscript_top(node, parents)
+                end = parents.get(top)
+                lowered = (
+                    isinstance(end, ast.Attribute)
+                    and end.value is top
+                    and self._lower_range_end(end) is not None
+                )
+                if not lowered:
+                    found.append(item_id)
+        finally:
+            self._lowering_predicate = outer
+        return found
+
+    def _unlowered_group_reads(self, tree: ast.AST) -> list[str]:
+        """QuestionGroups a condition reads in a form the model does not hold
+        (#184): the whole list as a value (``qg.outcome == 1``; a None test is
+        modelled), a set of answers (an unanswered slot is a ``None`` member),
+        an answer passed through a ternary branch, any read of a group inside a
+        Roster or capped Group or written by a codeBlock, and a read with other
+        than one index. A bare read carries no Subscript or Call node, so
+        without this name the dropped condition would record no gap at all."""
+        found: list[str] = []
+        if not self.question_groups:
+            return found
+        parents = self._build_parent_map(tree)
+        none_operands = {id(operand) for operand in none_test_operands(tree)}
+        for node in ast.walk(tree):
+            item_id = outcome_ref_name(node)
+            if item_id is None or not self._is_question_group(item_id) or item_id in found:
+                continue
+            top, depth = self._subscript_top(node, parents)
+            in_set = self._in_set(top, parents)
+            bare = depth == 0 and id(node) not in none_operands
+            through_ternary = depth == 1 and self._slot_through_ternary(top, parents)
+            if (
+                self._is_scoped(item_id)
+                or item_id in self._code_written_items()
+                or in_set
+                or bare
+                or depth > 1
+                or (through_ternary and not self._is_range_item(item_id))
+            ):
+                found.append(item_id)
+        return found
+
+    def _unlowered_matrix_reads(self, tree: ast.AST) -> list[str]:
+        """MatrixQuestions a condition reads other than one cell at a time
+        (#1781): the whole answer as a value (``m.outcome == 1``,
+        ``if m.outcome:``; a None test is not a value read) and a whole row
+        (``m.outcome[0] == 1``, ``set(m.outcome[0])``). The model holds a
+        matrix as one variable per cell and nothing for the list or a row, and
+        a bare read carries no Subscript or Call node, so without this name the
+        dropped condition would record no gap at all. Where a cell may be
+        ``None`` (``_matrix_has_choices``), a cell read through a ternary
+        branch or into a set is named too: ``None`` flows on untouched, and a
+        set counts it as a member (``_answer_list_reads``,
+        ``_try_distinct_pattern``). A Range matrix is named by
+        ``_unlowered_range_reads`` instead."""
+        found: list[str] = []
+        if not self.matrices:
+            return found
+        parents = self._build_parent_map(tree)
+        none_operands = {id(operand) for operand in none_test_operands(tree)}
+        for node in ast.walk(tree):
+            item_id = outcome_ref_name(node)
+            if (
+                item_id is None
+                or item_id in found
+                or item_id not in self.matrices
+                or self._is_range_item(item_id)
+            ):
+                continue
+            top, depth = self._subscript_top(node, parents)
+            nullable_cell = (
+                depth == 2
+                and self._matrix_has_choices(item_id)
+                and (self._slot_through_ternary(top, parents) or self._in_set(top, parents))
+            )
+            if nullable_cell or (depth != 2 and not (depth == 0 and id(node) in none_operands)):
+                found.append(item_id)
+        return found
+
+    @staticmethod
+    def _subscript_top(node: ast.AST, parents: dict[ast.AST, ast.AST]) -> tuple[ast.AST, int]:
+        """``(the outermost Subscript over node, how many indices it takes)``:
+        ``(m.outcome[0][1], 2)`` for the ``m.outcome`` inside it."""
+        top, depth = node, 0
+        while isinstance(parents.get(top), ast.Subscript) and parents[top].value is top:
+            top, depth = parents[top], depth + 1
+        return top, depth
+
+    @classmethod
+    def _in_set(cls, node: ast.AST, parents: dict[ast.AST, ast.AST]) -> bool:
+        """Whether ``node`` is (inside) an argument of ``set(...)``."""
+        return any(
+            isinstance(holder, ast.Call) and _is_call_to(holder, ("set",))
+            for holder in cls._ancestors(node, parents)
+        )
+
+    @staticmethod
+    def _ancestors(node: ast.AST, parents: dict[ast.AST, ast.AST]) -> list[ast.AST]:
+        chain: list[ast.AST] = []
+        while (node := parents.get(node)) is not None:
+            chain.append(node)
+        return chain
 
     def _try_distinct_pattern(
         self, node: ast.Compare, context: str, local_bindings: dict[str, int]
@@ -2442,7 +4478,19 @@ class StaticBuilder:
         ):
             return None
         list_arg = inner.args[0]
-
+        if any(
+            (found := self._answer_read(n)) is not None
+            and (
+                self._is_question_group(found[0])
+                or (found[0] in self.matrices and self._matrix_has_choices(found[0]))
+            )
+            for n in ast.walk(list_arg)
+        ):
+            # An unanswered slot or empty cell is a ``None`` member of the set,
+            # not a raise, and ``Distinct`` over the answers cannot hold it
+            # (#184, #1780); the gap names the item (``_unlowered_group_reads``,
+            # ``_unlowered_matrix_reads``).
+            return None
         # RHS must be a constant int we can resolve at build time.
         k = self._resolve_int_const(rhs, local_bindings)
         if k is None:
@@ -2455,6 +4503,24 @@ class StaticBuilder:
             # ``len(set([a, b, c])) == 2`` is satisfiable but is not "all
             # distinct" — Z3's Distinct doesn't model "exactly N distinct
             # values out of M". Refuse the translation; caller logs WARNING.
+            return None
+        skippable = list(
+            dict.fromkeys(
+                read
+                for n in ast.walk(list_arg)
+                if (read := outcome_ref_name(n)) is not None and self._may_be_skipped(read, context)
+            )
+        )
+        if skippable:
+            # A skipped Question is a ``None`` member of the set too (#1785):
+            # ``[None, 1, 2, 3]`` has four distinct members over three labels.
+            # Recorded so the gap names them (#1799), only after the shape
+            # checks above and only when every one takes a None guard that
+            # lowers (``_answerable``: not a Roster / capped-Group member), so
+            # the suggested guard does prove this check.
+            if all(self._answerable(read) for read in skippable):
+                named = self._distinct_refusals.setdefault(context, [])
+                named.extend(read for read in skippable if read not in named)
             return None
         if len(xs) <= 1:
             return BoolVal(True, self.ctx)
@@ -2482,7 +4548,13 @@ class StaticBuilder:
             return Sum(*xs)
 
         if fname == "int" and len(node.args) == 1:
+            # ``int(<comparison>)`` counts a condition (``int(a < 5) + int(b < 5)``):
+            # a boolean-valued expression is no value, so it lowers in bool
+            # context. Only one that is boolean in Python too: ``a or 1`` returns
+            # an operand, and reading it as a truth value would change the gate.
             arg = self._ast_to_z3(node.args[0], context, local_bindings)
+            if arg is None and _is_boolean_valued(node.args[0]):
+                arg = self._ast_to_z3_bool(node.args[0], context, local_bindings)
             if arg is None:
                 return None
             if isinstance(arg, BoolRef):
@@ -2524,7 +4596,9 @@ class StaticBuilder:
                 return None
             if isinstance(arg, BoolRef):
                 return arg
-            return arg != 0
+            # ``bool(None)`` is False (#1769).
+            skipped = self._skipped_operand(node.args[0], local_bindings)
+            return arg != 0 if skipped is None else And(Not(skipped), arg != 0)
 
         return None
 
@@ -2659,23 +4733,25 @@ class StaticBuilder:
             return self._get_current_z3_var(node.id)
 
         elif isinstance(node, ast.Attribute):
+            if node.attr in _RANGE_ENDS:
+                return self._lower_range_end(node)
             if isinstance(node.value, ast.Name) and node.attr == "outcome":
                 item_id = node.value.id
                 if item_id in self.item_vars:
                     return self.item_vars[item_id]
-                # Text items have string outcomes — return sentinel 0
-                if (
-                    item_id in self.item_details
-                    and self.item_details[item_id].get("control") == "Textarea"
-                ):
-                    return IntVal(0, self.ctx)
+                # Text items have string outcomes — return sentinel 0 in a
+                # predicate (flagged ``textarea_in_predicate``); in any
+                # codeBlock the text is opaque (#2003): no Int stands for it,
+                # so what it computes is unconstrained.
+                if self._is_textarea(item_id):
+                    return None if self._lowering_code else IntVal(0, self.ctx)
                 # Matrix items: bare .outcome (no subscript) is unsupported.
                 # Caller's WARNING-on-None machinery surfaces this to the author.
                 if item_id in self.item_cells:
                     return None
 
         elif isinstance(node, ast.Subscript):
-            # X.outcome[j][k]   →  item_cells[X][(j, k)]
+            # X.outcome[j][k]   →  item_cells[X][(j, k)] (non-Range matrix)
             # X.outcome[j]      →  None (one-level subscript on a matrix has no
             #                       scalar lowering; only fold-context unrolling
             #                       handles row-slice reads — see _unroll_list_arg)
@@ -2683,6 +4759,12 @@ class StaticBuilder:
             return self._lower_subscript(node, context, local_bindings)
 
         elif isinstance(node, ast.BinOp):
+            if _is_str_literal(node.left) or _is_str_literal(node.right):
+                # A string literal is an Int here only so equality in a
+                # predicate can compare it (its hash); as an arithmetic or
+                # bitwise operand the hash would stand for a number Python never
+                # computes (``"a" - 1`` raises, ``"a" * 2`` is a string), #2048.
+                return None
             left = self._ast_to_z3(node.left, context, local_bindings)
             right = self._ast_to_z3(node.right, context, local_bindings)
             if left is not None and right is not None:
@@ -2692,15 +4774,19 @@ class StaticBuilder:
                     return left - right
                 elif isinstance(node.op, ast.Mult):
                     return left * right
-                elif isinstance(node.op, ast.Div):
-                    return left / right  # Integer division in Z3
-                elif isinstance(node.op, ast.FloorDiv):
-                    return left / right
-                elif isinstance(node.op, ast.Mod):
-                    return left % right
+                elif isinstance(node.op, (ast.FloorDiv, ast.Mod)) and _z3_division_agrees(
+                    node.op, node.right
+                ):
+                    # Any other division, lowered, would prove a gate narrower
+                    # than the one that runs (``_z3_division_agrees``, #1767).
+                    return left / right if isinstance(node.op, ast.FloorDiv) else left % right
+                elif isinstance(node.op, ast.BitAnd):
+                    return self._lower_bit_and(node, left, right)
 
         elif isinstance(node, ast.UnaryOp):
-            operand = self._ast_to_z3(node.operand, context, local_bindings)
+            operand = None if _is_str_literal(node.operand) else self._ast_to_z3(
+                node.operand, context, local_bindings
+            )
             if operand is not None:
                 if isinstance(node.op, ast.USub):
                     return -operand
@@ -2727,6 +4813,19 @@ class StaticBuilder:
 
         return None
 
+    @staticmethod
+    def _lower_bit_and(node: ast.BinOp, left: ExprRef, right: ExprRef) -> ExprRef | None:
+        """``x & K`` (``_masked``) when either operand is a non-negative integer
+        literal ``K``, so the Checkbox mask idiom (``q.outcome & 32 > 0``) is
+        exact. Any other ``&`` does not lower: two variables, or a negative
+        mask, which parses as a unary minus rather than a literal (it would
+        have infinitely many set bits)."""
+        if (mask := _int_literal(node.right)) is not None:
+            return _masked(left, mask)
+        if (mask := _int_literal(node.left)) is not None:
+            return _masked(right, mask)
+        return None
+
     def _ast_to_z3_bool(
         self, node: ast.AST, context: str, local_bindings: dict[str, int] | None = None
     ) -> BoolRef | None:
@@ -2737,6 +4836,8 @@ class StaticBuilder:
         """
         if local_bindings is None:
             local_bindings = {}
+        if isinstance(node, ast.Compare) and id(node) in self._predicate_raising:
+            return self._raise_on_skip(node, context, local_bindings)
         if isinstance(node, ast.Compare):
             # Pattern-match the ranking-distinctness shape BEFORE general
             # comparison handling, so the LHS ``len(set([…]))`` doesn't fall
@@ -2744,6 +4845,9 @@ class StaticBuilder:
             distinct = self._try_distinct_pattern(node, context, local_bindings)
             if distinct is not None:
                 return distinct
+            none_test = self._lower_none_test(node)
+            if none_test is not None:
+                return none_test
 
             # Support chained comparisons: a < b < c → (a < b) and (b < c)
             if len(node.ops) != len(node.comparators):
@@ -2752,6 +4856,7 @@ class StaticBuilder:
             lhs = self._ast_to_z3(node.left, context, local_bindings)
             if lhs is None:
                 return None
+            lhs_node = node.left
             for op, comp in zip(node.ops, node.comparators, strict=False):
                 # In/NotIn need the raw AST comparator (list/tuple/set), not Z3 value
                 if isinstance(op, (ast.In, ast.NotIn)):
@@ -2764,7 +4869,14 @@ class StaticBuilder:
                         # ``not in`` (#1164).
                         if not member_vals or any(v is None for v in member_vals):
                             return None
-                        membership = Or(*[lhs == v for v in member_vals])
+                        # ``in`` is ``==`` against each member, a skipped
+                        # item's None included on either side (#1769).
+                        membership = Or(
+                            *[
+                                self._skip_aware_equality(lhs == v, lhs_node, elt, local_bindings)
+                                for v, elt in zip(member_vals, comp.elts, strict=True)
+                            ]
+                        )
                         if isinstance(op, ast.In):
                             clauses.append(membership)
                         else:
@@ -2774,13 +4886,17 @@ class StaticBuilder:
                     # For chained comparisons after In/NotIn, lhs stays the same
                     continue
 
+                if isinstance(op, _ORDERING_OPS) and (_is_str_literal(lhs_node) or _is_str_literal(comp)):
+                    # A string orders against a number by raising and against
+                    # another string by its text, never by its hash (#2048).
+                    return None
                 rhs = self._ast_to_z3(comp, context, local_bindings)
                 if rhs is None:
                     return None
                 if isinstance(op, ast.Eq):
-                    clauses.append(lhs == rhs)
+                    clauses.append(self._skip_aware_equality(lhs == rhs, lhs_node, comp, local_bindings))
                 elif isinstance(op, ast.NotEq):
-                    clauses.append(lhs != rhs)
+                    clauses.append(Not(self._skip_aware_equality(lhs == rhs, lhs_node, comp, local_bindings)))
                 elif isinstance(op, ast.Lt):
                     clauses.append(lhs < rhs)
                 elif isinstance(op, ast.LtE):
@@ -2790,9 +4906,10 @@ class StaticBuilder:
                 elif isinstance(op, ast.GtE):
                     clauses.append(lhs >= rhs)
                 else:
-                    # ast.Is, ast.IsNot, etc. - unsupported, return None
+                    # ast.Is / ast.IsNot outside a modelled None test
+                    # (``_lower_none_test``): unsupported.
                     return None
-                lhs = rhs  # Next comparison uses current comparator as left
+                lhs, lhs_node = rhs, comp  # Next comparison uses current comparator as left
             return And(*clauses) if len(clauses) > 1 else clauses[0] if clauses else None
 
         elif isinstance(node, ast.BoolOp):
@@ -2829,10 +4946,918 @@ class StaticBuilder:
         if expr is not None:
             if isinstance(expr, BoolRef):
                 return expr
-            # Non-zero is true
-            return expr != 0
+            # Non-zero is true; a skipped item's None is false (#1769).
+            skipped = self._skipped_operand(node, local_bindings)
+            return expr != 0 if skipped is None else And(Not(skipped), expr != 0)
 
         return None
+
+    def _raise_on_skip(
+        self, node: ast.Compare, context: str, local_bindings: dict[str, int]
+    ) -> BoolRef | None:
+        """A precondition comparison that raises when one of its items was
+        skipped, where the raise cannot be placed: False then (``_wrap_unplaced``, #1775)."""
+        raising = self._predicate_raising.pop(id(node))
+        try:
+            lowered = self._ast_to_z3_bool(node, context, local_bindings)
+        finally:
+            self._predicate_raising[id(node)] = raising
+        if lowered is None:
+            return None
+        choices, slot_reads = raising
+        skipped = list(choices)
+        for read in slot_reads:
+            slot = self._slot_of(read, local_bindings)
+            if slot is None:
+                return None
+            skipped.append(slot)
+        return And(*[Not(choice) for choice in skipped], lowered)
+
+    def _skipped_operand(self, node: ast.AST, local_bindings: dict[str, int] | None = None) -> BoolRef | None:
+        """The Bool under which ``node`` reads ``None``, iff it is ``Y.outcome``
+        for an item the predicate being lowered models as possibly skipped
+        (#1769), or a QuestionGroup answer or matrix cell read in a position
+        that does not raise on an unanswered slot (#184, #1780)."""
+        if id(node) in self._predicate_slot_safe:
+            return self._slot_of(node, local_bindings or {})
+        item_id = outcome_ref_name(node)
+        return self._predicate_skipped.get(item_id) if item_id is not None else None
+
+    def _skip_aware_equality(
+        self, equal: BoolRef, left: ast.AST, right: ast.AST, local_bindings: dict[str, int] | None = None
+    ) -> BoolRef:
+        """``left == right`` as Python answers it when either side may be a
+        skipped item's ``None`` (#1769): ``None == None`` is True, and ``None``
+        equals no number."""
+        left_skipped = self._skipped_operand(left, local_bindings)
+        right_skipped = self._skipped_operand(right, local_bindings)
+        if left_skipped is None and right_skipped is None:
+            return equal
+        if left_skipped is None or right_skipped is None:
+            skipped = left_skipped if right_skipped is None else right_skipped
+            return And(Not(skipped), equal)
+        return Or(
+            And(left_skipped, right_skipped),
+            And(Not(left_skipped), Not(right_skipped), equal),
+        )
+
+    def _skippable_reads(
+        self, tree: ast.AST, context: str
+    ) -> tuple[set[str], list[tuple[str, ast.AST]], dict[ast.AST, ast.AST]]:
+        """``(items read where Python sees their None, (item, node) of each
+        read that raises on it, the tree's parent map)``, #1769 / #1775.
+
+        An item asked under a precondition, or drawn into a Roster iteration or
+        a capped Group, reads ``None`` once it was not asked. Python answers
+        ``None == c``, ``!= c``, ``in``, ``not in`` and truthiness without
+        raising (``q.outcome != 1`` holds for everyone who skipped ``q``, and
+        an ``==`` / ``!=`` chain likewise), and raises on an ordering or
+        arithmetic read (``None > 1``). Both
+        kinds are modelled with the item's skip choice (``_skipped_choice``):
+        the first in the comparison itself, the second as the raise of the
+        leaf that holds it (``_place_raises``, ``_leaf_raise``).
+
+        Not modelled: the predicate's own item (it is being asked), an item the
+        predicate None-guards (``_lower_none_test`` models it), and anything
+        without a scalar variable.
+
+        Refused (#1867): a read whose value a ternary branch passes on
+        (``_value_through_ternary``). Its ``None`` reaches whatever encloses
+        the ternary untouched, which may read it without raising (``in`` a
+        list, ``==``), so it is neither a raise to place nor a value the
+        in-domain Int stands for: lowering it would prove a gate NEVER that a
+        skip makes True. The predicate is left unlowered
+        (``_UnmodelledAnswerRead``) and the gap names the item, as a
+        QuestionGroup or matrix read through a ternary is.
+        """
+        parents = self._build_parent_map(tree)
+        none_operands = {id(operand) for operand in none_test_operands(tree)}
+        safe: set[str] = set()
+        raising: list[tuple[str, ast.AST]] = []
+        refused: list[str] = []
+        for node in ast.walk(tree):
+            item_id = outcome_ref_name(node)
+            if item_id is None or id(node) in none_operands or not self._may_be_skipped(item_id, context):
+                continue
+            if self._none_safe_read(node, parents):
+                safe.add(item_id)
+            elif self._value_through_ternary(node, parents) and not self._ternary_certainly_raises(node, parents):
+                if item_id not in refused:
+                    refused.append(item_id)
+            else:
+                raising.append((item_id, node))
+        if refused:
+            named = self._ternary_refusals.setdefault(context, [])
+            named.extend(item for item in refused if item not in named)
+            raise _UnmodelledAnswerRead(refused[0])
+        return safe, raising, parents
+
+    @staticmethod
+    def _value_through_ternary(node: ast.AST, parents: dict[ast.AST, ast.AST]) -> bool:
+        """Whether ``node`` is itself a branch of a ternary (``q.outcome if c
+        else 0``), so a ``None`` there flows on past the ternary untouched.
+        Arithmetic inside a branch (``q.outcome + 1 if c else 0``) raises on
+        ``None`` before it leaves, so it stays a raise the wide lowering covers."""
+        parent = parents.get(node)
+        return isinstance(parent, ast.IfExp) and parent.test is not node
+
+    @staticmethod
+    def _ternary_certainly_raises(node: ast.AST, parents: dict[ast.AST, ast.AST]) -> bool:
+        """Whether the ``None`` a ternary branch passes on certainly raises
+        where the ternary's value lands: through (nested ternaries and)
+        arithmetic, or as an operand of an ordering on both sides. There the
+        read is an unplaced raise the wide lowering covers soundly
+        (``(q.outcome if c else 0) > 99`` stays provable NEVER); anywhere
+        else the ``None`` may be read without raising and is refused."""
+        child, parent = node, parents.get(node)
+        while isinstance(parent, ast.IfExp) and parent.test is not child:
+            child, parent = parent, parents.get(parent)
+        if isinstance(parent, ast.BinOp) or (isinstance(parent, ast.UnaryOp) and not isinstance(parent.op, ast.Not)):
+            return True
+        if isinstance(parent, ast.Compare):
+            chain = [parent.left, *parent.comparators]
+            position = next(i for i, operand in enumerate(chain) if operand is child)
+            touching = parent.ops[max(position - 1, 0) : position + 1]
+            return all(isinstance(op, _ORDERING_OPS) for op in touching)
+        return False
+
+    def _place_raises(
+        self,
+        raising: list[tuple[str, ast.AST]],
+        list_raising: list[tuple[str, ast.AST]],
+        slot_reads: list[ast.AST],
+        choices: dict[str, BoolRef],
+        parents: dict[ast.AST, ast.AST],
+    ) -> tuple[dict[int, list[tuple[int | None, bool, BoolRef]]], set[int], list[tuple[str | None, ast.AST]]]:
+        """``(the raise each condition leaf certainly makes, the ids of the
+        slot reads placed, the reads whose raise cannot be placed)``, #1775 / #1779.
+
+        A raising read is placed on the leaf the runtime evaluates it in
+        (``_raise_site``), with the operand of the comparison that holds it and
+        whether evaluating that operand raises (arithmetic, a subscript of a
+        skipped QuestionGroup or matrix, a Range end) or only an ordering on it does (a bare
+        ``None``): ``(operand index or None for a truth-tested leaf, evaluated,
+        choice)``, which ``_leaf_raise`` turns into the leaf's raise, so the
+        two-sided lowering (``_Outcome``) is exact wherever the leaf sits. A
+        chained comparison holding ``in`` / ``is`` is not placed (it evaluates
+        its clauses the way ``_ast_to_z3_bool`` does not split), nor is a slot
+        read whose index does not resolve.
+
+        A read with no such leaf (through a call, a container, a subscript, a
+        ternary, a comprehension) may not raise, or not there; it keeps the
+        wide lowering (``_wrap_unplaced`` / ``_waive_unplaced``).
+        """
+        by_leaf: dict[int, tuple[ast.AST, list[tuple[str | None, ast.AST, int | None, bool, BoolRef]]]] = {}
+        unplaced: list[tuple[str | None, ast.AST]] = []
+        reads = [
+            *((key, node, False) for key, node in raising),
+            *((key, node, True) for key, node in list_raising),
+            # A Range end (``None.low``) raises whatever the operator.
+            *((None, node, self._is_range_item(self._answer_read(node)[0])) for node in slot_reads),
+        ]
+        for key, node, whole_list in reads:
+            site = self._raise_site(node, parents)
+            choice = choices[key] if key is not None else self._slot_of(node, {})
+            if site is None or choice is None:
+                unplaced.append((key, node))
+                continue
+            leaf, operand, evaluated = site
+            by_leaf.setdefault(id(leaf), (leaf, []))[1].append((key, node, operand, evaluated or whole_list, choice))
+        placed: dict[int, list[tuple[int | None, bool, BoolRef]]] = {}
+        placed_slots: set[int] = set()
+        allowed = (ast.Eq, ast.NotEq, *_ORDERING_OPS)
+        for leaf_id, (leaf, entries) in by_leaf.items():
+            if isinstance(leaf, ast.Compare) and len(leaf.ops) > 1 and not all(isinstance(op, allowed) for op in leaf.ops):
+                unplaced.extend((key, node) for key, node, *_ in entries)
+                continue
+            placed[leaf_id] = [(operand, evaluated, choice) for _, _, operand, evaluated, choice in entries]
+            placed_slots |= {id(node) for key, node, *_ in entries if key is None}
+        return placed, placed_slots, unplaced
+
+    @staticmethod
+    def _condition_leaf(node: ast.AST, parents: dict[ast.AST, ast.AST]) -> ast.AST:
+        """The condition leaf ``node`` sits in: the outermost ancestor-or-self
+        that is not an ``and`` / ``or`` / ``not`` and has only those above it,
+        the leaf ``FlowProcessor._parse_condition`` splits off and
+        ``_lower_kleene`` lowers whole. A junction inside a call, a list or a
+        ternary belongs to that call's leaf."""
+        path = [node]
+        while (parent := parents.get(path[-1])) is not None:
+            path.append(parent)
+        for candidate in reversed(path):
+            if not (
+                isinstance(candidate, ast.BoolOp)
+                or (isinstance(candidate, ast.UnaryOp) and isinstance(candidate.op, ast.Not))
+            ):
+                return candidate
+        return node
+
+    @classmethod
+    def _raise_site(cls, node: ast.AST, parents: dict[ast.AST, ast.AST]) -> tuple[ast.AST, int | None, bool] | None:
+        """Where a raising read raises, if certainly there: ``(leaf, operand
+        index of the comparison it is, or None for a truth-tested leaf,
+        whether evaluating the operand raises)``. The read must reach the leaf
+        through arithmetic alone (``_comparison_raising_on``), and the leaf
+        must be one the runtime splits the condition into (``_parse_condition``:
+        only ``and`` / ``or`` / ``not`` above it)."""
+        child, parent = node, parents.get(node)
+        while isinstance(parent, ast.BinOp) or (isinstance(parent, ast.UnaryOp) and not isinstance(parent.op, ast.Not)):
+            child, parent = parent, parents.get(parent)
+        if isinstance(parent, ast.Compare):
+            leaf: ast.AST = parent
+            operands = [parent.left, *parent.comparators]
+            operand = next((i for i, o in enumerate(operands) if o is child), None)
+            if operand is None:
+                return None
+        elif parent is None or isinstance(parent, (ast.BoolOp, ast.UnaryOp)):
+            leaf, operand = child, None
+        else:
+            return None
+        if cls._condition_leaf(leaf, parents) is not leaf:
+            return None
+        return leaf, operand, child is not node or operand is None
+
+    def _leaf_raise(
+        self, leaf: ast.AST, reads: list[tuple[int | None, bool, BoolRef]], context: str
+    ) -> BoolRef | None:
+        """When ``leaf`` raises, Python's way (``_place_raises``); ``None``
+        when a clause of its chain does not lower.
+
+        A truth-tested leaf raises on any read in it. A comparison ``o0 op0
+        o1 op1 o2 …`` evaluates ``o0``, ``o1``, compares, and only while each
+        clause holds evaluates the next operand and the next clause, so a read
+        raises once the clauses before it hold: evaluating its operand
+        (arithmetic, a skipped list's subscript), or a bare ``None`` meeting
+        an ordering clause (``1 == None < 5`` stops at ``1 == None``)."""
+        if not isinstance(leaf, ast.Compare):
+            return self._disjoin([choice for _, _, choice in reads])
+        operands = [leaf.left, *leaf.comparators]
+        on_evaluation: list[list[BoolRef]] = [[] for _ in operands]
+        on_ordering: list[list[BoolRef]] = [[] for _ in operands]
+        for operand, evaluated, choice in reads:
+            (on_evaluation if evaluated else on_ordering)[operand].append(choice)
+        steps: list[BoolRef] = []
+        reached: list[BoolRef] = []
+        for i, op in enumerate(leaf.ops):
+            parts = [c for j in ((0, 1) if i == 0 else (i + 1,)) for c in on_evaluation[j]]
+            if isinstance(op, _ORDERING_OPS):
+                parts += on_ordering[i] + on_ordering[i + 1]
+            if parts:
+                steps.append(And(*reached, self._disjoin(parts)) if reached else self._disjoin(parts))
+            if i + 1 < len(leaf.ops):
+                clause = self._ast_to_z3_bool(
+                    ast.Compare(left=operands[i], ops=[op], comparators=[operands[i + 1]]), context
+                )
+                if clause is None:
+                    return None
+                reached.append(clause)
+        return self._disjoin(steps) if steps else BoolVal(False, self.ctx)
+
+    def _wrap_unplaced(
+        self,
+        unplaced: list[tuple[str | None, ast.AST]],
+        choices: dict[str, BoolRef],
+        parents: dict[ast.AST, ast.AST],
+    ) -> tuple[dict[int, tuple[list[BoolRef], list[ast.AST]]], list[str]]:
+        """A precondition's raises ``_place_raises`` could not place: ``(the
+        comparisons holding one and the skip choices each raises on, the items
+        whose raise leaves the lowering wider than the gate)``, #1775.
+
+        A precondition that raises is False, so such a comparison lowers as
+        ``And(Not(skipped), comparison)`` (``_raise_on_skip``): never narrower
+        than the runtime (a raise is the gate's bottom), but wide, since a
+        comparison inside a call, a ternary or a comprehension can be negated
+        or outweighed by what encloses it. A read outside any comparison it
+        certainly raises in (``len(set([None, 2])) == 2`` and ``str(None) ==
+        "None"`` raise nothing) is not wrapped (wrapping would claim a raise
+        that may not happen). A slot read's slot is resolved when the
+        comparison is lowered, since a comprehension variable may name it.
+        """
+        by_compare: dict[int, tuple[set[str], list[ast.AST]]] = {}
+        wide: set[str] = set()
+        for key, node in unplaced:
+            wide |= {key} if key is not None else outcome_reads(node)
+            compare = self._comparison_raising_on(node, parents)
+            if compare is None:
+                continue
+            items, reads = by_compare.setdefault(id(compare), (set(), []))
+            if key is None:
+                reads.append(node)
+            else:
+                items.add(key)
+        return {
+            key: ([choices[i] for i in sorted(items)], reads) for key, (items, reads) in by_compare.items()
+        }, sorted(wide)
+
+    def _waive_unplaced(
+        self, unplaced: list[tuple[str | None, ast.AST]], choices: dict[str, BoolRef]
+    ) -> tuple[list[BoolRef], list[str]]:
+        """A postcondition's raises ``_place_raises`` could not place: ``(the
+        choices any of which waives it, the items they read)``. A postcondition
+        that raises is waived, so the whole predicate is widened by them at its
+        root, a slot read by every slot it may take (#1775)."""
+        waived: list[BoolRef] = []
+        items: set[str] = set()
+        for key, node in unplaced:
+            if key is not None:
+                waived.append(choices[key])
+                items.add(key)
+                continue
+            slots = self._slots_a_read_may_take(node)
+            waived.extend(slots)
+            if slots:
+                items |= outcome_reads(node)
+        return waived, sorted(items)
+
+    @staticmethod
+    def _comparison_raising_on(node: ast.AST, parents: dict[ast.AST, ast.AST]) -> ast.Compare | None:
+        """The comparison that certainly raises when ``node`` reads ``None``,
+        or ``None``: the read must reach it through arithmetic alone (``None
+        + 1`` and ``-None`` raise); anything else between them (a call, a
+        container, a subscript, a ternary, ``and`` / ``or``, a comprehension)
+        may evaluate the read without raising, or not at all."""
+        parent = parents.get(node)
+        while isinstance(parent, ast.BinOp) or (
+            isinstance(parent, ast.UnaryOp) and not isinstance(parent.op, ast.Not)
+        ):
+            parent = parents.get(parent)
+        return parent if isinstance(parent, ast.Compare) else None
+
+    @staticmethod
+    def _none_safe_read(node: ast.AST, parents: dict[ast.AST, ast.AST]) -> bool:
+        """Whether Python reads ``node`` without raising when it is ``None``:
+        an operand of ``==`` / ``!=`` (chained too), the left of a lone ``in`` /
+        ``not in`` a literal list or a member of that list, or a truth value
+        (including ``bool(x)`` and a member or comprehension element of
+        ``any(...)`` / ``all(...)``)."""
+        parent = parents.get(node)
+        if isinstance(parent, (ast.List, ast.Tuple, ast.Set)):
+            holder = parents.get(parent)
+            if isinstance(holder, ast.Call):
+                return _is_call_to(holder, ("any", "all")) and holder.args == [parent]
+            return (
+                isinstance(holder, ast.Compare)
+                and len(holder.ops) == 1
+                and isinstance(holder.ops[0], (ast.In, ast.NotIn))
+                and holder.comparators[0] is parent
+            )
+        if isinstance(parent, ast.Call):
+            return _is_call_to(parent, ("bool",)) and parent.args == [node]
+        if isinstance(parent, (ast.GeneratorExp, ast.ListComp)) and parent.elt is node:
+            holder = parents.get(parent)
+            return isinstance(holder, ast.Call) and _is_call_to(holder, ("any", "all")) and holder.args == [parent]
+        if isinstance(parent, ast.Compare):
+            chain = [parent.left, *parent.comparators]
+            position = next(i for i, operand in enumerate(chain) if operand is node)
+            touching = parent.ops[max(position - 1, 0) : position + 1]
+            if all(isinstance(op, (ast.Eq, ast.NotEq)) for op in touching):
+                return True  # ``1 != None != 2`` does not raise.
+            if len(parent.ops) != 1:
+                return False
+            op = parent.ops[0]
+            return (
+                isinstance(op, (ast.In, ast.NotIn))
+                and parent.left is node
+                and isinstance(parent.comparators[0], (ast.List, ast.Tuple, ast.Set))
+            )
+        if isinstance(parent, ast.UnaryOp):
+            return isinstance(parent.op, ast.Not)
+        if isinstance(parent, ast.IfExp):
+            return parent.test is node
+        return parent is None or isinstance(parent, ast.BoolOp)
+
+    def _may_be_skipped(self, item_id: str, context: str) -> bool:
+        if item_id == self._own_none and item_id == context:
+            # Admitting a blank (``_blank_acceptance``): the item's own reads see
+            # its ``None`` the Python way, unless its None guard decides them.
+            return item_id not in self._none_guarded
+        if item_id == context or item_id in self._none_guarded or item_id not in self.item_vars:
+            return False
+        item = self.state.get_item(item_id)
+        details = self.item_details.get(item_id)
+        if item is None or details is None or details.get("kind") != "Question":
+            return False
+        return bool(
+            details.get("preconditions") or self._is_scoped(item_id)
+        )
+
+    def _skipped_choice(self, item_id: str) -> BoolRef:
+        """Whether item Y reads as skipped: one free Bool per item (#1769).
+
+        It is not tied to Y's own gate being false. A gate that reads an item
+        shown and left empty is undecided at runtime and skips (#1023), where
+        the model holds that item as an answer and the gate can hold, so
+        ``Not(P_Y)`` would be narrower than the runtime and prove gates NEVER.
+        Nor does a false gate force the skip: an API submit or a codeBlock write
+        answers an item whatever its gate. The choice belongs to the world, not
+        the predicate: a solver asking whether a gate can fail chooses it as
+        freely as one asking whether it can hold, so a gate and its negation
+        are both exact. It is one per item, like the item's value (one Int for
+        every predicate): the walk does not revisit a skip. An item a codeBlock
+        writes is the exception: the write can answer it between two
+        predicates, so each predicate gets its own choice. #1250's
+        ``answered`` is per predicate instead because an item's own gate runs
+        before it is answered and its postcondition after. An item with no
+        gate, outside a Roster or capped Group, is never skipped and gets none
+        (``_may_be_skipped``).
+
+        Skipped is not blank (#1784): a skipped item reads ``None`` the Python
+        way (``q.outcome != 1`` holds), while one shown and left blank makes
+        the whole leaf that reads it unknown (``_blank_choice``). A gated item
+        has both choices; a world with both true lowers like the blank one.
+        While a blank is being admitted, the item itself is ``None`` for
+        certain, so its choice is the constant True (``_blank_acceptance``).
+        """
+        if item_id == self._own_none:
+            return BoolVal(True, self.ctx)
+        if item_id in self._code_written_items():
+            # A codeBlock may answer it between two predicates, so each gets its own.
+            self._skipped_count += 1
+            choice = Bool(f"skipped@{item_id}#{self._skipped_count}", self.ctx)
+            self._fresh_skip_choices.setdefault(item_id, []).append(choice)
+            return choice
+        choice = self._skip_choices.get(item_id)
+        if choice is None:
+            # ``@`` cannot occur in an item id, so no item or variable shares the name.
+            choice = self._skip_choices[item_id] = Bool(f"skipped@{item_id}", self.ctx)
+        return choice
+
+    def answered_mint(self, name: str) -> tuple[str, str] | None:
+        """``(X, context)`` for a per-predicate ``answered@X#n`` symbol: the item
+        X it tests and the item whose condition was being lowered when it was
+        minted (the guard's own item, or another item whose blank acceptance a
+        lowering conjoins). ``None`` for any other name."""
+        return self._answered_minted.get(name)
+
+    def answered_by_world(self, item_id: str, *, skippable: bool) -> BoolRef | None:
+        """Whether ``item_id`` holds an answer, as the world's choices state it
+        once the walk is past it (#2046): neither skipped (``_skipped_choice``,
+        a gated item) nor left blank (``_blank_choice``, whose admissibility is
+        in the domain base). ``None`` for an item those choices do not settle:
+        one a codeBlock or codeInit writes (the write can answer it mid-walk),
+        one a None test does not model (``_answerable``), and, unless
+        ``skippable``, a gated one.
+
+        The choices are wider than the walk, so the result is sound for a
+        claim that no world satisfies a formula (``unsat``). The skip choice
+        is not tied to the item's gate (``_skipped_choice``), so a world that
+        satisfies a formula through it need not be a real walk: a reader that
+        claims a world exists passes ``skippable=False``. It reads the shared
+        choices without registering them, so ``skip_choice`` / ``blank_choice``
+        (a witness) still name only what a predicate modelled.
+        """
+        key = (item_id, skippable)
+        if key not in self._answered_by_world:
+            self._answered_by_world[key] = self._world_answered(item_id, skippable)
+        return self._answered_by_world[key]
+
+    def _world_answered(self, item_id: str, skippable: bool) -> BoolRef | None:
+        if not self._answerable(item_id) or item_id in self._code_written_items():
+            return None
+        unanswered = []
+        if self.item_details[item_id].get("preconditions"):
+            if not skippable:
+                return None
+            # The same constant as the shared choice, by name, whether or not a
+            # predicate registered it.
+            unanswered.append(Bool(f"skipped@{item_id}", self.ctx))
+        if self._blank_candidate(item_id):
+            unanswered.append(Bool(f"blank@{item_id}", self.ctx))
+        if not unanswered:
+            return BoolVal(True, self.ctx)
+        return Not(self._disjoin(unanswered))
+
+    def skip_choice(self, item_id: str) -> BoolRef | None:
+        """Whether ``item_id`` read as skipped anywhere, if any predicate
+        modelled its skip (``_skipped_choice``): its one choice, or any of a
+        code-written item's per-predicate choices. A witness reads it to report
+        the item unasked."""
+        return self._any_choice(item_id, self._fresh_skip_choices, self._skip_choices)
+
+    def _any_choice(
+        self, item_id: str, fresh: dict[str, list[BoolRef]], shared: dict[str, BoolRef]
+    ) -> BoolRef | None:
+        """``item_id``'s per-predicate choices then its shared one, disjoined;
+        ``None`` when no predicate made either."""
+        choices = list(fresh.get(item_id, []))
+        if item_id in shared:
+            choices.append(shared[item_id])
+        return self._disjoin(choices) if choices else None
+
+    def _blank_candidate(self, item_id: str) -> bool:
+        """Whether a read of ``item_id`` gets a blank choice (#1784): a
+        Question, whatever its control, a QuestionGroup, and a MatrixQuestion
+        whose ``None`` states are modelled (``_matrix_has_choices``). Every
+        channel can submit an item blank (owner decision on #1784)."""
+        details = self.item_details.get(item_id)
+        if details is None:
+            return False
+        if details.get("kind") == "MatrixQuestion":
+            return self._matrix_has_choices(item_id)
+        return details.get("kind") in ("Question", "QuestionGroup")
+
+    def _blank_choice(self, item_id: str) -> BoolRef:
+        """Whether ``item_id`` was shown and left blank (#1784), as the
+        predicate being lowered sees it.
+
+        A blank answer makes every leaf that reads it unknown at runtime
+        (#1023), which ``_lower_kleene`` lowers around the leaf. It is one Bool
+        per item (``blank@{id}``), a world variable like ``_skipped_choice``;
+        its admissibility (``_blank_acceptance``) is in the domain base. An
+        item a codeBlock writes gets a fresh choice per predicate (the write
+        can answer it between two predicates), whose admissibility cannot join
+        a base asserted before the predicate is compiled, so it is conjoined
+        into the choice itself: ``And(blank@{id}#n, acceptance)``.
+        """
+        choice = self._predicate_blank.get(item_id)
+        if choice is not None:
+            return choice
+        if item_id in self._code_written_items():
+            self._blank_count += 1
+            fresh = Bool(f"blank@{item_id}#{self._blank_count}", self.ctx)
+            accept = self._blank_acceptance(item_id) if self._built else None
+            # ``None``: the build is still running (its conditions only feed the
+            # dependency graph), or its acceptance is being computed (a cycle
+            # through postconditions); a free choice is wider, never narrower.
+            choice = fresh if accept is None else And(fresh, accept)
+            self._fresh_blank_choices.setdefault(item_id, []).append(choice)
+        else:
+            choice = self._shared_blank_choice(item_id)
+        self._predicate_blank[item_id] = choice
+        return choice
+
+    def _shared_blank_choice(self, item_id: str) -> BoolRef:
+        choice = self._blank_choices.get(item_id)
+        if choice is None:
+            # ``@`` cannot occur in an item id, so no item or variable shares the name.
+            choice = self._blank_choices[item_id] = Bool(f"blank@{item_id}", self.ctx)
+        return choice
+
+    def blank_choice(self, item_id: str) -> BoolRef | None:
+        """Whether ``item_id`` read as blank anywhere, if any predicate
+        modelled its blank (``_blank_choice``): its one choice, or any of a
+        code-written item's per-predicate choices. A witness reads it to report
+        the item ``None``."""
+        return self._any_choice(item_id, self._fresh_blank_choices, self._blank_choices)
+
+    def _enter_submission(self, item_id: str) -> tuple[dict[str, int], dict[str, ExprRef]]:
+        """Point ``version_map`` at the versions ``item_id``'s own conditions
+        read (``_runtime_versions``) and return the state it replaced, for
+        ``_leave_submission``.
+
+        An item's own conditions run before its own codeBlock (precondition,
+        postcondition, then codeBlock), so they read every variable as it is
+        when the walk reaches the item, never at the final version a compile
+        after the build would otherwise see (#1838). A copy, because a phantom
+        read seeds version 0 into the map it reads.
+        """
+        outer = (self.version_map, self._open_reads)
+        if item_id not in self._runtime_version_cache:
+            self._runtime_version_cache[item_id] = self._runtime_versions(item_id)
+        versions, open_reads = self._runtime_version_cache[item_id]
+        # A copy: a phantom read seeds version 0 into the map it reads.
+        self.version_map, self._open_reads = dict(versions), open_reads
+        return outer
+
+    def _leave_submission(self, outer: tuple[dict[str, int], dict[str, ExprRef]]) -> None:
+        self.version_map, self._open_reads = outer
+
+    def _runtime_versions(self, item_id: str) -> tuple[dict[str, int], dict[str, ExprRef]]:
+        """``(version map, variables read as a fresh Int)`` when the walk
+        reaches ``item_id``.
+
+        SSA versions are numbered in the build's order (``_submission_versions``),
+        the walk's navigation order (``QMLTopology``) wherever it orders code
+        state differently from the file (#1989, ``_build``); a build with a
+        dependency cycle keeps file order, where an item a condition depends on
+        can come first even when it is written later. So a variable reads the last version of
+        the longest prefix of its versions whose writers (codeInit, or an item
+        before ``item_id`` in navigation order; never its own codeBlock) all
+        run first, in the same order as they run on the walk. A variable whose earlier writers are not such a prefix
+        (some run after ``item_id``, a later one before it) has no version
+        that is its value there, and reads a fresh unconstrained Int: wider,
+        never a wrong constant. Before the build is complete the snapshot is
+        all there is."""
+        versions = dict(self._submission_versions[item_id])
+        open_reads: dict[str, ExprRef] = {}
+        position = self._navigation_index()
+        here = position.get(item_id)
+        if here is None:
+            return versions, open_reads
+        for var_name, history in self.version_history.items():
+            ran = [
+                context == "__init__" or (context != item_id and position.get(context, here) < here)
+                for _, context in history
+            ]
+            prefix = ran.index(False) if False in ran else len(ran)
+            # The chain is the build's order; it is the value only if those
+            # writers also run in that order on the walk.
+            walked = [position.get(context, -1) for _, context in history[:prefix] if context != "__init__"]
+            if any(ran[prefix:]) or walked != sorted(walked):
+                self._code_raise_count += 1
+                # ``@`` cannot occur in an item id, so no item or variable shares the name.
+                open_reads[var_name] = Int(f"open@{var_name}#{self._code_raise_count}", self.ctx)
+            elif prefix:
+                versions[var_name] = history[prefix - 1][0]
+            else:
+                versions.pop(var_name, None)
+        return versions, open_reads
+
+    def _navigation_index(self) -> dict[str, int]:
+        """Each item's position in the walk's navigation order (the stable
+        topological order ``QMLTopology`` gives ``FlowProcessor``), computed
+        once from the complete dependency graph."""
+        if self._navigation_positions is None:
+            order = self.topology.get_topological_order()
+            self._navigation_positions = {item: index for index, item in enumerate(order)}
+        return self._navigation_positions
+
+    @property
+    def topology(self):
+        """The questionnaire's ``QMLTopology`` over this builder's dependency
+        graph, built once (``QMLEngine`` reads this one, so Kahn's order and
+        its cycle warnings are computed a single time). Only after the build:
+        the graph is complete then."""
+        if not self._built:
+            raise RuntimeError("the topology is read only after the StaticBuilder build completes")
+        if self._topology is None:
+            # Local import: ``askalot_qml.core`` imports the engine, which imports this module.
+            from askalot_qml.core.qml_topology import QMLTopology
+
+            self._topology = QMLTopology(self.state, self)
+        return self._topology
+
+    def _blank_acceptance(self, item_id: str) -> BoolRef | None:
+        """Where ``item_id`` may be submitted blank (#1784): its effective
+        postconditions (block, then item) accept its ``None``. ``None`` while
+        it is being computed.
+
+        The runtime evaluates an item's own postcondition with its own outcome
+        excluded from the unknowns (``FlowProcessor._unanswered``), so a blank
+        answer reads Python's ``None``: each postcondition is lowered as an
+        acceptance (a raise waives, another item's blank waives its leaf) with
+        the item's own reads skipped for certain (``_own_none``). ``q.outcome
+        in [1, 2]`` refuses a blank, ``q.outcome > 1`` raises and admits it.
+        A QuestionGroup's or matrix's own answer reads raise on its ``None``
+        and waive (``_answer_list_reads``), so only a None test can refuse its
+        blank. A Range
+        or Textarea Question has no scalar the skip lowering can stand on, and
+        a postcondition that does not lower is no refusal, so each admits a
+        blank everywhere: wider, never narrower.
+
+        The runtime checks the postconditions before the item's codeBlock
+        runs, so a variable they read is the version current at submission
+        (``_submission_versions``), as the build's own postcondition
+        constraint reads it, not the final one a later compile would see.
+        """
+        if item_id in self._blank_acceptances:
+            return self._blank_acceptances[item_id]
+        self._blank_acceptances[item_id] = None
+        parts: list[BoolRef] = []
+        if item_id in self.item_vars or self._is_question_group(item_id) or item_id in self.matrices:
+            outer = self._own_none
+            self._own_none = item_id
+            outer_versions = self._enter_submission(item_id)
+            try:
+                for condition in self.item_details[item_id]["postconditions"]:
+                    predicate = condition.get("predicate", "")
+                    if not predicate:
+                        continue
+                    lowered, _ = self._compile_predicate(predicate, item_id, "postcondition")
+                    if lowered is None:
+                        parts = []
+                        break
+                    parts.append(lowered)
+            finally:
+                self._own_none = outer
+                self._leave_submission(outer_versions)
+        accept = self._conjoin(parts)
+        self._blank_acceptances[item_id] = accept
+        return accept
+
+    def _emit_blank_admissibility(self) -> None:
+        """``Implies(blank@{id}, acceptance)`` for every blank-candidate item
+        (``_blank_candidate``) whose own postconditions may refuse a blank,
+        into the domain base, so every verdict sees it (``_blank_acceptance``).
+        Code-written items carry it in each fresh choice instead
+        (``_blank_choice``)."""
+        for item_id in self.item_order:
+            if not self._blank_candidate(item_id) or item_id in self._code_written_items():
+                continue
+            if not self.item_details[item_id]["postconditions"]:
+                continue
+            accept = self._blank_acceptance(item_id)
+            if accept is not None:
+                self.domain_constraints.append(Implies(self._shared_blank_choice(item_id), accept))
+
+    def _answer_list_reads(
+        self, tree: ast.AST, context: str, parents: dict[ast.AST, ast.AST]
+    ) -> tuple[list[tuple[str, ast.AST]], list[ast.AST], set[int], set[str]]:
+        """The answer-list reads of a predicate: one answer of a QuestionGroup
+        (#184) or one cell of a MatrixQuestion (#1780), ``(reads that raise on
+        a None list, reads that raise on an unanswered slot, ids of reads
+        None-safe on an unanswered slot, items whose None test lowers)``.
+
+        The list is ``None`` until answered: its gate skipped it, or it was
+        shown and left blank. Skipped, subscripting its ``None`` raises
+        whatever the operator, so a read raises on the item's skip choice
+        (``_skipped_choice``) where it may be skipped
+        (``_whole_answer_skippable``). Blank, the leaf that reads it is unknown
+        (#1784): its blank choice, which ``_lower_kleene`` wraps around the
+        leaf. Not for an item the predicate None-guards: its None test lowers
+        to whichever of the two it has (``_answer_list_none``) and the reads it
+        guards cannot raise.
+
+        An answered list holds ``None`` in a slot left unanswered, read the
+        #1769 way: None-safe where ``_none_safe_read`` says so, raising
+        elsewhere. A Range answer's ``None.low`` raises whatever the operator.
+        A read the model gives no choices (``_answer_cells``) needs none. A
+        group answer or matrix cell read that reaches its comparison through a
+        ternary branch is neither: ``None`` passes through untouched, so such a
+        predicate is not lowered at all (``_slot_through_ternary``) and its
+        coverage gap names the item.
+        """
+        list_raising: list[tuple[str, ast.AST]] = []
+        slot_raising: list[ast.AST] = []
+        slot_safe: set[int] = set()
+        if not self.question_groups and not self.matrices:
+            return list_raising, slot_raising, slot_safe, set()
+        for node in ast.walk(tree):
+            found = self._answer_read(node)
+            if found is None or self._answer_cells(found[0]) is None:
+                continue
+            item_id = found[0]
+            if (
+                item_id not in self._none_guarded
+                and not self._judged_on_answers(item_id, context)
+                and self._whole_answer_skippable(item_id, context)
+            ):
+                list_raising.append((item_id, node))
+            if not self._is_range_item(item_id) and self._none_safe_read(node, parents):
+                slot_safe.add(id(node))
+            elif not self._is_range_item(item_id) and self._slot_through_ternary(node, parents):
+                raise _UnmodelledAnswerRead(item_id)
+            else:
+                slot_raising.append(node)
+        none_tested = {
+            found[0]
+            for node in ast.walk(tree)
+            if (found := none_test_of(node)) is not None
+            and found[0] in self._none_guarded
+            and self._answer_cells(found[0]) is not None
+        }
+        return list_raising, slot_raising, slot_safe, none_tested
+
+    def _answer_cells(self, item_id: str) -> dict[tuple[int, ...], ExprRef] | None:
+        """The cells of an answer-list item whose ``None`` states a predicate
+        models (``_answer_list_reads``): a QuestionGroup's where its reads
+        lower (``_group_cells``); a MatrixQuestion's in a condition (not a
+        codeBlock ``if`` guard or assigned value: ``_CodeReads`` models scalar
+        Question reads only), outside a Roster or capped Group and when no
+        codeBlock writes it. Anywhere else a matrix cell lowers in-domain,
+        with no choice."""
+        if self._is_question_group(item_id):
+            return self._group_cells(item_id)
+        if (
+            item_id not in self.matrices
+            or not self._lowering_predicate
+            or not self._model_blank
+            or not self._matrix_has_choices(item_id)
+        ):
+            return None
+        return self.item_cells.get(item_id)
+
+    def _matrix_has_choices(self, item_id: str) -> bool:
+        """A matrix outside a Roster or capped Group that no codeBlock writes:
+        one cell variable stands for its answer everywhere, so its ``None``
+        states are modelled. A scoped matrix has no cells per iteration
+        or draw, and a written one can change between two conditions."""
+        return not self._is_scoped(item_id) and item_id not in self._code_written_items()
+
+    def _judged_on_answers(self, item_id: str, context: str) -> bool:
+        """Whether an answer-list read is the item's own, in its own condition
+        as the classifier judges it: on real answers only, so the read does not
+        raise on a ``None`` list (owner decision on #1839, 2026-10-24). A blank
+        is waived at runtime with a ``critical`` warning that drops the survey
+        from datasets, so a check that refuses every real answer is INFEASIBLE
+        for a QuestionGroup or MatrixQuestion as for a scalar Question
+        (``_may_be_skipped``). Admitting a blank (``_blank_acceptance``) and a
+        codeBlock ``if`` guard still read the Python ``None``; a None test on
+        the item keeps its choice (``_whole_answer_skippable``), as a scalar's
+        keeps its free ``answered``."""
+        return item_id == context and item_id != self._own_none and self._model_blank
+
+    def _whole_answer_skippable(self, item_id: str, context: str) -> bool:
+        """Whether an answer-list read in the predicate being lowered may see
+        the whole list ``None`` the Python way, so a subscript raises on it:
+        a gated item (its gate skipped it), the item's own reads in
+        its own condition (the runtime excludes the condition's item from the
+        unknowns, so a blank one is Python's ``None`` there too), and a
+        codeBlock ``if`` guard, which runs plain Python (``_model_blank``).
+        Anywhere else a ``None`` list is one left blank, whose leaf is unknown
+        instead (``_blank_choice``)."""
+        if item_id == context or not self._model_blank:
+            return True
+        details = self.item_details.get(item_id)
+        return bool(details and details.get("preconditions"))
+
+    @staticmethod
+    def _slot_through_ternary(node: ast.AST, parents: dict[ast.AST, ast.AST]) -> bool:
+        """Whether ``node`` is (inside) a branch of a ternary, so its value,
+        ``None`` included, flows on unchanged."""
+        child, parent = node, parents.get(node)
+        while parent is not None:
+            if isinstance(parent, ast.IfExp) and parent.test is not child:
+                return True
+            child, parent = parent, parents.get(parent)
+        return False
+
+    def _slot_of(self, read: ast.AST, local_bindings: dict[str, int]) -> BoolRef | None:
+        """The unanswered choice of the slot an answer-list read names;
+        ``None`` when an index does not resolve."""
+        found = self._answer_read(read)
+        if found is None:
+            return None
+        index = [self._resolve_int_const(node, local_bindings) for node in found[1]]
+        if any(i is None for i in index):
+            return None
+        return self._slot_choice(found[0], *index)
+
+    def _slots_a_read_may_take(self, read: ast.AST) -> list[BoolRef]:
+        """The slots a read may name: its literal one, or, along an index a
+        comprehension variable picks, every slot of the group or matrix."""
+        found = self._answer_read(read)
+        if found is None:
+            return []
+        item_id, nodes = found
+        details = self.item_details[item_id]
+        extents = (
+            [details.get("questions_len") or 0]
+            if self._is_question_group(item_id)
+            else [details.get("rows_len") or 0, details.get("cols_len") or 0]
+        )
+        axes = []
+        for node, extent in zip(nodes, extents, strict=True):
+            i = self._resolve_int_const(node, {})
+            axes.append([i] if i is not None else range(extent))
+        return [self._slot_choice(item_id, *index) for index in itertools.product(*axes)]
+
+    def _slot_choice(self, item_id: str, *index: int) -> BoolRef:
+        """Whether answer ``index`` of QuestionGroup ``item_id`` (one index),
+        or cell ``(row, col)`` of MatrixQuestion ``item_id``, is unanswered:
+        a free Bool like ``_skipped_choice``, one per slot (an item a codeBlock
+        writes gets none, ``_answer_cells``)."""
+        key = (item_id, *index)
+        choice = self._slot_choices.get(key)
+        if choice is None:
+            # ``@`` cannot occur in an item id, so no item or variable shares the name.
+            name = "@".join(["unanswered", item_id, *(str(i) for i in index)])
+            choice = self._slot_choices[key] = Bool(name, self.ctx)
+        return choice
+
+    def slot_choice(self, item_id: str, *index: int) -> BoolRef | None:
+        """Whether a QuestionGroup answer ``(i)`` or a matrix cell ``(r, c)``
+        read as unanswered anywhere, if any predicate modelled it
+        (``_slot_choice``). A witness reads it to report the slot ``None``."""
+        return self._slot_choices.get((item_id, *index))
+
+    def _stored_outcomes(self, tree: ast.AST) -> list[str | None]:
+        """The base name of every outcome store in ``tree``: ``X.outcome`` as a
+        target of any kind (``=``, ``+=``, annotated, a tuple or ``for``
+        target), or one answer of it, ``X.outcome[i]`` (#184). ``None`` for a
+        store whose base is no bare name."""
+        names: list[str | None] = []
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Subscript) and isinstance(node.ctx, ast.Store):
+                name, _ = self._outcome_subscript(node)
+                if name is not None:
+                    names.append(name)
+            elif isinstance(node, ast.Attribute) and node.attr == "outcome" and isinstance(node.ctx, ast.Store):
+                names.append(outcome_ref_name(node))
+        return names
+
+    def _code_written_items(self) -> set[str]:
+        """Items whose outcome codeInit or a codeBlock stores to (any ``X.outcome``
+        target: ``=``, ``+=``, a tuple or ``for`` target, or one answer of it,
+        ``X.outcome[i] = v``), computed once: their
+        None-ness can change mid-walk. A store through anything but an item id
+        (``alias.outcome = 1``) could write any item, so then every item counts."""
+        if self._code_written is None:
+            written: set[str] = set()
+            for code in [self.state.get_code_init() or ""] + [
+                item.get("codeBlock") or "" for item in self.state.get_all_items()
+            ]:
+                try:
+                    tree = ast.parse(code)
+                except SyntaxError:
+                    continue
+                for name in self._stored_outcomes(tree):
+                    if name not in self.item_details:
+                        self._code_written = set(self.item_details)
+                        return self._code_written
+                    written.add(name)
+            self._code_written = written
+        return self._code_written
 
     def get_constraints(self) -> list[BoolRef]:
         """Get all Z3 constraints."""
@@ -2889,13 +5914,22 @@ class StaticBuilder:
         deps from its Roster. Topology needs these entries to compute
         a correct evaluation order even when the item itself isn't constrained.
         """
-        # Union of items with Z3 vars and items registered in dependency_graph
-        # (the latter covers Textarea items that get deps via roster inheritance
-        # or precondition/codeBlock references).
-        item_ids = set(self.item_vars.keys()) | set(self.dependency_graph.keys())
-        # Filter out non-item nodes (e.g., var:NAME entries that share the dict).
-        item_ids = {i for i in item_ids if not i.startswith("var:")}
+        item_ids = self._dependency_item_ids()
+        result = self._dependency_order_resolution(item_ids)
+        accumulators = self._accumulators_of(result)
+        if not accumulators:
+            return result
+        return self._file_order_dependencies(item_ids, accumulators)
 
+    def _dependency_item_ids(self) -> set[str]:
+        """Union of items with Z3 vars and items registered in dependency_graph
+        (the latter covers Textarea items that get deps via roster inheritance
+        or precondition/codeBlock references), without the ``var:`` nodes."""
+        item_ids = set(self.item_vars.keys()) | set(self.dependency_graph.keys())
+        return {i for i in item_ids if not i.startswith("var:")}
+
+    def _dependency_order_resolution(self, item_ids: set[str]) -> dict[str, set[str]]:
+        """Every item's dependencies with each variable read through all its writers."""
         result = {}
         for item_id in item_ids:
             deps = self._resolve_item_dependencies(item_id, set())
@@ -2912,6 +5946,188 @@ class StaticBuilder:
             result[item_id] = deps
         return result
 
+    def _file_positions(self) -> dict[str, int]:
+        """Each item's index in file order (the order ``QMLTopology`` breaks ties by)."""
+        return {item["id"]: index for index, item in enumerate(self.state.get_all_items()) if item.get("id")}
+
+    def _variable_readers(self, var_name: str) -> set[str]:
+        """Items whose own or block conditions (or Roster ``iterateOver``) read ``var_name``."""
+        node = f"var:{var_name}"
+        return {
+            node_id
+            for node_id, deps in self.dependency_graph.items()
+            if not node_id.startswith("var:") and node in deps
+        }
+
+    def _variable_item_writers(self, var_name: str) -> list[str]:
+        """Items whose codeBlock assigns ``var_name`` (codeInit excluded), each once."""
+        writers: list[str] = []
+        for context, _ in self._variable_writers.get(var_name, []):
+            if self._item_code(context) and context not in writers:
+                writers.append(context)
+        return writers
+
+    def _accumulators_of(self, resolved: dict[str, set[str]]) -> set[str]:
+        """Variables read in a circle under dependency order: accumulators (#1891, D91).
+
+        A variable is one when an item that both reads it in a condition (its
+        own or its block's) and writes it in its codeBlock lies on a common
+        dependency cycle of ``resolved`` (one strongly connected component)
+        with an item writing it LATER in file order, the founding article's
+        block counter being the canonical case: every item's codeBlock
+        increments ``negative_count`` and the block precondition reads it, so
+        every item would wait for every other. Only there is "before"
+        ambiguous, and D91 settles it with file order: a reader sees the
+        writers that precede it in the file. A variable read only after its
+        writers, or read before a later writer with no cycle (the walk then
+        asks the writer first), is not one and keeps dependency order, so a
+        questionnaire without a cycle resolves through every writer; nor
+        is a variable only read by items that do not write it, so two items
+        each gated on what the other writes stay a ``dependency_cycle``.
+        """
+        if not self._variable_writers:
+            return set()
+        component = self._strongly_connected_components(resolved)
+        position = self._file_positions()
+        accumulators: set[str] = set()
+        for var_name in self._variable_writers:
+            writers = self._variable_item_writers(var_name)
+            # Only an item that reads AND writes it makes a variable an
+            # accumulator: two items each reading what only the other writes
+            # (``pa`` / ``pb``) is a real cycle and stays one.
+            for reader in self._variable_readers(var_name) & set(writers):
+                here = position.get(reader)
+                if here is None or reader not in component:
+                    continue
+                if any(
+                    position.get(writer, -1) > here and component.get(writer) == component.get(reader)
+                    for writer in writers
+                ):
+                    accumulators.add(var_name)
+                    break
+        return accumulators
+
+    @staticmethod
+    def _strongly_connected_components(graph: dict[str, set[str]]) -> dict[str, int]:
+        """Tarjan's algorithm, iterative: each node's component number.
+
+        Only nodes that belong to a component of two or more get a number, so
+        a node missing from the result sits on no cycle."""
+        index: dict[str, int] = {}
+        low: dict[str, int] = {}
+        on_stack: set[str] = set()
+        stack: list[str] = []
+        component: dict[str, int] = {}
+        counter = 0
+        for root in sorted(graph):
+            if root in index:
+                continue
+            work = [(root, iter(sorted(graph.get(root, ()))))]
+            index[root] = low[root] = counter
+            counter += 1
+            stack.append(root)
+            on_stack.add(root)
+            while work:
+                node, successors = work[-1]
+                advanced = False
+                for nxt in successors:
+                    if nxt not in graph:
+                        continue
+                    if nxt not in index:
+                        index[nxt] = low[nxt] = counter
+                        counter += 1
+                        stack.append(nxt)
+                        on_stack.add(nxt)
+                        work.append((nxt, iter(sorted(graph.get(nxt, ())))))
+                        advanced = True
+                        break
+                    if nxt in on_stack:
+                        low[node] = min(low[node], index[nxt])
+                if advanced:
+                    continue
+                work.pop()
+                if work:
+                    parent = work[-1][0]
+                    low[parent] = min(low[parent], low[node])
+                if low[node] == index[node]:
+                    members = []
+                    while True:
+                        member = stack.pop()
+                        on_stack.discard(member)
+                        members.append(member)
+                        if member == node:
+                            break
+                    if len(members) > 1:
+                        number = len(set(component.values()))
+                        for member in members:
+                            component[member] = number
+        return component
+
+    def _file_order_dependencies(self, item_ids: set[str], accumulators: set[str]) -> dict[str, set[str]]:
+        """Item dependencies when ``accumulators`` are read in file order (D91).
+
+        A reader of an accumulator depends only on its writers before the
+        reader in file order (codeInit always runs first); a writer's own
+        reads resolve at the writer's position; every other variable resolves
+        through all its writers, as ``_resolve_item_dependencies`` does.
+
+        Each item writer of an accumulator also waits for every earlier item
+        that reads or writes it (an ordering edge), so the walk's topological
+        order keeps file order among them even where another dependency would
+        let Kahn's order ask a later writer first: a reader then never sees a
+        later writer's update at runtime, and its versions in Z3 are the file
+        order prefix ``_runtime_versions`` reads. A reader that needs a later
+        writer's ANSWER as well closes a real cycle and stays refused.
+        """
+        position = self._file_positions()
+        result: dict[str, set[str]] = {}
+        for item_id in item_ids:
+            here = position.get(item_id, len(position))
+            found: set[str] = set()
+            seen: set[tuple[str, int]] = set()
+            stack = [(dep, here) for dep in self.dependency_graph.get(item_id, ())]
+            while stack:
+                dep, bound = stack.pop()
+                if (dep, bound) in seen:
+                    continue
+                seen.add((dep, bound))
+                if not dep.startswith("var:"):
+                    found.add(dep)
+                    continue
+                var_name = dep[len("var:"):]
+                ordered = var_name in accumulators
+                for context, value_deps in self._variable_writers.get(var_name, []):
+                    at = -1
+                    if context != "__init__":
+                        at = position.get(context, len(position))
+                        if ordered and at >= bound:
+                            continue
+                        if self._item_code(context):
+                            found.add(context)
+                    stack.extend((value_dep, at) for value_dep in value_deps)
+            found.discard(item_id)
+            result[item_id] = found
+
+        for var_name in sorted(accumulators):
+            participants = self._variable_readers(var_name) | set(self._variable_item_writers(var_name))
+            for writer in self._variable_item_writers(var_name):
+                at = position.get(writer, len(position))
+                result.setdefault(writer, set()).update(
+                    other for other in participants if position.get(other, len(position)) < at
+                )
+        return result
+
+    def accumulator_variables(self) -> set[str]:
+        """Variables read in file order (``_accumulators_of``), for the
+        reachability model; only after the build, when the graph is complete."""
+        if not self._built:
+            raise RuntimeError("accumulators are read only after the StaticBuilder build completes")
+        if self._accumulators is None:
+            self._accumulators = self._accumulators_of(
+                self._dependency_order_resolution(self._dependency_item_ids())
+            )
+        return self._accumulators
+
     def get_dependency_graph(self) -> dict[str, set[str]]:
         """Get full dependency graph including variable nodes.
 
@@ -2921,13 +6137,22 @@ class StaticBuilder:
         return {k: v.copy() for k, v in self.dependency_graph.items()}
 
     def get_all_z3_vars(self) -> dict[str, ExprRef]:
-        """Get all Z3 variables (SSA versions, scalar item outcomes, matrix cells)."""
-        all_vars = dict(self.z3_vars)
-        all_vars.update(self.item_vars)
-        # Matrix cells: flatten ``item_cells[id][(r, c)]`` to ``item_{id}_{r}_{c}``
-        for item_id, cells in self.item_cells.items():
-            for (r, c), cell_var in cells.items():
-                all_vars[f"item_{item_id}_{r}_{c}"] = cell_var
+        """Get all Z3 variables (SSA versions, scalar item outcomes, Range ends, matrix cells).
+
+        Every entry is keyed by its Z3 name (``var@{name}@{n}``, ``item_{id}``,
+        ``item_{id}@lo`` / ``@hi``, ``item_{id}@{r}@{c}``, …), which no two
+        variables share (#1783, #1798). The ``z3_vars`` / ``item_vars`` keys
+        would collide: variable ``q`` version 0 and Question ``q_0`` are both
+        ``q_0``.
+        """
+        all_vars = {str(var): var for var in self.z3_vars.values()}
+        all_vars.update((str(var), var) for var in self.item_vars.values())
+        for pair in self.item_pairs.values():
+            for end in pair:
+                all_vars[str(end)] = end
+        for cells in self.item_cells.values():
+            for cell_var in cells.values():
+                all_vars[str(cell_var)] = cell_var
         return all_vars
 
     def _conjoin(self, exprs: list[BoolRef]) -> BoolRef:
@@ -2943,6 +6168,12 @@ class StaticBuilder:
         if len(exprs) == 1:
             return exprs[0]
         return And(*exprs)
+
+    @staticmethod
+    def _disjoin(exprs: list[BoolRef]) -> BoolRef:
+        """Disjoin a non-empty list of Z3 booleans: a single element as-is,
+        otherwise ``Or(*exprs)``. Callers handle the empty list themselves."""
+        return exprs[0] if len(exprs) == 1 else Or(*exprs)
 
     def get_domain_base(self) -> BoolRef:
         """
@@ -3015,7 +6246,117 @@ class StaticBuilder:
         frozen_constraints: list[BoolRef] = []
         for var_name in frozen:
             frozen_constraints.extend(self.codeinit_constant_constraints.get(var_name, []))
-        return self._conjoin(list(self.domain_constraints) + frozen_constraints)
+        return self._conjoin(
+            list(self.domain_constraints) + frozen_constraints + self._accumulator_reachability()
+        )
+
+    def _accumulator_reachability(self) -> list[BoolRef]:
+        """Each accumulator version as its writers produce it, for precondition
+        reachability (#1891): a counter-bounded gate is verified, so the
+        article's ``negative_count < 3`` is ALWAYS on items 1–3, CONDITIONAL
+        from item 4, and ``negative_count < 0`` is NEVER everywhere.
+
+        A precondition reads an accumulator at the file-order prefix its item
+        sees (``_runtime_versions``; ``_file_order_dependencies`` keeps the
+        walk in that order). Version ``x@j`` written by item ``W`` is
+        ``If(ran@W, value, x@before)``, ``x@before`` being the version at
+        ``W``'s submission: a skipped item's codeBlock does not run, so
+        ``ran@W`` is a free Bool for an item with any effective precondition
+        and True for an ungated one; codeInit versions are their constants.
+        Only for an accumulator whose item writers are all plain items (no
+        Roster, capped-Group or otherwise conditionally present writer, whose
+        codeBlock runs per iteration or per draw) and that no codeBlock the
+        build leaves unlowered assigns or that a codeBlock deletes
+        (``_unmodelled_writers``, a ``del``): any other keeps its free versions, wider,
+        never a false NEVER. A value that reads ANOTHER accumulator its writer
+        takes no part in is left free too: the codeBlock read that accumulator
+        at its file-order version, but nothing keeps the walk in file order
+        between that writer and the other accumulator's writers, so the version
+        it read need not be the one the walk gives it. Other produced variables
+        stay out: their verdicts do not move. Computed once, after the build.
+        """
+        if not self._built:
+            return []
+        if self._accumulator_constraints is not None:
+            return self._accumulator_constraints
+        accumulators = self.accumulator_variables()
+        participants = {
+            name: self._variable_readers(name) | set(self._variable_item_writers(name)) for name in accumulators
+        }
+        constraints: list[BoolRef] = []
+        for var_name in sorted(accumulators):
+            if self._unmodelled_writers(var_name) or not all(
+                self._plain_writer(writer) for writer in self._variable_item_writers(var_name)
+            ):
+                continue
+            for name, version, context, value, deps in self._assignment_values:
+                if name != var_name:
+                    continue
+                current = self.z3_vars[_ssa_key(var_name, version)]
+                if value is not None and value.sort() != current.sort():
+                    value = None
+                if value is not None and context != "__init__" and any(
+                    dep.startswith("var:")
+                    and dep[len("var:"):] in accumulators
+                    and dep[len("var:"):] != var_name
+                    and context not in participants[dep[len("var:"):]]
+                    for dep in deps
+                ):
+                    value = None
+                if context == "__init__":
+                    if value is not None:
+                        constraints.append(current == value)
+                    continue
+                before_version = self._submission_versions.get(context, {}).get(var_name)
+                before = (
+                    self.z3_vars.get(_ssa_key(var_name, before_version)) if before_version is not None else None
+                )
+                constraints.extend(_gated_write(current, value, before, self._writer_ran(context)))
+        self._accumulator_constraints = constraints
+        return constraints
+
+    def _unmodelled_writers(self, var_name: str) -> list[str]:
+        """Items whose codeBlock changes ``var_name`` in a way no SSA version
+        records: a codeBlock binding it that the build did not lower (every
+        item's is lowered since #2003, a Textarea's included, so this is a
+        safety net for any writer a later change leaves out), or any
+        codeBlock deleting it (``del x`` unbinds it, so a later read raises,
+        while the model keeps the previous version). The model cannot see such
+        a change, so an accumulator it touches is left open, never bounded."""
+        modelled = set(self._variable_item_writers(var_name))
+        unseen: list[str] = []
+        for item in self.state.get_all_items():
+            item_id, code = item.get("id"), item.get("codeBlock")
+            if not item_id or not code:
+                continue
+            try:
+                tree = ast.parse(code)
+            except SyntaxError:
+                continue
+            deleted = any(
+                isinstance(node, ast.Name) and isinstance(node.ctx, ast.Del) and node.id == var_name
+                for node in ast.walk(tree)
+            )
+            if deleted or (item_id not in modelled and var_name in self._collect_leaking_bound_names(tree)):
+                unseen.append(item_id)
+        return unseen
+
+    def _plain_writer(self, item_id: str) -> bool:
+        """An item asked at most once per walk: not a Roster or capped-Group member."""
+        item = self.state.get_item(item_id) or {}
+        return not (
+            self.is_conditionally_present(item_id)
+            or item.get("_roster_block_id")
+            or item.get("_group_block_id")
+        )
+
+    def _writer_ran(self, item_id: str) -> BoolRef:
+        """Whether ``item_id``'s codeBlock ran: True for an ungated item, else a
+        free choice (its gate may skip it, and then its codeBlock does not run)."""
+        if not self.item_details.get(item_id, {}).get("preconditions"):
+            return BoolVal(True, self.ctx)
+        # ``@`` cannot occur in an item id, so no item or variable shares the name.
+        return Bool(f"ran@{item_id}", self.ctx)
 
     def get_frozen_variable_gates(self) -> dict[str, list[str]]:
         """Frozen variables that GATE logic: those read by ≥1 predicate.
@@ -3097,34 +6438,112 @@ class StaticBuilder:
         all_constraints = list(self.domain_constraints) + list(self.codeblock_constraints)
         return self._conjoin(all_constraints)
 
-    def compile_conditions(self, item_id: str, conditions: list[dict[str, Any]]) -> BoolRef:
-        """The conjunction of the conditions that lowered (see :meth:`compile_conditions_exactly`)."""
-        return self.compile_conditions_exactly(item_id, conditions)[0]
+    def compile_conditions(
+        self,
+        item_id: str,
+        conditions: list[dict[str, Any]],
+        *,
+        kind: ConditionKind,
+        code_guard: bool = False,
+    ) -> BoolRef:
+        """The conjunction of the conditions that lowered (see :meth:`compile_conditions_exactly`).
+
+        Records no coverage gap: a caller that discards exactness may compile a
+        condition that is not ``item_id``'s own (the ``uninitialized_read`` lint
+        compiles a codeBlock ``if`` guard), which would land as a gap against the
+        item's own condition of the same index.
+
+        ``code_guard`` compiles a codeBlock ``if`` test rather than a
+        condition: a codeBlock runs plain Python, where a blank answer is
+        ``None`` and not unknown, so no blank is modelled (#1784). The guard
+        still sees a skip but reads a blank item in-domain, unlike the
+        assignments it guards (``_CodeReads``, #1776).
+        """
+        return self._compile_conditions(
+            item_id, conditions, kind, record_wide=False, blank=not code_guard
+        )[0]
 
     def compile_conditions_exactly(
-        self, item_id: str, conditions: list[dict[str, Any]]
+        self, item_id: str, conditions: list[dict[str, Any]], *, kind: ConditionKind
     ) -> tuple[BoolRef, bool]:
         """``(conjunction of the conditions that lowered, whether every one did)``.
 
+        ``kind`` is ``"precondition"`` or ``"postcondition"``: a read that raises
+        on a skipped item's None fails a precondition and waives a postcondition
+        (#1775), so the two lower it differently, and so does a leaf reading a
+        blank answer (#1784): a precondition lowers to its truth, a
+        postcondition to its acceptance (see :meth:`compile_postcondition_truth`
+        for the truth of a postcondition).
+
         A condition Z3 cannot express lowers to ``None`` and is left out of the
-        conjunction, so the formula is WIDER than the real one whenever the flag
-        is ``False``. Its consumers must then refuse any verdict that only a
-        narrower formula could prove: ``ItemClassifier`` claims no ALWAYS
+        conjunction, and one whose raise on a skipped item the model cannot
+        place on a condition leaf (``_place_raises``: a read through a call, a
+        container, a subscript, a ternary or a comprehension) lowers wide
+        (#1775, #1779), so the formula is
+        WIDER than the real one whenever the flag is ``False``. Its consumers
+        must then refuse any verdict that only a narrower formula could prove: ``ItemClassifier`` claims no ALWAYS
         precondition and no TAUTOLOGICAL / globally-true postcondition on an
         inexact formula (#1164), while NEVER and INFEASIBLE, which a wider
-        formula still proves, stand. Where an inexact P is an ASSUMPTION rather
+        formula still proves, stand. A wide condition is recorded as a coverage
+        gap carrying ``wide_items`` here, so the withheld verdict surfaces as an
+        ``inexact_condition`` warning (#1815). Where an inexact P is an ASSUMPTION rather
         than the thing classified, see :meth:`item_implication`.
         """
+        return self._compile_conditions(item_id, conditions, kind, record_wide=True)
+
+    def compile_postcondition_truth(self, item_id: str, conditions: list[dict[str, Any]]) -> BoolRef:
+        """The postconditions all evaluate True (not merely accepted).
+
+        TAUTOLOGICAL needs truth, not acceptance (#1784): a postcondition that
+        holds only because a blank leaf or a raise waived it is not one the
+        answer satisfies. Being True is what a precondition lowers to (an
+        unknown leaf or a raise is not True), so the postconditions are lowered
+        under the precondition rule, in the owner's context.
+
+        Its exactness is the acceptance's (:meth:`compile_conditions_exactly`):
+        both are exact exactly when every raise is placed (``_place_raises``
+        does not depend on the kind). Records no
+        gap; the acceptance records the postcondition's own.
+        """
+        return self._compile_conditions(item_id, conditions, "precondition", record_wide=False)[0]
+
+    def _compile_conditions(
+        self,
+        item_id: str,
+        conditions: list[dict[str, Any]],
+        kind: ConditionKind,
+        *,
+        record_wide: bool,
+        blank: bool = True,
+    ) -> tuple[BoolRef, bool]:
+        """The body of :meth:`compile_conditions_exactly`; ``record_wide`` records
+        each wide condition as a ``wide_items`` coverage gap of ``item_id``;
+        ``blank`` models blank answers (``_lower_kleene``)."""
+        _require_condition_kind(kind)
         compiled_conditions = []
         exact = True
-        for condition in conditions:
-            predicate = condition.get("predicate", "")
-            if predicate:
-                compiled = self._compile_predicate_to_z3(predicate, item_id)
-                if compiled is None:
-                    exact = False
-                else:
-                    compiled_conditions.append(compiled)
+        # After the build, an item's own conditions read the versions of its
+        # submission, not the final ones (#1838, ``_enter_submission``).
+        at_submission = self._built and item_id in self._submission_versions
+        outer_versions = self._enter_submission(item_id) if at_submission else None
+        try:
+            for idx, condition in enumerate(conditions):
+                predicate = condition.get("predicate", "")
+                if predicate:
+                    compiled, wide = self._compile_predicate(predicate, item_id, kind, blank=blank)
+                    if compiled is None or wide:
+                        exact = False
+                    if compiled is not None:
+                        compiled_conditions.append(compiled)
+                        if wide and record_wide:
+                            # Recorded where exactness is decided, so every owner the
+                            # classifier judges is covered, Textarea items included
+                            # (the build pass skips them): a withheld verdict is
+                            # never silent (#1815).
+                            self._record_coverage_gap(item_id, kind, idx, [], wide_items=wide)
+        finally:
+            if outer_versions is not None:
+                self._leave_submission(outer_versions)
 
         return self._conjoin(compiled_conditions), exact
 
@@ -3140,19 +6559,233 @@ class StaticBuilder:
         verdict stays sound (#1164). An inexact Q_i is wider and needs no guard.
         """
         details = self.item_details[item_id]
-        P_i, P_exact = self.compile_conditions_exactly(item_id, details["preconditions"])
+        P_i, P_exact = self.compile_conditions_exactly(item_id, details["preconditions"], kind="precondition")
         if not P_exact:
             return BoolVal(True, self.ctx)
-        return Implies(P_i, self.compile_conditions(item_id, details["postconditions"]))
+        return Implies(P_i, self.compile_conditions(item_id, details["postconditions"], kind="postcondition"))
 
-    def _compile_predicate_to_z3(self, predicate: str, context: str) -> BoolRef | None:
-        """Compile a predicate string to Z3 boolean expression."""
+    def _lower_predicate(
+        self, tree: ast.AST, context: str, kind: ConditionKind, *, blank: bool = True
+    ) -> tuple[BoolRef | None, list[str]]:
+        """Lower one predicate, with the None tests it may model (``_lower_none_test``),
+        the skipped items it can see (``_skippable_reads``) and, when ``blank``,
+        the items it may read blank (``_lower_kleene``): ``(formula, the items
+        whose raise on None leaves it wider than the gate)``; an empty list
+        means the formula is exact.
+
+        Each node lowers two-sided (``_Outcome``, #1779), so a raise on a
+        skipped item's None (#1775) is exact wherever it sits, and the kind
+        applies once at the root: a precondition lowers to the condition being
+        True (a blank leaf, like a raise, fails it); a postcondition to its
+        acceptance, not False (a blank leaf, like a raise, waives it), #1784.
+        Only a raise ``_place_raises`` cannot place widens it.
+
+        Re-entrant through the helpers it calls; the state it sets is restored.
+        """
+        outer = (
+            self._none_guarded,
+            self._predicate_answered,
+            self._predicate_value_reads,
+            self._predicate_reads_variables,
+            self._predicate_skipped,
+            self._predicate_raising,
+            self._lowering_predicate,
+            self._predicate_slot_safe,
+            self._predicate_list_none,
+            self._predicate_blank,
+            self._model_blank,
+            self._predicate_context,
+        )
+        try:
+            self._predicate_context = context
+            self._none_guarded, self._predicate_answered = none_guarded_outcomes(tree), {}
+            self._predicate_value_reads = outcome_value_reads(tree)
+            self._predicate_reads_variables = bool(name_reads(tree) - outcome_reads(tree))
+            self._lowering_predicate = True
+            self._predicate_blank, self._model_blank = {}, blank
+            try:
+                safe, raising, parents = self._skippable_reads(tree, context)
+                list_raising, slot_raising, self._predicate_slot_safe, none_tested = self._answer_list_reads(
+                    tree, context, parents
+                )
+            except _UnmodelledAnswerRead:
+                return None, []
+            scalar_raised = {item_id for item_id, _ in raising}
+            raised = sorted(scalar_raised | {item_id for item_id, _ in list_raising})
+            skippable_lists = {item for item in none_tested if self._whole_answer_skippable(item, context)}
+            choices = {
+                item_id: self._skipped_choice(item_id)
+                for item_id in sorted(safe | set(raised) | skippable_lists)
+            }
+            # A raising read's item is skip-aware wherever Python reads it
+            # without raising too (a chain's ``==`` clause, ``_leaf_raise``).
+            self._predicate_skipped = {item_id: choices[item_id] for item_id in safe | scalar_raised}
+            self._predicate_list_none = {
+                item: self._answer_list_none(item, context, choices) for item in none_tested
+            }
+            placed, placed_slots, unplaced = self._place_raises(
+                raising, list_raising, slot_raising, choices, parents
+            )
+            self._predicate_slot_safe = self._predicate_slot_safe | placed_slots
+            waived: list[BoolRef] = []
+            if kind == "precondition":
+                self._predicate_raising, wide = self._wrap_unplaced(unplaced, choices, parents)
+            else:
+                self._predicate_raising = {}
+                waived, wide = self._waive_unplaced(unplaced, choices)
+            loose = self._loose_leaves(unplaced, choices, parents)
+            lowered = self._lower_kleene(tree, context, placed, loose)
+            if lowered is None:
+                return None, wide
+            if kind == "precondition":
+                return lowered.true, wide
+            return (Or(lowered.accepted, *waived) if waived else lowered.accepted), wide
+        finally:
+            (
+                self._none_guarded,
+                self._predicate_answered,
+                self._predicate_value_reads,
+                self._predicate_reads_variables,
+                self._predicate_skipped,
+                self._predicate_raising,
+                self._lowering_predicate,
+                self._predicate_slot_safe,
+                self._predicate_list_none,
+                self._predicate_blank,
+                self._model_blank,
+                self._predicate_context,
+            ) = outer
+
+    def _answer_list_none(self, item_id: str, context: str, choices: dict[str, BoolRef]) -> BoolRef:
+        """When a None-tested QuestionGroup or MatrixQuestion is ``None``: skipped
+        (``_whole_answer_skippable``), or shown and left blank
+        (``_blank_choice``; never the condition's own item, which the runtime
+        reads the Python way). Each has at least one of the two."""
+        parts = [choices[item_id]] if item_id in choices else []
+        if self._model_blank and item_id != context:
+            parts.append(self._blank_choice(item_id))
+        return self._disjoin(parts)
+
+    def _loose_leaves(
+        self,
+        unplaced: list[tuple[str | None, ast.AST]],
+        choices: dict[str, BoolRef],
+        parents: dict[ast.AST, ast.AST],
+    ) -> dict[int, list[BoolRef]]:
+        """The condition leaves holding a raise ``_place_raises`` could not
+        place, with the skip choices under which it may happen.
+
+        Such a raise is lowered wide only for the strict evaluation, where a
+        raise is fatal (a precondition fails, a postcondition is waived at its
+        root): any value the leaf takes there is wider than the runtime. Reached
+        after an unknown operand the runtime reads it as unknown instead, and a
+        False there could settle an ``and`` or make a later raise fatal, so
+        ``_lower_kleene`` frees the leaf's lenient outcome under these choices.
+        """
+        loose: dict[int, list[BoolRef]] = {}
+        for key, node in unplaced:
+            skips = [choices[key]] if key is not None else self._slots_a_read_may_take(node)
+            if skips:
+                loose.setdefault(id(self._condition_leaf(node, parents)), []).extend(skips)
+        return loose
+
+    def _lower_kleene(
+        self,
+        node: ast.AST,
+        context: str,
+        placed: dict[int, list[tuple[int | None, bool, BoolRef]]],
+        loose: dict[int, list[BoolRef]],
+    ) -> _Outcome | None:
+        """Lower ``node`` to its runtime outcome (``_Outcome``) with Kleene
+        semantics for blank answers (#1784) and Python's for raises (#1779).
+
+        Mirrors ``FlowProcessor._parse_condition`` / ``_evaluate_three_valued``:
+        the runtime splits a condition through its top-level ``and`` / ``or`` /
+        ``not`` only, and a leaf (anything else, an ``any([...])`` or a
+        comprehension included) that reads an item shown and left blank is
+        unknown. So this recurses through exactly those nodes and lowers each
+        leaf once with ``_ast_to_z3_bool``, never wrapping inside it.
+
+        A leaf ``L`` with blank operands ``B`` and raise ``R`` (``placed``,
+        ``_leaf_raise``) is True on ``Not(B) ∧ Not(R) ∧ L``, accepted (not
+        False) on ``B ∨ R ∨ L``, and raises on ``Not(B) ∧ R``: a blank leaf is
+        unknown before anything is evaluated. Junctions combine as the runtime
+        short-circuits (``_outcome_junction``, ``_outcome_not``). A leaf
+        holding a raise that cannot be placed (``loose``, ``_loose_leaves``)
+        takes any lenient outcome where that raise may happen: fresh Bools,
+        wider, never narrower.
+        """
+        if isinstance(node, ast.BoolOp):
+            parts = [self._lower_kleene(value, context, placed, loose) for value in node.values]
+            # All operands or nothing (#1164, see ``_ast_to_z3_bool``).
+            if any(part is None for part in parts):
+                return None
+            return _outcome_junction(isinstance(node.op, ast.And), parts)  # type: ignore[arg-type]
+        if isinstance(node, ast.UnaryOp) and isinstance(node.op, ast.Not):
+            operand = self._lower_kleene(node.operand, context, placed, loose)
+            return None if operand is None else _outcome_not(operand)
+        leaf = self._ast_to_z3_bool(node, context)
+        if leaf is None:
+            return None
+        raises = None
+        if id(node) in placed:
+            raises = self._leaf_raise(node, placed[id(node)], context)
+            if raises is None:
+                return None
+        blanks = [self._blank_choice(item_id) for item_id in sorted(self._blank_operands(node, context))]
+        if self._model_blank:
+            # A variable the runtime marked unknown makes the leaf unknown as a
+            # blank answer does (#1044, #1844): FlowProcessor's leaf variables.
+            leaf_variables = name_reads(node) - outcome_reads(node) - none_tested_names(node)
+            blanks.extend(
+                mark for name in sorted(leaf_variables) if (mark := self._variable_mark(name)) is not None
+            )
+        any_blank = self._disjoin(blanks) if blanks else None
+        fails = [f for f in (any_blank, raises) if f is not None]
+        if not fails:
+            outcome = _Outcome(leaf, leaf)
+        else:
+            if raises is not None and any_blank is not None:
+                raises = And(Not(any_blank), raises)
+            outcome = _Outcome(And(*[Not(f) for f in fails], leaf), Or(*fails, leaf), raises)
+        if id(node) not in loose:
+            return outcome
+        may_raise = self._disjoin(loose[id(node)])
+        self._loose_count += 1
+        # ``@`` cannot occur in an item id, so no item or variable shares the name.
+        free_true, free_accepted = (
+            Bool(f"loose@{part}@{context}#{self._loose_count}", self.ctx) for part in ("true", "accepted")
+        )
+        lenient = (If(may_raise, free_true, outcome.true), If(may_raise, free_accepted, outcome.accepted))
+        return _Outcome(outcome.true, outcome.accepted, outcome.raises, lenient)
+
+    def _blank_operands(self, leaf: ast.AST, context: str) -> set[str]:
+        """The items whose blank answer makes ``leaf`` unknown (#1784): what it
+        reads as ``X.outcome`` (``FlowProcessor``'s leaf operands), less what
+        the leaf tests against None (it says what None means), what the
+        predicate None-guards (its guard leaf carries the blank and settles
+        the predicate as Kleene does), and the condition's own item (the
+        runtime excludes it from the unknowns)."""
+        if not self._model_blank:
+            return set()
+        reads = outcome_reads(leaf) - none_tested_outcomes(leaf) - self._none_guarded - {context}
+        return {item_id for item_id in reads if self._blank_candidate(item_id)}
+
+    def _compile_predicate(
+        self, predicate: str, context: str, kind: ConditionKind, *, blank: bool = True
+    ) -> tuple[BoolRef | None, list[str]]:
+        """Compile a predicate string: ``(Z3 formula or None, the items that leave it
+        wider than the condition)`` (``_lower_predicate``)."""
         try:
             tree = ast.parse(predicate, mode="eval")
-            return self._ast_to_z3_bool(tree.body, context)
+            return self._lower_predicate(tree.body, context, kind, blank=blank)
         except Exception as e:
             self.logger.error(f"Error compiling predicate '{predicate}' in context {context}: {e}")
-            return None
+            return None, []
+        finally:
+            # The build already reported this condition's refusals (#1799, #1867).
+            self._distinct_refusals.pop(context, None)
+            self._ternary_refusals.pop(context, None)
 
     def debug_dump(self) -> str:
         """Generate debug output."""

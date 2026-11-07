@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "Questionnaire Markup Language",
-  "version": "2.4.1",
+  "version": "2.6.4",
   "type": "object",
   "required": [
     "qmlVersion",
@@ -387,6 +387,14 @@
                   1
                 ],
                 "description": "Suggested position for the switch (0 off, 1 on). Not rendered and never an answer: the switch starts on neither side, and nothing is recorded for the item until the respondent chooses one."
+              },
+              "left": {
+                "type": "string",
+                "description": "Caption on the switch's off side, shown when `off` is not given."
+              },
+              "right": {
+                "type": "string",
+                "description": "Caption on the switch's on side, shown when `on` is not given."
               }
             }
           }
@@ -518,6 +526,10 @@
               "maxLength": {
                 "type": "integer",
                 "description": "Maximum number of characters allowed"
+              },
+              "minLength": {
+                "type": "integer",
+                "description": "Minimum number of characters the author expects. Declared for the record: no answer is refused for being shorter."
               }
             }
           }
@@ -548,8 +560,7 @@
                 "description": "Step size for the slider"
               },
               "default": {
-                "type": "integer",
-                "description": "Resting position of the slider thumb. Must be between min and max (inclusive). A hint shown to the respondent, never an answer: nothing is recorded for the item until they interact with the control."
+                "description": "Resting position of the thumbs, inside min and max (inclusive): a Slider's single integer, a Range's pair (see the Range branch). A hint shown to the respondent, never an answer: nothing is recorded for the item until they interact with the control."
               },
               "left": {
                 "type": "string"
@@ -566,8 +577,47 @@
               "max"
             ]
           }
+        },
+        {
+          "if": {
+            "properties": {
+              "control": {
+                "const": "Slider"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "default": {
+                "type": "integer"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "control": {
+                "const": "Range"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "default": {
+                "type": "array",
+                "items": {
+                  "type": "integer"
+                },
+                "minItems": 2,
+                "maxItems": 2,
+                "description": "Resting positions of the two thumbs, a pair [low, high] with min <= low <= high <= max. A Range answer is the same kind of pair."
+              }
+            }
+          }
         }
-      ]
+      ],
+      "unevaluatedProperties": false
     }
   }
 }

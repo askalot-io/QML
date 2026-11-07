@@ -5,14 +5,59 @@ previous, navigate, finish, resume) lives in ``flow_service`` so the respondent
 lane walks surveys on the same engine; this module owns only what is HTTP —
 the credential check, request parsing, the request-scoped store on ``g``, and
 response shaping. Every presenting step passes channel ``web``.
+
+The sentences the respondent's page shows (``message``, and the ``error`` /
+``reason`` of a refusal it puts in its modal) are rendered in the language of
+the walk's questionnaire, as every respondent-facing render is: a survey's
+questionnaire, a preview run's questionnaire, and the browser's language only
+when no walk was read. The locale is resolved only on those paths, so a step
+that answers an item pays no extra read. Error codes and developer-facing
+diagnostics (a missing ``survey_id``, an unknown id) stay English.
+
+Language picker. While a fielded survey holds no committed answer and its
+campaign's pin offers more than one language, the current item carries
+``offered_languages`` (``[{code, name}]``, the name the language's own, source
+first), ``preselected`` and ``language`` (the pick so far, or None).
+``POST /choose-language`` picks one (``flow_service.choose_language``). A pick
+the walk can no longer take answers ``409`` with an error code the page acts on
+and no sentence: ``language_locked`` (an answer is already stored: reload into
+the locked language), ``language_not_offered`` (the pin moved: a fresh picker,
+whose fields the body carries), and on ``evaluate-item``
+``translation_changed`` (the picked text changed after it was shown, or another
+tab picked a language after this page rendered: the answer was refused, and the
+body carries a fresh picker). Every ``current-item`` answer carries ``pick_token``
+(``language_pick_token``, null when no pick re-materialized the walk; the page
+keeps it across ``previous-item`` and ``navigate-to-item``, whose answers do not
+carry it, because no pick can land once an answer locked the language), and
+``evaluate-item`` takes it back as ``pick_token``: an answer naming another pick
+than the stored one is refused before anything is written, as
+``translation_changed`` while the language is still open and ``language_locked``
+once another tab's answer locked it (#2127). Preselection follows the
+respondent's preferred language, then the browser's, then the source; an
+interviewer-assisted survey ignores the browser, which is the interviewer's.
 """
 
 import logging
+import os
+import traceback
+import uuid
 from collections.abc import Callable
 
+from askalot_common.campaign_admission import (
+    FIELDING_STATUSES,
+    campaign_takes_answers,
+    has_committed_answer,
+    not_taking_answers,
+)
+from askalot_common.i18n import UnsupportedLocale, gettext, native_name, respondent_locale
+from askalot_common.i18n.locale import preselect_language
 from askalot_common.repository.exceptions import (
     OrganizationSealedError,
     SurveyStateConflictError,
+)
+from askalot_common.repository.mixins.survey import (
+    SurveyTranslationChangedError,
+    language_pick_token,
 )
 from flask import Blueprint, g, jsonify, request
 
@@ -24,6 +69,8 @@ from askalot_qml.api.flow_service import (
     FlowStore,
 )
 from askalot_qml.models.qml_state import CHANNEL_WEB
+
+logger = logging.getLogger(__name__)
 
 #: The organization + survey one anonymous session may drive, as the service
 #: resolves it. ``askalot_qml`` stays repository-free and cookie-format-free:
@@ -67,22 +114,104 @@ class FlowSessionError(Exception):
 #
 # A PREVIEW walk is unaffected: it writes ``preview_runs``, which the seal
 # admits, so reviewing an instrument in a sealed organization still works.
-_WALK_CLOSED = (
-    "This survey is closed. Its organization has been sealed, so it is no "
-    "longer accepting responses."
-)
 
 
-def _sealed_walk_response():
+def requested_survey_ids() -> set[str]:
+    """EVERY survey this request names, from both places an endpoint reads.
+
+    Collected as a set rather than resolved to one value, because the two
+    sources do not agree about which one wins: the GET routes read
+    `request.args` while `evaluate-item`, `navigate-to-item`, `reset`,
+    `finish` and `resume` read `data.get("survey_id")` from the body alone.
+    A check that preferred one source would admit a request carrying a
+    MATCHING value there and a MISMATCHING one in the other, which the
+    endpoint would then serve against the mismatching survey.
+
+    The binding check has to happen BEFORE the endpoint reaches its own
+    read; a check after it would run with organization context already set
+    from someone else's session. Nothing here decides which id the endpoint
+    will honour — it refuses unless every id the request carries is the one
+    the session names, so the precedence question cannot arise.
+    """
+    ids: set[str] = set()
+    from_args = request.args.get("survey_id")
+    if from_args:
+        ids.add(from_args)
+    if request.is_json:
+        body = request.get_json(silent=True)
+        # A JSON body that is not an object (a bare list) names no survey.
+        from_body = body.get("survey_id") if isinstance(body, dict) else None
+        if from_body:
+            ids.add(str(from_body))
+    return ids
+
+
+def _loggable_id(value: str) -> str:
+    """``value`` when it is a UUID, else ``<invalid>``: an id field is caller text too."""
+    try:
+        return str(uuid.UUID(value))
+    except (ValueError, TypeError, AttributeError):
+        return "<invalid>"
+
+
+def _log_failure(action: str, error: Exception) -> None:
+    """Log a flow endpoint's unexpected failure by its class, where it was raised, and the surveys it named.
+
+    Never the exception's text, nor a traceback (``logger.exception`` prints
+    the text too): an answer that failed validation or coercion, or a
+    codeBlock's error, can quote what the respondent supplied, and Loki cannot
+    be scrubbed (#2193; the rule warnings follow, #2190). The raising frame's
+    file and line are code, never data, and are what makes the line
+    diagnosable without the text. The survey ids are the request's own
+    (``requested_survey_ids``), and only a value that is a UUID is written: the
+    caller sends that field too, and any other text in it (a value, a forged
+    line) reads as ``<invalid>``.
+    """
+    where = "-"
+    for frame, lineno in traceback.walk_tb(error.__traceback__):
+        where = f"{os.path.basename(frame.f_code.co_filename)}:{lineno}"
+    surveys = sorted(_loggable_id(value) for value in requested_survey_ids())
+    logger.error(
+        "flow.%s_failed survey_ids=%s error=%s at=%s",
+        action,
+        ",".join(surveys) or "-",
+        type(error).__name__,
+        where,
+    )
+
+
+def session_binds(session: FlowSession | None, survey_ids: set[str]) -> bool:
+    """Whether *session* is bound to every survey in *survey_ids*, and there is one.
+
+    The one rule for "this session authorizes this request". The blueprint uses
+    it to let a bound session outrank a JWT, and a host's seal-guard resolver
+    uses it to judge the same request in the same organization, so the two
+    cannot disagree.
+    """
+    return (
+        session is not None
+        and bool(survey_ids)
+        and all(str(session[2]) == rid for rid in survey_ids)
+    )
+
+
+def _sealed_walk_response(locale: str):
     """The legible refusal a sealed organization's fielded walk returns.
 
     Carries the same ``org_sealed`` code the request guard uses, so a client
     that already distinguishes a seal refusal from an RBAC 403 keeps working.
+    The sentence is also ``message``, the field SirWay's survey page shows in
+    its modal (it reads ``message`` before ``error``, never ``detail``).
     """
-    return jsonify({"error": "org_sealed", "detail": _WALK_CLOSED}), 403
+    detail = gettext(
+        locale,
+        "This survey is closed. Its organization has been sealed, so it is no "
+        "longer accepting responses.",
+    )
+    return jsonify({"error": "org_sealed", "detail": detail, "message": detail}), 403
 
 
-def _conflict_walk_response():
+def _conflict_walk_response(locale: str):
     """409 when this step lost a race with another step on the same survey.
 
     ``FlowStore.save`` refuses a write over a row that changed since the walk
@@ -95,11 +224,24 @@ def _conflict_walk_response():
             {
                 "error": "survey_state_conflict",
                 # ``message`` is what SirWay's survey page shows in its modal.
-                "message": "This survey changed in another window. Reload to continue.",
+                "message": gettext(
+                    locale, "This survey changed in another window. Reload to continue."
+                ),
             }
         ),
         409,
     )
+
+
+def _not_fielding_walk_response(locale: str):
+    """403 when the survey's campaign is not taking answers (#1285).
+
+    ``message`` is what SirWay's survey page shows; nothing was recorded. The
+    sentence is ``campaign_admission.not_taking_answers``, shared with SirWay's
+    entry pages, so it is rendered there rather than re-marked here.
+    """
+    message = not_taking_answers(locale)
+    return jsonify({"error": "campaign_not_fielding", "message": message}), 403
 
 
 def create_flow_blueprint(
@@ -137,7 +279,6 @@ def create_flow_blueprint(
         Flask blueprint with flow endpoints
     """
     blueprint = Blueprint("qml_flow", __name__, url_prefix=url_prefix)
-    logger = logging.getLogger(__name__)
 
     def _store() -> FlowStore:
         """This request's store (``flow_service.FlowStore``), created once per request.
@@ -151,35 +292,6 @@ def create_flow_blueprint(
         if not hasattr(g, "_askalot_flow_store"):
             g._askalot_flow_store = FlowStore(repository)
         return g._askalot_flow_store
-
-    def _requested_survey_ids() -> set[str]:
-        """EVERY survey this request names, from both places an endpoint reads.
-
-        Collected as a set rather than resolved to one value, because the two
-        sources do not agree about which one wins. This helper used to prefer
-        the query argument and fall back to the body — but the endpoints split
-        the other way: the GET routes read `request.args` while
-        `evaluate-item`, `navigate-to-item`, `reset`, `finish` and `resume`
-        read `data.get("survey_id")` from the body alone. So a request carrying
-        a MATCHING query argument and a MISMATCHING body satisfied this check
-        and was then served against the body's survey — the precedence gap was
-        the bypass.
-
-        The binding check has to happen BEFORE the endpoint reaches its own
-        read; a check after it would run with organization context already set
-        from someone else's session. Nothing here decides which id the endpoint
-        will honour — it refuses unless every id the request carries is the one
-        the session names, so the precedence question cannot arise.
-        """
-        ids: set[str] = set()
-        from_args = request.args.get("survey_id")
-        if from_args:
-            ids.add(from_args)
-        if request.is_json:
-            from_body = (request.get_json(silent=True) or {}).get("survey_id")
-            if from_body:
-                ids.add(str(from_body))
-        return ids
 
     def _set_org_context_from_request():
         """
@@ -204,24 +316,46 @@ def create_flow_blueprint(
         same organization is refused rather than served, so a leaked survey id
         is not enough on its own.
 
+        When both are present, a session bound to every survey the request
+        names is used and the JWT is not: the survey was opened through a link
+        into the link's organization, which a signed-in visitor's active
+        organization need not be (#1605).
+
         Raises:
             FlowSessionError: 401 when nothing authorized the request, 403 when
                 a valid session was presented for a survey it does not name.
         """
         from askalot_common.repository import get_organization_context, set_organization_context
 
+        # A session bound to the survey this request names wins over everything
+        # else, a JWT included (#1605). The session was minted by a door after it
+        # validated a link, and it authorizes exactly that one survey in the
+        # link's organization; a signed-in visitor's JWT names THEIR active
+        # organization, which need not be the link's, and reading the survey
+        # there finds nothing. Only a session that binds every id the request
+        # names qualifies, so a stale cookie for another survey changes nothing.
+        session = session_resolver() if session_resolver else None
+        requested = requested_survey_ids()
+        if session_binds(session, requested):
+            set_organization_context(session[0], session[1])
+            logger.debug("Set org context from the flow session bound to this survey")
+            return
+
         # Skip if org context already set (returns OrganizationContext object or None)
         if get_organization_context():
             return
 
-        # Try to get org context from JWT token first (authenticated users)
+        # Try to get org context from JWT token first (authenticated users).
+        # The whole session check, not the signature alone: a logged-out or
+        # deleted account's token must not choose the organization (#2184).
         try:
-            from askalot_common.auth import extract_jwt_token, get_auth_config, verify_jwt_token
+            from askalot_common.auth import extract_jwt_token, get_auth_config
+            from askalot_common.auth.middleware import verified_session
+            from askalot_common.auth.user_service import get_user_service
 
             token = extract_jwt_token()
             if token:
-                config = get_auth_config()
-                payload = verify_jwt_token(token, config)
+                payload, _user, _refusal = verified_session(token, get_auth_config(), get_user_service())
                 if payload:
                     organization_id = payload.get("organization_id")
                     organization_slug = payload.get("organization_slug")
@@ -229,12 +363,9 @@ def create_flow_blueprint(
                         set_organization_context(organization_id, organization_slug)
                         logger.debug(f"Set org context from JWT: {organization_slug}")
                         return
-        except OrganizationSealedError:
-            return _sealed_walk_response()
         except Exception as e:
-            logger.debug(f"Could not get org from JWT: {e}")
+            logger.debug("Could not get org from JWT: %s", type(e).__name__)
 
-        session = session_resolver() if session_resolver else None
         if session is None:
             raise FlowSessionError(
                 "This request carries no credential the flow API accepts. "
@@ -242,8 +373,7 @@ def create_flow_blueprint(
             )
 
         organization_id, organization_slug, session_survey_id = session
-        requested_survey_ids = _requested_survey_ids()
-        if any(str(session_survey_id) != rid for rid in requested_survey_ids):
+        if any(str(session_survey_id) != rid for rid in requested):
             raise FlowSessionError("This session is not valid for that survey.", status=403)
 
         set_organization_context(organization_id, organization_slug)
@@ -267,6 +397,78 @@ def create_flow_blueprint(
             return jsonify({"error": str(error)}), error.status
         return None
 
+    def _load_walk(survey_id):
+        """Read the walk this request names, remembering it for ``_locale``."""
+        walk = _store().load(survey_id)
+        g._askalot_flow_walk = walk
+        return walk
+
+    def _locale() -> str:
+        """The language of this request's respondent-facing sentences.
+
+        The walk's questionnaire decides; before a walk is read (or when the id
+        named none) the browser's language does. Called only where a sentence
+        is about to be rendered, never on the answering path.
+        """
+        return respondent_locale(
+            repository,
+            survey=getattr(g, "_askalot_flow_walk", None),
+            accept_language=request.headers.get("Accept-Language"),
+        )
+
+    def _fielded_campaign(survey):
+        """The fielded survey's campaign, read fresh so a pause lands on the next
+        step; ``None`` for a survey without one."""
+        return repository.get_campaign(survey.campaign_id) if survey.campaign_id else None
+
+    def _refuses_answers(survey) -> bool:
+        """Whether this fielded survey's campaign takes no answer from this step.
+
+        ``campaign_admission.campaign_takes_answers`` is the rule every lane
+        shares: a paused or closed campaign takes nothing, except from a survey
+        a person has already answered in, which may finish. A preview has no
+        campaign and is never refused.
+        """
+        if _store().kind == "preview":
+            return False
+        return not campaign_takes_answers(_fielded_campaign(survey), survey)
+
+    def _language_picker(survey, offered: list[str]) -> dict:
+        """The picker fields for ``survey`` over ``offered`` (source first)."""
+        if survey.language in offered:
+            preselected = survey.language
+        else:
+            respondent = (
+                repository.get_respondent(survey.respondent_id) if survey.respondent_id else None
+            )
+            preselected = preselect_language(
+                offered,
+                getattr(respondent, "preferred_language", None),
+                # An interviewer's browser says nothing about the respondent.
+                None
+                if survey.mode == "field_interview"
+                else request.headers.get("Accept-Language"),
+                offered[0],
+            )
+        return {
+            "offered_languages": [{"code": code, "name": native_name(code)} for code in offered],
+            "preselected": preselected,
+            "language": survey.language,
+        }
+
+    def _open_language_picker(survey) -> dict:
+        """The picker fields while the survey's language is still open, else nothing."""
+        if _store().kind != "survey" or has_committed_answer(survey.qml_state):
+            return {}
+        # A translation belongs to a version, so a survey with no pin of its own
+        # (an unpinned campaign, or one rebound to another questionnaire)
+        # offers only its source language and shows no picker.
+        version_id = flow_service.walk_pin(survey, _fielded_campaign(survey))
+        if not version_id:
+            return {}
+        offered = repository.offered_locales(survey.questionnaire_id, version_id)
+        return _language_picker(survey, list(offered)) if len(offered) > 1 else {}
+
     def _initialize_survey_state(survey):
         """Initialize a walk that has no state, write it, and record ``started``.
 
@@ -288,10 +490,15 @@ def create_flow_blueprint(
             if not survey_id:
                 return jsonify({"error": "No survey_id provided"}), 400
 
-            survey = _store().load(survey_id)
+            survey = _load_walk(survey_id)
             if not survey:
                 return jsonify({"error": f"Survey {survey_id} not found"}), 404
             survey = flow_service.prepare_walk(survey)
+            # Presenting opens a timing event and may record ``started``, so a
+            # paused campaign's unbegun survey is refused here too; a completed
+            # survey still reads its end screen.
+            if survey.status != "completed" and _refuses_answers(survey):
+                return _not_fielding_walk_response(_locale())
 
             step = flow_service.present_current_item(
                 _store(),
@@ -307,7 +514,7 @@ def create_flow_blueprint(
                     {
                         "status": "complete",
                         "survey_id": survey_id,
-                        "message": "Survey completed",
+                        "message": gettext(_locale(), "Survey completed"),
                         "isCompleted": True,
                         "justCompleted": True,
                     }
@@ -325,7 +532,7 @@ def create_flow_blueprint(
                     {
                         "status": "complete",
                         "survey_id": survey_id,
-                        "message": "Survey completed",
+                        "message": gettext(_locale(), "Survey completed"),
                         "isCompleted": True,
                     }
                 ), 200
@@ -333,15 +540,17 @@ def create_flow_blueprint(
             item_data = step.item
             item_data["survey_id"] = survey_id
             item_data["isCompleted"] = step.was_completed
+            item_data["pick_token"] = language_pick_token(survey.qml_state)
+            item_data.update(_open_language_picker(survey))
 
             logger.info("survey.navigate survey_id=%s item_id=%s", survey_id, item_data.get("id"))
             return jsonify(item_data), 200
         except OrganizationSealedError:
-            return _sealed_walk_response()
+            return _sealed_walk_response(_locale())
         except SurveyStateConflictError:
-            return _conflict_walk_response()
+            return _conflict_walk_response(_locale())
         except Exception as e:
-            logger.error(f"Error getting current item: {e}")
+            _log_failure("current_item", e)
             return jsonify({"error": str(e)}), 500
 
     @blueprint.route("/evaluate-item", methods=["POST"])
@@ -361,10 +570,12 @@ def create_flow_blueprint(
             if not survey_id:
                 return jsonify({"error": "No survey_id provided"}), 400
 
-            survey = _store().load(survey_id)
+            survey = _load_walk(survey_id)
             if not survey:
                 return jsonify({"error": f"Survey {survey_id} not found"}), 404
             survey = flow_service.prepare_walk(survey)
+            if _refuses_answers(survey):
+                return _not_fielding_walk_response(_locale())
 
             item_id = data.get("item_id")
             if not item_id:
@@ -378,10 +589,20 @@ def create_flow_blueprint(
                 skip_postcondition=data.get("skip_postcondition", False),
                 source=flow_service.timing_source(survey),
                 channel=CHANNEL_WEB,
+                pick_token=data.get("pick_token"),
                 audit_callback=audit_callback,
                 external_input_resolver=external_input_resolver,
             )
 
+            if step.outcome is FlowOutcome.PICK_CHANGED:
+                # Another tab picked a language after this page rendered;
+                # nothing was written.
+                if has_committed_answer(survey.qml_state):
+                    return jsonify({"error": "language_locked", "language": survey.language}), 409
+                fresh = flow_service.offered_languages(repository, survey)
+                return jsonify(
+                    {"error": "translation_changed", **_language_picker(survey, fresh)}
+                ), 409
             if step.outcome is FlowOutcome.REJECTED:
                 return jsonify({"message": step.message}), 400
 
@@ -405,12 +626,70 @@ def create_flow_blueprint(
             return jsonify(
                 {"status": "success", "survey_id": survey_id, "hasNextItem": step.has_next}
             ), 200
+        except SurveyTranslationChangedError:
+            # Nothing was written: the answer and the freeze rolled back together.
+            fresh = flow_service.offered_languages(repository, survey)
+            return jsonify(
+                {"error": "translation_changed", **_language_picker(survey, fresh)}
+            ), 409
         except OrganizationSealedError:
-            return _sealed_walk_response()
+            return _sealed_walk_response(_locale())
         except SurveyStateConflictError:
-            return _conflict_walk_response()
+            return _conflict_walk_response(_locale())
         except Exception as e:
-            logger.error(f"Error evaluating item: {e}")
+            _log_failure("evaluate_item", e)
+            return jsonify({"error": str(e)}), 500
+
+    @blueprint.route("/choose-language", methods=["POST"])
+    def choose_language():
+        """Pick the language a fielded survey is answered in, before its first answer.
+
+        Request body: ``survey_id``, ``language`` (a supported locale). 200 with
+        the language on success; 409 ``language_locked`` once an answer is
+        stored; 409 ``language_not_offered`` with a fresh picker when the
+        campaign's pin does not offer it. A preview has no picker.
+        """
+        try:
+            data = request.get_json() or {}
+            survey_id = data.get("survey_id")
+            if not survey_id:
+                return jsonify({"error": "No survey_id provided"}), 400
+            language = data.get("language")
+            if not language:
+                return jsonify({"error": "No language provided"}), 400
+
+            survey = _load_walk(survey_id)
+            if not survey:
+                return jsonify({"error": f"Survey {survey_id} not found"}), 404
+            if _store().kind != "survey":
+                return jsonify({"error": "A preview is walked in its questionnaire's language"}), 400
+            survey = flow_service.prepare_walk(survey)
+            if _refuses_answers(survey):
+                return _not_fielding_walk_response(_locale())
+
+            try:
+                choice = flow_service.choose_language(
+                    repository, survey, language, external_input_resolver=external_input_resolver
+                )
+            except UnsupportedLocale:
+                return jsonify({"error": f"Unsupported language {language!r}"}), 400
+
+            if choice.outcome is flow_service.LanguageChoiceOutcome.LOCKED:
+                return jsonify({"error": "language_locked", "language": survey.language}), 409
+            if choice.outcome is flow_service.LanguageChoiceOutcome.NOT_OFFERED:
+                return jsonify(
+                    {"error": "language_not_offered", **_language_picker(survey, choice.offered)}
+                ), 409
+            logger.info("survey.language survey_id=%s language=%s", survey_id, survey.language)
+            return jsonify(
+                {"status": "success", "survey_id": survey_id, "language": survey.language}
+            ), 200
+        except OrganizationSealedError:
+            return _sealed_walk_response(_locale())
+        except SurveyStateConflictError:
+            return _conflict_walk_response(_locale())
+        except Exception as e:
+            _log_failure("choose_language", e)
             return jsonify({"error": str(e)}), 500
 
     @blueprint.route("/previous-item", methods=["GET"])
@@ -422,7 +701,7 @@ def create_flow_blueprint(
             if not survey_id:
                 return jsonify({"error": "No survey_id provided"}), 400
 
-            survey = _store().load(survey_id)
+            survey = _load_walk(survey_id)
             if not survey:
                 return jsonify({"error": f"Survey {survey_id} not found"}), 404
             survey = flow_service.prepare_walk(survey)
@@ -436,7 +715,7 @@ def create_flow_blueprint(
                 external_input_resolver=external_input_resolver,
             )
             if step.outcome is FlowOutcome.NO_PREVIOUS:
-                return jsonify({"error": "No previous item available"}), 404
+                return jsonify({"error": gettext(_locale(), "No previous item available")}), 404
 
             item_data = step.item
             item_data["survey_id"] = survey_id
@@ -444,11 +723,11 @@ def create_flow_blueprint(
             logger.info("survey.back survey_id=%s item_id=%s", survey_id, item_data.get("id"))
             return jsonify(item_data), 200
         except OrganizationSealedError:
-            return _sealed_walk_response()
+            return _sealed_walk_response(_locale())
         except SurveyStateConflictError:
-            return _conflict_walk_response()
+            return _conflict_walk_response(_locale())
         except Exception as e:
-            logger.error(f"Error getting previous item: {e}")
+            _log_failure("previous_item", e)
             return jsonify({"error": str(e)}), 500
 
     @blueprint.route("/stepper", methods=["GET"])
@@ -463,7 +742,7 @@ def create_flow_blueprint(
             if not survey_id:
                 return jsonify({"error": "No survey_id provided"}), 400
 
-            survey = _store().load(survey_id)
+            survey = _load_walk(survey_id)
             if not survey:
                 return jsonify({"error": f"Survey {survey_id} not found"}), 404
 
@@ -502,11 +781,11 @@ def create_flow_blueprint(
 
             return jsonify({"currentItemId": current_item_id, "stepperItems": stepper_items}), 200
         except OrganizationSealedError:
-            return _sealed_walk_response()
+            return _sealed_walk_response(_locale())
         except SurveyStateConflictError:
-            return _conflict_walk_response()
+            return _conflict_walk_response(_locale())
         except Exception as e:
-            logger.error(f"Error building stepper data: {e}")
+            _log_failure("stepper", e)
             return jsonify({"error": str(e)}), 500
 
     @blueprint.route("/navigation-path", methods=["GET"])
@@ -518,7 +797,7 @@ def create_flow_blueprint(
             if not survey_id:
                 return jsonify({"error": "No survey_id provided"}), 400
 
-            survey = _store().load(survey_id)
+            survey = _load_walk(survey_id)
             if not survey:
                 return jsonify({"error": f"Survey {survey_id} not found"}), 404
             survey = flow_service.prepare_walk(survey)
@@ -546,11 +825,11 @@ def create_flow_blueprint(
                 }
             ), 200
         except OrganizationSealedError:
-            return _sealed_walk_response()
+            return _sealed_walk_response(_locale())
         except SurveyStateConflictError:
-            return _conflict_walk_response()
+            return _conflict_walk_response(_locale())
         except Exception as e:
-            logger.error(f"Error getting navigation path: {e}")
+            _log_failure("navigation_path", e)
             return jsonify({"error": str(e)}), 500
 
     @blueprint.route("/navigate-to-item", methods=["POST"])
@@ -578,10 +857,12 @@ def create_flow_blueprint(
             if not target_item_id:
                 return jsonify({"error": "No target_item_id provided"}), 400
 
-            survey = _store().load(survey_id)
+            survey = _load_walk(survey_id)
             if not survey:
                 return jsonify({"error": f"Survey {survey_id} not found"}), 404
             survey = flow_service.prepare_walk(survey)
+            if _refuses_answers(survey):
+                return _not_fielding_walk_response(_locale())
 
             step = flow_service.navigate_to_item(
                 _store(),
@@ -596,7 +877,10 @@ def create_flow_blueprint(
                 return jsonify({"error": f"Item {target_item_id} not found in questionnaire"}), 404
             if step.outcome is FlowOutcome.NAVIGATION_REFUSED:
                 return jsonify(
-                    {"error": "Cannot navigate to this item", "reason": step.message}
+                    {
+                        "error": gettext(_locale(), "Cannot navigate to this item"),
+                        "reason": step.message,
+                    }
                 ), 400
 
             target_item = step.item
@@ -606,11 +890,11 @@ def create_flow_blueprint(
             return jsonify(target_item), 200
 
         except OrganizationSealedError:
-            return _sealed_walk_response()
+            return _sealed_walk_response(_locale())
         except SurveyStateConflictError:
-            return _conflict_walk_response()
+            return _conflict_walk_response(_locale())
         except Exception as e:
-            logger.error(f"Error navigating to item: {e}")
+            _log_failure("navigate_to_item", e)
             return jsonify({"error": str(e)}), 500
 
     @blueprint.route("/reset", methods=["POST"])
@@ -620,6 +904,9 @@ def create_flow_blueprint(
         Clears all outcomes, history, and runtime state, and returns the first
         item so the UI can display it. Web-only: the respondent lane has no
         reset, so this stays here rather than in ``flow_service``.
+
+        A fielded survey may be reset before completion by whoever is walking
+        it and by nobody after (409 ``survey_completed``); a preview always.
 
         What it clears and what it KEEPS differ by arrival. For a fielded
         survey the parsed questionnaire is kept — the instrument is pinned for
@@ -640,10 +927,32 @@ def create_flow_blueprint(
             if not survey_id:
                 return jsonify({"error": "No survey_id provided"}), 400
 
-            survey = _store().load(survey_id)
+            survey = _load_walk(survey_id)
             if not survey:
                 return jsonify({"error": f"Survey {survey_id} not found"}), 404
             survey = flow_service.prepare_walk(survey)
+            # A reset erases the answers that let a respondent continue after a
+            # pause, so it is judged on fielding alone: outside fielding it
+            # would only strand them.
+            if _store().kind != "preview":
+                campaign = _fielded_campaign(survey)
+                if campaign is None or campaign.status not in FIELDING_STATUSES:
+                    return _not_fielding_walk_response(_locale())
+            # A fielded survey that was ever completed is never reset (#1293,
+            # D30), a resumed one included: it may already be in a dataset, and
+            # its AI channel was revoked on completion. Resume and Back are how
+            # a respondent changes answers.
+            if _store().kind != "preview" and flow_service.walk_was_completed(survey):
+                return jsonify(
+                    {
+                        "error": "survey_completed",
+                        "message": gettext(
+                            _locale(),
+                            "This survey was completed and cannot be reset. "
+                            "Use Back or Resume to change an answer.",
+                        ),
+                    }
+                ), 409
 
             # Initialize if needed (shouldn't happen but be safe)
             if not survey.qml_state:
@@ -700,11 +1009,11 @@ def create_flow_blueprint(
             return jsonify({"status": "success", "item": first_item}), 200
 
         except OrganizationSealedError:
-            return _sealed_walk_response()
+            return _sealed_walk_response(_locale())
         except SurveyStateConflictError:
-            return _conflict_walk_response()
+            return _conflict_walk_response(_locale())
         except Exception as e:
-            logger.error(f"Error resetting survey: {e}")
+            _log_failure("reset", e)
             return jsonify({"error": str(e)}), 500
 
     @blueprint.route("/finish", methods=["POST"])
@@ -727,10 +1036,12 @@ def create_flow_blueprint(
             if not survey_id:
                 return jsonify({"error": "No survey_id provided"}), 400
 
-            survey = _store().load(survey_id)
+            survey = _load_walk(survey_id)
             if not survey:
                 return jsonify({"error": f"Survey {survey_id} not found"}), 404
             survey = flow_service.prepare_walk(survey)
+            if _refuses_answers(survey):
+                return _not_fielding_walk_response(_locale())
 
             step = flow_service.finish(_store(), survey, audit_callback=audit_callback)
             if step.outcome is FlowOutcome.ALREADY_COMPLETED:
@@ -738,7 +1049,7 @@ def create_flow_blueprint(
                     {
                         "status": "already_completed",
                         "survey_id": survey_id,
-                        "message": "Survey is already completed",
+                        "message": gettext(_locale(), "Survey is already completed"),
                     }
                 ), 200
 
@@ -747,16 +1058,16 @@ def create_flow_blueprint(
                 {
                     "status": "success",
                     "survey_id": survey_id,
-                    "message": "Survey finished successfully",
+                    "message": gettext(_locale(), "Survey finished successfully"),
                 }
             ), 200
 
         except OrganizationSealedError:
-            return _sealed_walk_response()
+            return _sealed_walk_response(_locale())
         except SurveyStateConflictError:
-            return _conflict_walk_response()
+            return _conflict_walk_response(_locale())
         except Exception as e:
-            logger.error(f"Error finishing survey: {e}")
+            _log_failure("finish", e)
             return jsonify({"error": str(e)}), 500
 
     @blueprint.route("/resume", methods=["POST"])
@@ -779,10 +1090,12 @@ def create_flow_blueprint(
             if not survey_id:
                 return jsonify({"error": "No survey_id provided"}), 400
 
-            survey = _store().load(survey_id)
+            survey = _load_walk(survey_id)
             if not survey:
                 return jsonify({"error": f"Survey {survey_id} not found"}), 404
             survey = flow_service.prepare_walk(survey)
+            if _refuses_answers(survey):
+                return _not_fielding_walk_response(_locale())
 
             step = flow_service.resume(
                 _store(),
@@ -797,7 +1110,7 @@ def create_flow_blueprint(
                     {
                         "status": "not_completed",
                         "survey_id": survey_id,
-                        "message": "Survey is not completed, cannot resume",
+                        "message": gettext(_locale(), "Survey is not completed, cannot resume"),
                     }
                 ), 400
 
@@ -811,7 +1124,7 @@ def create_flow_blueprint(
                         "status": "success",
                         "survey_id": survey_id,
                         "item": item_data,
-                        "message": "Survey resumed successfully",
+                        "message": gettext(_locale(), "Survey resumed successfully"),
                     }
                 ), 200
             # All items were already visited
@@ -819,16 +1132,16 @@ def create_flow_blueprint(
                 {
                     "status": "success",
                     "survey_id": survey_id,
-                    "message": "Survey resumed but all items are completed",
+                    "message": gettext(_locale(), "Survey resumed but all items are completed"),
                 }
             ), 200
 
         except OrganizationSealedError:
-            return _sealed_walk_response()
+            return _sealed_walk_response(_locale())
         except SurveyStateConflictError:
-            return _conflict_walk_response()
+            return _conflict_walk_response(_locale())
         except Exception as e:
-            logger.error(f"Error resuming survey: {e}")
+            _log_failure("resume", e)
             return jsonify({"error": str(e)}), 500
 
     return blueprint

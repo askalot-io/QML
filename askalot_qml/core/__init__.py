@@ -22,10 +22,14 @@ from askalot_qml.core.qml_publish import (
     PublishResult,
     PublishTicket,
     evaluate_qml_content,
+    head_version_to_stamp,
+    judge_head_version,
     pin_validated_version,
     publish_questionnaire_to_campaign,
     publish_refusal_message,
+    publish_refusal_text,
     record_questionnaire_verdict,
+    record_stamp,
     stamp_questionnaire_validation,
     validation_record,
 )
@@ -40,6 +44,15 @@ from askalot_qml.core.qml_source import (
     parse_qml_address,
 )
 from askalot_qml.core.qml_topology import QMLTopology
+from askalot_qml.core.qml_translation import (
+    RefusalKind,
+    TranslationRefusal,
+    apply_translation,
+    carry_forward,
+    text_keys,
+    untranslated,
+    validate_translation,
+)
 from askalot_qml.core.quality_metrics import compute_quality_report
 from askalot_qml.core.validation_processor import ValidationProcessor
 
@@ -67,10 +80,14 @@ __all__ = [
     "evaluate_merge_gate",
     "evaluate_publish_gate_content",
     "evaluate_qml_content",
+    "head_version_to_stamp",
+    "judge_head_version",
     "pin_validated_version",
     "publish_questionnaire_to_campaign",
     "publish_refusal_message",
+    "publish_refusal_text",
     "record_questionnaire_verdict",
+    "record_stamp",
     "stamp_questionnaire_validation",
     "validation_record",
     "merge_qml",
@@ -78,4 +95,11 @@ __all__ = [
     "list_external_items",
     "outcome_in_domain",
     "questionnaire_item_count",
+    "RefusalKind",
+    "TranslationRefusal",
+    "apply_translation",
+    "carry_forward",
+    "text_keys",
+    "untranslated",
+    "validate_translation",
 ]

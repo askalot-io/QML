@@ -2,13 +2,19 @@
 
 import ast
 import json
+import keyword
 import logging
 import re
+import unicodedata
 from pathlib import Path
 from typing import Any
 
 import yaml
-from jsonschema import ValidationError, validate
+from jsonschema.validators import validator_for
+
+from askalot_qml.core.domain_validator import default_refusal
+from askalot_qml.core.python_runner import WHOLE_NUMBER_FIX, fractional_construct, sandbox_names
+from askalot_qml.schema import schema_refusal
 
 
 def _is_power_of_two(value: Any) -> bool:
@@ -84,6 +90,8 @@ def normalize_switch_input(spec: Any) -> None:
     (``on: 1``) becomes its text, and an empty one (``on:``) is dropped — the
     Switch simply carries no label on that side, as the renderers already show
     it. Any other shape (a list, a mapping) is left for the schema to refuse.
+    The ``left`` / ``right`` captions (schema 2.6.0) are retyped by the same
+    rule: they are typed as strings too, and ``left: No`` is as natural to write.
     """
     if not isinstance(spec, dict) or spec.get("control") != "Switch":
         return
@@ -91,6 +99,7 @@ def normalize_switch_input(spec: Any) -> None:
         if flag in spec:
             label = spec.pop(flag)
             spec.setdefault(name, label)
+    for name in ("on", "off", "left", "right"):
         label = spec.get(name)
         if isinstance(label, bool):
             spec[name] = "Yes" if label else "No"
@@ -98,6 +107,21 @@ def normalize_switch_input(spec: Any) -> None:
             spec[name] = str(label)
         elif name in spec and label is None:
             del spec[name]
+
+
+def _root_shape(value: Any) -> str:
+    """How a refused document root reads to an author (#1819)."""
+    if value is None:
+        return "empty"
+    if isinstance(value, list):
+        return "a list"
+    if isinstance(value, bool):
+        return "a true/false value"
+    if isinstance(value, (int, float)):
+        return "a number"
+    if isinstance(value, str):
+        return "a line of text"
+    return f"a {type(value).__name__}"
 
 
 class QMLLoader:
@@ -114,12 +138,11 @@ class QMLLoader:
     filesystem. Everything above the load call — parse, schema validation,
     kind/reserved-id checks, flattening — is identical either way, so a caller
     swapping storage changes one constructor argument and nothing else. Without
-    a source the loader reads ``qml_dir``; that path serves fixtures, the CLI,
-    and Armiger's ephemeral workspace trees, which are real files by design.
+    a source the loader reads ``qml_dir``; that path serves fixtures and the
+    CLI.
 
     There is no environment-derived default for ``qml_dir``. A caller that
-    resolves names by path knows which tree it means (a workspace, a fixture
-    directory), and inventing a plausible-looking one for a caller that did not
+    resolves names by path knows which tree it means (a fixture directory), and inventing a plausible-looking one for a caller that did not
     say would silently resolve into a directory holding no QML at all.
     """
 
@@ -192,22 +215,20 @@ class QMLLoader:
             raise ValueError(
                 f"Cannot resolve QML name {filename!r}: this loader has neither a "
                 "content_source nor a qml_dir. Pass RepositoryQMLSource to read the "
-                "document store, or a qml_dir to read a workspace/fixture tree."
+                "document store, or a qml_dir to read a fixture tree."
             )
-        # ``qml_dir`` is a BOUNDARY, not a convenience prefix. The name reaches
-        # here from a query parameter, and ``Path.__truediv__`` discards the
-        # left operand entirely when the right one is absolute — so an
-        # unchecked join let ``/etc/hostname`` and ``../../<other user>/x.qml``
-        # read outside the caller's workspace. Confirmed against the live
-        # tenant before this check existed: an absolute path was opened and
-        # parsed, and a name that does not exist answered differently from one
-        # that does, which is an existence oracle over the whole filesystem.
+        # ``qml_dir`` is a BOUNDARY, not a convenience prefix (#772).
+        # ``Path.__truediv__`` discards the left operand entirely when the
+        # right one is absolute, so an unchecked join would let
+        # ``/etc/hostname`` or ``../../x.qml`` read outside the directory, and a
+        # name that does not exist would answer differently from one that does,
+        # an existence oracle over the whole filesystem.
         root = self.qml_dir.resolve()
         file_path = (self.qml_dir / filename).resolve()
         if not file_path.is_relative_to(root):
             # Deliberately does not echo the resolved path: the caller chose the
             # name and learning where it landed is itself the disclosure.
-            raise ValueError(f"QML name {filename!r} resolves outside the workspace")
+            raise ValueError(f"QML name {filename!r} resolves outside the QML directory")
         return self.load_from_path(file_path)
 
     def load_from_path(self, file_path: str | Path) -> dict[str, Any]:
@@ -261,6 +282,10 @@ class QMLLoader:
         (file read vs. raw string) and parse it into ``self.parsed_yaml``, then
         delegate here. The exact ordering is contractually fixed:
 
+        0. the root must be a mapping (#1819): a scalar or list root parsed as
+           YAML is a document the rest of the pipeline cannot read, so it is
+           refused with a sentence for the author, not left to fail as an
+           ``AttributeError`` the validation endpoint can only answer with 500
         1. qmlVersion gate (BEFORE schema validation, so a legacy document gets
            a clear version error rather than a cryptic enum failure on the
            removed kinds)
@@ -272,15 +297,23 @@ class QMLLoader:
            not injected during validation)
         5. loader-level kind validation (legacy-kind rejection) + reserved
            item-id rejection (``__init__`` / ``codeInit`` collide with Z3
-           static-builder sentinels)
+           static-builder sentinels) + whole-number arithmetic (#1813)
         6. Roster/Checkbox power-of-2 label keys + Group ``count`` positivity +
-           iterateOver self-cycle
+           iterateOver self-cycle, then every control ``default`` inside its
+           answer domain (#1823; after the label keys it is judged against)
         7. capped-Group inner-item independence (direct sibling references)
         8. flatten the nested structure
 
         ``missing_section_label`` distinguishes the two callers' error text
         ("QML file" vs "QML content") on a missing ``questionnaire`` section.
         """
+        # 0. Refuse a document whose root is not a mapping (#1819).
+        if not isinstance(self.parsed_yaml, dict):
+            raise ValueError(
+                f"{missing_section_label} must be a YAML mapping with a 'questionnaire' section; "
+                f"its root is {_root_shape(self.parsed_yaml)}."
+            )
+
         # 1. Reject an incompatible declared qmlVersion before schema validation.
         self._validate_qml_version()
 
@@ -304,7 +337,9 @@ class QMLLoader:
         # 5-7. Loader-level validation that JSON Schema can't express cleanly.
         self._validate_block_kinds(self.parsed_yaml["questionnaire"])
         self._validate_reserved_item_ids(self.parsed_yaml["questionnaire"])
+        self._validate_whole_number_arithmetic(self.parsed_yaml["questionnaire"])
         self._validate_roster_and_checkbox_constraints(self.parsed_yaml["questionnaire"])
+        self._validate_defaults_in_domain(self.parsed_yaml["questionnaire"])
         self._validate_group_independence(self.parsed_yaml["questionnaire"])
 
         # 8. Flatten the structure before returning.
@@ -328,12 +363,13 @@ class QMLLoader:
         with open(self.schema_path, encoding="utf-8") as schema_file:
             schema = json.load(schema_file)
 
-        try:
-            validate(instance=self.parsed_yaml, schema=schema)
-            self.logger.info("QML validation successful")
-        except ValidationError as e:
-            self.logger.error(f"QML validation failed: {e}")
-            raise
+        validator_class = validator_for(schema)
+        validator_class.check_schema(schema)
+        error = schema_refusal(validator_class(schema).iter_errors(self.parsed_yaml))
+        if error is not None:
+            self.logger.error(f"QML validation failed: {error}")
+            raise error
+        self.logger.info("QML validation successful")
 
     def _validate_qml_version(self) -> None:
         """
@@ -488,6 +524,34 @@ class QMLLoader:
                     f"{list(self.SUPPORTED_BLOCK_KINDS)}.{hint}"
                 )
 
+    def _validate_defaults_in_domain(self, questionnaire: dict[str, Any]) -> None:
+        """Refuse a control ``default`` no answer to the item could match (#1823).
+
+        The schema checks a default's type, not its domain: a Range
+        ``default: [8, 2]`` or one past ``max``, a Slider or Editbox default
+        outside its bounds, or a Radio / Dropdown default that is not a label
+        key all loaded, and a respondent confirming that resting position
+        submitted a value ``process_item`` refuses. The default is judged by
+        the answer-domain rule itself (``domain_validator.default_refusal``),
+        so the two can never disagree. A default stays a hint, never an answer
+        (#1166); only one outside every answer is refused.
+
+        Raises:
+            ValueError: naming the item, its control and the domain.
+        """
+        for block in questionnaire.get("blocks", []):
+            for item in block.get("items", []):
+                input_spec = item.get("input")
+                if not isinstance(input_spec, dict):
+                    continue
+                domain = default_refusal(input_spec)
+                if domain is not None:
+                    raise ValueError(
+                        f"Item {item.get('id')!r}: its {input_spec.get('control')} default "
+                        f"is outside the answers the item takes, which are {domain}. "
+                        f"Move the default inside that domain or remove it."
+                    )
+
     def _validate_reserved_item_ids(self, questionnaire: dict[str, Any]) -> None:
         """Reject any item whose id collides with a Z3 static-builder sentinel.
 
@@ -499,8 +563,19 @@ class QMLLoader:
         or misroute hygiene findings to ``item_id=None`` (``codeInit``). Fail
         loud at load time so the collision can never reach the builder.
 
+        An item id must also be a Python identifier that is not a keyword:
+        a condition reads an item as ``<id>.outcome``, so no other id can be
+        referenced, and the Z3 builder relies on it, joining an id and its
+        scope parts with ``@`` (``item_m@0@0``) so a derived name never equals
+        another item's own (#1783). It must be in NFKC form, because Python
+        normalizes a name it parses (``ﬁrst.outcome`` reads ``first``), and
+        must not be a sandbox builtin or module name (``len``, ``math``): the
+        item would shadow it in every condition, which Z3 still reads as the
+        builtin.
+
         Raises:
-            ValueError: when an item id is a reserved sentinel string.
+            ValueError: when an item id is a reserved sentinel string, or not
+                an identifier conditions can name.
         """
         for block in questionnaire.get("blocks", []):
             for item in block.get("items", []):
@@ -511,6 +586,62 @@ class QMLLoader:
                         f"internal Z3 static-builder sentinel. Rename the item "
                         f"(reserved ids: {list(self.RESERVED_ITEM_IDS)})."
                     )
+                if not (
+                    isinstance(item_id, str)
+                    and item_id.isidentifier()
+                    and not keyword.iskeyword(item_id)
+                    and unicodedata.normalize("NFKC", item_id) == item_id
+                    and item_id not in sandbox_names()
+                ):
+                    raise ValueError(
+                        f"Item id {item_id!r} is not a name conditions can read: "
+                        f"use letters, digits and underscores, not starting with a "
+                        f"digit, and neither a Python keyword nor a built-in name "
+                        f"such as 'len' or 'math'."
+                    )
+
+    def _validate_whole_number_arithmetic(self, questionnaire: dict[str, Any]) -> None:
+        """Refuse author code that can produce a fraction (#1813).
+
+        QML arithmetic is whole numbers (``python_runner.fractional_construct``
+        names the constructs): every answer is whole and the Z3 model holds
+        every value as an Int, so a ``/`` would run a computation the
+        verification cannot represent. Checked here for every code unit:
+        codeInit, each codeBlock, each block's and item's pre/postconditions,
+        and a Roster's ``iterateOver``. A unit that does not parse is left to
+        the layers that report syntax.
+
+        Raises:
+            ValueError: naming the construct, where it is, and the fix.
+        """
+        units: list[tuple[str, Any, str]] = []
+        if questionnaire.get("codeInit"):
+            units.append(("codeInit", questionnaire["codeInit"], "exec"))
+        for block in questionnaire.get("blocks", []):
+            owners = [(f"block '{block.get('id')}'", block)] + [
+                (f"'{item.get('id')}'", item) for item in block.get("items", [])
+            ]
+            if block.get("iterateOver"):
+                units.append((f"the iterateOver of block '{block.get('id')}'", block["iterateOver"], "eval"))
+            for owner, entry in owners:
+                if entry.get("codeBlock"):
+                    units.append((f"the codeBlock of {owner}", entry["codeBlock"], "exec"))
+                for kind in ("precondition", "postcondition"):
+                    for condition in entry.get(kind) or []:
+                        predicate = condition.get("predicate") if isinstance(condition, dict) else None
+                        if isinstance(predicate, str):
+                            units.append((f"a {kind} of {owner}", predicate, "eval"))
+        for where, code, mode in units:
+            try:
+                tree = ast.parse(str(code), mode=mode)
+            except SyntaxError:
+                continue
+            construct = fractional_construct(tree)
+            if construct:
+                raise ValueError(
+                    f"QML arithmetic is whole numbers: {construct} in {where} can "
+                    f"produce a fraction; {WHOLE_NUMBER_FIX}."
+                )
 
     def _validate_roster_and_checkbox_constraints(self, questionnaire: dict[str, Any]) -> None:
         """

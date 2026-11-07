@@ -33,9 +33,57 @@ import logging
 from dataclasses import dataclass, field
 from typing import Any
 
+from askalot_common.i18n import N_, gettext
+
 from askalot_qml.core.qml_loader import QMLLoader
 from askalot_qml.core.validation_processor import ValidationProcessor
 from askalot_qml.models import QMLState
+
+#: Every validation issue ``type`` the gate can report, with the words a page
+#: shows for it (#2166). The type is the stable machine identifier agents and
+#: the editor read; the label is a msgid, translated where a page prints it
+#: (:func:`issue_type_label`). The issue ``message`` stays the engine's English
+#: detail for the editor's report and agents.
+ISSUE_TYPE_LABELS: dict[str, str] = {
+    "load_error": N_("The questionnaire could not be loaded"),
+    "validation_error": N_("The logic check could not run"),
+    "unreachable_item": N_("Item can never be shown"),
+    "infeasible_postcondition": N_("Answer check that no answer can pass"),
+    "tautological_postcondition": N_("Answer check that every answer passes"),
+    "globally_false_postcondition": N_("Answer check that always fails"),
+    "global_unsat": N_("No respondent can complete the questionnaire"),
+    "global_unknown": N_("Completion could not be proven"),
+    "dependency_cycle": N_("Items depend on each other in a cycle"),
+    "accumulated_dead_code": N_("Item unreachable once earlier answers are given"),
+    "group_dependency": N_("Items in a capped group depend on each other"),
+    "undefined_name": N_("Name that refers to nothing"),
+    "uninitialized_read": N_("Variable read before it is set"),
+    "none_unsafe_reference": N_("Reads an answer that may be missing"),
+    "frozen_variable": N_("Condition on a value that never changes"),
+    "skipped_condition": N_("Condition the logic check could not verify"),
+    "inexact_condition": N_("Condition verified only approximately"),
+    "unsafe_code": N_("Code that is not allowed"),
+    "write_only_variable": N_("Variable set but never read"),
+    "pass_through_alias": N_("Variable that only copies another"),
+    "duplicate_input_bound": N_("Answer check repeats the input limits"),
+    "textarea_in_predicate": N_("Condition reads free text"),
+    "comment_titled_as_question": N_("Comment worded as a question"),
+    "questionnaire_level_condition": N_("Questionnaire-level condition that nothing reads"),
+    "roster_subject_not_answerable": N_("Repeated-question subject that cannot be answered"),
+    "self_assignment": N_("Variable assigned to itself"),
+    "mandated_answer_postcondition": N_("Answer check that allows only one choice"),
+    "combinable_none_option": N_("A 'none' option that can be ticked with others"),
+}
+
+
+def issue_type_label(locale: str, issue_type: str) -> str:
+    """The words a page shows for a validation issue type, in ``locale``.
+
+    A type with no label reads as itself, never as a guess; the coverage test
+    over the validator's types keeps that from happening for a current one.
+    """
+    label = ISSUE_TYPE_LABELS.get(issue_type)
+    return gettext(locale, label) if label is not None else issue_type
 
 
 def error_issues(issues: list[dict[str, Any]]) -> list[dict[str, Any]]:

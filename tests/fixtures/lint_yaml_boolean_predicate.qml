@@ -33,9 +33,8 @@ questionnaire:
           title: "Does the simplified assessment apply?"
           input:
             control: Switch
-            labels:
-              1: "Yes"
-              2: "No"
+            on: "Yes"
+            off: "No"
         - id: q_pillar1_full
           kind: Question
           title: "Pillar 1 — full assessment"

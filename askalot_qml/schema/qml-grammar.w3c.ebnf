@@ -35,16 +35,16 @@ BlockMeta     ::= ( "title" String )?
 
 Item               ::= CommentItem | QuestionItem | QuestionGroupItem | MatrixQuestionItem
 
-CommentItem        ::= "id" String "kind" "Comment" ItemMeta
+CommentItem        ::= "id" ItemId "kind" "Comment" ItemMeta
 
-QuestionItem       ::= "id" String "kind" "Question" ItemMeta
+QuestionItem       ::= "id" ItemId "kind" "Question" ItemMeta
                        "input" Input
 
-QuestionGroupItem  ::= "id" String "kind" "QuestionGroup" ItemMeta
+QuestionGroupItem  ::= "id" ItemId "kind" "QuestionGroup" ItemMeta
                        "questions" String*
                        "input" Input
 
-MatrixQuestionItem ::= "id" String "kind" "MatrixQuestion" ItemMeta
+MatrixQuestionItem ::= "id" ItemId "kind" "MatrixQuestion" ItemMeta
                        "rows" String*
                        "columns" String*
                        "input" Input
@@ -62,6 +62,8 @@ Input         ::= SwitchInput | RadioInput | DropdownInput | CheckboxInput
 SwitchInput   ::= "control" "Switch"
                   ( "off" String )?
                   ( "on" String )?
+                  ( "left" String )?
+                  ( "right" String )?
                   ( "default" SwitchDefault )?
 
 RadioInput    ::= "control" "Radio"
@@ -87,19 +89,24 @@ EditboxInput  ::= "control" "Editbox"
 
 TextareaInput ::= "control" "Textarea"
                   ( "placeholder" String )?
+                  ( "minLength" Integer )?
                   ( "maxLength" Integer )?
 
 SliderInput   ::= "control" "Slider" SliderBody
+                  ( "default" Integer )?
 
 RangeInput    ::= "control" "Range" SliderBody
+                  ( "default" RangePair )?
 
 SliderBody    ::= "min" Integer
                   "max" Integer
                   ( "step" Integer )?
-                  ( "default" Integer )?
                   ( "left" String )?
                   ( "right" String )?
                   ( "labels" Labels )?
+
+/* low <= high, both inside min..max */
+RangePair     ::= "[" Integer "," Integer "]"
 
 SwitchDefault ::= "0" | "1"
 
@@ -118,5 +125,14 @@ VersionString ::= Integer "." Integer "." Integer
 
 PositiveInteger ::= Integer
 IntegerKey      ::= Integer
+/* Python, judged by the sandbox: a Condition predicate, iterateOver
+   (PythonExpr), codeInit and codeBlock (PythonCode). Arithmetic is whole
+   numbers (2.6.2, enforced by the loader): no '/', float literal, float(),
+   negative power or float-valued math / statistics / random member; '//'
+   and '%' stay. */
 PythonExpr      ::= String
 PythonCode      ::= String
+/* A name a condition reads as <id>.outcome (2.6.1, enforced by the loader):
+   a Python identifier in NFKC form that is neither a keyword nor a sandbox
+   builtin or module name (len, math, ...), and not __init__ or codeInit. */
+ItemId          ::= String

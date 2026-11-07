@@ -16,9 +16,8 @@ means for the merge:
 
 - ``merge_qml`` **refuses**. A failing verdict downgrades the merge to a
   conflict whose content is the merged candidate, with a reason to show. It is
-  for a caller that must not make an unsound merge the head: workspace
-  promotion, where the merged text would replace a file a person is editing
-  and nobody asked for the combination.
+  for a caller that must not make an unsound merge the head. No production
+  caller passes it today.
 - ``merge_qml_judged`` **judges and never refuses**. The merge stays clean
   whatever the verdict says, and the verdict travels with it so the caller
   stores it on the version it writes. It is for a caller whose save must never
@@ -153,9 +152,9 @@ def merge_qml(
     """Merge QML content 3-way and gate the result on Z3 soundness.
 
     Args:
-        base: Content of the version the workspace materialized from.
+        base: Content of the version the sender's edit started from.
         head: Current canonical content.
-        workspace: Content the workspace is trying to promote.
+        workspace: Content the sender is saving.
         logger: Optional logger threaded into the gate.
 
     Returns:

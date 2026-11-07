@@ -7,20 +7,32 @@ The contract:
 - Question      → bare scalar (int | float | str | bool | None).
                   Checkbox: bitmask int (already reduced upstream by the input
                   boundary parser; ItemProxy does NOT coerce list → bitmask).
-- QuestionGroup → List[Any] of length input.count (None pads short answers).
-- MatrixQuestion→ List[List[Any]] sized rows × cols.
+- QuestionGroup → List[Any], one cell per entry of the item's `questions`
+                  (None pads short answers; a longer list raises, #1616).
+- MatrixQuestion→ List[List[Any]] sized by the item's `rows` × `columns`
+                  (a wrong count raises, #1616).
 - Comment       → None unconditionally.
+- Range cell    → None or a pair [low, high] of numbers, low <= high, in all
+                  three kinds; each end is coerced, a scalar is never paired.
+                  Read as a RangeValue (`.low` / `.high`, no positional alias,
+                  #1755) and stored by `to_outcome()` as the pair, including a
+                  codeBlock's `q.outcome = [a, b]` write and a cell written in
+                  place; comparing it with a list raises instead of a silent
+                  False.
 
 Loud failure on legacy dict shapes:
 - {"_": v}, {"_0": v0, "_1": v1}, {"_0_0": v} reaching from_outcome → ValueError.
 - Any shape mismatch → ValueError.
 
-`to_outcome()` is a trivial accessor returning self.outcome (Optional[Any]).
+`to_outcome()` returns the storage shape: self.outcome, except a Range cell
+(or a RangeValue a codeBlock put on a non-Range item) becomes its
+`[low, high]` pair.
 """
 
 import unittest
 
 import pytest
+from askalot_qml.core.controls import RangeValue
 from askalot_qml.models.item_proxy import ItemProxy
 
 
@@ -108,33 +120,33 @@ class TestQuestionGroupShape(unittest.TestCase):
     """QuestionGroup kind: native list."""
 
     def test_none_outcome(self):
-        item = {"id": "qg", "kind": "QuestionGroup", "outcome": None, "input": {"count": 3}}
+        item = {"id": "qg", "kind": "QuestionGroup", "outcome": None, "questions": ["Q1?", "Q2?", "Q3?"]}
         proxy = ItemProxy(item)
         self.assertIsNone(proxy.outcome)
 
     def test_list_outcome(self):
-        item = {"id": "qg", "kind": "QuestionGroup", "outcome": [10, 20, 30], "input": {"count": 3}}
+        item = {"id": "qg", "kind": "QuestionGroup", "outcome": [10, 20, 30], "questions": ["Q1?", "Q2?", "Q3?"]}
         proxy = ItemProxy(item)
         self.assertEqual(proxy.outcome, [10, 20, 30])
 
     def test_partial_list_padded(self):
-        """Shorter list pads with None to reach input.count."""
+        """Shorter list pads with None, one cell per question."""
         item = {
             "id": "qg",
             "kind": "QuestionGroup",
             "outcome": [1, None, "text"],
-            "input": {"count": 3},
+            "questions": ["Q1?", "Q2?", "Q3?"],
         }
         proxy = ItemProxy(item)
         self.assertEqual(proxy.outcome, [1, None, "text"])
 
     def test_list_too_long_raises(self):
-        item = {"id": "qg", "kind": "QuestionGroup", "outcome": [1, 2, 3, 4], "input": {"count": 3}}
+        item = {"id": "qg", "kind": "QuestionGroup", "outcome": [1, 2, 3, 4], "questions": ["Q1?", "Q2?", "Q3?"]}
         with self.assertRaises(ValueError):
             ItemProxy(item)
 
     def test_list_short_padded_with_none(self):
-        item = {"id": "qg", "kind": "QuestionGroup", "outcome": [1], "input": {"count": 3}}
+        item = {"id": "qg", "kind": "QuestionGroup", "outcome": [1], "questions": ["Q1?", "Q2?", "Q3?"]}
         proxy = ItemProxy(item)
         self.assertEqual(proxy.outcome, [1, None, None])
 
@@ -143,7 +155,7 @@ class TestQuestionGroupShape(unittest.TestCase):
             "id": "qg",
             "kind": "QuestionGroup",
             "outcome": {"_0": 1, "_1": 2},
-            "input": {"count": 2},
+            "questions": ["Q1?", "Q2?"],
         }
         with self.assertRaises(ValueError):
             ItemProxy(item)
@@ -154,7 +166,7 @@ class TestQuestionGroupShape(unittest.TestCase):
             "id": "qg",
             "kind": "QuestionGroup",
             "outcome": ["10", "20", "30"],
-            "input": {"count": 3},
+            "questions": ["Q1?", "Q2?", "Q3?"],
         }
         proxy = ItemProxy(item)
         self.assertEqual(proxy.outcome, [10, 20, 30])
@@ -170,11 +182,9 @@ class TestMatrixQuestionShape(unittest.TestCase):
             "id": "mq",
             "kind": "MatrixQuestion",
             "outcome": None,
-            "input": {
-                "control": "RadioMatrix",
-                "rows": [{"id": "r0"}, {"id": "r1"}],
-                "columns": [{"id": "c0"}, {"id": "c1"}],
-            },
+            "rows": [{"id": "r0"}, {"id": "r1"}],
+            "columns": [{"id": "c0"}, {"id": "c1"}],
+            "input": {"control": "Radio"},
         }
         proxy = ItemProxy(item)
         self.assertIsNone(proxy.outcome)
@@ -184,11 +194,9 @@ class TestMatrixQuestionShape(unittest.TestCase):
             "id": "mq",
             "kind": "MatrixQuestion",
             "outcome": [[1, 2], [3, 4]],
-            "input": {
-                "control": "RadioMatrix",
-                "rows": [{"id": "r0"}, {"id": "r1"}],
-                "columns": [{"id": "c0"}, {"id": "c1"}],
-            },
+            "rows": [{"id": "r0"}, {"id": "r1"}],
+            "columns": [{"id": "c0"}, {"id": "c1"}],
+            "input": {"control": "Radio"},
         }
         proxy = ItemProxy(item)
         self.assertEqual(proxy.outcome, [[1, 2], [3, 4]])
@@ -200,11 +208,9 @@ class TestMatrixQuestionShape(unittest.TestCase):
             "id": "mq",
             "kind": "MatrixQuestion",
             "outcome": [[1, None], [None, 4]],
-            "input": {
-                "control": "RadioMatrix",
-                "rows": [{"id": "r0"}, {"id": "r1"}],
-                "columns": [{"id": "c0"}, {"id": "c1"}],
-            },
+            "rows": [{"id": "r0"}, {"id": "r1"}],
+            "columns": [{"id": "c0"}, {"id": "c1"}],
+            "input": {"control": "Radio"},
         }
         proxy = ItemProxy(item)
         self.assertEqual(proxy.outcome, [[1, None], [None, 4]])
@@ -214,11 +220,9 @@ class TestMatrixQuestionShape(unittest.TestCase):
             "id": "mq",
             "kind": "MatrixQuestion",
             "outcome": [["1", "2"], ["3", "4"]],
-            "input": {
-                "control": "RadioMatrix",
-                "rows": [{"id": "r0"}, {"id": "r1"}],
-                "columns": [{"id": "c0"}, {"id": "c1"}],
-            },
+            "rows": [{"id": "r0"}, {"id": "r1"}],
+            "columns": [{"id": "c0"}, {"id": "c1"}],
+            "input": {"control": "Radio"},
         }
         proxy = ItemProxy(item)
         self.assertEqual(proxy.outcome, [[1, 2], [3, 4]])
@@ -228,11 +232,9 @@ class TestMatrixQuestionShape(unittest.TestCase):
             "id": "mq",
             "kind": "MatrixQuestion",
             "outcome": {"_0_0": 1, "_1_1": 4},
-            "input": {
-                "control": "RadioMatrix",
-                "rows": [{"id": "r0"}, {"id": "r1"}],
-                "columns": [{"id": "c0"}, {"id": "c1"}],
-            },
+            "rows": [{"id": "r0"}, {"id": "r1"}],
+            "columns": [{"id": "c0"}, {"id": "c1"}],
+            "input": {"control": "Radio"},
         }
         with self.assertRaises(ValueError):
             ItemProxy(item)
@@ -242,11 +244,9 @@ class TestMatrixQuestionShape(unittest.TestCase):
             "id": "mq",
             "kind": "MatrixQuestion",
             "outcome": [[1, 2]],
-            "input": {
-                "control": "RadioMatrix",
-                "rows": [{"id": "r0"}, {"id": "r1"}],
-                "columns": [{"id": "c0"}, {"id": "c1"}],
-            },
+            "rows": [{"id": "r0"}, {"id": "r1"}],
+            "columns": [{"id": "c0"}, {"id": "c1"}],
+            "input": {"control": "Radio"},
         }
         with self.assertRaises(ValueError):
             ItemProxy(item)
@@ -256,11 +256,9 @@ class TestMatrixQuestionShape(unittest.TestCase):
             "id": "mq",
             "kind": "MatrixQuestion",
             "outcome": [[1], [2]],
-            "input": {
-                "control": "RadioMatrix",
-                "rows": [{"id": "r0"}, {"id": "r1"}],
-                "columns": [{"id": "c0"}, {"id": "c1"}],
-            },
+            "rows": [{"id": "r0"}, {"id": "r1"}],
+            "columns": [{"id": "c0"}, {"id": "c1"}],
+            "input": {"control": "Radio"},
         }
         with self.assertRaises(ValueError):
             ItemProxy(item)
@@ -270,14 +268,217 @@ class TestMatrixQuestionShape(unittest.TestCase):
             "id": "mq",
             "kind": "MatrixQuestion",
             "outcome": [1, 2, 3, 4],
-            "input": {
-                "control": "RadioMatrix",
-                "rows": [{"id": "r0"}, {"id": "r1"}],
-                "columns": [{"id": "c0"}, {"id": "c1"}],
-            },
+            "rows": [{"id": "r0"}, {"id": "r1"}],
+            "columns": [{"id": "c0"}, {"id": "c1"}],
+            "input": {"control": "Radio"},
         }
         with self.assertRaises(ValueError):
             ItemProxy(item)
+
+
+def _range_question(outcome, **input_extra):
+    return {
+        "id": "q_range",
+        "kind": "Question",
+        "outcome": outcome,
+        "input": {"control": "Range", "min": 0, "max": 10, **input_extra},
+    }
+
+
+def _range_group(outcome):
+    # Production shape: the loader keeps `questions` on the item, not `input.count`.
+    return {
+        "id": "qg_range",
+        "kind": "QuestionGroup",
+        "questions": ["First?", "Second?", "Third?"],
+        "outcome": outcome,
+        "input": {"control": "Range", "min": 0, "max": 100},
+    }
+
+
+def _range_matrix(outcome):
+    # Production shape: `rows` / `columns` sit on the item as plain strings.
+    return {
+        "id": "mq_range",
+        "kind": "MatrixQuestion",
+        "rows": ["English", "Spanish", "French", "German", "Italian"],
+        "columns": ["Mother", "Father", "Sister", "Brother"],
+        "outcome": outcome,
+        "input": {"control": "Range", "min": 0, "max": 6},
+    }
+
+
+@pytest.mark.unit
+@pytest.mark.models
+class TestRangeShape(unittest.TestCase):
+    """Range cell: None or a pair [low, high] of numbers with low <= high (#1474),
+    read as a ``RangeValue`` with named ends and stored as the pair (#1755).
+
+    ItemProxy coerces each end but never builds a pair from anything else, in
+    every kind that can carry a Range control.
+    """
+
+    def test_pair_round_trips(self):
+        """AE1: the pair the respondent chose is stored unchanged, and read
+        with named ends (#1755)."""
+        proxy = ItemProxy(_range_question([2, 8]))
+        self.assertEqual(proxy.outcome, RangeValue(2, 8))
+        self.assertEqual((proxy.outcome.low, proxy.outcome.high), (2, 8))
+        self.assertEqual(proxy.to_outcome(), [2, 8])
+
+    def test_a_positional_read_is_refused(self):
+        """#1755: no positional alias; the error names the ends."""
+        proxy = ItemProxy(_range_question([2, 8]))
+        for index in (0, 1):
+            with self.subTest(index=index), self.assertRaises(TypeError) as exc:
+                proxy.outcome[index]
+            self.assertIn(".low / .high", str(exc.exception))
+
+    def test_a_code_block_pair_write_is_read_by_name_and_stored_as_a_pair(self):
+        """``q.outcome = [a, b]`` is the codeBlock write form (D89): the proxy
+        reads it by name at once, stores the pair, and refuses a malformed one
+        at the write."""
+        proxy = ItemProxy(_range_question([2, 8]))
+        proxy.outcome = ["1", 3]
+        self.assertEqual(proxy.outcome.low, 1)
+        self.assertEqual(proxy.to_outcome(), [1, 3])
+        with self.assertRaises(ValueError) as exc:
+            proxy.outcome = [5, 1]
+        self.assertIn("q_range", str(exc.exception))
+
+    def test_roster_iterations_of_every_range_kind_read_by_name(self):
+        """``outcomes[K]`` of a Range Question, QuestionGroup or matrix inside a
+        Roster reads its cells with named ends too."""
+        for item, stored, read in (
+            (_range_question(None), [1, 4], lambda v: v.high),
+            (_range_group(None), [[0, 2], None, [3, 5]], lambda v: v[2].high),
+            (_range_matrix(None), [[[0, 1]] * 4] * 5, lambda v: v[4][3].low),
+        ):
+            with self.subTest(kind=item["kind"]):
+                item = {**item, "_roster_block_id": "per_member"}
+                proxy = ItemProxy(item, roster_outcomes_for_block={1: {item["id"]: stored}})
+                self.assertIn(read(proxy.outcomes[1]), (0, 4, 5))
+
+    def test_none_is_unanswered(self):
+        self.assertIsNone(ItemProxy(_range_question(None)).outcome)
+
+    def test_equal_ends_are_a_pair(self):
+        self.assertEqual(ItemProxy(_range_question([5, 5])).to_outcome(), [5, 5])
+
+    def test_stringified_ends_are_coerced(self):
+        proxy = ItemProxy(_range_question(["2", "8"]))
+        self.assertEqual(proxy.to_outcome(), [2, 8])
+        self.assertTrue(all(type(end) is int for end in proxy.to_outcome()))
+
+    def test_fractional_ends_are_kept(self):
+        proxy = ItemProxy(_range_question([2.5, 3]))
+        self.assertEqual(proxy.outcome, RangeValue(2.5, 3))
+
+    def test_malformed_cells_are_refused(self):
+        for bad in (
+            7,  # a scalar is never turned into a pair
+            "7",
+            [3],
+            [1, 2, 3],
+            [],
+            ["a", 2],
+            [4, None],
+            [None, None],
+            [True, 2],  # a bool is not a number
+            [8, 2],  # low > high
+            ["nan", "nan"],
+            {"low": 2, "high": 8},
+            (2, 8),
+        ):
+            with self.subTest(bad=bad):
+                with self.assertRaises(ValueError) as exc:
+                    ItemProxy(_range_question(bad))
+                self.assertIn("q_range", str(exc.exception))
+
+    def test_group_of_pairs(self):
+        proxy = ItemProxy(_range_group([[1, 2], None, [0, 0]]))
+        self.assertEqual(proxy.outcome, [RangeValue(1, 2), None, RangeValue(0, 0)])
+        self.assertEqual(proxy.to_outcome(), [[1, 2], None, [0, 0]])
+
+    def test_group_with_a_scalar_cell_is_refused(self):
+        with self.assertRaises(ValueError) as exc:
+            ItemProxy(_range_group([[1, 2], 5]))
+        self.assertIn("qg_range", str(exc.exception))
+
+    def test_matrix_of_pairs(self):
+        grid = [[[r, r + c] for c in range(4)] for r in range(5)]
+        grid[1][2] = None
+        proxy = ItemProxy(_range_matrix(grid))
+        self.assertEqual(proxy.outcome[2][3].low, 2)
+        self.assertEqual(proxy.outcome[2][3].high, 5)
+        self.assertIsNone(proxy.outcome[1][2])
+        self.assertEqual(proxy.to_outcome(), grid)
+
+    def test_matrix_with_a_scalar_cell_is_refused(self):
+        grid = [[[0, 1] for _ in range(4)] for _ in range(5)]
+        grid[3][1] = 4
+        with self.assertRaises(ValueError) as exc:
+            ItemProxy(_range_matrix(grid))
+        self.assertIn("mq_range", str(exc.exception))
+
+    def test_a_range_matrix_with_a_wrong_row_count_is_refused(self):
+        """#1616: the matrix shape reads the item's own rows / columns."""
+        with self.assertRaises(ValueError) as exc:
+            ItemProxy(_range_matrix([[[0, 1]] * 4] * 4))
+        self.assertIn("row count 4", str(exc.exception))
+
+    def test_a_malformed_list_write_is_refused_at_the_write(self):
+        """#1616: a codeBlock's group / matrix assignment is shape-checked by
+        the setter, so it fails where it was written."""
+        matrix = ItemProxy(_range_matrix(None))
+        with self.assertRaises(ValueError) as exc:
+            matrix.outcome = [[[0, 1]] * 4]
+        self.assertIn("mq_range", str(exc.exception))
+        group = ItemProxy(_range_group(None))
+        group.outcome = [[0, 1]]  # short: the rest unanswered
+        with self.assertRaises(ValueError):
+            group.outcome = [[0, 1]] * 4
+
+    def test_a_non_range_question_still_refuses_a_list(self):
+        item = {"id": "q", "kind": "Question", "outcome": [2, 8], "input": {"control": "Slider"}}
+        with self.assertRaises(ValueError):
+            ItemProxy(item)
+
+    def test_a_cell_written_in_place_is_checked_and_stored_as_a_pair(self):
+        """A codeBlock writing one cell in place (``qg.outcome[i] = [a, b]``)
+        never passes the setter; the write-back still stores the pair, and
+        refuses a malformed one naming the item and the cell."""
+        group = ItemProxy(_range_group([[1, 2], None, None]))
+        group.outcome[1] = ["3", 4]
+        self.assertEqual(group.to_outcome(), [[1, 2], [3, 4], None])
+        grid = [[[0, 1] for _ in range(4)] for _ in range(5)]
+        matrix = ItemProxy(_range_matrix(grid))
+        matrix.outcome[2][3] = [5, 6]
+        self.assertEqual(matrix.to_outcome()[2][3], [5, 6])
+        matrix.outcome[0][1] = [6, 5]
+        with self.assertRaises(ValueError) as exc:
+            matrix.to_outcome()
+        self.assertIn("mq_range", str(exc.exception))
+        self.assertIn("row 0, column 1", str(exc.exception))
+
+    def test_comparing_with_the_stored_list_raises(self):
+        """``q.outcome == [2, 8]`` would otherwise be a silent False, a gate
+        that never holds; it raises, like a positional read."""
+        proxy = ItemProxy(_range_question([2, 8]))
+        for written in (lambda v: v == [2, 8], lambda v: [2, 8] != v, lambda v: v == (2, 8)):
+            with self.subTest(), self.assertRaises(TypeError) as exc:
+                written(proxy.outcome)
+            self.assertIn(".low / .high", str(exc.exception))
+        self.assertEqual(proxy.outcome, RangeValue(2, 8))
+        self.assertNotEqual(proxy.outcome, None)
+
+    def test_a_range_value_assigned_to_another_item_is_stored_as_a_pair(self):
+        """``other.outcome = q.outcome`` on a non-Range item stores the pair, so
+        no dataclass reaches the JSON survey state."""
+        source = ItemProxy(_range_question([2, 8]))
+        other = ItemProxy({"id": "q_copy", "kind": "Question", "outcome": None, "input": {}})
+        other.outcome = source.outcome
+        self.assertEqual(other.to_outcome(), [2, 8])
 
 
 @pytest.mark.unit
@@ -315,13 +516,13 @@ class TestRoundTrip(unittest.TestCase):
         self.assertEqual(b.outcome, 42)
 
     def test_question_group_round_trip(self):
-        item = {"id": "qg", "kind": "QuestionGroup", "outcome": [1, None, 3], "input": {"count": 3}}
+        item = {"id": "qg", "kind": "QuestionGroup", "outcome": [1, None, 3], "questions": ["Q1?", "Q2?", "Q3?"]}
         a = ItemProxy(item)
         item2 = {
             "id": "qg",
             "kind": "QuestionGroup",
             "outcome": a.to_outcome(),
-            "input": {"count": 3},
+            "questions": ["Q1?", "Q2?", "Q3?"],
         }
         b = ItemProxy(item2)
         self.assertEqual(b.outcome, [1, None, 3])
@@ -333,14 +534,18 @@ class TestRoundTrip(unittest.TestCase):
             "id": "mq",
             "kind": "MatrixQuestion",
             "outcome": [[1, None], [None, 4]],
-            "input": {"control": "RadioMatrix", "rows": rows, "columns": cols},
+            "rows": rows,
+            "columns": cols,
+            "input": {"control": "Radio"},
         }
         a = ItemProxy(item)
         item2 = {
             "id": "mq",
             "kind": "MatrixQuestion",
             "outcome": a.to_outcome(),
-            "input": {"control": "RadioMatrix", "rows": rows, "columns": cols},
+            "rows": rows,
+            "columns": cols,
+            "input": {"control": "Radio"},
         }
         b = ItemProxy(item2)
         self.assertEqual(b.outcome, [[1, None], [None, 4]])

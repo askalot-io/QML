@@ -10,10 +10,9 @@ Stamping (:func:`stamp_questionnaire_validation`)
     reads). This NEVER refuses. A save that breaks the logic still becomes head,
     marked invalid; work in progress must be savable, and a corpus sweep of dev
     found 13 of 45 questionnaires currently failing this gate (issue #201) —
-    blocking saves would have bricked them. A door that already graded the
-    version it wrote (Portor's save, Armiger's merge promotion) records that
-    verdict through :func:`record_questionnaire_verdict` instead of stamping
-    again.
+    blocking saves would have bricked them. A door that already graded a
+    version (Armiger's verdict job) records that verdict through
+    :func:`record_questionnaire_verdict` instead of stamping again.
 
 Publishing (:func:`pin_validated_version`)
     Pin ``campaigns.qml_version_id`` to a version a stamp already passed. It
@@ -51,8 +50,16 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
 
-from askalot_qml.core.publish_gate import PublishGateResult, evaluate_publish_gate_content
+from askalot_common.i18n import gettext, ngettext
+from askalot_common.repository.mixins.qml_document import HEAD_VERDICT_SUPERSEDED
+
+from askalot_qml.core.publish_gate import (
+    PublishGateResult,
+    evaluate_publish_gate_content,
+    issue_type_label,
+)
 from askalot_qml.core.qml_source import QMLDocumentMissingError
+from askalot_qml.core.qml_translation import seed_translations
 
 logger = logging.getLogger(__name__)
 
@@ -176,6 +183,18 @@ def stamp_questionnaire_validation(repository: Any, questionnaire: Any) -> Publi
     actually judged, instead of paying for a second gate run that would resolve
     head again (#212).
     """
+    version = head_version_to_stamp(repository, questionnaire)
+    return record_stamp(repository, questionnaire, version, judge_head_version(version, questionnaire))
+
+
+def head_version_to_stamp(repository: Any, questionnaire: Any) -> Any:
+    """The head version a stamp judges and records: the read half of a stamp.
+
+    A caller that must keep the gate off its thread (Portor's MCP event loop,
+    #1696) runs the three halves itself: this read and :func:`record_stamp` on
+    its own thread, :func:`judge_head_version` on another. Composed, they are
+    :func:`stamp_questionnaire_validation`.
+    """
     document_id = getattr(questionnaire, "document_id", None)
     if not document_id:
         raise QMLDocumentMissingError(
@@ -187,21 +206,66 @@ def stamp_questionnaire_validation(repository: Any, questionnaire: Any) -> Publi
         raise QMLDocumentMissingError(
             f"QML document {document_id!r} has no content to validate"
         )
-    gate = evaluate_publish_gate_content(
+    return version
+
+
+def judge_head_version(version: Any, questionnaire: Any) -> PublishGateResult:
+    """The publish gate over a version's content. Pure: reads and writes nothing."""
+    return evaluate_publish_gate_content(
         version.content,
         source_label=f"questionnaire {getattr(questionnaire, 'id', '<unknown>')}",
         logger=logger,
     )
+
+
+def record_stamp(
+    repository: Any, questionnaire: Any, version: Any, gate: PublishGateResult
+) -> PublishTicket:
+    """Record ``gate``, the verdict for ``version``, on the version and the questionnaire rows.
+
+    The judged version always carries its verdict: the pin's floor reads it.
+    The verdict is written through ``record_qml_head_verdict``, which re-reads
+    the head and the row under the document's append lock and writes the
+    version and the row together only while ``version`` is still head (one
+    transaction; a moved head gets the version stamped alone), never from the copy the
+    caller read before the gate ran. A whole-row upsert of that copy would undo
+    any write that landed meanwhile (a rename, #1696, which runs the gate on
+    another thread while the caller's loop serves other writes). When the row
+    was written, the caller's copy is brought along in memory to match it.
+
+    On both branches the judged version then gets its translations carried
+    forward from its parent (``seed_translations``), before any pin.
+    """
     checked_at = datetime.now(UTC).isoformat()
-    repository.stamp_qml_version_validation(version.id, validation_record(gate, checked_at=checked_at))
-    record_questionnaire_verdict(
-        questionnaire,
-        ok=gate.ok,
-        checked_at=checked_at,
-        quality_report=gate.quality_report,
-        version_id=version.id,
+    validation = validation_record(gate, checked_at=checked_at)
+
+    def row_verdict(row: Any) -> None:
+        record_questionnaire_verdict(
+            row,
+            ok=gate.ok,
+            checked_at=checked_at,
+            quality_report=gate.quality_report,
+            version_id=version.id,
+        )
+
+    recorded = repository.record_qml_head_verdict(
+        str(questionnaire.document_id),
+        expected_version_id=str(version.id),
+        validation=validation,
+        record_row_verdict=row_verdict,
     )
-    repository.upsert_questionnaire(questionnaire)
+    if recorded == HEAD_VERDICT_SUPERSEDED:
+        # The head moved while the gate ran: the row is left to the head's own
+        # verdict, and the judged version is stamped alone (the pin reads it).
+        # The caller's copy is left as read, so it never describes a verdict
+        # the stored row does not carry.
+        repository.stamp_qml_version_validation(version.id, validation)
+    else:
+        row_verdict(questionnaire)
+    # Before the caller can pin: a version fielded here, by a campaign create
+    # or edit, may never reach the verdict job, and must carry its parent's
+    # translations when it is.
+    seed_translations(repository, str(questionnaire.id), str(version.id))
     return PublishTicket(gate=gate, version_id=version.id)
 
 
@@ -238,6 +302,7 @@ def publish_questionnaire_to_campaign(
     *,
     campaign_id: str,
     questionnaire: Any,
+    ticket: PublishTicket | None = None,
 ) -> PublishResult:
     """Validate the questionnaire's head and pin it to an existing campaign.
 
@@ -252,8 +317,13 @@ def publish_questionnaire_to_campaign(
     pin last. A refusal writes no pin at all — the campaign keeps whatever it
     was fielding, which for a live campaign is the previously validated version
     and for a new one is nothing.
+
+    ``ticket`` is a stamp the caller already took for this questionnaire in
+    this request (it ran the gate on its own thread, #1696); without one the
+    stamp is taken here.
     """
-    ticket = stamp_questionnaire_validation(repository, questionnaire)
+    if ticket is None:
+        ticket = stamp_questionnaire_validation(repository, questionnaire)
 
     if not ticket.ok:
         logger.info(
@@ -284,4 +354,46 @@ def publish_refusal_message(gate: PublishGateResult, *, limit: int = 5) -> str:
     return (
         f"Publish gate failed — {len(errors)} error-severity issue(s): {preview}{more}. "
         "Fix them (validate_qml_file shows the full report), then publish again."
+    )
+
+
+#: Issue types whose detail is the only account of what went wrong (#2166).
+_DETAIL_ON_PAGE_TYPES = frozenset({"load_error", "validation_error"})
+
+
+def _refusal_issue_text(issue: dict, locale: str) -> str:
+    """One blocking issue as a page names it: its translated type, then its item or detail."""
+    issue_type = issue.get("type") or ""
+    label = issue_type_label(locale, issue_type)
+    if issue_type in _DETAIL_ON_PAGE_TYPES and issue.get("message"):
+        return gettext(locale, "%(issue)s: %(detail)s", issue=label, detail=issue["message"])
+    if issue.get("item_id"):
+        return gettext(locale, "%(issue)s (%(item)s)", issue=label, item=issue["item_id"])
+    return label
+
+
+def publish_refusal_text(gate: PublishGateResult, locale: str, *, limit: int = 5) -> str:
+    """:func:`publish_refusal_message` for a page, in ``locale`` (#2166).
+
+    A page names each blocking issue by its translated type and the item it
+    is on; the engine's English detail stays with the editor's report and the
+    agent lanes, which read :func:`publish_refusal_message`. A content that did
+    not load or could not be checked has no item to name, so its parser's own
+    reason follows the label: untranslatable, but the only clue a reader
+    without editor access gets.
+    """
+    errors = gate.errors
+    shown = [_refusal_issue_text(issue, locale) for issue in errors[:limit]]
+    text = ngettext(
+        locale,
+        "Publishing was refused: %(num)d error must be fixed first: %(issues)s.",
+        "Publishing was refused: %(num)d errors must be fixed first: %(issues)s.",
+        len(errors),
+        issues="; ".join(shown),
+    )
+    hidden = len(errors) - len(shown)
+    if hidden > 0:
+        text += " " + ngettext(locale, "%(num)d more is not listed.", "%(num)d more are not listed.", hidden)
+    return text + " " + gettext(
+        locale, "Open the questionnaire in the editor for the full report, fix it, then publish again."
     )

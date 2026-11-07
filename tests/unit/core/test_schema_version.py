@@ -6,16 +6,19 @@ Tests the decoupled Major.Minor.Patch schema-version signal:
 - `version` is valid three-part semver
 - `QML_SCHEMA_VERSION` is read from (never hardcoded apart from) the schema
   file — the single-source-of-truth / no-drift guarantee
-- the current contract version is 2.4.0 (the 2.0.0 breaking collapse of block
+- the current contract version is 2.6.4 (the 2.0.0 breaking collapse of block
   kinds to Group + Roster, the 2.1.0 backward-compatible addition of the optional
   Roster `subjectFrom` key, the 2.1.1 PATCH tightening that closes the
   Item and Condition objects with `unevaluatedProperties: false`, the 2.2.0
   backward-compatible addition of the optional `external` Item flag, the
   2.3.0 backward-compatible addition of the optional `coding` key on the two
-  text controls, and the 2.4.0 removal of that same key)
+  text controls, the 2.4.0 removal of that same key, the 2.6.0 closing
+  of `Input`, and the 2.6.1–2.6.4 PATCH tightenings: identifier item ids,
+  whole-number arithmetic, whole-number Range defaults, in-domain defaults)
 - the schema version is independent of the askalot_qml package version
-- a document still declaring the retired `coding` key is ADMITTED, not
-  rejected — `$defs.Input` is open, so the schema is not the tripwire
+- `$defs.Input` is closed (2.6.0): a misspelt or retired key is refused, while
+  the keys stored documents carry (Textarea `minLength`, Switch `left` /
+  `right`) load
 - every committed QML fixture still validates against the schema
 - the EBNF grammar rendering carries no `Coding` production
 - the EBNF `Questionnaire` production declares no `precondition`/`postcondition`
@@ -101,17 +104,44 @@ class TestSchemaVersionContract:
         # only a version bump.
         # 2.4.0 REMOVES `coding` again — from the two text branches and from the
         # five non-text refusal branches that existed only because of them. It is
-        # MINOR, not MAJOR: `$defs.Input` is open, so no stored document stops
-        # loading, and the fleet is swept by a content migration plus a
-        # standalone leftover guard rather than by the loader. See
-        # TestRetiredCodingKeyIsSilentlyAdmitted for what that openness costs.
+        # MINOR, not MAJOR: `$defs.Input` was still open, so no stored document
+        # stopped loading, and the fleet was swept by a content migration plus a
+        # standalone leftover guard rather than by the loader. 2.6.0 closed
+        # `Input`; see TestInputIsClosed.
         # 2.4.1 REMOVES the questionnaire-level `precondition`/`postcondition`
         # keys. PATCH, where the `coding` removal one line up was MINOR, and the
         # difference is consumption: `coding` was read by seven schema branches,
         # while these two were read by nothing at any layer and appeared in no
         # stored document. The schema stopped advertising a capability it never
         # had — this file's own definition of PATCH.
-        assert QML_SCHEMA_VERSION == "2.4.1"
+        # 2.5.0 makes a Range `default` a `[low, high]` pair (Slider keeps an
+        # integer) and a Range answer a pair (#1474). MINOR, not MAJOR: a MAJOR
+        # bump rejects every 2.x document, while no stored document carried a
+        # Range `default` or a condition on a Range outcome on any tenant
+        # (checked 2026-10-16), so none stops loading or changes meaning.
+        # 2.6.0 closes `Input` with `unevaluatedProperties: false`, so a
+        # misspelt input key (`lables`) is refused (#186), and declares the two
+        # keys stored documents carried undeclared: Textarea `minLength` (D6)
+        # and Switch `left` / `right` (the all-controls sample). MINOR, not
+        # MAJOR: every live head and every campaign-pinned version on dev
+        # validates closed once those are declared (checked 2026-10-21), and
+        # eu1 holds no questionnaire.
+        # 2.6.1 refuses an item id that is not a Python identifier (#1783):
+        # a condition could never name it, and the Z3 builder's ``@``-joined
+        # names rely on it. PATCH: it tightens a de-facto constraint, and no
+        # item id on dev breaks it (0 of 2925, checked 2026-10-21).
+        # 2.6.2 refuses author code that can produce a fraction (#1813): QML
+        # arithmetic is whole numbers, as every answer is (D90). PATCH: none of
+        # 1,016 stored dev versions (6,656 code units) uses such a construct,
+        # and eu1 holds no questionnaire (checked 2026-10-22).
+        # 2.6.3 types a Range default's two ends as integers (#1806), as every
+        # Range end already is (#1801). PATCH: none of 1,013 stored dev versions
+        # has a fractional Range default, and eu1 holds no questionnaire
+        # (checked 2026-10-22).
+        # 2.6.4 refuses a control default outside the item's answer domain
+        # (#1823). PATCH: all 1,034 stored dev versions (heads and campaign
+        # pins) load, 77 carry defaults, none outside its domain (checked 2026-10-24).
+        assert QML_SCHEMA_VERSION == "2.6.4"
 
     def test_schema_version_decoupled_from_package_version(self):
         # Decoupled by policy: a code-only release moves the package version
@@ -126,78 +156,97 @@ class TestSchemaVersionContract:
 
 
 @pytest.mark.unit
-class TestRetiredCodingKeyIsSilentlyAdmitted:
-    """The retired `coding` key still VALIDATES — the schema is not the tripwire.
+class TestInputIsClosed:
+    """`$defs.Input` refuses a key it does not declare (2.6.0, #186).
 
-    `coding` was removed at 2.4.0, but `$defs.Input` carries no
-    `unevaluatedProperties`, so an unnamed key is ADMITTED rather than
-    forbidden. A stored document that still declares `coding: semantic`
-    therefore loads clean and the key is silently ignored — nothing reads it.
-
-    These tests exist so a later reader cannot mistake the schema for the thing
-    that enforces the removal's completeness. It is not: a content migration
-    sweeps the fleet's stored documents, and a standalone leftover guard is what
-    catches a survivor. Asserting the admission (rather than a refusal that does
-    not exist) is what keeps that distinction discoverable from the tests.
+    Before 2.6.0 the object was open, so a misspelt `lables` or the retired
+    `coding` loaded clean and was silently ignored. Closing it needed the two
+    keys stored documents still carried to be declared first: Textarea
+    `minLength` (D6, pinned by a fielded campaign) and Switch `left` / `right`
+    (the all-controls sample, pinned too).
     """
 
-    #: A whole document, not a bare `$defs.Input` payload — the point is that
-    #: the real loader's schema-validation step admits it end to end.
     _DOC = """
-qmlVersion: "2.4.0"
+qmlVersion: "2.6.0"
 questionnaire:
-  title: "A document that still declares the retired key"
+  title: "Input keys"
   blocks:
-    - id: "b_open"
-      title: "Open ends"
+    - id: "b"
+      title: "B"
       items:
-        - id: "q_why"
-          title: "Why did you choose that?"
+        - id: "q"
+          title: "Q"
           kind: "Question"
           input:
             control: "Textarea"
-            coding: "semantic"
-        - id: "q_mood"
-          title: "How do you feel about it?"
-          kind: "Question"
-          input:
-            control: "Radio"
-            labels: {1: "Good", 2: "Bad"}
-            coding: "semantic"
 """
 
-    def test_the_loader_really_validates_this_document(self):
-        """The control for the two tests below.
+    def _load(self, input_lines: str):
+        doc = self._DOC.replace('            control: "Textarea"\n', input_lines)
+        return QMLLoader().load_from_string(doc)
 
-        Both assert that something is NOT rejected, which a loader that skipped
-        schema validation would also satisfy — the assertions would pass while
-        proving nothing. Removing a required top-level key must still raise, so
-        the admission below is a real verdict rather than a skipped step.
-        """
+    def test_the_loader_really_validates_this_document(self):
+        """The control for the admissions below: a missing top-level key still raises."""
         with pytest.raises(ValidationError) as exc:
-            QMLLoader().load_from_string(self._DOC.replace('qmlVersion: "2.4.0"', ""))
+            QMLLoader().load_from_string(self._DOC.replace('qmlVersion: "2.6.0"', ""))
         assert "qmlVersion" in str(exc.value)
 
-    def test_a_text_control_still_declaring_coding_is_admitted(self):
-        data = QMLLoader().load_from_string(self._DOC)
-        stray = next(i for i in data["items"] if i["id"] == "q_why")
-        # Admitted AND carried through verbatim: the loader neither rejects nor
-        # strips it. Nothing downstream reads it, which is exactly why a
-        # leftover is invisible without the dedicated guard.
-        assert stray["input"]["coding"] == "semantic"
+    @pytest.mark.parametrize(
+        "input_lines",
+        [
+            '            control: "Radio"\n            lables: {1: "A"}\n            labels: {1: "A"}\n',
+            '            control: "Textarea"\n            coding: "semantic"\n',
+            '            control: "Editbox"\n            min: 0\n            max: 5\n            step: 1\n',
+        ],
+        ids=["misspelt-labels", "retired-coding", "step-on-editbox"],
+    )
+    def test_an_undeclared_input_key_is_refused(self, input_lines):
+        with pytest.raises(ValidationError):
+            self._load(input_lines)
 
-    def test_a_non_text_control_declaring_coding_is_now_admitted_too(self):
-        """The five refusal branches went with the two permissive ones.
+    @pytest.mark.parametrize(
+        ("input_lines", "key"),
+        [
+            ('            control: "Radio"\n            lables: {1: "A"}\n            labels: {1: "A"}\n', "lables"),
+            ('            control: "Editbox"\n            min: 0\n            max: 5\n            step: 1\n', "step"),
+        ],
+        ids=["misspelt-labels", "step-on-editbox"],
+    )
+    def test_the_refusal_names_the_undeclared_key_not_input(self, input_lines, key):
+        """The Item's cascade "'input' was unexpected" would send the author to delete ``input``."""
+        with pytest.raises(ValidationError) as exc:
+            self._load(input_lines)
+        assert f"'{key}' was unexpected" in exc.value.message
+        assert list(exc.value.absolute_path)[-1] == "input"
 
-        Before 2.4.0 a Radio naming `coding` was rejected — those refusals were
-        spelled out precisely because `$defs.Input` is open. Removing the
-        permissive branches without the refusals would have left the schema
-        refusing a key nothing implements, so they were deleted together and a
-        Radio now admits it like every other control.
-        """
-        data = QMLLoader().load_from_string(self._DOC)
-        stray = next(i for i in data["items"] if i["id"] == "q_mood")
-        assert stray["input"]["coding"] == "semantic"
+    def test_a_range_default_is_a_pair_of_whole_numbers(self):
+        """#1806: a Range's ends are whole (#1801), so a resting position a
+        respondent could never submit unchanged is refused when it loads."""
+        with pytest.raises(ValidationError) as exc:
+            self._load('            control: "Range"\n            min: 0\n            max: 10\n            default: [2.5, 7.5]\n')
+        assert list(exc.value.absolute_path)[-2] == "default"
+        self._load('            control: "Range"\n            min: 0\n            max: 10\n            default: [2, 7]\n')
+
+    def test_a_slider_step_is_a_whole_number(self):
+        """#1801: no numeric control takes a fractional ``step``, which is what
+        lets the answer-domain check refuse every decimal (D90)."""
+        with pytest.raises(ValidationError):
+            self._load('            control: "Slider"\n            min: 0\n            max: 5\n            step: 0.5\n')
+        self._load('            control: "Slider"\n            min: 0\n            max: 10\n            step: 2\n')
+
+    @pytest.mark.parametrize(
+        "input_lines",
+        [
+            '            control: "Textarea"\n            minLength: 10\n            maxLength: 200\n',
+            '            control: "Switch"\n            left: "No"\n            right: "Yes"\n',
+            # Unquoted, YAML 1.1 reads both captions as booleans; the loader
+            # retypes them as it does `on` / `off`.
+            '            control: "Switch"\n            left: No\n            right: Yes\n',
+        ],
+        ids=["textarea-min-length", "switch-left-right", "switch-left-right-unquoted"],
+    )
+    def test_the_declared_keys_stored_documents_carry_load(self, input_lines):
+        self._load(input_lines)
 
 
 #: Fixtures that do NOT validate against the bundled schema, and have not for as
@@ -207,8 +256,8 @@ questionnaire:
 #: - YAML coerces bare ``Yes``/``No`` label values to booleans, so
 #:   ``labels: {1: Yes, 2: No}`` reaches the schema as ``{1: True, 2: False}``
 #:   and trips ``Labels.additionalProperties: {type: string}``. Same
-#:   YAML-vs-schema family as the Switch ``on:``/``off:`` coercion that keeps
-#:   ``$defs.Input`` open in the first place.
+#:   YAML-vs-schema family as the Switch ``on:``/``off:`` coercion, which the
+#:   loader undoes (``normalize_before_validation``) and these labels it does not.
 #: - ``block_preconditions`` and ``dependencies`` additionally carry an Editbox
 #:   with no ``min``/``max``, which its branch requires.
 #:
@@ -281,6 +330,9 @@ class TestFixtureCorpusValidatesAgainstSchema:
         # the sweep at the item/input structure a schema edit can actually
         # break, instead of stopping at a document-level omission.
         document.setdefault("qmlVersion", QML_SCHEMA_VERSION)
+        # What the loader does before the schema reads a document: give a
+        # Switch its ``on`` / ``off`` keys back after YAML 1.1 made them booleans.
+        QMLLoader().normalize_before_validation(document.get("questionnaire"))
         return document
 
     def _errors(self, path: Path) -> list:
@@ -347,7 +399,8 @@ class TestFixtureCorpusValidatesAgainstSchema:
 
 @pytest.mark.unit
 class TestGrammarTracksTheSchema:
-    """The EBNF rendering has no `Coding` production left.
+    """The EBNF rendering has no `Coding` production left, and tracks the schema's
+    tightenings it renders (the Questionnaire's conditions, a Range pair's ends).
 
     `qml-grammar.w3c.ebnf` is hand-derived from the schema and there is no
     schema-to-grammar sync test, so a removal that touches only the JSON leaves
@@ -402,3 +455,11 @@ class TestGrammarTracksTheSchema:
         production = text[start:].split("\n\n", 1)[0]
         assert "precondition" in production
         assert "postcondition" in production
+
+    def test_a_range_pair_is_two_integers(self):
+        """#1806: the schema types a Range `default`'s ends as integers, so the
+        grammar's `RangePair` must not advertise a decimal."""
+        text = _GRAMMAR_PATH.read_text(encoding="utf-8")
+        start = text.index("RangePair     ::=")
+        production = text[start:].split("\n", 1)[0]
+        assert production.count("Integer") == 2, production

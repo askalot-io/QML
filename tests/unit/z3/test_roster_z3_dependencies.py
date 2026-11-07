@@ -35,6 +35,9 @@ primitive:
   power-of-2 mask K — linear int, no BitVec).
 - Classification-safety: a bit-unset iteration is NOT NEVER / dead-code.
 - Timing-shape: constraint count scales ~linearly with `len(labels)`.
+- A Range inner item binds its own ``[low, high]`` pair per iteration
+  (``item_{id}@iter{K}@lo`` / ``@hi``, #1474): each iteration's ends are
+  bounded, and a contradiction is found in iteration 2.
 
 These exercise the same pipeline ValidationProcessor uses, so a green suite
 means roster questionnaires validate kind-aware without a worse-than-linear
@@ -384,3 +387,48 @@ def _mentions(expr, target_id: int) -> bool:
         for sub in _walk_z3(expr)
         if hasattr(sub, "get_id")
     )
+
+
+@pytest.mark.unit
+@pytest.mark.z3
+class TestRosterRangeInnerItem(unittest.TestCase):
+    """A Range inner item is a ``[low, high]`` pair per iteration (#1474): the
+    unroll binds ``item_{id}@iter{K}@lo`` / ``@hi`` under each key's present
+    gate, bounded by the pair domain, and re-lowers ``outcome.low`` /
+    ``outcome.high`` (#1755) onto that iteration's ends."""
+
+    def _iteration(self, builder: StaticBuilder, k: int) -> list:
+        present_k = builder._present_var("q_span", k)
+        return [
+            c
+            for c in builder.constraints + builder.domain_constraints
+            if _mentions(c, present_k.get_id())
+        ]
+
+    def test_each_iteration_binds_its_own_bounded_ends(self):
+        from z3 import Int, Solver, unsat
+
+        builder = _build_static("range_roster.qml")
+        self.assertNotIn("q_span", builder.item_vars)
+        for k in (1, 2):
+            lo = Int(f"item_q_span@iter{k}@lo", builder.ctx)
+            hi = Int(f"item_q_span@iter{k}@hi", builder.ctx)
+            domain = [
+                c
+                for c in builder.domain_constraints
+                if _mentions(c, builder._present_var("q_span", k).get_id())
+            ]
+            for escape in (lo < 0, hi > 10, lo > hi):
+                s = Solver(ctx=builder.ctx)
+                s.add(builder._present_var("q_span", k), *domain, escape)
+                self.assertEqual(s.check(), unsat, f"k={k}: {escape}")
+
+    def test_the_contradiction_is_found_in_the_second_iteration(self):
+        from z3 import Solver, unsat
+
+        builder = _build_static("range_roster.qml")
+        constraints = self._iteration(builder, 2)
+        self.assertTrue(any("item_q_span@iter2@lo" in str(c) for c in builder.constraints))
+        s = Solver(ctx=builder.ctx)
+        s.add(builder._present_var("q_span", 2), *constraints)
+        self.assertEqual(s.check(), unsat)

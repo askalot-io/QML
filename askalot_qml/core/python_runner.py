@@ -1,6 +1,8 @@
 import ast
+import functools
 import re
 from types import SimpleNamespace
+from typing import Any
 
 from askalot_common.profiling import profile_block
 
@@ -14,11 +16,144 @@ class CodeExecutionError(Exception):
     recorded as such), while the assignments that completed before the raise
     must survive (the flow continues on that partial state rather than
     discarding a respondent's progress).
+
+    ``fractional`` names the variables and item proxies a block that ran to
+    its end left holding a fraction (#1813), empty for a block that raised:
+    names from the author's code, never their values, so a warning may carry
+    them (#2190).
     """
 
-    def __init__(self, message: str, local_env: dict):
+    def __init__(self, message: str, local_env: dict, *, fractional: tuple[str, ...] = ()):
         super().__init__(message)
         self.local_env = local_env
+        self.fractional = fractional
+
+
+class CodeRefused(ValueError):
+    """Author code refused by AST validation before anything ran.
+
+    ``reason`` is the refusal's own wording, built from the author's code alone
+    (``_check_ast_safety`` reads the syntax tree, never a value), so a warning
+    may carry it where an exception's text, which can quote a respondent's
+    answer, may not (#2190).
+    """
+
+    def __init__(self, what: str, reason: str):
+        super().__init__(f"{what}: {reason}")
+        self.reason = reason
+
+
+#: Members of the sandbox's modules (``PythonRunner._SAFE_MODULE_MEMBERS``)
+#: whose value is a float whatever their arguments. The rest return an int or
+#: bool (``math.floor``, ``random.randint``, ``math.isclose``) or pass their
+#: arguments' elements through (``random.choice``, ``statistics.mode``).
+_FRACTIONAL_MEMBERS: frozenset[tuple[str, str]] = frozenset(
+    [("math", name) for name in (
+        "copysign", "dist", "e", "exp", "fabs", "fmod", "fsum", "hypot", "inf",
+        "log", "log2", "log10", "nan", "pi", "pow", "sqrt", "tau",
+    )]
+    + [("random", name) for name in (
+        "betavariate", "gauss", "normalvariate", "random", "triangular", "uniform",
+    )]
+    + [("statistics", name) for name in (
+        "correlation", "covariance", "fmean", "geometric_mean", "harmonic_mean",
+        "linear_regression", "mean", "median", "pstdev", "pvariance", "quantiles",
+        "stdev", "variance",
+    )]
+)
+
+WHOLE_NUMBER_FIX = "use '//' (floor division) or scale first, for example 100 * a // b"
+
+
+def _negated_exponent(node: ast.AST | None) -> bool:
+    """An exponent written negative: a negative int literal, or a unary minus
+    or ``~`` over anything (``-1``, ``+-1``, ``-n``, ``~0``). An int raised to
+    a negative power is a float. A variable that holds a negative number at
+    runtime (``n = -1``, then ``2 ** n``) cannot be told apart from the Roster
+    mask idiom ``2 ** count`` by syntax; ``run_code`` refuses the fraction it
+    computes (``fraction_in``)."""
+    while isinstance(node, ast.UnaryOp) and isinstance(node.op, ast.UAdd):
+        node = node.operand
+    if isinstance(node, ast.UnaryOp) and isinstance(node.op, (ast.USub, ast.Invert)):
+        return True
+    return isinstance(node, ast.Constant) and type(node.value) is int and node.value < 0
+
+
+def _pow_call_argument(node: ast.Call, position: int, keyword: str) -> ast.AST | None:
+    """The argument ``pow(base, exp, mod)`` binds to *keyword*, positional or not."""
+    if len(node.args) > position:
+        return node.args[position]
+    return next((kw.value for kw in node.keywords if kw.arg == keyword), None)
+
+
+def fractional_construct(tree: ast.AST) -> str | None:
+    """The first construct in *tree* that can produce a non-integer, described
+    for an author, or None (#1813).
+
+    QML arithmetic is whole numbers: every answer is whole (D90) and the Z3
+    model holds every value as an Int, so a fraction is refused where author
+    code enters (``QMLLoader`` and ``PythonRunner``) rather than chased through
+    the model. The constructs: ``/`` and ``/=``, a float or complex literal,
+    ``float`` / ``complex`` (called or passed on, as in ``map(float, xs)``), a
+    power by a negated exponent (``2 ** -1``, ``pow(2, exp=-1)``;
+    ``pow(b, e, m)`` with a modulus is modular and whole), ``pow`` passed on
+    as a function (``functools.reduce(pow, xs)``), and a float-valued module
+    member (``_FRACTIONAL_MEMBERS``). ``//`` and ``%`` stay whole."""
+    nodes = list(ast.walk(tree))
+    callees = {id(node.func) for node in nodes if isinstance(node, ast.Call)}
+    for node in nodes:
+        if isinstance(node, (ast.BinOp, ast.AugAssign)):
+            if isinstance(node.op, ast.Div):
+                return "'/'"
+            if isinstance(node.op, ast.Pow) and _negated_exponent(node.right if isinstance(node, ast.BinOp) else node.value):
+                return "a power by a negative number"
+        elif isinstance(node, ast.Constant) and type(node.value) in (float, complex):
+            return f"the number {node.value!r}"
+        elif isinstance(node, ast.Name):
+            if node.id in ("float", "complex"):
+                return f"'{node.id}()'"
+            if node.id == "pow" and id(node) not in callees:
+                return "'pow' passed on as a function"
+        elif isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id == "pow":
+            modulus = _pow_call_argument(node, 2, "mod")
+            modular = modulus is not None and not (isinstance(modulus, ast.Constant) and modulus.value is None)
+            if not modular and _negated_exponent(_pow_call_argument(node, 1, "exp")):
+                return "a power by a negative number"
+        elif (
+            isinstance(node, ast.Attribute)
+            and isinstance(node.value, ast.Name)
+            and (node.value.id, node.attr) in _FRACTIONAL_MEMBERS
+        ):
+            return f"'{node.value.id}.{node.attr}'"
+    return None
+
+
+def fraction_in(value: Any) -> bool:
+    """Whether *value* holds a float or complex number anywhere: itself, a
+    container's members, a Range answer's ends, or an item proxy's outcome.
+
+    The runtime half of whole-number arithmetic (#1813): ``fractional_construct``
+    refuses every construct that makes a fraction by its spelling, but a value
+    computed at runtime (``2 ** n`` with a negative ``n``) has no spelling to
+    refuse, so what a codeBlock leaves behind is checked too."""
+    from askalot_qml.core.controls import RangeValue
+    from askalot_qml.models.item_proxy import ItemProxy
+
+    pending = [value]
+    while pending:
+        item = pending.pop()
+        if isinstance(item, (float, complex)):
+            return True
+        if isinstance(item, ItemProxy):
+            pending.append(item.outcome)
+        elif isinstance(item, RangeValue):
+            pending.extend((item.low, item.high))
+        elif isinstance(item, dict):
+            pending.extend(item.keys())
+            pending.extend(item.values())
+        elif isinstance(item, (list, tuple, set, frozenset)):
+            pending.extend(item)
+    return False
 
 
 class PythonRunner:
@@ -68,21 +203,14 @@ class PythonRunner:
     #:   functions below take a pattern string and cover the same ground.
     _SAFE_MODULE_MEMBERS: dict[str, frozenset[str]] = {
         "math": frozenset({
-            "ceil", "comb", "copysign", "dist", "e", "exp", "fabs", "factorial",
-            "floor", "fmod", "fsum", "gcd", "hypot", "inf", "isclose", "isfinite",
-            "isinf", "isnan", "lcm", "log", "log2", "log10", "nan", "perm", "pi",
-            "pow", "prod", "sqrt", "tau", "trunc",
+            "ceil", "comb", "factorial", "floor", "gcd", "isclose", "isfinite",
+            "isinf", "isnan", "lcm", "perm", "prod", "trunc",
         }),
         "random": frozenset({
-            "betavariate", "choice", "choices", "gauss", "normalvariate",
-            "randint", "random", "randrange", "sample", "seed", "shuffle",
-            "triangular", "uniform",
+            "choice", "choices", "randint", "randrange", "sample", "seed", "shuffle",
         }),
         "statistics": frozenset({
-            "correlation", "covariance", "fmean", "geometric_mean",
-            "harmonic_mean", "linear_regression", "mean", "median",
-            "median_high", "median_low", "mode", "multimode", "pstdev",
-            "pvariance", "quantiles", "stdev", "variance",
+            "median_high", "median_low", "mode", "multimode",
         }),
         "itertools": frozenset({
             "accumulate", "batched", "chain", "combinations", "compress",
@@ -111,7 +239,7 @@ class PythonRunner:
         # Filtered namespaces, not the modules themselves: what an author can
         # reach is the declaration above, so the next interpreter's additions
         # are not silently in scope. `SimpleNamespace` keeps `_safe_modules` a
-        # plain name -> object mapping, which `z3.static_builder._safe_eval_names`
+        # plain name -> object mapping, which `sandbox_names`
         # reads the KEYS of for the undefined-name lint, and which the suite
         # injects a probe object into.
         self._safe_modules = {
@@ -140,11 +268,9 @@ class PythonRunner:
             "bin": bin,
             "bool": bool,
             "chr": chr,
-            "complex": complex,
             "divmod": divmod,
             "enumerate": enumerate,
             "filter": filter,
-            "float": float,
             "format": format,
             "hash": hash,
             "hex": hex,
@@ -301,6 +427,12 @@ class PythonRunner:
         Returns:
             None if the tree is safe, or an error message if unsafe
         """
+        fractional = fractional_construct(tree)
+        if fractional:
+            return (
+                f"QML arithmetic is whole numbers: {fractional} can produce a "
+                f"fraction; {WHOLE_NUMBER_FIX}"
+            )
         for node in ast.walk(tree):
             # Check node type
             if type(node) in self._forbidden_nodes:
@@ -407,7 +539,7 @@ class PythonRunner:
             A dictionary of the local environment after execution and captured output
 
         Raises:
-            ValueError: If the code contains disallowed constructs
+            CodeRefused: If the code contains disallowed constructs (a ValueError)
             CodeExecutionError: If the code raises while executing; the partial
                 environment travels on the exception
         """
@@ -418,12 +550,16 @@ class PythonRunner:
             # Validate code safety
             error = self.validate_code(code)
             if error:
-                raise ValueError(f"Unsafe code: {error}")
+                raise CodeRefused("Unsafe code", error)
 
             # Set up execution environment
             global_env = {"__builtins__": self._safe_builtins, **self._safe_modules}
 
             local_env = {**kwargs}
+
+            # A fraction already in the input (a value stored before #1813)
+            # is not this block's doing; only one it makes is refused.
+            held_before = {name for name, value in local_env.items() if fraction_in(value)}
 
             # Execute the code safely
             try:
@@ -454,6 +590,7 @@ class PythonRunner:
                 # interpreter's additions inside the contract.
                 local_env["__output__"] = self.captured_output
                 self._strip_interpreter_bookkeeping(local_env)
+                self._drop_fractions(local_env, held_before)
                 # The failure is raised rather than reported through a key in
                 # the returned environment: a returned environment is
                 # indistinguishable from a successful run unless every caller
@@ -463,7 +600,35 @@ class PythonRunner:
             # Add the captured output to the environment
             local_env["__output__"] = self.captured_output
             self._strip_interpreter_bookkeeping(local_env)
+            fractional = self._drop_fractions(local_env, held_before)
+            if fractional:
+                raise CodeExecutionError(
+                    f"QML arithmetic is whole numbers: {', '.join(map(repr, fractional))} "
+                    f"computed a fraction at runtime; {WHOLE_NUMBER_FIX}",
+                    local_env,
+                    fractional=tuple(fractional),
+                )
             return local_env
+
+    @staticmethod
+    def _drop_fractions(env: dict, held_before: set[str]) -> list[str]:
+        """Remove every variable whose value holds a fraction from *env*, and
+        name it with every item proxy that holds one; an empty list when there
+        is none. A fraction no spelling revealed (``2 ** n`` with a negative
+        ``n``) must not become survey state the Z3 model cannot hold: the
+        variable is gone, as after a block that raised before assigning it, and
+        the run fails as a ``critical`` codeBlock error (#1813). A proxy is
+        named, not reset: its write-back is the flow's, and the critical
+        warning already excludes the survey from datasets."""
+        from askalot_qml.models.item_proxy import ItemProxy
+
+        found: list[str] = []
+        for name in [n for n in env if n != "__output__" and n not in held_before]:
+            if fraction_in(env[name]):
+                found.append(name)
+                if not isinstance(env[name], ItemProxy):
+                    del env[name]
+        return found
 
     def eval_expr(self, expr: str, **kwargs) -> bool:
         """
@@ -477,13 +642,13 @@ class PythonRunner:
             The boolean result of the expression
 
         Raises:
-            ValueError: If the expression contains disallowed constructs
+            CodeRefused: If the expression contains disallowed constructs (a ValueError)
         """
         with profile_block("qml_eval_expr"):
             # Validate expression safety
             error = self.validate_expr(expr)
             if error:
-                raise ValueError(f"Unsafe expression: {error}")
+                raise CodeRefused("Unsafe expression", error)
 
             # Set up evaluation environment
             global_env = {"__builtins__": self._safe_builtins, **self._safe_modules}
@@ -505,7 +670,7 @@ class PythonRunner:
             except Exception:
                 raise
             except BaseException as e:
-                raise RuntimeError(f"Expression raised {type(e).__name__}: {e}") from e
+                raise RuntimeError(f"Expression raised {type(e).__name__}") from e
             return bool(result)
 
     def eval_value(self, expr: str, **kwargs):
@@ -518,7 +683,7 @@ class PythonRunner:
         eval_expr() to preserve the long-standing fail-open contract.
 
         Raises:
-            ValueError: If the expression contains disallowed constructs.
+            CodeRefused: If the expression contains disallowed constructs (a ValueError).
             Anything raised by `eval` (NameError, TypeError, …) bubbles up so
             the caller can decide policy (e.g., FlowProcessor surfaces a
             survey warning and treats the roster pass as empty).
@@ -526,17 +691,33 @@ class PythonRunner:
         with profile_block("qml_eval_value"):
             error = self.validate_expr(expr)
             if error:
-                raise ValueError(f"Unsafe expression: {error}")
+                raise CodeRefused("Unsafe expression", error)
 
             global_env = {"__builtins__": self._safe_builtins, **self._safe_modules}
             local_env = {**kwargs}
             # Same boundary rule as `eval_expr`: the caller decides policy from
             # an `Exception`, so nothing may leave here as a BaseException.
             try:
-                return eval(expr, global_env, local_env)
+                value = eval(expr, global_env, local_env)
             except KeyboardInterrupt:
                 raise
             except Exception:
                 raise
             except BaseException as e:
-                raise RuntimeError(f"Expression raised {type(e).__name__}: {e}") from e
+                raise RuntimeError(f"Expression raised {type(e).__name__}") from e
+            if fraction_in(value):
+                raise ValueError(
+                    # The value is never named: it is computed from answers.
+                    f"QML arithmetic is whole numbers: the expression computed a "
+                    f"fraction; {WHOLE_NUMBER_FIX}"
+                )
+            return value
+
+
+@functools.cache
+def sandbox_names() -> frozenset[str]:
+    """The builtin and module names the sandbox binds in every condition and
+    codeBlock: the undefined-name lint's known names, and the item ids the
+    loader refuses, since an item bound under one of them would shadow it."""
+    runner = PythonRunner()
+    return frozenset(runner._safe_builtins) | frozenset(runner._safe_modules)

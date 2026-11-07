@@ -52,7 +52,13 @@ def none_tested_names(tree: ast.AST) -> set[str]:
 
 
 def _none_tested(tree: ast.AST, ref: Callable[[ast.AST], str | None]) -> set[str]:
-    guarded: set[str] = set()
+    return {owner for probe in none_test_operands(tree) if (owner := ref(probe))}
+
+
+def none_test_operands(tree: ast.AST) -> list[ast.AST]:
+    """Every operand the tree compares directly with a ``None`` literal under
+    ``is`` / ``is not`` / ``==`` / ``!=``, either side, operator by operator."""
+    operands: list[ast.AST] = []
     for node in ast.walk(tree):
         if not isinstance(node, ast.Compare):
             continue
@@ -62,9 +68,96 @@ def _none_tested(tree: ast.AST, ref: Callable[[ast.AST], str | None]) -> set[str
                 continue
             left, right = chain[index], chain[index + 1]
             for probe, other in ((left, right), (right, left)):
-                if is_none_literal(other) and (owner := ref(probe)):
-                    guarded.add(owner)
-    return guarded
+                if is_none_literal(other):
+                    operands.append(probe)
+    return operands
+
+
+def none_test_of(node: ast.AST) -> tuple[str, bool] | None:
+    """``(X, tests_answered)`` iff ``node`` is a one-operator None test on
+    ``X.outcome`` (``is not None`` / ``!= None`` test that X is answered)."""
+    if not (isinstance(node, ast.Compare) and len(node.ops) == 1):
+        return None
+    op = node.ops[0]
+    if not isinstance(op, NONE_TEST_OPS):
+        return None
+    left, right = node.left, node.comparators[0]
+    if is_none_literal(left):
+        left, right = right, left
+    name = outcome_ref_name(left)
+    if name is None or not is_none_literal(right):
+        return None
+    return name, isinstance(op, (ast.IsNot, ast.NotEq))
+
+
+def none_guarded_outcomes(tree: ast.AST) -> set[str]:
+    """Items whose None test in ``tree`` is the guard of every other read the
+    predicate makes.
+
+    X qualifies when it has a one-operator None test and each other
+    ``X.outcome`` read, and each variable read (a variable may hold X's
+    value: ``v = X.outcome``), sits in a later operand of an ``and`` that holds
+    ``X is not None`` or of an ``or`` that holds ``X is None``, so Python
+    reaches the read only while X is answered. A read anywhere else (before
+    the test, or under ``X is None and …``) may read an unanswered X.
+    """
+    tested = {found[0] for node in ast.walk(tree) if (found := none_test_of(node)) is not None}
+    if not tested:
+        return set()
+
+    parents: dict[int, ast.AST] = {}
+    for node in ast.walk(tree):
+        for child in ast.iter_child_nodes(node):
+            parents[id(child)] = node
+    test_operands = {
+        id(operand)
+        for node in ast.walk(tree)
+        if none_test_of(node) is not None
+        for operand in (node.left, *node.comparators)
+    }
+
+    def guarded(read: ast.AST, name: str) -> bool:
+        child, parent = read, parents.get(id(read))
+        while parent is not None:
+            if isinstance(parent, ast.BoolOp):
+                wanted = isinstance(parent.op, ast.And)
+                index = next(i for i, value in enumerate(parent.values) if value is child)
+                if any(
+                    none_test_of(value) == (name, wanted) for value in parent.values[:index]
+                ):
+                    return True
+            child, parent = parent, parents.get(id(parent))
+        return False
+
+    def is_variable_read(node: ast.AST) -> bool:
+        if not (isinstance(node, ast.Name) and isinstance(node.ctx, ast.Load)):
+            return False
+        parent = parents.get(id(node))
+        # ``X.outcome`` / ``math.floor`` bases and called names are not values.
+        if isinstance(parent, ast.Attribute) or (isinstance(parent, ast.Call) and parent.func is node):
+            return False
+        return True
+
+    qualified = set(tested)
+    for node in ast.walk(tree):
+        if id(node) in test_operands:
+            continue
+        owner = outcome_ref_name(node)
+        readers = {owner} & tested if owner else (tested if is_variable_read(node) else set())
+        for name in readers:
+            if not guarded(node, name):
+                qualified.discard(name)
+    return qualified
+
+
+def outcome_value_reads(tree: ast.AST) -> set[str]:
+    """Items whose ``.outcome`` the tree reads as a value, outside a None test."""
+    operands = {id(operand) for operand in none_test_operands(tree)}
+    return {
+        name
+        for node in ast.walk(tree)
+        if id(node) not in operands and (name := outcome_ref_name(node))
+    }
 
 
 def name_reads(tree: ast.AST) -> set[str]:

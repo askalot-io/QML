@@ -66,10 +66,21 @@ class ItemClassifier:
                 # only the verdicts a wider formula still proves are claimed below
                 # (#1164).
                 P_form, P_exact = self.builder.compile_conditions_exactly(
-                    item_id, details["preconditions"]
+                    item_id, details["preconditions"], kind="precondition"
                 )
                 Q_form, Q_exact = self.builder.compile_conditions_exactly(
-                    item_id, details["postconditions"]
+                    item_id, details["postconditions"], kind="postcondition"
+                )
+                # Q_form is the postconditions' ACCEPTANCE: a leaf reading a
+                # blank answer, or a raise, waives them. TAUTOLOGICAL and
+                # globally-true need them to hold, so they read the TRUTH
+                # formula instead (#1784): a check true only by waiver is not
+                # one every answer satisfies. Its exactness is Q_exact, and
+                # both verdicts need it, so it is built only for an exact Q.
+                Q_true = (
+                    self.builder.compile_postcondition_truth(item_id, details["postconditions"])
+                    if has_postconditions and Q_exact
+                    else None
                 )
 
             # Persistent base solvers. The reachability base B := ∧_i D_i(S_i)
@@ -126,7 +137,7 @@ class ItemClassifier:
             # ------------------------------
             # Postcondition invariants (relative to P)
             # Only items with postconditions can have TAUTOLOGICAL/INFEASIBLE/CONSTRAINING classifications
-            # TAUTOLOGICAL: UNSAT(base ∧ P ∧ ¬Q)  i.e., B ∧ P ⊨ Q
+            # TAUTOLOGICAL: UNSAT(base ∧ P ∧ ¬T(Q))  i.e., B ∧ P ⊨ Q holds, not merely accepted
             # INFEASIBLE:   UNSAT(base ∧ P ∧ Q)
             # CONSTRAINING: otherwise (both SAT for P∧Q and P∧¬Q)
             # ------------------------------
@@ -140,17 +151,19 @@ class ItemClassifier:
                 # Item has postconditions and is reachable
                 # Use full_base to include behavioral constraints from codeBlocks
                 with profile_block("z3_postcondition_check", {"item_id": item_id}):
-                    full_solver.push()
-                    full_solver.add(P_form, Not(Q_form))
-                    tautological_under_P = full_solver.check() == unsat
-                    full_solver.pop()
+                    tautological_under_P = False
+                    if Q_true is not None:
+                        full_solver.push()
+                        full_solver.add(P_form, Not(Q_true))
+                        tautological_under_P = full_solver.check() == unsat
+                        full_solver.pop()
 
                     full_solver.push()
                     full_solver.add(P_form, Q_form)
                     infeasible_under_P = full_solver.check() == unsat
                     full_solver.pop()
 
-                if tautological_under_P and Q_exact:
+                if tautological_under_P:
                     post_invariant = "TAUTOLOGICAL"
                 elif infeasible_under_P:
                     post_invariant = "INFEASIBLE"
@@ -163,7 +176,7 @@ class ItemClassifier:
             # ------------------------------
             # Global Q flags (only meaningful for items with postconditions)
             # q_globally_false: UNSAT(full_base ∧ Q)
-            # q_globally_true:  UNSAT(full_base ∧ ¬Q)
+            # q_globally_true:  UNSAT(full_base ∧ ¬T(Q)), the truth formula as for TAUTOLOGICAL
             # Use full_base to include behavioral constraints from codeBlocks
             # ------------------------------
             if has_postconditions:
@@ -173,10 +186,12 @@ class ItemClassifier:
                     q_globally_false = full_solver.check() == unsat
                     full_solver.pop()
 
-                    full_solver.push()
-                    full_solver.add(Not(Q_form))
-                    q_globally_true = Q_exact and full_solver.check() == unsat
-                    full_solver.pop()
+                    q_globally_true = False
+                    if Q_true is not None:
+                        full_solver.push()
+                        full_solver.add(Not(Q_true))
+                        q_globally_true = full_solver.check() == unsat
+                        full_solver.pop()
             else:
                 # Items without postconditions have no global Q flags
                 q_globally_false = False

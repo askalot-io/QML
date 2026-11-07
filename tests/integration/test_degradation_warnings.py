@@ -19,6 +19,13 @@ would have rejected. These tests cover the collection contract end to end:
 - Every recorded warning carries severity, block_id, iter_key, count, and both
   timestamps — no field is optional (KTD12).
 - add_warning refuses an unrecognized severity rather than recording it.
+- A warning and its log line carry nothing the respondent supplied or computed
+  from it (#2190): a codeBlock failing on an answer's value stores the
+  exception's class and the author code's line, never its text; a Roster whose
+  `iterateOver` reads a Textarea answer ('Jane') or a Checkbox mask names only
+  the expression, never the value or its bits. What the author's code alone
+  decides is named: an AST refusal's reason (codeBlock, condition) and the
+  variables a block that ran to its end left holding a fraction.
 - The two condition kinds fail in OPPOSITE directions (#658): an unevaluatable
   precondition returns False (the item is skipped, `degraded`, and the survey
   stays dataset-eligible) while an unevaluatable postcondition returns True (the
@@ -44,6 +51,11 @@ would have rejected. These tests cover the collection contract end to end:
 - "Shown" means presented on the current path (in history AND processed), not
   merely `visited`: a Roster member its gate kept out, force-visited when the
   pass completes, keeps its intended None.
+- A precondition reading a Range answer's named ends (`q.outcome.high -
+  q.outcome.low`, #1755) decides on the stored pair, and is undecided (not an
+  error) while the Range item is unanswered (#1474). A positional read
+  (`q.outcome[0]`) is an unevaluatable gate, and every Range value a codeBlock
+  writes or a variable holds is stored as the plain `[low, high]` pair.
 
 These integration tests drive a real FlowProcessor over inline QML (no service
 layer, no repository) and assert on the resulting QMLState, because the point
@@ -51,7 +63,10 @@ under test is what the engine WRITES about its own fallbacks — the input to
 dataset exclusion and to the campaign-level degradation rollup.
 """
 
+import json
+
 import pytest
+from askalot_common.i18n import Sentence
 from askalot_qml.core.flow_processor import FlowProcessor
 from askalot_qml.core.qml_loader import QMLLoader
 from askalot_qml.models.qml_state import SOURCE_RESPONDENT, QMLState
@@ -114,6 +129,33 @@ questionnaire:
 """
 
 
+# q1's codeBlock converts q_name's free-text answer to a number: Python's
+# ValueError quotes the answer it failed on.
+_QML_ANSWER_IN_EXCEPTION = """
+questionnaire:
+  title: Answer in exception
+  blocks:
+    - id: main
+      kind: Group
+      items:
+        - id: q_name
+          kind: Question
+          title: Name
+          input:
+            control: Textarea
+        - id: q1
+          kind: Question
+          title: First
+          input:
+            control: Radio
+            labels:
+              1: A
+              2: B
+          codeBlock: |
+            age = int(q_name.outcome)
+"""
+
+
 @pytest.mark.integration
 @pytest.mark.flow
 class TestCodeBlockRuntimeFailure:
@@ -136,7 +178,26 @@ class TestCodeBlockRuntimeFailure:
         warning = codeblock_warnings[0]
         assert warning["item_id"] == "q1"
         assert warning["severity"] == "critical"
-        assert "never_defined_anywhere" in warning["message"]
+        # Named by class and the author code's line, never by the exception's text.
+        assert warning["message_vars"] == {"error_type": "NameError", "line": 2}
+        assert "never_defined_anywhere" not in warning["message"]
+
+    def test_a_failure_on_an_answer_value_stores_and_logs_no_part_of_it(self, caplog):
+        """A codeBlock failing on an answer (``int('Jane')``) must not copy the
+        answer into the warning or the log through the exception's text (#2190)."""
+        state = _state(_QML_ANSWER_IN_EXCEPTION)
+        processor = FlowProcessor(state)
+        processor.get_current_item(state)
+        processor.process_item(state, "q_name", "Jane", source=SOURCE_RESPONDENT)
+        processor.get_current_item(state)
+
+        with caplog.at_level("DEBUG"):
+            processor.process_item(state, "q1", 1, source=SOURCE_RESPONDENT)
+
+        [warning] = _warnings_of_type(state, "codeblock")
+        assert warning["message_vars"] == {"error_type": "ValueError", "line": 1}
+        assert "Jane" not in json.dumps(warning)
+        assert not [r for r in caplog.records if "Jane" in r.getMessage()]
 
     def test_no_error_sentinel_in_downstream_contexts(self):
         """The failure travels as an exception, not as a context key: no item
@@ -187,7 +248,7 @@ class TestCodeBlockRuntimeFailure:
         warning = codeblock_warnings[0]
         assert warning["item_id"] == "codeInit"
         assert warning["severity"] == "critical"
-        assert "never_defined_at_init" in warning["message"]
+        assert warning["message_vars"] == {"error_type": "NameError", "line": 1}
 
 
 # A Roster whose mask (5 = bits 1 and 4) asks for an iteration the block never
@@ -242,10 +303,196 @@ class TestRosterMaskWarnings:
         mask_warnings = _warnings_of_type(state, "roster_mask_undeclared")
         assert len(mask_warnings) == 1
         assert mask_warnings[0]["severity"] == "informational"
-        assert "[4]" in mask_warnings[0]["message"]
+        # The expression, never the mask or its bits: both derive from answers.
+        assert mask_warnings[0]["message_vars"] == {"expr": "'mask'"}
 
         # Traversal is unchanged: only the declared bit is iterated.
         assert state.get_roster_active_keys("per_subject") == [1]
+
+
+# Rosters driven straight by an answer: q_name's free text (not a whole number)
+# and q_pick's Checkbox mask, which sets bit 4 the Roster has no label for.
+_QML_ROSTER_OVER_ANSWERS = """
+questionnaire:
+  title: Roster over answers
+  blocks:
+    - id: intro
+      kind: Group
+      items:
+        - id: q_name
+          kind: Question
+          title: Name
+          input:
+            control: Textarea
+        - id: q_pick
+          kind: Question
+          title: Pick
+          input:
+            control: Checkbox
+            labels:
+              1: A
+              2: B
+              4: C
+    - id: by_name
+      kind: Roster
+      iterateOver: q_name.outcome
+      labels:
+        1: "First"
+      items:
+        - id: q_by_name
+          kind: Question
+          title: Note
+          input:
+            control: Slider
+            min: 1
+            max: 5
+    - id: by_pick
+      kind: Roster
+      iterateOver: q_pick.outcome
+      labels:
+        1: "First"
+      items:
+        - id: q_by_pick
+          kind: Question
+          title: Note
+          input:
+            control: Slider
+            min: 1
+            max: 5
+"""
+
+
+@pytest.mark.integration
+@pytest.mark.flow
+class TestRosterWarningsCarryNoAnswer:
+    """#2190: a Roster warning names the expression, never what it computed."""
+
+    def _walk(self, caplog) -> QMLState:
+        state = _state(_QML_ROSTER_OVER_ANSWERS)
+        processor = FlowProcessor(state)
+        processor.get_current_item(state)
+        with caplog.at_level("DEBUG"):
+            processor.process_item(state, "q_name", "Jane", source=SOURCE_RESPONDENT)
+            processor.get_current_item(state)
+            processor.process_item(state, "q_pick", 5, source=SOURCE_RESPONDENT)
+            processor.get_current_item(state)
+        return state
+
+    def test_a_textarea_answer_is_neither_stored_nor_logged(self, caplog):
+        state = self._walk(caplog)
+
+        [warning] = _warnings_of_type(state, "roster_iterate_over")
+        assert warning["item_id"] == "q_by_name"
+        assert warning["message_vars"] == {"expr": "'q_name.outcome'"}
+        assert "Jane" not in json.dumps(warning)
+        assert not [r for r in caplog.records if "Jane" in r.getMessage()]
+
+    def test_a_checkbox_mask_and_its_bits_are_neither_stored_nor_logged(self, caplog):
+        state = self._walk(caplog)
+
+        [warning] = _warnings_of_type(state, "roster_mask_undeclared")
+        assert warning["message_vars"] == {"expr": "'q_pick.outcome'"}
+        assert not {"5", "4"} & set(warning["message"])
+        # The log line is the stored English, so it carries the mask no more.
+        logged = [r.getMessage() for r in caplog.records if "q_pick.outcome" in r.getMessage()]
+        assert logged == [warning["message"]]
+        assert state.get_roster_active_keys("by_pick") == [1]
+
+
+_QML_REFUSED_CODE = """
+questionnaire:
+  title: Refused code
+  blocks:
+    - id: main
+      kind: Group
+      items:
+        - id: q1
+          kind: Question
+          title: First
+          input:
+            control: Radio
+            labels:
+              1: A
+              2: B
+          codeBlock: |
+            import os
+        - id: q2
+          kind: Question
+          title: Second
+          precondition:
+            - predicate: "__import__('os') is None"
+          input:
+            control: Radio
+            labels:
+              1: A
+              2: B
+        - id: q3
+          kind: Question
+          title: Third
+          input:
+            control: Slider
+            min: 1
+            max: 5
+          codeBlock: |
+            exponent = q3.outcome - 3
+            share = 2 ** exponent
+            kept = 1
+"""
+
+
+@pytest.mark.integration
+@pytest.mark.flow
+class TestAuthorCodeFactsAreNamed:
+    """#2190: what the author's code alone decides is named in the warning."""
+
+    def test_a_refused_codeblock_names_its_refusal_reason(self):
+        state = _state(_QML_REFUSED_CODE)
+        processor = FlowProcessor(state)
+        processor.get_current_item(state)
+        processor.process_item(state, "q1", 1, source=SOURCE_RESPONDENT)
+
+        [warning] = _warnings_of_type(state, "codeblock")
+        assert warning["severity"] == "critical"
+        assert warning["message_msgid"].startswith("The code block was refused (")
+        assert set(warning["message_vars"]) == {"reason"}
+        assert warning["message_vars"]["reason"]
+        assert warning["message_vars"]["reason"] in warning["message"]
+
+    def test_a_refused_precondition_names_its_reason_and_skips_the_item(self):
+        state = _state(_QML_REFUSED_CODE)
+        processor = FlowProcessor(state)
+        processor.get_current_item(state)
+        processor.process_item(state, "q1", 1, source=SOURCE_RESPONDENT)
+
+        # The refused gate fails closed, as an unevaluatable one does.
+        assert processor.get_current_item(state)["id"] == "q3"
+        [warning] = _warnings_of_type(state, "precondition")
+        assert warning["severity"] == "degraded"
+        assert warning["message_msgid"].startswith("Precondition '%(expr)s' was refused")
+        assert warning["message_vars"]["expr"] == "__import__('os') is None"
+        assert warning["message_vars"]["reason"]
+
+    def test_a_runtime_fraction_names_the_variable_never_its_value(self, caplog):
+        state = _state(_QML_REFUSED_CODE)
+        processor = FlowProcessor(state)
+        processor.get_current_item(state)
+        processor.process_item(state, "q1", 1, source=SOURCE_RESPONDENT)
+        processor.get_current_item(state)
+
+        with caplog.at_level("DEBUG"):
+            # 2 ** (1 - 3) is 0.25, which only the answer made.
+            processor.process_item(state, "q3", 1, source=SOURCE_RESPONDENT)
+
+        [warning] = [w for w in _warnings_of_type(state, "codeblock") if w["item_id"] == "q3"]
+        assert warning["severity"] == "critical"
+        assert warning["message_vars"] == {"variables": "share"}
+        assert "ran to its end" in warning["message"]
+        assert "0.25" not in json.dumps(warning)
+        assert not [r for r in caplog.records if "0.25" in r.getMessage()]
+        # The block ran to its end; only the fractional variable was dropped.
+        variables = state.tail_state()["vars"]
+        assert "share" not in variables
+        assert variables["kept"] == 1
 
 
 # A postcondition that cannot be evaluated (undefined name) fails open, so the
@@ -382,7 +629,7 @@ class TestWarningRecordShape:
         than quietly downgrade a corrupted survey to noise."""
         state = _state(_QML_MALFORMED_POSTCONDITION)
         with pytest.raises(ValueError, match="Unknown warning severity"):
-            state.add_warning("q1", "codeblock", "boom", severity="fatal")
+            state.add_warning("q1", "codeblock", Sentence("boom"), severity="fatal")
 
 
 # A precondition that cannot be evaluated (undefined name). Fails CLOSED, so q2
@@ -1320,3 +1567,104 @@ questionnaire:
             labels:
               1: Done
 """
+
+
+# q_narrow is asked only when the band given on q_budget is at most 3 wide: a
+# condition reading the two ends of a Range pair (#1474).
+_QML_RANGE_ENDS = """
+questionnaire:
+  title: Range ends
+  blocks:
+    - id: main
+      kind: Group
+      items:
+        - id: q_budget
+          kind: Question
+          title: Budget band
+          input:
+            control: Range
+            min: 0
+            max: 10
+        - id: q_narrow
+          kind: Question
+          title: Why so narrow?
+          precondition:
+            - predicate: "q_budget.outcome.high - q_budget.outcome.low <= 3"
+              hint: A narrow band
+          input:
+            control: Radio
+            labels:
+              1: Sure
+        - id: q_end
+          kind: Question
+          title: End
+          input:
+            control: Radio
+            labels:
+              1: Done
+"""
+
+
+@pytest.mark.integration
+@pytest.mark.flow
+class TestRangeEndsAtRuntime:
+    """A condition reads a Range answer's ends as ``outcome.low`` /
+    ``outcome.high`` (#1755) on the stored pair, and an unanswered Range is
+    undecided, never an error."""
+
+    def test_a_narrow_band_admits_the_item(self):
+        state, seen = _walk(_QML_RANGE_ENDS, {"q_budget": [2, 4], "q_narrow": 1, "q_end": 1})
+
+        assert seen == ["q_budget", "q_narrow", "q_end"]
+        assert state.get_warnings() == []
+
+    def test_a_wide_band_skips_the_item(self):
+        state, seen = _walk(_QML_RANGE_ENDS, {"q_budget": [2, 8], "q_end": 1})
+
+        assert seen == ["q_budget", "q_end"]
+        assert state.get_warnings() == []
+
+    def test_an_unanswered_range_is_undecided_not_an_error(self):
+        state, seen = _walk(_QML_RANGE_ENDS, {"q_budget": None, "q_end": 1})
+
+        assert seen == ["q_budget", "q_end"]
+        assert _warning_owners(state, _UNANSWERED) == {"q_narrow"}
+        assert _warnings_of_type(state, "precondition") == []
+
+    def test_a_positional_end_read_is_an_unevaluatable_gate(self):
+        """There is no positional alias (#1755): ``outcome[1]`` on a Range
+        raises, so the gate is skipped and recorded, never read as a number."""
+        qml = _QML_RANGE_ENDS.replace(
+            "q_budget.outcome.high - q_budget.outcome.low", "q_budget.outcome[1] - q_budget.outcome[0]"
+        )
+        state, seen = _walk(qml, {"q_budget": [2, 4], "q_end": 1})
+
+        assert seen == ["q_budget", "q_end"]
+        assert _warning_owners(state, "precondition") == {"q_narrow"}
+
+    def test_range_values_are_stored_as_plain_pairs(self):
+        """A codeBlock's ``q.outcome = [a, b]`` write and a variable holding a
+        whole Range value both persist as ``[low, high]``: the state stays JSON,
+        and the next step reads the written ends by name."""
+        qml = _QML_RANGE_ENDS.replace(
+            "          title: Budget band\n",
+            "          title: Budget band\n"
+            "          codeBlock: \"band = q_budget.outcome\\nq_budget.outcome = [band.low, band.low + 1]\"\n",
+        )
+        state, seen = _walk(qml, {"q_budget": [2, 8], "q_narrow": 1, "q_end": 1})
+
+        assert seen == ["q_budget", "q_narrow", "q_end"]
+        assert state.get_item("q_budget")["outcome"] == [2, 3]
+        assert state.tail_state()["vars"]["band"] == [2, 8]
+        json.dumps(dict(state))
+
+    def test_a_block_reads_the_ends_it_just_wrote(self):
+        qml = _QML_RANGE_ENDS.replace(
+            "          title: Budget band\n",
+            "          title: Budget band\n"
+            "          codeBlock: \"q_budget.outcome = [1, 3]\\nlo = q_budget.outcome.low\"\n",
+        )
+        state, _seen = _walk(qml, {"q_budget": [2, 8], "q_narrow": 1, "q_end": 1})
+
+        assert state.tail_state()["vars"]["lo"] == 1
+        assert _warnings_of_type(state, "codeblock") == []

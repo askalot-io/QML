@@ -25,6 +25,7 @@ from askalot_qml.core.qml_engine import QMLEngine
 from askalot_qml.models.qml_state import Condition, QMLState, QuestionnaireItem
 from askalot_qml.predicate_ast import (
     name_reads,
+    none_test_operands,
     none_tested_outcomes,
     outcome_reads,
     outcome_ref_name,
@@ -75,18 +76,44 @@ _YAML_LITERAL_SUGGESTIONS: dict[str, str] = {
 #:   will therefore also warn — accepted, because the warning is advisory and
 #:   the alternative misses the real shape;
 #: * an **inscription verb** in request position (start of a sentence, or after
-#:   "please"). The distinction that matters is not imperative-vs-not: a Comment
-#:   EXISTS to instruct, so "Please read the following carefully" is exactly
-#:   right and "Please print your name" is exactly wrong. An instruction to read
-#:   is what the kind is for; an instruction to write is what it cannot honour.
+#:   "please" / "kérjük," / "kérem," / "por favor," / "veuillez" / "bitte").
+#:   The distinction that matters is not
+#:   imperative-vs-not: a Comment EXISTS to instruct, so "Please read the
+#:   following carefully" is exactly right and "Please print your name" is
+#:   exactly wrong. An instruction to read is what the kind is for; an
+#:   instruction to write is what it cannot honour.
 #:
-#: The verb list is English, so a non-English instrument gets the ``?`` arm
-#: only. That is a false negative, which for an advisory warning is the safe
-#: direction — the alternative is matching English stems against another
-#: language's prose.
+#: The verbs cover every supported questionnaire language, each in the
+#: register a questionnaire addresses its respondent in: English; Hungarian in
+#: the formal Ön imperative ("írja be", "adja meg", "sorolja fel", "nevezze
+#: meg", "töltse ki"); Spanish in the usted imperative ("escriba", "indique",
+#: "anote", "especifique", "enumere", "introduzca", "rellene"); French in the
+#: vous imperative and the infinitive "veuillez" takes ("écrivez"/"écrire",
+#: "indiquez"/"indiquer", "précisez", "inscrivez", "énumérez", "saisissez"/
+#: "saisir", "remplissez"/"remplir"); German in the Sie imperative, whose
+#: separable particle ends the clause ("schreiben Sie", "geben Sie … an/ein",
+#: "tragen Sie … ein", "füllen Sie … aus", "nennen Sie", "zählen Sie … auf" —
+#: the gap stops at the sentence's end, and a clause carrying "kein"/"nicht"
+#: is an instruction NOT to write, as "Geben Sie keine Daten an" is).
+#: "Por favor, lea", "Veuillez lire" and "Bitte lesen Sie"
+#: are instructions to read and stay silent. Every ``en`` instrument and its
+#: twin in another supported language get the same verdict. A language added
+#: to the supported locales adds its verbs here, or its instruments fall back
+#: to the ``?`` arm alone.
 _COMMENT_ASKS_QUESTION_MARK = re.compile(r"\?")
 _COMMENT_ASKS_INSCRIPTION = re.compile(
-    r"(?:^|[.;:]\s+|\bplease\s+)(print|enter|write|specify|list|fill\s+in)\b",
+    r"(?:^|[.;:]\s+|\b(?:please|kér(?:jük|em)|por\s+favor|veuillez|bitte),?\s+)"
+    r"(print|enter|write|specify|list|fill\s+in"
+    r"|írja\s+(?:be|le|ide)|adja\s+meg|sorolja\s+fel|nevezze\s+meg|töltse\s+ki"
+    r"|escriba|indique|anote|especifique|enumere|introduzca|rellene"
+    r"|[ée]crivez|[ée]crire|indiquez|indiquer|pr[ée]cisez|pr[ée]ciser"
+    r"|inscrivez|inscrire|[ée]num[ée]rez|[ée]num[ée]rer"
+    r"|saisissez|saisir|remplissez|remplir"
+    r"|schreiben\s+Sie|nennen\s+Sie"
+    r"|geben\s+Sie\b(?![^.;:?!]*\b(?:kein|nicht))[^.;:?!]*?\b(?:an|ein)(?=\s*(?:[.;:?!,]|$))"
+    r"|tragen\s+Sie\b(?![^.;:?!]*\b(?:kein|nicht))[^.;:?!]*?\bein(?=\s*(?:[.;:?!,]|$))"
+    r"|füllen\s+Sie\b(?![^.;:?!]*\b(?:kein|nicht))[^.;:?!]*?\baus(?=\s*(?:[.;:?!,]|$))"
+    r"|zählen\s+Sie\b[^.;:?!]*?\bauf(?=\s*(?:[.;:?!,]|$)))\b",
     re.IGNORECASE,
 )
 
@@ -138,7 +165,7 @@ def _assignment_guard(tree: ast.Module, name: str) -> ast.expr | None:
     a static SSA version the runtime state may not hold. Any other binding site
     (a loop, a nested or partial branch, a variable-reading test) makes the
     whole block count as always assigning: the lint then says less, never
-    something false.
+    something false. So does a test that checks an outcome against ``None``.
     """
     if name in _definitely_assigned(tree.body):
         return None
@@ -158,6 +185,11 @@ def _assignment_guard(tree: ast.Module, name: str) -> ast.expr | None:
         ):
             return None
         if name_reads(st.test) - outcome_reads(st.test):
+            return None
+        # A None test lowers to a free ``answered`` Bool (#1250), and an answer
+        # can arrive whatever the item's gate, so it would let the lint read the
+        # assignment as skippable where the respondent's walk always makes it.
+        if none_test_operands(st.test):
             return None
         guards.append(st.test if in_body else ast.UnaryOp(op=ast.Not(), operand=st.test))
     if not guards:
@@ -210,12 +242,39 @@ def _none_unsafe_item_references(predicate: str) -> set[str]:
 
 
 #: A Checkbox label that denies every other option: "None of the above", "No
-#: health insurance", "Neither". Anchored at the start so a label merely
+#: health insurance", "Neither"; in Hungarian "Egyik sem", "Semmi", "Nincs
+#: biztosításom", "Semelyik"; in Spanish "Ninguno", "Ningún vehículo", "Nada";
+#: in French "Aucun", "Aucune assurance", "Rien"; in German "Keine davon",
+#: "Kein Fahrzeug", "Nichts". Anchored at the start so a label merely
 #: CONTAINING "no" ("Know someone", "Not sure") does not match; ``\b`` keeps
-#: "Not"/"Nothing but…" from matching the ``no`` arm. English only — a
-#: non-English instrument is a false negative, the safe direction for an
-#: advisory warning.
-_CHECKBOX_NONE_LABEL = re.compile(r"^\s*(?:no|none|nothing|neither)\b", re.IGNORECASE)
+#: "Not"/"Nothing but…" from matching the ``no`` arm.
+#:
+#: A "don't know" or "no answer" option does not deny the other options, and
+#: no arm may match one in any supported language. Hungarian "nem" is left out
+#: on purpose ("Nem tudom"); French "ne" likewise ("Ne sais pas"). The rest
+#: share a stem with a denial and are excluded by lookahead: the ``no`` arm
+#: refuses English "No idea", "No opinion", "No answer", "No response" and
+#: Spanish "No sé", "No lo sé", "No (lo) sabe", "No aplica", "No procede", "No
+#: contesta", "No responde", "No opina", "No recuerdo", "No estoy seguro/a",
+#: "No tengo opinión"; the ``ningun`` arm refuses "Ninguna opinión"; the
+#: ``nincs`` arm refuses "Nincs véleményem"; the ``aucun`` arm refuses "Aucune
+#: idée", "Aucun avis", "Aucune opinion"; the ``kein`` arm refuses "Keine
+#: Angabe", "Keine Ahnung", "Keine Antwort", "Keine Meinung".
+#: Every ``en`` instrument and its twin in another supported language get the
+#: same verdict; a language added to the supported locales adds its words here.
+_CHECKBOX_NONE_LABEL = re.compile(
+    r"^\s*(?:"
+    r"no(?!\s+(?:lo\s+)?(?:s[eé]|sabe)\b"
+    r"|\s+(?:idea|opinion|answer|response|aplica|procede|contesta|responde|opina"
+    r"|recuerdo|estoy\s+segur[oa]|tengo\s+opini[oó]n)\b)"
+    r"|none|nothing|neither"
+    r"|egyik(?:et)?\s+sem|semelyik(?:et)?|semmi(?:t|lyen)?|nincs(?:en)?(?!\s+vélemény)"
+    r"|ning[uú]n(?:o|a)?(?!\s+opini[oó]n\b)|nada"
+    r"|aucun(?:e)?(?!\s+(?:id[ée]e|avis|opinion)\b)|rien"
+    r"|kein(?:e|er|es|en|em)?(?!\s+(?:angabe|ahnung|antwort|meinung)\b)|nichts"
+    r")\b",
+    re.IGNORECASE,
+)
 
 _CMP_OPS: dict[type[ast.cmpop], Any] = {
     ast.Eq: operator.eq,
@@ -228,9 +287,9 @@ _CMP_OPS: dict[type[ast.cmpop], Any] = {
     ast.NotIn: lambda a, b: a not in b,
 }
 
-#: ``//`` and ``%`` are how a QML author tests a Checkbox bit in a form Z3 can
-#: lower (``(q.outcome // 256) % 2 == 0``); ``&`` / ``|`` are the runtime-only
-#: spelling of the same test.
+#: The operators a QML author tests a Checkbox bit with: ``//`` and ``%``
+#: (``(q.outcome // 256) % 2 == 0``), or ``&`` by a literal mask, which Z3
+#: lowers too (#2037); ``|`` combines bits.
 _BIN_OPS: dict[type[ast.operator], Any] = {
     ast.BitAnd: operator.and_,
     ast.BitOr: operator.or_,
@@ -399,6 +458,11 @@ class ValidationProcessor:
         # lazy memo is correct (mirrors ``self._classifications``).
         self._postcondition_records: list[dict[str, Any]] | None = None
 
+        # The guard tree (#1970), built at most once per build and only when
+        # asked (``get_guard_tree``): its Z3 checks are bounded per check and per
+        # build (``QMLGuardTree``), and nothing on the validation answer reads it.
+        self._guard_tree: dict[str, Any] | None = None
+
         self.logger.info(
             f"ValidationProcessor initialized for {len(self.engine.get_items())} items"
         )
@@ -425,6 +489,29 @@ class ValidationProcessor:
             self._classifications = {}
 
         return self._classifications
+
+    def get_guard_tree(self) -> dict[str, Any]:
+        """The questionnaire's guard tree, for the diagram's Tree view (``POST /guard-tree``).
+
+        A fault while building it does not take the diagram down: it is logged
+        and answered as ``{"error": ...}``, which QML Explorer shows as the reason
+        its tree view is unavailable.
+        """
+        if self._guard_tree is not None:
+            return self._guard_tree
+        from askalot_qml.core.qml_guard_tree import QMLGuardTree
+
+        try:
+            with create_span("qml.guard_tree", {"item_count": len(self.engine.get_items())}):
+                self._guard_tree = QMLGuardTree(
+                    self.engine.static_builder,
+                    self.state,
+                    list(self.engine.topology.topological_order or []),
+                ).build()
+        except Exception as e:
+            self.logger.error(f"Guard tree failed: {e}", exc_info=True)
+            self._guard_tree = {"error": "The branch structure could not be computed."}
+        return self._guard_tree
 
     def _get_postcondition_records(self) -> list[dict[str, Any]]:
         """Return the builder's postcondition analysis records (lazy-loaded).
@@ -495,6 +582,32 @@ class ValidationProcessor:
         }
 
         issues: list[dict[str, Any]] = []
+        # A block's condition is composed into every item of the block, so the
+        # builder records its gap once per item, and the same predicate can
+        # lower differently in each item's context (a self-reference). It is
+        # reported once, against the block (#1817): one finding per block
+        # condition, the stronger one when the items disagree (skipped beats
+        # partly verified), added after the per-item findings.
+        block_findings: dict[tuple[str, str, int], dict[str, Any]] = {}
+        builder = self.engine.static_builder
+        # Each item's gap names only the reads skippable in ITS context; the
+        # block's one finding names (and guards) the union.
+        block_reads = builder.block_condition_reads()
+
+        def gap_owner(item_id: str, gap: dict[str, Any]) -> tuple[str, str, tuple[str, str, int] | None]:
+            """``(owner, "Item" | "Block", the block condition's key or None)``."""
+            idx = gap.get("condition_idx", 0)
+            owner, scope = builder.condition_owner(item_id, gap.get("kind", ""), idx)
+            return owner, scope.capitalize(), ((owner, gap["kind"], idx) if scope == "block" else None)
+
+        def emit(issue: dict[str, Any], key: tuple[str, str, int] | None) -> None:
+            if key is None:
+                issues.append(issue)
+            elif key not in block_findings or (
+                block_findings[key]["type"] == "inexact_condition" and issue["type"] == "skipped_condition"
+            ):
+                block_findings[key] = issue
+
         for item_id, classification in classifications.items():
             pre_status = classification.get("precondition", {}).get("status", "UNKNOWN")
             post_invariant = classification.get("postcondition", {}).get("invariant", "UNKNOWN")
@@ -696,10 +809,8 @@ class ValidationProcessor:
                 # Skipped-condition coverage gap (#165, WARNING). A precondition
                 # or postcondition the static translator could not fully lower to
                 # Z3 — an unsupported Call / ListComp / GeneratorExp, or a
-                # Subscript over an outcome the model does not represent per-cell
-                # (a QuestionGroup vector ``qg.outcome[i]`` — QuestionGroups carry
-                # a single scalar var, no per-question cells, so the read has no
-                # Z3 target). The gap was RECORDED in ``coverage_gaps`` but, before
+                # Subscript over an outcome the model does not represent per-cell.
+                # The gap was RECORDED in ``coverage_gaps`` but, before
                 # #165, no ``to_issues`` branch surfaced it, so the author saw a
                 # clean file while the item's classification silently fell back to
                 # a trivial default (a skipped precondition → ALWAYS, a skipped
@@ -707,31 +818,214 @@ class ValidationProcessor:
                 # rule. WARNING, not error: the runtime still applies the predicate
                 # and some forms are legitimately runtime-only — but the author
                 # must know the static guarantee does not cover it.
-                elif gap_kind in ("precondition", "postcondition"):
-                    nodes = ", ".join(gap.get("unsupported_nodes", []) or []) or "an unsupported construct"
-                    issues.append(
+                #
+                # A gap carrying ``range_items`` was caused by a Range read the
+                # model does not represent (#1474, #1755): a Range answer has two
+                # named ends, so the message names that cause and the two forms
+                # that are proven. A gap carrying ``group_items`` read a
+                # QuestionGroup in a form the model does not hold (#184): the
+                # whole list, a set of answers, a group in a Roster or capped
+                # Group, more than one index; or a codeBlock wrote one. A gap
+                # carrying ``matrix_items`` read a MatrixQuestion's whole answer
+                # or a whole row (#1781): the model holds one variable per cell.
+                # A gap carrying ``skippable_items`` is a refused distinct-values
+                # check over Questions that may be unanswered (#1785, #1799).
+                # A gap carrying ``ternary_items`` read a skippable Question
+                # through a ternary branch (#1867): its None flows on untouched.
+                # A ``codeBlock`` gap is a Range outcome WRITE the model cannot
+                # hold (anything but a ``[a, b]`` literal on a Range Question):
+                # the runtime writes the pair, but conditions read later are
+                # proven without it.
+                # A condition that lowered WIDER than it is (#1815): a read that
+                # raises on a skipped item's None sits where the model cannot
+                # place the raise (#1775). Only NEVER / INFEASIBLE stand on it,
+                # so ALWAYS / TAUTOLOGICAL are withheld; the owner rule is that
+                # a withheld verdict is never silent.
+                elif gap.get("wide_items"):
+                    # NEVER / INFEASIBLE are what a wider formula still proves:
+                    # nothing was withheld, and the error already speaks. An
+                    # unreachable item's postcondition is vacuous, so its
+                    # inexactness withholds nothing either.
+                    if post_vacuous or (gap_kind == "postcondition" and post_invariant == "INFEASIBLE"):
+                        continue
+                    owner, scope, block_key = gap_owner(item_id, gap)
+                    wide_items = block_reads[block_key]["wide_items"] if block_key else gap["wide_items"]
+                    named = ", ".join(f"'{w}'" for w in wide_items)
+                    if gap_kind == "precondition":
+                        withheld = "ALWAYS reachable"
+                        guard = " and ".join(f"{w}.outcome is not None" for w in wide_items)
+                        guarded = f"'{guard} and (…)'"
+                    else:
+                        withheld = "always satisfied"
+                        guard = " or ".join(f"{w}.outcome is None" for w in wide_items)
+                        guarded = f"'{guard} or (…)'"
+                    emit(
                         {
-                            "item_id": item_id,
+                            "item_id": owner,
+                            "severity": "warning",
+                            "type": "inexact_condition",
+                            "message": (
+                                f"{scope} '{owner}' has a {gap_kind} that is only partly "
+                                f"verified: it reads {named}, which may be unanswered, and "
+                                f"the static validator cannot tell where reading None raises "
+                                f"in this condition. A contradiction it finds still stands, "
+                                f"but it cannot prove the {gap_kind} is {withheld}."
+                            ),
+                            "suggestion": (
+                                f"Test for an answer first ({guarded}), and compare the "
+                                f"answer directly rather than through a call, a list, a "
+                                f"ternary ('x if c else y') or a comprehension."
+                            ),
+                        },
+                        block_key,
+                    )
+
+                elif gap_kind in ("precondition", "postcondition", "codeBlock"):
+                    owner, scope, block_key = gap_owner(item_id, gap)
+                    range_items = gap.get("range_items") or []
+                    group_items = gap.get("group_items") or []
+                    matrix_items = gap.get("matrix_items") or []
+                    skippable_items = gap.get("skippable_items") or []
+                    if skippable_items and block_key:
+                        skippable_items = block_reads[block_key]["skippable_items"]
+                    ternary_items = gap.get("ternary_items") or []
+                    if ternary_items and block_key:
+                        ternary_items = block_reads[block_key]["ternary_items"]
+                    if group_items and not range_items:
+                        named = ", ".join(f"'{g}'" for g in group_items)
+                        verb = "writes" if gap_kind == "codeBlock" else "reads"
+                        cause = (
+                            f"it {verb} the QuestionGroup {named} in a form the static "
+                            f"model does not represent"
+                        )
+                        suggestion = (
+                            "A QuestionGroup answer is proven when a precondition or "
+                            "postcondition reads one answer, 'qg.outcome[i]' (or "
+                            "'qg.outcome[i].low' / '.high' on a Range group) with a literal "
+                            "index or a comprehension variable, or tests the group with "
+                            "'qg.outcome is not None'. The whole list read as a value, a "
+                            "set of answers, a group inside a Roster or capped Group, and "
+                            "a codeBlock write to a group are runtime-only and unverified."
+                        )
+                    elif range_items:
+                        named = ", ".join(f"'{r}'" for r in range_items)
+                        verb = "writes" if gap_kind == "codeBlock" else "reads"
+                        cause = (
+                            f"it {verb} the Range answer of {named} in a form the static "
+                            f"model does not represent"
+                        )
+                        suggestion = (
+                            "A Range answer has two named ends: read them as "
+                            "'q.outcome.low' / 'q.outcome.high' on a Range Question, or "
+                            "'m.outcome[j][k].low' / '.high' with literal indices on a "
+                            "Range matrix cell — those are proven, as is a codeBlock "
+                            "write of a literal pair 'q.outcome = [a, b]'. A positional "
+                            "read such as 'q.outcome[0]' fails at runtime. A whole Range "
+                            "answer compared as a number, a fold over Range cells, any "
+                            "positional Range QuestionGroup read and any other Range "
+                            "codeBlock write are runtime-only and unverified. A Range "
+                            "QuestionGroup answer reads as 'qg.outcome[i].low' / '.high'."
+                        )
+                    elif matrix_items:
+                        named = ", ".join(f"'{m}'" for m in matrix_items)
+                        cause = (
+                            f"it reads the MatrixQuestion {named} as a whole or by row, "
+                            f"a form the static model does not represent"
+                        )
+                        suggestion = (
+                            "A matrix answer is proven cell by cell: read "
+                            "'m.outcome[j][k]' with literal indices or comprehension "
+                            "variables, alone or in the supported folds ('sum', 'all', "
+                            "'any', 'len(set([...])) == k'). The whole answer or a whole "
+                            "row read as a value is runtime-only and unverified."
+                        )
+                    elif skippable_items:
+                        named = ", ".join(f"'{q}'" for q in skippable_items)
+                        guards = " and ".join(f"{q}.outcome is not None" for q in skippable_items)
+                        cause = (
+                            f"its distinct-values check reads {named}, which may be skipped "
+                            f"or left blank; an unanswered item is an empty member of the set, "
+                            f"which the distinct-values proof cannot hold"
+                        )
+                        suggestion = (
+                            f"Guard each item first ('{guards} and len(set([...])) == k') "
+                            "and the distinct-values check is proven; the guarded "
+                            "condition is False whenever one of them is unanswered, "
+                            "so use it only if that is the intended rule. Otherwise "
+                            "it is runtime-only and unverified."
+                        )
+                    elif ternary_items:
+                        named = ", ".join(f"'{q}'" for q in ternary_items)
+                        # The guard points the way the runtime fails (#658).
+                        if gap_kind == "postcondition":
+                            guarded = " or ".join(f"{q}.outcome is None" for q in ternary_items) + " or (…)"
+                        else:
+                            guarded = " and ".join(f"{q}.outcome is not None" for q in ternary_items) + " and (…)"
+                        cause = (
+                            f"it reads {named}, which may be skipped, through a ternary "
+                            f"('x if c else y'), which passes an unanswered item's None on "
+                            f"to what encloses it; the static validator cannot follow it"
+                        )
+                        suggestion = (
+                            f"Test for an answer first ('{guarded}') or compare "
+                            "the answer directly ('q.outcome in [...]' rather than "
+                            "'(q.outcome if c else 0) in [...]'), and the condition is "
+                            "proven. Otherwise it is runtime-only and unverified."
+                        )
+                    else:
+                        nodes = (
+                            ", ".join(gap.get("unsupported_nodes", []) or [])
+                            or "an unsupported construct"
+                        )
+                        cause = f"the static validator could not lower it to Z3 ({nodes})"
+                        suggestion = (
+                            "Rewrite the condition into the statically-verified subset "
+                            "(item outcomes, bound variables, and the supported folds "
+                            "over matrix cells and QuestionGroup answers), or accept "
+                            "that this rule is runtime-only and unverified."
+                        )
+                        if "Is" in (gap.get("unsupported_nodes") or []):
+                            suggestion += (
+                                " A None test ('X.outcome is None' / 'is not None') is "
+                                "proven when it comes before every other read of "
+                                "X.outcome, and of any variable, in the condition "
+                                "('X.outcome is not None and …', 'X.outcome is None or …'): "
+                                "move the test first."
+                            )
+                        if "Str" in (gap.get("unsupported_nodes") or []):
+                            suggestion += (
+                                " A string literal is proven only in an equality "
+                                "('==', '!=', 'in [...]'): arithmetic on one, or "
+                                "ordering it ('<', '>='), is left to the runtime, "
+                                "where Python raises or compares the text."
+                            )
+                        if {"FloorDiv", "Mod"} & set(gap.get("unsupported_nodes") or []):
+                            suggestion += (
+                                " A '//' or '%' is proven only by a positive whole-number "
+                                "literal, where Python and the static model agree; "
+                                "multiply out instead ('q.outcome > 2 * k', not "
+                                "'q.outcome // 2 > k')."
+                            )
+                    covers = f"'{owner}'" if scope == "Item" else f"every item of block '{owner}'"
+                    emit(
+                        {
+                            "item_id": owner,
                             "severity": "warning",
                             "type": "skipped_condition",
                             "message": (
-                                f"Item '{item_id}' has a {gap_kind} the static validator "
-                                f"could not lower to Z3 ({nodes}), so it was skipped: the "
-                                f"item's {gap_kind} classification fell back to a trivial "
-                                f"default and only the runtime enforces the rule — it sits "
-                                f"outside the verified envelope, so reachability/invariant "
-                                f"results for '{item_id}' may be wrong."
+                                f"{scope} '{owner}' has a {gap_kind} that was skipped "
+                                f"because {cause}: its {gap_kind} classification "
+                                f"fell back to a trivial default and only the runtime "
+                                f"enforces the rule — it sits outside the verified "
+                                f"envelope, so reachability/invariant results for "
+                                f"{covers} may be wrong."
                             ),
-                            "suggestion": (
-                                "Rewrite the condition into the statically-verified subset "
-                                "(item outcomes, bound variables, and the supported folds "
-                                "over matrix cells), or accept that this rule is "
-                                "runtime-only and unverified. A QuestionGroup vector "
-                                "outcome 'qg.outcome[i]' is not yet modeled per-question — "
-                                "gate on a dedicated item's outcome instead."
-                            ),
-                        }
+                            "suggestion": suggestion,
+                        },
+                        block_key,
                     )
+
+        issues.extend(block_findings.values())
 
         # U3 hygiene lints (WARNING). Computed here — beside the severity-and-
         # message policy for every other issue type — from the builder's
@@ -1038,13 +1332,13 @@ class ValidationProcessor:
             """
             try:
                 owner_gate, owner_exact = builder.compile_conditions_exactly(
-                    owner_id, _gate(owner_id)
+                    owner_id, _gate(owner_id), kind="precondition"
                 )
                 if not owner_exact:
                     return True
                 solver.push()
                 solver.add(owner_gate)
-                solver.add(Not(builder.compile_conditions(referenced, _gate(referenced))))
+                solver.add(Not(builder.compile_conditions(referenced, _gate(referenced), kind="precondition")))
                 answer = solver.check() == unsat
                 solver.pop()
                 return answer
@@ -1066,19 +1360,13 @@ class ValidationProcessor:
         reported: set[tuple[str, str, str]] = set()
 
         for owner_id, details in builder.item_details.items():
-            block_id = (self.state.get_item(owner_id) or {}).get("blockId")
-            block = self.state.get_block(block_id) if block_id else None
             for kind in ("preconditions", "postconditions"):
-                block_predicates = {
-                    (c or {}).get("predicate") for c in ((block or {}).get(kind[:-1]) or [])
-                }
-                for condition in details.get(kind) or []:
+                for idx, condition in enumerate(details.get(kind) or []):
                     predicate = condition.get("predicate", "")
                     if not predicate:
                         continue
                     # Attribute a block-sourced condition to the block that declares it.
-                    from_block = predicate in block_predicates
-                    declared_by = block_id if from_block else owner_id
+                    declared_by, scope = builder.condition_owner(owner_id, kind[:-1], idx)
                     for referenced in sorted(_none_unsafe_item_references(predicate)):
                         if referenced == owner_id or referenced in always_reachable:
                             continue
@@ -1090,7 +1378,6 @@ class ValidationProcessor:
                             continue
                         reported.add((declared_by, predicate, referenced))
                         condition_kind = kind[:-1]  # 'preconditions' -> 'precondition'
-                        scope = "block" if from_block else "item"
                         # The guard must fail to the side the RUNTIME fails to, and
                         # the two sides are opposite: a precondition that cannot be
                         # evaluated skips its item, so its guard must make the
@@ -1207,7 +1494,7 @@ class ValidationProcessor:
         def gate(item_id: str) -> Any:
             if item_id not in gates:
                 gates[item_id] = builder.compile_conditions(
-                    item_id, builder.item_details[item_id].get("preconditions") or []
+                    item_id, builder.item_details[item_id].get("preconditions") or [], kind="precondition"
                 )
             return gates[item_id]
 
@@ -1219,7 +1506,15 @@ class ValidationProcessor:
                     if guard is None
                     else And(
                         gate(item_id),
-                        builder.compile_conditions(item_id, [{"predicate": ast.unparse(guard)}]),
+                        # A codeBlock ``if`` that raises takes no branch: a precondition's
+                        # rule. It runs plain Python, where a blank answer is None and
+                        # not unknown, so no blank is modelled (code_guard, #1784).
+                        builder.compile_conditions(
+                            item_id,
+                            [{"predicate": ast.unparse(guard)}],
+                            kind="precondition",
+                            code_guard=True,
+                        ),
                     )
                 )
             return runs[item_id, name]
@@ -1230,14 +1525,16 @@ class ValidationProcessor:
         # (fewer findings); on the READER it widens where the read can happen and
         # would flag a read its own gate protects. So a reader whose gate uses a
         # construct outside the plain comparison-and-arithmetic subset (a call, a
-        # subscript, a string literal) is not judged: the lint says less rather
+        # subscript, a string literal), or whose gate did not lower whole (an
+        # unmodelled None test, #1250), is not judged: the lint says less rather
         # than something false.
         exact_gates: dict[str, bool] = {}
 
         def gate_is_exact(item_id: str) -> bool:
             if item_id not in exact_gates:
-                exact = True
-                for condition in builder.item_details[item_id].get("preconditions") or []:
+                preconditions = builder.item_details[item_id].get("preconditions") or []
+                exact = builder.compile_conditions_exactly(item_id, preconditions, kind="precondition")[1]
+                for condition in preconditions:
                     try:
                         tree = ast.parse(condition.get("predicate", "") or "True", mode="eval")
                     except SyntaxError:
@@ -1295,15 +1592,10 @@ class ValidationProcessor:
             if reader not in order:
                 continue
             details = builder.item_details[reader]
-            block_id = (self.state.get_item(reader) or {}).get("blockId")
-            block = self.state.get_block(block_id) if block_id else None
             # variable -> [(site kind, declaring item or block, scope word)]
             sites: dict[str, list[tuple[str, str, str]]] = {}
             for kind in ("precondition", "postcondition"):
-                block_predicates = {
-                    (c or {}).get("predicate") for c in ((block or {}).get(kind) or [])
-                }
-                for condition in details.get(f"{kind}s") or []:
+                for idx, condition in enumerate(details.get(f"{kind}s") or []):
                     predicate = condition.get("predicate", "")
                     if not predicate:
                         continue
@@ -1311,11 +1603,7 @@ class ValidationProcessor:
                         names = _free_reads(ast.parse(predicate, mode="eval"))
                     except SyntaxError:
                         continue
-                    site = (
-                        (kind, block_id, "block")
-                        if predicate in block_predicates
-                        else (kind, reader, "item")
-                    )
+                    site = (kind, *builder.condition_owner(reader, kind, idx))
                     for name in names & candidates:
                         sites.setdefault(name, []).append(site)
             if reader in code_trees:
@@ -1451,7 +1739,8 @@ class ValidationProcessor:
                 for cycle in self.engine.get_cycles():
                     if not cycle:
                         continue
-                    path = " → ".join(cycle) + f" → {cycle[0]}"
+                    # get_cycles() returns each cycle already closed (first id repeated last).
+                    path = " → ".join(cycle)
                     issues.append(
                         {
                             "item_id": cycle[0],

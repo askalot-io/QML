@@ -31,8 +31,11 @@ from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from typing import Any
 
-from askalot_qml.core.domain_validator import outcome_in_domain
-from askalot_qml.core.python_runner import CodeExecutionError, PythonRunner
+from askalot_common.i18n import N_, Sentence
+
+from askalot_qml.core.controls import stored_shape
+from askalot_qml.core.domain_validator import answer_refusal, outcome_in_domain
+from askalot_qml.core.python_runner import CodeExecutionError, CodeRefused, PythonRunner
 from askalot_qml.core.qml_engine import QMLEngine
 from askalot_qml.core.qml_topology import QMLTopology
 from askalot_qml.models.item_proxy import ItemProxy
@@ -87,6 +90,163 @@ _UNEVALUATABLE_CONDITION_POLICY: dict[str, tuple[bool, str]] = {
 # reasoning and the corpus figures are in askalot_qml/CLAUDE.md (Degradation
 # warnings).
 _UNANSWERED_OPERAND_SEVERITY = "degraded"
+
+# The words of each degradation warning, as catalog msgids (#2177): the engine
+# stores the English ``message`` formatted from them for agents and rollups,
+# and the msgid with its variables so a page translates it. One whole sentence
+# per case, never a spliced condition kind: a condition's fail direction is
+# fixed per kind by ``_UNEVALUATABLE_CONDITION_POLICY``, so each kind's
+# consequence is written into its own sentence.
+_UNEVALUATABLE_MESSAGES = {
+    "precondition": N_(
+        "Unable to evaluate precondition '%(expr)s' (%(error_type)s). "
+        "Treating it as unsatisfied (the gated item is skipped)."
+    ),
+    "postcondition": N_(
+        "Unable to evaluate postcondition '%(expr)s' (%(error_type)s). "
+        "Treating it as satisfied (the answer is accepted unchecked)."
+    ),
+}
+# A condition refused by AST validation never ran; the refusal's reason comes
+# from the author's code alone (``CodeRefused``), so the sentence names it.
+_REFUSED_CONDITION_MESSAGES = {
+    "precondition": N_(
+        "Precondition '%(expr)s' was refused (%(reason)s), so it never ran. "
+        "Treating it as unsatisfied (the gated item is skipped)."
+    ),
+    "postcondition": N_(
+        "Postcondition '%(expr)s' was refused (%(reason)s), so it never ran. "
+        "Treating it as satisfied (the answer is accepted unchecked)."
+    ),
+}
+_UNANSWERED_MESSAGES = {
+    "precondition": N_(
+        "Could not decide precondition '%(expr)s'. Treating it as unsatisfied (the gated "
+        "item is skipped). Items it reads that were shown and left unanswered, or computed "
+        "from one: %(items)s"
+    ),
+    "postcondition": N_(
+        "Could not decide postcondition '%(expr)s'. Treating it as satisfied (the answer is "
+        "accepted unchecked). Items it reads that were shown and left unanswered, or computed "
+        "from one: %(items)s"
+    ),
+}
+_ORPHANED_MESSAGES = {
+    "precondition": N_(
+        "A precondition reads answers as never given, because a backward edit took them "
+        "off the current path: %(items)s"
+    ),
+    "postcondition": N_(
+        "An answer check reads answers as never given, because a backward edit took them "
+        "off the current path: %(items)s"
+    ),
+}
+# The sentences above state each kind's fail direction; a policy change that
+# did not rewrite them would store a consequence the engine does not apply.
+if {kind: fail for kind, (fail, _) in _UNEVALUATABLE_CONDITION_POLICY.items()} != {
+    "precondition": False,
+    "postcondition": True,
+}:
+    raise RuntimeError("_UNEVALUATABLE_CONDITION_POLICY changed; rewrite the warning sentences")
+_CODEBLOCK_PARTIAL_MESSAGE = N_(
+    "The code block stopped with %(error_type)s. "
+    "Variables assigned before the failure are kept; downstream state may be wrong."
+)
+_CODEBLOCK_PARTIAL_AT_LINE_MESSAGE = N_(
+    "The code block stopped with %(error_type)s at line %(line)s. "
+    "Variables assigned before the failure are kept; downstream state may be wrong."
+)
+_CODEBLOCK_FRACTION_MESSAGE = N_(
+    "The code block ran to its end, but QML arithmetic is whole numbers and these "
+    "names computed a fraction: %(variables)s. Each variable holding a fraction was dropped; "
+    "downstream state may be wrong."
+)
+_CODEBLOCK_REFUSED_MESSAGE = N_(
+    "The code block was refused (%(reason)s), so nothing ran and the context is unchanged."
+)
+_CODEBLOCK_FAILED_TO_START_MESSAGE = N_(
+    "The code block could not start (%(error_type)s), so nothing ran and the context "
+    "is unchanged."
+)
+_ITERATE_OVER_RAISED_MESSAGE = N_(
+    "The iterateOver expression %(expr)s failed (%(error_type)s), so the roster pass is skipped."
+)
+_ITERATE_OVER_REFUSED_MESSAGE = N_(
+    "The iterateOver expression %(expr)s was refused (%(reason)s), so the roster pass "
+    "is skipped."
+)
+# The two below never name the value the expression computed: it is derived
+# from the respondent's answers (a Checkbox mask, a count), which a warning
+# and a log line must not carry (#2190).
+_ITERATE_OVER_INVALID_MESSAGE = N_(
+    "The iterateOver expression %(expr)s did not resolve to a non-negative whole "
+    "number, so the roster pass is skipped."
+)
+_MASK_UNDECLARED_MESSAGE = N_(
+    "The iterateOver expression %(expr)s selects iterations that have no declared "
+    "label, so those iterations are not traversed."
+)
+_ITEM_MISSING_MESSAGE = N_("Item %(item)s not found in questionnaire state")
+_PREFILL_DECLINED_MESSAGES = {
+    "not_external": N_(
+        "External prefill declined for %(item)s: item is not declared `external: true`."
+    ),
+    "block_kind": N_(
+        "External prefill declined for %(item)s: the item belongs to a Roster or a "
+        "count-capped Group, so a single prefilled value has no well-defined iteration."
+    ),
+    "precondition": N_(
+        "External prefill declined for %(item)s: "
+        "the item's precondition is false, so it is not asked at all."
+    ),
+    "domain": N_(
+        "External prefill declined for %(item)s: "
+        "the supplied value is outside the item's declared domain."
+    ),
+    "postcondition": N_(
+        "External prefill declined for %(item)s: "
+        "the supplied value fails the item's postcondition (%(hint)s)."
+    ),
+}
+
+
+def _warning(
+    state: QMLState, item_id: str, warning_type: str, msgid: str, *, severity: str, **variables: Any
+) -> tuple[bool, str]:
+    """Record a degradation warning as a ``Sentence``; returns (new record?, English message).
+
+    The English ``message`` is the sentence's text, so agents, logs and rollups
+    read what they always read, and a page translates it (``warning_message_text``,
+    #2177, #2191). Variables carry nothing the respondent supplied or computed
+    from it (#2190): an exception is named by its class and the author code's
+    line (:func:`_error_facts`), never its text; an AST refusal's reason and a
+    variable's name come from the author's code and may be named; a value
+    never is.
+    """
+    message = Sentence(msgid, **variables)
+    return state.add_warning(item_id, warning_type, message, severity=severity), str(message)
+
+
+def _error_facts(error: BaseException) -> tuple[str, int | None]:
+    """An exception as a warning may name it: its class and the author code's line (#2190).
+
+    Never ``str(error)``: an exception's text can quote the value it failed on
+    (``invalid literal for int() with base 10: 'Jane'``), which would put a
+    respondent's answer into the stored state, a staff page and the logs
+    (Loki is not scrubbed). A ``CodeExecutionError`` wraps what the author's
+    code raised (its ``__cause__``); the line is the deepest traceback frame in
+    the author's code (``exec`` names it ``<string>``), ``None`` when there is
+    none (a whole-number refusal after the block finished).
+    """
+    cause = error.__cause__ if isinstance(error, CodeExecutionError) and error.__cause__ else error
+    line = None
+    tb = cause.__traceback__
+    while tb is not None:
+        if tb.tb_frame.f_code.co_filename == "<string>":
+            line = tb.tb_lineno
+        tb = tb.tb_next
+    return type(cause).__name__, line
+
 
 # The third truth value: a part of a condition that reads an unanswered item.
 _UNKNOWN = object()
@@ -438,11 +598,18 @@ class FlowProcessor:
                 return self.python_runner.eval_expr(expr=condition_expr, **context_of())
             verdict = self._evaluate_three_valued(parsed.root, unanswered, context_of)
         except Exception as e:
+            if isinstance(e, CodeRefused):
+                msgid = _REFUSED_CONDITION_MESSAGES[condition_type]
+                variables = {"expr": condition_expr, "reason": e.reason}
+            else:
+                msgid = _UNEVALUATABLE_MESSAGES[condition_type]
+                variables = {"expr": condition_expr, "error_type": _error_facts(e)[0]}
             return self._undecided(
                 condition_type,
                 item_id,
                 warning_type=condition_type,
-                reason=f"Unable to evaluate {condition_type} '{condition_expr}': {e}.",
+                msgid=msgid,
+                variables=variables,
                 severity=_UNEVALUATABLE_CONDITION_POLICY[condition_type][1],
             )
         if verdict is not _UNKNOWN:
@@ -451,11 +618,8 @@ class FlowProcessor:
             condition_type,
             item_id,
             warning_type=f"{condition_type}_unanswered_dependency",
-            reason=(
-                f"Could not decide {condition_type} '{condition_expr}': it reads "
-                f"{', '.join(sorted(unanswered))}, presented and left unanswered "
-                f"or computed from such an item."
-            ),
+            msgid=_UNANSWERED_MESSAGES[condition_type],
+            variables={"expr": condition_expr, "items": ", ".join(sorted(unanswered))},
             severity=_UNANSWERED_OPERAND_SEVERITY,
         )
 
@@ -534,12 +698,13 @@ class FlowProcessor:
             and item.get("outcome") is not None
         )
         if orphans:
-            self.state.add_warning(
+            _warning(
+                self.state,
                 item_id,
                 f"{condition_type}_orphaned_answer",
-                f"{condition_type.capitalize()} read {', '.join(orphans)} as never asked: "
-                f"the answer given is off the current path after a backward edit.",
+                _ORPHANED_MESSAGES[condition_type],
                 severity="informational",
+                items=", ".join(orphans),
             )
 
     def _unknown_variables(
@@ -601,7 +766,8 @@ class FlowProcessor:
         item_id: str | None,
         *,
         warning_type: str,
-        reason: str,
+        msgid: str,
+        variables: dict[str, Any],
         severity: str,
     ) -> bool:
         """Record a condition the engine could not decide and return the
@@ -614,17 +780,12 @@ class FlowProcessor:
         """
         self._last_gate_undecided = True
         fail_value = _UNEVALUATABLE_CONDITION_POLICY[condition_type][0]
-        consequence = (
-            "Treating it as satisfied (the answer is accepted unchecked)."
-            if fail_value
-            else "Treating it as unsatisfied (the gated item is skipped)."
-        )
-        message = f"{reason} {consequence}"
-        first = (
-            self.state.add_warning(item_id, warning_type, message, severity=severity)
-            if item_id
-            else True
-        )
+        if item_id:
+            first, message = _warning(
+                self.state, item_id, warning_type, msgid, severity=severity, **variables
+            )
+        else:
+            first, message = True, msgid % variables
         self.logger.log(logging.WARNING if first else logging.DEBUG, message)
         return fail_value
 
@@ -659,26 +820,43 @@ class FlowProcessor:
             # which is a different claim than "an answer was kept that a gate
             # would have rejected". This is the severity that excludes the
             # survey from dataset construction (R16).
-            warning_msg = (
-                f"Error executing code block: {e}. "
-                f"Variables assigned before the failure are kept; downstream state may be wrong."
-            )
-            self.logger.warning(warning_msg)
-
-            if item_id:
-                self.state.add_warning(item_id, "codeblock", warning_msg, severity="critical")
-
+            if e.fractional:
+                # It ran to its end and the runner dropped what held a fraction
+                # (#1813); the names are the author's, never their values.
+                msgid = _CODEBLOCK_FRACTION_MESSAGE
+                facts: dict[str, Any] = {"variables": ", ".join(e.fractional)}
+            else:
+                error_type, line = _error_facts(e)
+                if line is None:
+                    msgid, facts = _CODEBLOCK_PARTIAL_MESSAGE, {"error_type": error_type}
+                else:
+                    msgid = _CODEBLOCK_PARTIAL_AT_LINE_MESSAGE
+                    facts = {"error_type": error_type, "line": line}
+            self._record_codeblock_warning(item_id, msgid, facts)
             return e.local_env
         except Exception as e:
-            # validate_code refused the block (AST-unsafe), so nothing executed
-            # and no variable the block was supposed to set exists downstream.
-            warning_msg = f"Error executing code block: {e}. Context unchanged."
-            self.logger.warning(warning_msg)
-
-            if item_id:
-                self.state.add_warning(item_id, "codeblock", warning_msg, severity="critical")
-
+            # Nothing executed, so no variable the block was supposed to set
+            # exists downstream. An AST refusal names its reason (author code
+            # only); anything else only its class.
+            if isinstance(e, CodeRefused):
+                msgid, facts = _CODEBLOCK_REFUSED_MESSAGE, {"reason": e.reason}
+            else:
+                msgid = _CODEBLOCK_FAILED_TO_START_MESSAGE
+                facts = {"error_type": _error_facts(e)[0]}
+            self._record_codeblock_warning(item_id, msgid, facts)
             return context
+
+    def _record_codeblock_warning(
+        self, item_id: str | None, msgid: str, facts: dict[str, Any]
+    ) -> None:
+        """Log a codeBlock degradation and, for an item's block, record it `critical`.
+
+        The log line is the same English the warning stores, so it carries
+        nothing a respondent supplied either (#2190).
+        """
+        self.logger.warning(msgid % facts)
+        if item_id:
+            _warning(self.state, item_id, "codeblock", msgid, severity="critical", **facts)
 
     def _initialize_questionnaire(self, questionnaire_state: QMLState) -> None:
         """
@@ -735,8 +913,14 @@ class FlowProcessor:
 
     @staticmethod
     def _variables_of(context: dict[str, Any]) -> dict[str, Any]:
-        """The variables in an execution context — everything but the item proxies."""
-        return {k: v for k, v in context.items() if not isinstance(v, ItemProxy)}
+        """The variables in an execution context — everything but the item proxies.
+
+        A variable holding a whole Range answer (``span = q.outcome``) is kept
+        as the stored pair, since variables are persisted as JSON: within the
+        block that assigned it, ``span.low`` reads, but a later step sees the
+        list. Assigning the ends (``lo = q.outcome.low``) keeps them named.
+        """
+        return {k: stored_shape(v) for k, v in context.items() if not isinstance(v, ItemProxy)}
 
     def _evaluation_context(self, all_items: list[dict[str, Any]]) -> dict[str, Any]:
         """The current state's variables plus a proxy per item — what a gate,
@@ -874,7 +1058,8 @@ class FlowProcessor:
                 # Skip empty cells — get_roster_outcomes_for_item drops them anyway.
                 continue
             proxy = ItemProxy(roster_item)
-            self.state.set_roster_outcome(block_id, iter_key, roster_item["id"], proxy.outcome)
+            # to_outcome(): the stored shape (a Range cell reads as a RangeValue).
+            self.state.set_roster_outcome(block_id, iter_key, roster_item["id"], proxy.to_outcome())
 
     def _enter_roster_pass(
         self, item: dict[str, Any], all_items: list[dict[str, Any]]
@@ -910,24 +1095,32 @@ class FlowProcessor:
             # turn a perfectly good int-bitmask like 7 into True.
             mask = self.python_runner.eval_value(expr=iterate_over_expr, **eval_context)
         except Exception as e:
-            warning = (
-                f"iterateOver expression {iterate_over_expr!r} raised: {e}; skipping roster pass."
+            if isinstance(e, CodeRefused):
+                msgid, facts = _ITERATE_OVER_REFUSED_MESSAGE, {"reason": e.reason}
+            else:
+                msgid, facts = _ITERATE_OVER_RAISED_MESSAGE, {"error_type": _error_facts(e)[0]}
+            _added, warning = _warning(
+                self.state,
+                item["id"],
+                "roster_iterate_over",
+                msgid,
+                severity="informational",
+                expr=repr(iterate_over_expr),
+                **facts,
             )
             self.logger.warning(warning)
-            self.state.add_warning(
-                item["id"], "roster_iterate_over", warning, severity="informational"
-            )
             return None
 
         if not isinstance(mask, int) or isinstance(mask, bool) or mask < 0:
-            warning = (
-                f"iterateOver expression {iterate_over_expr!r} resolved to {mask!r} "
-                f"(must be a non-negative int); skipping roster pass."
+            _added, warning = _warning(
+                self.state,
+                item["id"],
+                "roster_iterate_over",
+                _ITERATE_OVER_INVALID_MESSAGE,
+                severity="informational",
+                expr=repr(iterate_over_expr),
             )
             self.logger.warning(warning)
-            self.state.add_warning(
-                item["id"], "roster_iterate_over", warning, severity="informational"
-            )
             return None
 
         # Walk set bits low-to-high, intersect with declared labels. A bit set
@@ -938,16 +1131,17 @@ class FlowProcessor:
         active_keys = sorted(k for k in labels.keys() if mask & k)
         undeclared = sorted(bit for bit in _set_bits(mask) if bit not in labels)
         if undeclared:
-            warning = (
-                f"iterateOver mask {mask} sets bit(s) {undeclared} with no declared label; "
-                f"those iterations are not traversed."
-            )
-            self.logger.warning(warning)
             # `informational`: no answer was accepted or rejected — the pass
             # simply covers fewer subjects than the mask asked for.
-            self.state.add_warning(
-                item["id"], "roster_mask_undeclared", warning, severity="informational"
+            _added, warning = _warning(
+                self.state,
+                item["id"],
+                "roster_mask_undeclared",
+                _MASK_UNDECLARED_MESSAGE,
+                severity="informational",
+                expr=repr(iterate_over_expr),
             )
+            self.logger.warning(warning)
 
         self.state.set_roster_active_keys(block_id, active_keys)
 
@@ -972,6 +1166,53 @@ class FlowProcessor:
         """
         return n if isinstance(n, int) and n > 0 else 0
 
+    def is_undrawn_past_cap(self, item: dict[str, Any]) -> bool:
+        """Whether ``item`` is a capped-Group member the draw would not present
+        now because the cap is full: it is not in the running asked-list and
+        that list already holds ``count`` members (#1809).
+
+        The one reading of the cap rule, shared by the forward walk
+        (``_group_reach_decision``, the all-done terminator), a forward
+        ``navigate-to-item`` (``flow_service.compute_navigate_to_item``) and
+        ``process_item``'s refusal, so a jump or an API submit cannot record
+        an answer the draw left out. A member already drawn stays answerable,
+        so a backward edit inside the Group still works. The member's gate is
+        judged separately (``_check_preconditions`` / ``_gate_says_no``).
+        """
+        block_id = item.get("_group_block_id")
+        if block_id is None:
+            return False
+        asked = self.state.get_group_asked(block_id)
+        return item["id"] not in asked and len(asked) >= self._resolve_cap(item.get("_group_count"))
+
+    def draw_group_member(self, item: dict[str, Any]) -> None:
+        """Give ``item`` a slot of its capped Group's draw when it joins the
+        path off the walk: an answer ``process_item`` accepts, or a forward
+        ``navigate-to-item`` jump onto it (#1845).
+
+        Without this the member sits in history without consuming a slot, so
+        the walk asks one member more than ``count``. A member already drawn
+        keeps its one slot (a backward edit draws nothing), and one past a full
+        cap is left alone: the callers refuse such a member before they get
+        here. No active pass yet means the walk has not reached the Group, so
+        drawing opens the pass with this member and the walk's own entry then
+        keeps it rather than resetting the list.
+
+        The member is also tagged ``_group_drawn_off_walk``: the walk's
+        first-N rule would not pick it on a re-entry of the pass (an earlier
+        eligible member comes first), so ``_enter_group_pass`` gives it its
+        slot back while it holds an answer and its gate holds.
+        """
+        block_id = item.get("_group_block_id")
+        if block_id is None:
+            return
+        asked = self.state.get_group_asked(block_id)
+        if item["id"] in asked or self.is_undrawn_past_cap(item):
+            return
+        self.state.set_group_asked(block_id, [*asked, item["id"]])
+        item["_group_asked"] = True
+        item["_group_drawn_off_walk"] = True
+
     def _effective_conditions(self, item: dict[str, Any], field: str) -> list[dict[str, Any]]:
         """Compose block-level and item-level conditions for evaluation.
 
@@ -989,9 +1230,18 @@ class FlowProcessor:
         item_conds: list[dict[str, Any]] = list(item.get(field) or [])
         return block_conds + item_conds
 
-    def _enter_group_pass(self, item: dict[str, Any]) -> None:
+    def _enter_group_pass(self, item: dict[str, Any], all_items: list[dict[str, Any]]) -> None:
         """Open a fresh ``count``-capped Group pass: reset the running asked-list
-        to empty so the on-reach walk can fill it slot-by-slot.
+        so the on-reach walk can fill it slot-by-slot.
+
+        The list starts with the members drawn off the walk
+        (``draw_group_member``) that still hold an answer and whose gate holds
+        now, in ``navigation_path`` order, up to ``count``. The walk's own
+        first-N rule re-derives every member it drew itself, but not these: on
+        a benign re-entry it would draw the first eligible member in their
+        place and evict their accepted answers although no gate changed. One
+        whose gate no longer holds gets no slot, and its reach decision evicts
+        it, as for any member a backward edit pushed out.
 
         The draw is NOT frozen at entry. The forward walk
         (``_group_reach_decision``) evaluates each member's precondition *when it
@@ -1010,7 +1260,21 @@ class FlowProcessor:
         entry (this method) and cleared on pass completion / backward exit.
         """
         block_id = item["_group_block_id"]
-        self.state.set_group_asked(block_id, [])
+        cap = self._resolve_cap(item.get("_group_count"))
+        kept: list[str] = []
+        for item_id in self.state.get_navigation_path():
+            if len(kept) >= cap:
+                break
+            member = self.state.get_item(item_id)
+            if (
+                member is not None
+                and member.get("_group_block_id") == block_id
+                and member.get("_group_drawn_off_walk")
+                and member.get("outcome") is not None
+                and self._check_preconditions(member, all_items)
+            ):
+                kept.append(item_id)
+        self.state.set_group_asked(block_id, kept)
 
     def _group_reach_decision(
         self, item: dict[str, Any], all_items: list[dict[str, Any]]
@@ -1039,16 +1303,16 @@ class FlowProcessor:
         skipped-after-having-been-asked and nothing is evicted (AE19).
         """
         block_id = item["_group_block_id"]
-        n = item.get("_group_count")
         asked = self.state.get_group_asked(block_id)
         item_id = item["id"]
 
         if item_id in asked:
             return True  # already asked this pass → re-present (drawn+unvisited)
 
-        cap = self._resolve_cap(n)
+        # The gate is evaluated even when the cap is full: the eviction below
+        # reads the _last_gate_undecided this call sets.
         eligible = self._check_preconditions(item, all_items)
-        if eligible and len(asked) < cap:
+        if eligible and not self.is_undrawn_past_cap(item):
             # ASK: consume a slot and tag the item as group-asked (durable).
             self.state.set_group_asked(block_id, [*asked, item_id])
             item["_group_asked"] = True
@@ -1087,7 +1351,8 @@ class FlowProcessor:
             the forward walk does not treat it as already shown;
           * the durable ``_group_asked`` tag cleared — the group no longer owns
             this answer, so a later sweep must not re-evict an already-clean item
-            — and ``_asked`` with it: there is no answer left to mask (#1022);
+            — and ``_group_drawn_off_walk`` and ``_asked`` with it: there is no
+            answer left to keep a slot for or to mask (#1022);
           * the item's ``history`` entry (and its lockstep
             ``history_iter_key``) removed so the extractor never reaches it;
           * the item's ``response_timing`` events removed — the answer is gone,
@@ -1104,6 +1369,7 @@ class FlowProcessor:
         item["outcome"] = None
         item["visited"] = False
         item.pop("_group_asked", None)
+        item.pop("_group_drawn_off_walk", None)
         item.pop("_asked", None)
         self.state.drop_timing_events_for_item(item_id)
         self.state.clear_external_provenance(item_id)
@@ -1142,15 +1408,22 @@ class FlowProcessor:
             it is reset on entry here and is meaningless at any other moment.
         """
         self._last_gate_undecided = False
+        for verdict in self._gate_verdicts(item, all_items):
+            if verdict is not True:
+                self._last_gate_undecided = verdict is None
+                return False
+        return True
 
-        effective = self._effective_conditions(item, "precondition")
-        if not effective:
-            return True  # No preconditions
+    def _gate_verdicts(self, item: dict[str, Any], all_items: list[dict[str, Any]]):
+        """Each effective precondition's verdict, block's first, evaluated
+        lazily in order: True, False, or None when it decided nothing (it
+        raised, or reads an item shown and left unanswered, #1023).
 
-        # The current state plus a proxy per item, built on first use: a gate
-        # left undecided by an unanswered item evaluates nothing and needs none.
-        # The current state is the last history entry's — the items that
-        # actually ran — whichever item the gate belongs to (#1021).
+        The context (the current state plus a proxy per item) is built on
+        first use: a gate undecided on an unanswered item evaluates nothing
+        and needs none. The current state is the last history entry's, the
+        items that actually ran, whichever item the gate belongs to (#1021).
+        """
         context: dict[str, Any] | None = None
 
         def context_of() -> dict[str, Any]:
@@ -1159,18 +1432,40 @@ class FlowProcessor:
                 context = self._evaluation_context(all_items)
             return context
 
-        # Evaluate all preconditions - ALL must be satisfied
         item_id = item.get("id")
-        for condition in effective:
-            if not self._evaluate_condition(
+        for condition in self._effective_conditions(item, "precondition"):
+            self._last_gate_undecided = False
+            if self._evaluate_condition(
                 condition.get("predicate", ""),
                 context_of,
                 item_id=item_id,
                 condition_type="precondition",
             ):
-                return False
+                yield True
+            else:
+                yield None if self._last_gate_undecided else False
 
-        return True
+    def _gate_says_no(self, item: dict[str, Any], all_items: list[dict[str, Any]]) -> bool:
+        """Whether one of ``item``'s effective preconditions DECIDES False now.
+
+        ``_check_preconditions`` answers whether the walk presents the item,
+        so an undecided gate is a no there. Here it is not: an answer is
+        refused only on a gate that said no, and an undecided one lets it
+        through (#1768). A conjunct that decides False refuses even after one
+        that decided nothing.
+
+        The judgement leaves no warning behind. The evaluator records an
+        undecided gate as "the gated item is skipped", which an accepted
+        answer would contradict, and a refused one changes nothing to warn of.
+        """
+        warnings = copy.deepcopy(self.state.get("warnings"))
+        try:
+            return any(verdict is False for verdict in self._gate_verdicts(item, all_items))
+        finally:
+            if warnings is None:
+                self.state.pop("warnings", None)
+            else:
+                self.state["warnings"] = warnings
 
     def get_current_item(
         self, questionnaire_state: QMLState, backward: bool = False
@@ -1267,9 +1562,9 @@ class FlowProcessor:
                 asked = questionnaire_state.get_group_asked(group_block_id)
                 if item.get("id") in asked:
                     return False  # asked + unvisited → still pending
-                n = item.get("_group_count")
-                cap = self._resolve_cap(n)
-                presentable = len(asked) < cap and self._check_preconditions(item, all_items)
+                presentable = not self.is_undrawn_past_cap(item) and self._check_preconditions(
+                    item, all_items
+                )
                 return not presentable  # free pass / cap full → settled-skipped
             # Item with unsatisfied preconditions is implicitly done (skipped)
             if not self._check_preconditions(item, all_items):
@@ -1338,7 +1633,7 @@ class FlowProcessor:
             if item.get("_group_block_id"):
                 gblock_id = item["_group_block_id"]
                 if not questionnaire_state.has_group_pass(gblock_id):
-                    self._enter_group_pass(item)
+                    self._enter_group_pass(item, all_items)
                 if not self._group_reach_decision(item, all_items):
                     # Free pass / cap full — skip this member silently.
                     continue
@@ -1448,22 +1743,105 @@ class FlowProcessor:
         # Find the item in the questionnaire state
         current_item = questionnaire_state.get_item(item_id)
         if not current_item:
-            warning_msg = f"Item {item_id} not found in questionnaire state"
-            self.logger.error(warning_msg)
             # `degraded`: a caller submitted an answer the engine had nowhere to
             # put. Nothing wrong was accepted, but a respondent's answer was
             # dropped, and a survey that hits this has an id mismatch between
             # what was presented and what the state holds.
-            questionnaire_state.add_warning(
-                item_id, "item_missing", warning_msg, severity="degraded"
+            _added, warning_msg = _warning(
+                questionnaire_state,
+                item_id,
+                "item_missing",
+                _ITEM_MISSING_MESSAGE,
+                severity="degraded",
+                item=item_id,
             )
+            self.logger.error(warning_msg)
             return {"success": False, "message": f"Item {item_id} not found"}
+
+        # An answer outside the item's declared domain is refused before it
+        # touches the walk (#1757): no timing event, no history rewind, no
+        # state. Z3 proves reachability over the declared domain, so accepting
+        # one would walk the respondent onto items proven unreachable. The
+        # convenience save (skip_postcondition, the answer on screen kept as
+        # the respondent leaves backwards) is not refused, so Back always
+        # works, but its flag comes from the client: an out-of-domain value
+        # sent with it is ignored, and the item keeps what it held.
+        refusal = answer_refusal(current_item, outcome)
+        if refusal is not None:
+            if skip_postcondition:
+                return {"success": True, "ignored": "answer_out_of_domain"}
+            return {"success": False, "message": refusal, "reason": "answer_out_of_domain"}
 
         # Resolve the timing event's iteration key BEFORE anything else: the
         # Roster post-processing below advances the block's current iteration
         # once the pass is exhausted, so a key read after that point would close
         # the event of the iteration the respondent is moving INTO.
         timing_iter_key = questionnaire_state.current_iter_key(item_id)
+
+        # A Roster item on the path with no live iteration (its pass is done,
+        # and the API answers it directly, no jump): its answer is a backward
+        # edit to its FIRST entry, in that entry's iteration, exactly where a
+        # jump by id lands. History is cut after that entry before the pass is
+        # re-entered, so `iterateOver` reads the state that entry was built on,
+        # and the entry is then found below, so its gate is not judged again.
+        # A Roster item never on the path is left to the refusals (#1846).
+        if (
+            timing_iter_key is None
+            and current_item.get("_roster_block_id")
+            and item_id in questionnaire_state.get_history()
+        ):
+            timing_iter_key = self.rewind_to_first_entry(questionnaire_state, item_id)
+
+        # An answer to an item whose gate is False is refused, also before it
+        # touches the walk (#1768): the API takes any item id, and the walk
+        # would never have asked it. Judged only for an item not yet on the
+        # path in this iteration. One already in history passed its gate when
+        # it was reached (a forward jump judges its target's gate too), and an
+        # edit upstream truncates it, so a backward edit is never refused on a
+        # gate a later codeBlock moved. A jump back into a Roster restores the
+        # target's iteration (#1808), and so does a direct re-answer of a
+        # Roster item whose pass is done (above), so its entry is found under
+        # that key.
+        entry_idx = questionnaire_state.entry_index(item_id, timing_iter_key)
+        if entry_idx is None and self._gate_says_no(current_item, all_items):
+            if skip_postcondition:
+                return {"success": True, "ignored": "precondition_not_met"}
+            return {
+                "success": False,
+                "message": "this item is not asked on this path: its condition is not met",
+                "reason": "precondition_not_met",
+            }
+        # Likewise a capped-Group member the draw left out (#1809): the Group
+        # already asked its `count` members, so the walk never asks this one,
+        # and its answer would break "absent, not answered".
+        if entry_idx is None and self.is_undrawn_past_cap(current_item):
+            if skip_postcondition:
+                return {"success": True, "ignored": "group_cap_reached"}
+            return {
+                "success": False,
+                "message": (
+                    "this item is not asked on this path: its group already asked "
+                    "as many questions as it asks"
+                ),
+                "reason": "group_cap_reached",
+            }
+        # A Roster item never on the path, with no live iteration (its pass is
+        # over, or not yet entered), belongs to no iteration (#1846): the walk
+        # presents a Roster item only inside its pass, and Bronze keys Roster
+        # answers by iteration, so an iteration-less entry is data nothing can
+        # place. One on the path was rewound to its entry's iteration above.
+        if entry_idx is None and current_item.get("_roster_block_id") and timing_iter_key is None:
+            if skip_postcondition:
+                return {"success": True, "ignored": "roster_iteration_not_active"}
+            return {
+                "success": False,
+                "message": (
+                    "this item is not asked on this path now: it repeats per "
+                    "iteration, and none of its iterations is in progress"
+                ),
+                "reason": "roster_iteration_not_active",
+            }
+
         was_visited = current_item.get("visited", False)
         # Idempotent: when a presentation seam already stamped this pair the
         # original moment stands. A driver with no presentation seam (the API,
@@ -1475,7 +1853,7 @@ class FlowProcessor:
         # being presented (the external-input prefill, an API submission for an
         # item the walk has not reached) joins the path here: it now has an
         # answer, and its variables must reach whatever runs after it.
-        entry_idx = questionnaire_state.entry_index(item_id, timing_iter_key)
+        # (entry_idx is resolved above; nothing since has touched history.)
         # Answering an item that later entries were built on is a backward
         # edit, whichever driver sends it (the API takes any item id): the
         # walk rewinds to it, as the stepper jump does, and the items after
@@ -1610,6 +1988,9 @@ class FlowProcessor:
         if entry_idx is None:
             questionnaire_state.add_to_history(item_id, iter_key=timing_iter_key)
             entry_idx = len(questionnaire_state.get_history()) - 1
+        # An accepted capped-Group member takes its slot (#1845), so the walk
+        # never asks more than `count`. A drawn member is not drawn again.
+        self.draw_group_member(current_item)
         questionnaire_state["history_state"][entry_idx] = {
             "vars": variables,
             "unknown": sorted(unknown),
@@ -1730,7 +2111,7 @@ class FlowProcessor:
 
     @staticmethod
     def _warn_prefill_declined(
-        questionnaire_state: QMLState, item_id: str, gate: str, reason: str
+        questionnaire_state: QMLState, item_id: str, gate: str, **variables: Any
     ) -> None:
         """Record that a supplied external value was declined, naming the gate.
 
@@ -1741,9 +2122,14 @@ class FlowProcessor:
         respondent data (R17, and the same non-PII rule the provenance marker
         follows).
         """
-        message = f"External prefill declined for {item_id}: {reason}."
-        questionnaire_state.add_warning(
-            item_id, f"external_prefill_{gate}", message, severity="degraded"
+        _warning(
+            questionnaire_state,
+            item_id,
+            f"external_prefill_{gate}",
+            _PREFILL_DECLINED_MESSAGES[gate],
+            severity="degraded",
+            item=item_id,
+            **variables,
         )
 
     def apply_external_inputs(
@@ -1766,11 +2152,13 @@ class FlowProcessor:
              is undefined in v1; it is asked in the normal flow).
           2. Evaluate its effective precondition; skip when False — a
              precondition-false external must stay absent (running its codeBlock
-             at init would corrupt downstream branching). ``process_item`` does
-             NOT check the precondition, hence this explicit gate.
+             at init would corrupt downstream branching). ``process_item``
+             refuses only a gate that decides False (#1768); this one also
+             skips an undecided gate, since nobody asked for a prefill.
           3. Validate the injected value against the item's declared domain
-             (``process_item`` never range-checks the outcome); skip if
-             out-of-domain — the item is asked in the normal flow (AE3/R11).
+             (``process_item`` would refuse it, #1757; checked here first so the
+             decline is recorded as a prefill warning); skip if out-of-domain —
+             the item is asked in the normal flow (AE3/R11).
           4. ``process_item(state, id, value)`` — validates the postcondition
              and runs the codeBlock. An item the walk has not presented joins
              history there (iter_key=None), so the history-keyed Bronze
@@ -1833,7 +2221,6 @@ class FlowProcessor:
                     questionnaire_state,
                     item_id,
                     "not_external",
-                    "item is not declared `external: true`",
                 )
                 continue
             # v1 scope: only plain single-control Questions outside Roster/Group
@@ -1844,8 +2231,6 @@ class FlowProcessor:
                     questionnaire_state,
                     item_id,
                     "block_kind",
-                    "item is repeated or drawn (Roster/Group), so a single prefilled "
-                    "value has no well-defined iteration",
                 )
                 summary["skipped"] += 1
                 continue
@@ -1858,7 +2243,6 @@ class FlowProcessor:
                     questionnaire_state,
                     item_id,
                     "precondition",
-                    "the item's precondition is false, so it is not asked at all",
                 )
                 summary["skipped"] += 1
                 continue
@@ -1875,7 +2259,6 @@ class FlowProcessor:
                     questionnaire_state,
                     item_id,
                     "domain",
-                    "the supplied value is outside the item's declared domain",
                 )
                 summary["skipped"] += 1
                 continue
@@ -1898,7 +2281,7 @@ class FlowProcessor:
                     questionnaire_state,
                     item_id,
                     "postcondition",
-                    f"the supplied value fails the item's postcondition ({result.get('message')})",
+                    hint=str(result.get("message")),
                 )
                 summary["skipped"] += 1
                 continue
@@ -2014,21 +2397,77 @@ class FlowProcessor:
         if not prev_item:
             return None
 
-        # Re-establish roster pass state if the previous item lives in one.
-        prev_block_id = prev_item.get("_roster_block_id")
-        if prev_iter is not None and prev_block_id:
-            # Make sure the pass is active. If it's not (e.g., we exited to a
-            # non-roster item and are now navigating back into the roster),
-            # re-enter using the same iterateOver eval.
-            if questionnaire_state.get_roster_active_keys(prev_block_id) is None:
-                self._enter_roster_pass(prev_item, all_items)
-            questionnaire_state.set_current_roster_iter(prev_block_id, prev_iter)
-            self._restore_roster_outcomes_for_iter(prev_block_id, prev_iter)
+        if prev_iter is not None and prev_item.get("_roster_block_id"):
+            self._resume_roster_iteration(questionnaire_state, prev_item, prev_iter, all_items)
 
         self.logger.debug(f"Backward navigation to: {prev_id} (iter_key={prev_iter})")
         # Decorated like a forward step's item, so a Roster item stepped back
         # into still says which iteration it asks about.
         return self._decorate_with_roster_progress(prev_item)
+
+    def rewind_to_first_entry(self, questionnaire_state: QMLState, item_id: str) -> int | None:
+        """Cut history after ``item_id``'s FIRST entry, un-visit every item it
+        removes, and re-enter the entry as Back does (its Roster pass and
+        iteration resumed, ``_resume_roster_iteration``).
+
+        The one rewind to an item by id, shared by a jump back
+        (``flow_service.compute_navigate_to_item``) and a direct re-answer of a
+        Roster item whose pass is done (``process_item``), so both land on the
+        same entry. For a Roster item that undoes every later iteration.
+        Returns the entry's iteration key (``None`` outside a Roster). The
+        caller makes sure ``item_id`` is in history.
+        """
+        idx = questionnaire_state.get_history().index(item_id)
+        for removed_id, _ in questionnaire_state.truncate_history(idx + 1):
+            removed = questionnaire_state.get_item(removed_id)
+            if removed is not None:
+                removed["visited"] = False
+        self._reenter_top_of_history(questionnaire_state, questionnaire_state.get_all_items())
+        return questionnaire_state.get_history_with_iter()[-1][1]
+
+    def _resume_roster_iteration(
+        self,
+        questionnaire_state: QMLState,
+        item: dict[str, Any],
+        iter_key: int,
+        all_items: list[dict[str, Any]],
+    ) -> None:
+        """Make ``iter_key`` the live iteration of ``item``'s Roster block, as
+        it stood at its last surviving history entry.
+
+        The one re-entry into an iteration, shared by Back, a jump back
+        (``reenter_top_of_history``) and a direct re-answer of an item whose
+        pass is done (``process_item``). The pass is entered again when a
+        completed pass cleared it, the iteration's outcomes come back from
+        ``roster_outcomes`` and the block's ``visited`` flags are re-derived
+        from history: an item is visited in this iteration iff it has an entry
+        under it, or a surviving entry of the iteration's codeBlock wrote it a
+        value (``process_item`` marks such a write visited). Entering a pass
+        or advancing to another iteration un-visits the whole block, so
+        without this an answered item still before the top entry is presented
+        again and joins history twice.
+        """
+        block_id = item["_roster_block_id"]
+        if questionnaire_state.get_roster_active_keys(block_id) is None:
+            self._enter_roster_pass(item, all_items)
+        questionnaire_state.set_current_roster_iter(block_id, iter_key)
+        self._restore_roster_outcomes_for_iter(block_id, iter_key)
+
+        block_items = questionnaire_state.get_items_by_block(block_id)
+        block_ids = {ri["id"] for ri in block_items}
+        settled: set[str] = set()
+        for idx, (entry_id, entry_iter) in enumerate(questionnaire_state.get_history_with_iter()):
+            if entry_iter != iter_key or entry_id not in block_ids:
+                continue
+            settled.add(entry_id)
+            undo = questionnaire_state["history_state"][idx]["outcome_undo"]
+            settled.update(
+                written_id
+                for written_id, (_, _, written) in undo.items()
+                if written is not None and written_id in block_ids
+            )
+        for ri in block_items:
+            ri["visited"] = ri["id"] in settled
 
     @staticmethod
     def _block_has_history_entries(state: QMLState, block_id: str) -> bool:

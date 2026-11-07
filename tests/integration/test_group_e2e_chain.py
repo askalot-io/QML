@@ -174,7 +174,7 @@ class TestUncappedGroupRosterRegression(unittest.TestCase):
         # 2 Roster iterations (Member 1, Member 2).
         answers = {
             "q_family_count": 2,
-            "q_member_name": "Alice",
+            "q_member_name": 11,
             "q_member_age": 40,
         }
         walked = _walk(processor, state, answers)
@@ -223,7 +223,7 @@ class TestMixedRosterGroupStateRoundTrip(unittest.TestCase):
         # q_pref_b drawn in canonical order (q_pref_c never drawn).
         answers = {
             "q_family_count": 2,
-            "q_member_name": "Bob",
+            "q_member_name": 12,
             "q_member_age": 33,
             "q_pref_a": 1,
             "q_pref_b": 2,

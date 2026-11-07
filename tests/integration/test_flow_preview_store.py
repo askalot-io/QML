@@ -21,6 +21,14 @@ Tests the store seam:
   preview walk in the same sealed organization keeps working.
 - A fielded write that lost a race with another step on the same survey
   answers 409 ``survey_state_conflict``, not a 500, and records nothing.
+- A paused campaign takes no new answer (403 ``campaign_not_fielding``), while
+  a respondent who had already answered may answer on and finish; a reset and
+  a resume are refused outside fielding (#1285).
+- A fielded survey that was ever completed is never reset (409
+  ``survey_completed``, nothing written), a resumed one included; an
+  in-progress one is, and a completed preview still resets (#1293).
+- Presenting an unbegun survey of a paused campaign is refused too, since
+  presenting writes a timing event (#1285).
 
 These integration tests drive the real blueprint over Flask's test client, with
 a fake repository that records which store each call reached. A unit test of the
@@ -72,13 +80,14 @@ class _FakeSurvey:
         self.id = survey_id
         self.questionnaire_id = "q-1"
         self.respondent_id = "r-1"
-        self.campaign_id = None
+        self.campaign_id = "c-1"
         self.interviewer_user_id = None
         self.status = "in_progress"
         self.qml_state = {}
         self.current_block_id = None
         self.current_item_id = None
         self.mode = "direct"
+        self.language = None
 
 
 class _FakePreviewRun:
@@ -105,7 +114,7 @@ class _RecordingRepo:
 
     def __init__(self):
         self._questionnaire = type(
-            "Q", (), {"id": "q-1", "name": "Preview Store", "document_id": "doc-1"}
+            "Q", (), {"id": "q-1", "name": "Preview Store", "document_id": "doc-1", "language": "en"}
         )()
         self.survey_reads: list[str] = []
         self.survey_writes: list[str] = []
@@ -113,6 +122,7 @@ class _RecordingRepo:
         self.preview_writes: list[str] = []
         self._surveys: dict[str, _FakeSurvey] = {SURVEY_ID: _FakeSurvey(SURVEY_ID)}
         self._previews: dict[str, _FakePreviewRun] = {PREVIEW_ID: _FakePreviewRun(PREVIEW_ID)}
+        self.campaign_status = "active"
 
     # --- survey store ---
     def get_survey(self, survey_id):
@@ -144,11 +154,14 @@ class _RecordingRepo:
         return True
 
     # --- shared reads ---
-    def get_questionnaire(self, questionnaire_id):
+    def get_questionnaire(self, questionnaire_id, include_deleted=False):
         return self._questionnaire
 
     def get_campaign(self, campaign_id):
-        return None
+        """Every survey has a campaign (``ck_surveys_campaign_present``); unpinned here."""
+        if campaign_id != "c-1":
+            return None
+        return type("C", (), {"id": "c-1", "status": self.campaign_status, "qml_version_id": None})()
 
     def get_document_content(self, document_id, *, version_id=None):
         return _FakeVersion(_QML) if document_id == "doc-1" else None
@@ -361,3 +374,149 @@ class TestAFieldedWriteThatLostARace:
         body = resp.get_json()
         assert body["error"] == "survey_state_conflict"
         assert "Reload" in body["message"] and SURVEY_ID not in body["message"]
+
+
+@pytest.mark.integration
+@pytest.mark.flow
+class TestAPausedCampaignTakesNoNewAnswers:
+    """``campaign_takes_answers`` decides every answer-writing step (#1285, D29)."""
+
+    def _paused(self):
+        repo = _RecordingRepo()
+        repo.campaign_status = "paused"
+        return repo, _client(repo, ("org-1", "org-slug", SURVEY_ID))
+
+    @pytest.mark.parametrize(
+        "path,payload",
+        [
+            ("/api/flow/evaluate-item", {"item_id": "q1", "outcome": 1}),
+            ("/api/flow/navigate-to-item", {"target_item_id": "q1"}),
+            ("/api/flow/finish", {}),
+        ],
+    )
+    def test_a_survey_nobody_answered_is_refused_and_nothing_is_written(self, path, payload):
+        repo, client = self._paused()
+
+        resp = client.post(path, json={"survey_id": SURVEY_ID, **payload})
+
+        assert resp.status_code == 403, resp.get_data(as_text=True)
+        body = resp.get_json()
+        assert body["error"] == "campaign_not_fielding"
+        assert "not accepting responses" in body["message"]
+        assert repo.survey_writes == []
+
+    def test_presenting_an_unbegun_survey_is_refused_and_writes_nothing(self):
+        """Presenting opens a timing event and records ``started``: not on a
+        paused campaign for a survey nobody has begun (code review on B381)."""
+        repo, client = self._paused()
+
+        resp = client.get(f"/api/flow/current-item?survey_id={SURVEY_ID}")
+
+        assert resp.status_code == 403
+        assert resp.get_json()["error"] == "campaign_not_fielding"
+        assert repo.survey_writes == []
+
+    def test_a_respondent_mid_survey_answers_on_and_finishes(self):
+        repo = _RecordingRepo()
+        client = _client(repo, ("org-1", "org-slug", SURVEY_ID))
+        client.get(f"/api/flow/current-item?survey_id={SURVEY_ID}")
+        first = client.post(
+            "/api/flow/evaluate-item", json={"survey_id": SURVEY_ID, "item_id": "q1", "outcome": 1}
+        )
+        assert first.status_code == 200
+        repo.campaign_status = "paused"
+
+        client.get(f"/api/flow/current-item?survey_id={SURVEY_ID}")
+        second = client.post(
+            "/api/flow/evaluate-item", json={"survey_id": SURVEY_ID, "item_id": "q2", "outcome": 2}
+        )
+        done = client.post("/api/flow/finish", json={"survey_id": SURVEY_ID})
+
+        assert second.status_code == 200, second.get_data(as_text=True)
+        assert done.status_code == 200
+        assert repo._surveys[SURVEY_ID].status == "completed"
+
+    def test_a_reset_and_a_resume_are_refused_outside_fielding(self):
+        repo = _RecordingRepo()
+        client = _client(repo, ("org-1", "org-slug", SURVEY_ID))
+        client.get(f"/api/flow/current-item?survey_id={SURVEY_ID}")
+        client.post(
+            "/api/flow/evaluate-item", json={"survey_id": SURVEY_ID, "item_id": "q1", "outcome": 1}
+        )
+        repo.campaign_status = "paused"
+
+        reset = client.post("/api/flow/reset", json={"survey_id": SURVEY_ID})
+        client.post("/api/flow/finish", json={"survey_id": SURVEY_ID})
+        resume = client.post("/api/flow/resume", json={"survey_id": SURVEY_ID})
+
+        assert reset.status_code == 403
+        assert resume.status_code == 403
+        assert repo._surveys[SURVEY_ID].status == "completed"
+
+    def test_a_preview_walk_has_no_campaign_and_is_never_refused(self):
+        repo = _RecordingRepo()
+        repo.campaign_status = "paused"
+        client = _client(repo, ("org-1", "org-slug", PREVIEW_ID))
+
+        client.get(f"/api/flow/current-item?survey_id={PREVIEW_ID}")
+        resp = client.post(
+            "/api/flow/evaluate-item", json={"survey_id": PREVIEW_ID, "item_id": "q1", "outcome": 1}
+        )
+
+        assert resp.status_code == 200
+
+
+@pytest.mark.integration
+@pytest.mark.flow
+class TestResetOfAFieldedSurvey:
+    """#1293 (D30): reset before completion by whoever walks it, never after."""
+
+    def _answered(self, walk_id):
+        repo = _RecordingRepo()
+        client = _client(repo, ("org-1", "org-slug", walk_id))
+        client.get(f"/api/flow/current-item?survey_id={walk_id}")
+        client.post("/api/flow/evaluate-item", json={"survey_id": walk_id, "item_id": "q1", "outcome": 1})
+        return repo, client
+
+    def test_a_completed_survey_is_not_reset_and_nothing_is_written(self):
+        repo, client = self._answered(SURVEY_ID)
+        client.post("/api/flow/finish", json={"survey_id": SURVEY_ID})
+        writes = list(repo.survey_writes)
+
+        resp = client.post("/api/flow/reset", json={"survey_id": SURVEY_ID})
+
+        assert resp.status_code == 409, resp.get_data(as_text=True)
+        assert resp.get_json()["error"] == "survey_completed"
+        assert "Resume" in resp.get_json()["message"]
+        assert repo.survey_writes == writes
+        assert repo._surveys[SURVEY_ID].status == "completed"
+
+    def test_a_resumed_survey_is_not_reset_either(self):
+        """Resume reopens a completed walk; the reset guard reads that it was
+        completed, not only what its status says now (code review on B381)."""
+        repo, client = self._answered(SURVEY_ID)
+        client.post("/api/flow/finish", json={"survey_id": SURVEY_ID})
+        assert client.post("/api/flow/resume", json={"survey_id": SURVEY_ID}).status_code == 200
+        writes = list(repo.survey_writes)
+
+        resp = client.post("/api/flow/reset", json={"survey_id": SURVEY_ID})
+
+        assert resp.status_code == 409
+        assert repo.survey_writes == writes
+
+    def test_an_in_progress_survey_is_reset_by_whoever_walks_it(self):
+        repo, client = self._answered(SURVEY_ID)
+
+        resp = client.post("/api/flow/reset", json={"survey_id": SURVEY_ID})
+
+        assert resp.status_code == 200
+        assert resp.get_json()["item"]["id"] == "q1"
+
+    def test_a_completed_preview_still_resets(self):
+        repo, client = self._answered(PREVIEW_ID)
+        client.post("/api/flow/finish", json={"survey_id": PREVIEW_ID})
+
+        resp = client.post("/api/flow/reset", json={"survey_id": PREVIEW_ID})
+
+        assert resp.status_code == 200
+        assert repo._previews[PREVIEW_ID].status == "in_progress"

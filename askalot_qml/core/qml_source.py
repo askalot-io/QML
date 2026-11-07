@@ -54,30 +54,44 @@ logger = logging.getLogger(__name__)
 class QMLAddress:
     """The ids a ``qml_name`` carries, and which of the two forms it was written in.
 
-    ``form`` is ``"canonical"`` for ``projects/<project_id>/questionnaires/<questionnaire_id>.qml``
-    and ``"bare"`` for ``<questionnaire_id>.qml``, which names no project. The
-    ids are the address's own text: nothing here says they are UUIDs or that a
-    questionnaire exists under them.
+    ``form`` is ``"canonical"`` for ``projects/<project_id>/questionnaires/<questionnaire_id>.qml``,
+    ``"bare"`` for ``<questionnaire_id>.qml`` and ``"id"`` for a suffix-less
+    ``<questionnaire_id>`` (only when the caller asked for it); the last two name
+    no project. The ids are the address's own text: nothing here says they are
+    UUIDs or that a questionnaire exists under them.
     """
 
     project_id: str | None
     questionnaire_id: str
-    form: Literal["canonical", "bare"]
+    form: Literal["canonical", "bare", "id"]
 
 
-def parse_qml_address(qml_name: str) -> QMLAddress | None:
+def parse_qml_address(qml_name: str, *, accept_id: bool = False) -> QMLAddress | None:
     """Turn a ``qml_name`` into its ids, or ``None`` when it addresses no questionnaire.
 
     The one parser of the questionnaire address grammar. The document store
     keys a ``qml`` document on ``(project_id, kind="qml", key=<questionnaire_id>)``,
     so this is the bridge between a caller holding a name and the document
     identity. Slashes around the name are ignored and the ``.qml`` suffix is
-    required. Any other layout (an org-root draft path, ``shared/foo.qml``)
-    has no document identity and yields ``None``.
+    required, in that exact case. Any other layout (an org-root draft path,
+    ``shared/foo.qml``) has no document identity and yields ``None``.
+
+    ``accept_id`` opts into the ``"id"`` form: a bare questionnaire id with no
+    suffix and no slash. Only the browser editor's ``?qml=`` deep link takes it,
+    because Targetor's questionnaire pages link there with the row's id alone; a
+    name a tool or a document carries always has its suffix, so every other
+    caller leaves it off and such a name stays ``None`` for them.
 
     Which forms a caller serves is the caller's policy, read from ``form``:
     reads take the canonical form only, because the reach gate checks canonical
     names; the write resolver and the approval diff take the bare form too.
+
+    One deliberate second reading of the grammar exists:
+    ``askalot_common.files.signed_links`` validates a signed QML link's address
+    with its own strict pattern (the canonical form only, both ids UUIDs, no
+    surrounding slashes), at mint and again at redemption. It is a validator of
+    a value this parser already produced, not a splitter, and it cannot call
+    this function because ``askalot_common`` must not import ``askalot_qml``.
     """
     name = qml_name.strip("/")
     canonical = _CANONICAL_ADDRESS.match(name)
@@ -87,10 +101,14 @@ def parse_qml_address(qml_name: str) -> QMLAddress | None:
             questionnaire_id=canonical.group("questionnaire_id"),
             form="canonical",
         )
-    if "/" not in name and name.endswith(_QML_SUFFIX) and len(name) > len(_QML_SUFFIX):
+    if "/" in name:
+        return None
+    if name.endswith(_QML_SUFFIX) and len(name) > len(_QML_SUFFIX):
         return QMLAddress(
             project_id=None, questionnaire_id=name[: -len(_QML_SUFFIX)], form="bare"
         )
+    if accept_id and name and not name.lower().endswith(_QML_SUFFIX):
+        return QMLAddress(project_id=None, questionnaire_id=name, form="id")
     return None
 
 
@@ -239,6 +257,26 @@ class RepositoryQMLSource:
     def read(self, qml_name: str) -> str:
         """The head content of the questionnaire ``qml_name`` addresses."""
         return load_qml_content(self.repository, self._questionnaire_for(qml_name))
+
+    def read_version(self, qml_name: str, version_id: str) -> str:
+        """The content of one version of the questionnaire ``qml_name`` addresses.
+
+        For a reader that was told a version and must be served exactly it,
+        whatever is head by now: Portor's signed QML download serves the version
+        ``get_qml_content`` named when it minted the link (#1547). Raises
+        ``QMLDocumentMissingError`` on the misses :meth:`read` does, and when no
+        such version of this questionnaire's document exists: the repository
+        raises ``ValueError`` for a version of another document (the
+        questionnaire was relinked to a new document since the link was
+        minted), which for a reader holding a version id is a miss too.
+        """
+        questionnaire = self._questionnaire_for(qml_name)
+        try:
+            return load_qml_content(self.repository, questionnaire, version_id=version_id)
+        except ValueError as exc:
+            raise QMLDocumentMissingError(
+                f"Version {version_id!r} is not a version of {qml_name!r}'s document"
+            ) from exc
 
     def read_within(self, qml_name: str, max_bytes: int) -> HeadContentProbe:
         """The head's version id, number and size — and its content only when it fits (#213).

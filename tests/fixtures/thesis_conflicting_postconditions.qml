@@ -10,6 +10,9 @@
 #   - W_2 = B ∧ true ∧ (S_1 >= 30) is SAT (e.g., S_1 = 50)
 # - Global: UNSAT(F) - no value of S_1 satisfies both S_1 > 50 AND S_1 < 30
 # - This demonstrates accumulated constraints conflict
+#
+# Q_1 also refuses a blank rating (`is not None`): a blank S_1 would waive
+# both checks at runtime (#1784), and the questionnaire would be completable.
 
 qmlVersion: "2.0"
 
@@ -29,7 +32,7 @@ questionnaire:
             min: 1
             max: 100
           postcondition:
-            - predicate: q_rating.outcome > 50
+            - predicate: q_rating.outcome is not None and q_rating.outcome > 50
               hint: "Rating must be above 50"
 
         - id: q_confirm

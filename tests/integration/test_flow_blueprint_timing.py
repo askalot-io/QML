@@ -59,7 +59,7 @@ class _FakeSurvey:
     def __init__(self, mode: str = "direct"):
         self.id = "s-1"
         self.questionnaire_id = "q-1"
-        self.campaign_id = None
+        self.campaign_id = "camp-1"
         self.respondent_id = "r-1"
         self.qml_state = None
         self.status = "in_progress"
@@ -67,12 +67,14 @@ class _FakeSurvey:
         self.current_block_id = None
         # 'direct' or 'field_interview' — the only input to the source tag.
         self.mode = mode
+        self.language = None
 
 
 class _FakeQuestionnaire:
     def __init__(self):
         self.id = "q-1"
         self.document_id = "doc-1"
+        self.language = "en"
 
 
 class _FakeVersion:
@@ -92,11 +94,14 @@ class _FakeRepo:
     def get_survey(self, survey_id):
         return self._survey if survey_id == self._survey.id else None
 
-    def get_questionnaire(self, questionnaire_id):
+    def get_questionnaire(self, questionnaire_id, include_deleted=False):
         return self._questionnaire
 
     def get_campaign(self, campaign_id):
-        return None
+        """A fielding, unpinned campaign: every survey has one (``ck_surveys_campaign_present``)."""
+        if not campaign_id:
+            return None
+        return type("C", (), {"id": campaign_id, "status": "active", "qml_version_id": None})()
 
     def get_document_content(self, document_id, *, version_id=None):
         return _FakeVersion(_QML) if document_id == "doc-1" else None
