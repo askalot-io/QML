@@ -1,284 +1,3174 @@
-# PALS 2001 (Children under 15): Declarative Conversion Analysis
-
-**Source:** Statistics Canada, Participation and Activity Limitation Survey -- 2001 (Children -- under 15), FORM 03, 57 pages
-**QML Files:** `evaluation/statcan-questionnaires/PALS_Activity_Limitation/` (9 section files)
-**Date:** 2026-03-29
-
-## Objective
-
-Transform the PALS 2001 Children questionnaire (57 pages, 267 nodes across 9 sections plus follow-up, GOTO-based interviewer-administered paper survey with an external Profile Sheet tracking device) into a declarative QML representation consisting of 9 standalone section files, then run the Z3-based formal validator to detect structural problems hidden in the imperative version.
-
-## Methodology
-
-1. **PDF preprocessing**: Extracted text with `pdftotext -layout -nodiag`. The survey is a paper-based interviewer-administered instrument (PAPI) collected under the authority of the Statistics Act, Statutes of Canada, 1985, Chapter S19. Section boundaries identified via heading patterns (SECTION A through SECTION I) and question ID prefixes (A1, B1, C1, etc.).
-2. **Question inventory**: 267 nodes catalogued across 9 sections plus a follow-up contact item, with full routing annotations including Profile Sheet checkbox operations. Judgement agent verified coverage: 10/10 sections, 0 missing items, 134/148 GOTO annotations captured (14 absorbed into filter node descriptions). One routing bug found and fixed (E2 routing). Status: READY FOR QML.
-3. **Declarative QML conversion**: Per-section standalone QML files generated. Each section file is independently validatable with its own `qmlVersion` and `codeInit`. The critical Profile Sheet mechanism was modeled using 24 flag variables (9 limitation flags, 7 USE-aid flags, 7 NEED-aid flags, plus an aggregate limitation counter). Cross-section variables (`child_under_5`, `limitation_general`) declared as extern annotations.
-4. **Formal validation**: Z3 SMT solver run on all 9 section files independently. All sections pass all four validation levels (per-item classification, global satisfiability, cycle detection, path-based reachability).
-
-## Survey Architecture Overview
-
-The PALS 2001 (Children) questionnaire surveys the activity limitations and participation barriers of Canadian children under 15 with disabilities. It was conducted as a post-censal survey following the 2001 Census. The survey uses two primary routing mechanisms: a **date-of-birth age gate** (born after May 15, 1996 = under age 5) and a **Profile Sheet** (an external administrative tracking device where the interviewer marks limitation and aid-use checkboxes throughout Section B).
-
-### Section Structure
-
-| Section | Pages | Items | Purpose |
-|---------|-------|-------|---------|
-| A -- Filter Questions | 1-2 | 4 | Activity difficulty and limitation screening |
-| B -- Activity Limitations | 2-21 | 110 | Hearing, seeing, communication, walking, hands/fingers, learning, developmental, emotional/psychological, chronic conditions, diagnosis/cause, health, medications, health professionals, aids/costs |
-| C -- Help with Everyday Activities | 22-26 | 29 | Personal care, mobility help, housework, care coordination, work impact |
-| D -- Child Care | 26-27 | 8 | Child care arrangements, refusals |
-| E -- Education | 28-38 | 39 | School attendance, grade level (province-specific), special education, school accommodations, aids, assessment |
-| F -- Leisure and Recreation | 39-44 | 38 | Activity frequency/hours, summer camp, barriers, computer/Internet use |
-| G -- Home Accommodation | 45-46 | 11 | Special features entering/leaving and inside residence |
-| H -- Transportation | 47-50 | 17 | Car features, specialized bus, taxi, expenses |
-| I -- Economic Characteristics | 50-52 | 10 | Insurance, tax credits, household income |
-| Follow-up | 52 | 1 | Re-contact permission |
-
-**Age gate coverage**: Sections E, F, G, and H are skipped entirely for children under 5. Within Section B, the age gate appears at 7 filter points (B6.edit, B13.edit, B15.edit, B16.edit, B51.edit, B53.edit, B87.edit) to skip aids subsections for under-5 children. Section C applies the age gate to personal care questions (C1-C11). Section D applies it at exit (D8.edit) to route under-5 children directly to Section I.
-
-## Semantic Equivalence
+---
+askalot_import: 1
+source_file: PALS_Activity_Limitation.pdf
+kind: pdf
+pages: 58
+vision_pages: [53, 56, 58]
+assumed_blank: false
+normalizer:
+  pages: 58
+  pages_by_route: {text: 55, soft: 2, hard: 1}
+  route_reasons: {grid: 1, reading_order: 1, no_text: 1}
+  glyphs_dropped: {symbol_picture: 437}
+  filled_checkboxes: 7
+  running_lines_dropped: 53
+  page_labels_found: 53
+  answers_discarded: 7
+---
 
-| Metric | Count |
-|--------|-------|
-| Source questions (substantive) | 223 |
-| QML items | 247 |
-| Matched | 223 |
-| Filter/routing nodes modeled | 22 |
-| Justified omissions | 2 |
+<!-- page 1 read_by="text_layer" -->
 
-### Justified Omissions (2 items)
+**INTRODUCTION**
+**Statistics Canada is conducting a survey on children whose day-to-day activities may be limited because**
+**of a condition or health problem. Survey results will help to identify difficulties and barriers these children**
+**and their families may face.To reduce the number of questions we need to ask, the Census information**
+**collected last May will be added to the information provided in this interview. All information will be kept**
+**confidential and used for statistical purposes only. While your participation is voluntary, your assistance**
+**is very important to ensure that the results are accurate.**
 
-| Category | Items | Reason |
-|----------|-------|--------|
-| Profile Sheet (administrative) | Profile Sheet tracking checkboxes | External paper device replaced by 24 computed flag variables in `codeInit`; the checkbox tallying function is preserved, but the physical device is not a survey question |
-| Follow-up contact details | FU1 address/phone collection fields | Contact information collection (name, address, telephone of alternate contact) is administrative; the Yes/No consent gate is modeled but the data entry fields are not QML questions |
+- ___ Participation and Activity
+- ___ Limitation Survey – 2001
+- ___ ___ (Children – under 15)
 
-### Additional QML items (24 over source count)
+## FORM 03
 
-The 247 QML items exceed the 223 source questions by 24 because:
-- 22 filter/age-gate nodes (B6.edit, B13.edit, B15.edit, B16.edit, B45.edit, B51.edit, B53.edit, B60.edit, B62.edit, B81.edit, B87.edit, B89.edit, B95.edit, C_AGE.edit, C9.edit, C12.edit, C17.edit, C22.edit, D8.edit, E10.edit, G_AGE.edit, H_AGE.edit) are modeled as Comment items with `codeBlock` or as block-level preconditions rather than separate items
-- Frequency+hours paired questions in Section F (F1a/F1a_hrs, F1b/F1b_hrs, etc.) expand the 16 source items into 38 QML items because each frequency question and its conditional hours question become separate QML items
-- Profile Sheet checkpoint (B62.edit) is modeled as a Comment item that computes the aggregate limitation count
+- ___ Collected under the authority of
+- ___ the Statistics Act. Statutes of
 
-## Validator Results
+Canada, 1985, Chapter S19.
 
-### Summary
+**CONFIDENTIAL WHEN COMPLETED**
 
-| Metric | Value |
-|--------|-------|
-| Total items | 247 |
-| Total blocks | 25 |
-| Preconditions | 225 |
-| Postconditions | 0 |
-| Variables (SSA) | 62 |
-| Dependencies | 860 |
-| Cycles | **0** |
-| Global Status | **SAT** (all 9 sections) |
-| Dead Code | **0** |
-| Issues | **0** |
+8-4500-113.1 STC/HFS-110-75174
+Province or Territory
+Initial(s)
 
-### Z3 Item Classifications
+Number and Street or lot and concession or exact location
 
-| Classification | Count | Meaning |
-|----------------|-------|---------|
-| Precondition ALWAYS | 22 | Items shown regardless of age or prior responses |
-| Precondition CONDITIONAL | 225 | Items gated by age, limitation flags, or prior responses |
-| Precondition NEVER | 0 | No dead code detected |
-| Postcondition CONSTRAINING | 0 | No active filtering postconditions |
-| Postcondition INFEASIBLE | 0 | No impossible validation rules |
-| Postcondition TAUTOLOGICAL | 0 | No postconditions defined |
+City, Town, Village or Municipality
+Sex:
+Male Female
+Date of birth:
+Year Month Day Area code Telephone No.
+Telephone:
 
-**Interpretation**: The 22 ALWAYS items are unconditional entry points in each section: the 4 filter questions (Section A), the first question in each disability subsection (B1, B11, B43, B44, B56, B59), health/medication lead items (B68, B69), and first items in Sections D and I. All 225 CONDITIONAL items have at least one valid path confirmed by the path-based reachability check. The complete absence of postconditions (0 across all 247 items) is a noteworthy property of the original questionnaire -- see P4 below.
+Address:
 
-### Per-Section Validation
+Postal Code
 
-| Section | Items | Blocks | Pre | Post | Vars | Deps | Cycles | Status |
-|---------|-------|--------|-----|------|------|------|--------|--------|
-| 01_filter_questions | 4 | 1 | 0 | 0 | 1 | 0 | 0 | VALID |
-| 02_activity_limitations | 100 | 14 | 95 | 0 | 39 | 684 | 0 | VALID |
-| 03_everyday_help | 24 | 4 | 18 | 0 | 6 | 20 | 0 | VALID |
-| 04_child_care | 7 | 1 | 5 | 0 | 0 | 6 | 0 | VALID |
-| 05_education | 38 | 1 | 38 | 0 | 12 | 76 | 0 | VALID |
-| 06_leisure_recreation | 38 | 1 | 38 | 0 | 1 | 48 | 0 | VALID |
-| 07_home_accommodation | 10 | 1 | 10 | 0 | 1 | 6 | 0 | VALID |
-| 08_transportation | 16 | 1 | 16 | 0 | 1 | 15 | 0 | VALID |
-| 09_economic_characteristics | 10 | 1 | 5 | 0 | 1 | 5 | 0 | VALID |
+**INFORMATION SOURCE**
 
-### Key Structural Finding: Section B Dependency Density
+First name(s)
 
-Section B (Activity Limitations) accounts for **684 of 860 total dependencies (80%)** across 100 items in 14 blocks. This density arises from the Profile Sheet mechanism: each disability subsection (hearing, seeing, communication, walking, hands/fingers, learning, developmental, emotional/psychological, chronic conditions) writes to limitation and aid-use flag variables that are read by later subsections (B62.edit reads all 10 limitation flags; B89.edit reads all 7 USE-aid flags; B95.edit reads all 7 NEED-aid flags). The Z3 solver confirms the entire dependency graph is acyclic because all flag variables flow strictly forward through the subsection order.
+Family name
+Name of parent/guardian or proxy:
+First name(s) Family name
 
-## Section Files
+Apt.No.
 
-| # | File | Block(s) | Items | Variables Read | Variables Written |
-|---|------|----------|-------|----------------|-------------------|
-| 01 | `01_filter_questions.qml` | b_filter_questions | 4 | -- | limitation_general |
-| 02 | `02_activity_limitations.qml` | 14 blocks (hearing, vision, communication, walking, hands, learning, developmental, emotional, chronic, profile_check, diagnosis, health_meds, health_prof, aids_costs) | 100 | limitation_general, child_under_5 | limitation_hearing, limitation_seeing, limitation_communicating, limitation_walking, limitation_hands, limitation_learning, limitation_developmental, limitation_emotional, limitation_chronic, use_aid_hearing through use_aid_chronic, need_aid_hearing through need_aid_chronic, limitation_count, use_aid_count, need_aid_count |
-| 03 | `03_everyday_help.qml` | 4 blocks (personal_mobility, family_help, care_coordination, work_impact) | 24 | child_under_5 | c9_any_yes, c12_any_yes, c17_any_yes, c22_any_yes, c15_dk |
-| 04 | `04_child_care.qml` | b_child_care | 7 | -- | -- |
-| 05 | `05_education.qml` | b_education | 38 | child_under_5 | e1_path, e4_ever_school, e6_special_school, e7_class_type, e8_ever_special, e13_province, is_kindergarten, e25_used_features, e27_needed_features, e30_unmet_aids, e37_assessment |
-| 06 | `06_leisure_recreation.qml` | b_leisure_recreation | 38 | child_under_5 | -- |
-| 07 | `07_home_accommodation.qml` | b_home_accommodation | 10 | child_under_5 | -- |
-| 08 | `08_transportation.qml` | b_transportation | 16 | child_under_5 | -- |
-| 09 | `09_economic_characteristics.qml` | b_economic | 10 | -- | dk_i9 |
+Number of residents in the household: Adults (15 and over) Children (0-14)
+—
 
-## Problems in the Original Questionnaire (Exposed by Declarative Conversion)
+**Reason for proxy:**
 
-### P1: Profile Sheet -- External Administrative Device as Critical Routing Logic
+- (1) Parent/Guardian does not speak English
 
-**Severity:** HIGH
-**PDF evidence:** pp. 1-21, Profile Sheet instructions appear at A1, A2A, A2B, A2C (p. 1-2), B2 (p. 3), B4 (p. 3), B6 (p. 4), B8 (p. 4), B17 (p. 5), B19 (p. 5), B21 (p. 6), B22 (p. 6), B27 (p. 7), B29 (p. 7), B31 (p. 8), B33 (p. 8), B35 (p. 8), B37 (p. 9), B39 (p. 9), B41 (p. 9), B43 (p. 10), B44 (p. 10), B47 (p. 11), B49 (p. 11), B53 (p. 12), B57 (p. 13), B60 (p. 13), B62.edit (p. 15), B87 (p. 20), B89.edit (p. 20), B93 (p. 21), B95.edit (p. 21)
+## or French . . . . . . . . . . . . . . . . . . . . . . . . . . . . . iih
 
-**Problem:** The questionnaire depends on a Profile Sheet -- a separate physical document that the interviewer must maintain alongside the questionnaire form. Throughout Section B (approximately 60 questions), the interviewer is instructed to "Check box [Category] -- Limitation on Profile Sheet" or "Check box [Category] -- USE Aid on Profile Sheet" whenever specific answers are given. The Profile Sheet accumulates checkbox tallies across three columns (Limitation, USE Aid, NEED Aid) and ten rows (General, Hearing, Seeing, Communicating, Walking, Hands/Fingers, Learning, Developmental, Emotional/Psychological, Chronic). At three critical routing checkpoints -- B62.edit (p. 15), B89.edit (p. 20), and B95.edit (p. 21) -- the interviewer must consult the Profile Sheet to determine routing:
+- (2) Parent/Guardian unable to respond. . . . . . . . . . iih
+- (3) Parent/Guardian absent – duration of survey. . . iih
 
-- **B62.edit**: "If any box is checked in the 'Limitation Column' on the Profile Sheet, go to B62. Otherwise, go to the Follow-up Question (page 52)." This is the single most consequential routing decision in the entire questionnaire. If the interviewer fails to mark any limitation checkbox, the respondent is routed past the entire diagnosis, health, medications, and aids subsections (B62-B97) -- a loss of 36 questions of substantive data.
-- **B89.edit**: "If any box is checked in the 'USE -- Aid' column on the Profile Sheet, continue. Otherwise, go to B93." Controls access to the aids funding and costs subsection.
-- **B95.edit**: "If any box is checked in the 'NEED Aid' column on the Profile Sheet, continue. Otherwise, go to C1." Controls access to the unmet aids impact subsection.
+**Non-Proxy:**
 
-**In the imperative version:** The Profile Sheet is a manual bookkeeping device. The interviewer must remember to mark checkboxes at each of the approximately 30 checkpoint instructions scattered across 20 pages. A single missed checkbox at any limitation-marking point (B2=2, B4=2/3, B21=1, B22=1, B31=1/2, B37=1/2, B43=1, B44=1, B53=1, B57=1/2, B60=1/2) could cause the B62.edit routing check to fail, silently skipping the entire second half of Section B. There is no built-in error correction mechanism.
+- (1) Parent/Guardian . . . . . . . . . . . . . . . . ih
+- (2) Parent/Guardian (via interpreter) . . . . ih
 
-**In the declarative version:** The Profile Sheet was modeled as 24 computed flag variables (9 limitation, 7 USE-aid, 7 NEED-aid, plus an aggregate counter) in the `codeInit` of `02_activity_limitations.qml`. Each flag is set via `codeBlock` at the corresponding question. The B62.edit checkpoint becomes a `precondition: limitation_count > 0` on the diagnosis block. This makes the accumulation logic auditable and error-free -- the Z3 solver verifies that the `limitation_count` variable is reachable with a positive value (SAT), confirming that at least one valid path populates the Profile Sheet. The conversion exposed that the paper form's integrity depends entirely on interviewer diligence in maintaining an external tracking device.
+**Proxy:**
 
-### P2: Scattered Age Gate with No Centralized Filter
+- (3) Other household member . . . . . . . . . ih
+- (4) Other, specify . . . . . . . . . . . . . . ih
 
-**Severity:** MEDIUM
-**PDF evidence:** B6.edit (p. 3: "If child was born AFTER May 15, 1996, go to B11"), B13.edit (p. 5), B15.edit (p. 5), B16.edit (p. 5), B51.edit (p. 12), B53.edit (p. 12), B87.edit (p. 19), C header (p. 22: "If child was born AFTER May 15, 1996, go to C12"), D8.edit (p. 27), Section E header (p. 28, implied), Section F header (p. 39, implied), Section G header (p. 45), Section H header (p. 47)
+# FOR INFORMATION ONLY
 
-**Problem:** The "born after May 15, 1996" filter (meaning child is under 5 years old at the time of the 2001 survey) appears at 13+ distinct points throughout the questionnaire. In Section B alone, it appears at 7 filter edit points (B6.edit, B13.edit, B15.edit, B16.edit, B51.edit, B53.edit, B87.edit), each requiring the interviewer to check the child's date of birth against the May 15, 1996 threshold. In the later sections, the age gate controls access to entire sections (E, F, G, H) and to the personal care subsection of Section C.
+# POUR INFORMATION SEULEMENT
 
-The scattered nature of this filter creates two issues:
-1. The interviewer must repeatedly perform the same date comparison at each checkpoint. There is no single screening point where the age determination is made and recorded for subsequent use.
-2. The age gate is asymmetrically applied within Section B. For hearing (B6.edit), the gate skips only the aids subsection (B6-B10). For vision (B13.edit/B15.edit), it skips the aids subsection AND the entire communication-through-mobility sequence, routing directly to B51 (developmental). This means under-5 children are assessed for hearing difficulty (B1-B5) but not for speaking difficulty (B21-B30), walking difficulty (B31-B36), or hand/finger difficulty (B37-B42), even though these capabilities exist in children under 5.
+\___
 
-**In the imperative version:** The interviewer checks "born AFTER May 15, 1996" at each filter point. The scattered placement and asymmetric application are hidden by the sequential page-by-page flow. The interviewer follows each instruction locally without seeing the overall pattern of what is skipped for under-5 children versus what is not.
+<!-- page 2 printed="02" read_by="text_layer" -->
 
-**In the declarative version:** The age gate was modeled as a single `child_under_5` extern variable. All 7 Section B filter points and all section-level gates use this same variable. The asymmetric application becomes structurally visible: the QML for hearing has `child_under_5 == 0` only on the aids subsection (B6-B10), while blocks for communication (B21-B30), walking (B31-B36), and hands/fingers (B37-B42) have `child_under_5 == 0` as a block-level precondition, skipping the entire capability assessment for under-5 children. Whether this asymmetry is intentional (young children's hearing is assessed earlier than other capabilities) or an oversight is not documented in the source.
+PALS 02
 
-### P3: Province-Specific Grade Structure Creating Structural Redundancy
+**A1. Does ..... have any DIFFICULTY hearing, seeing, communicating, walking, climbing stairs, bending,**
+**learning or doing any similar activities?**
+Interviewer: Read list.Mark one only.
+
+- (1) Yes, sometimes . . . . . . . h
+- (2) Yes, often . . . . . . . . . . . . h
+- (3) No . . . . . . . . . . . . . . . . . h
+- (x) Don’t know . . . . . . . . . . . h
+- (r) Refusal . . . . . . . . . . . . . h
+
+**A2A. Does a physical condition OR mental condition OR health problem REDUCE THE AMOUNT OR THE**
+**KIND OF ACTIVITY ..... can do at home?**
+Interviewer: Read list.Mark one only.
+
+- (1) Yes, sometimes . . . . . . . h
+- (2) Yes, often . . . . . . . . . . . . h
+- (3) No . . . . . . . . . . . . . . . . . h
+- (x) Don’t know . . . . . . . . . . . h
+- (r) Refusal . . . . . . . . . . . . . h
+
+**A2B. Does a physical condition OR mental condition OR health problem REDUCE THE AMOUNT OR THE**
+**KIND OF ACTIVITY ..... can do at work or at school?**
+Interviewer: Read list.Mark one only.
+
+- (1) Yes, sometimes . . . . . . . h
+- (2) Yes, often . . . . . . . . . . . . h
+- (3) No . . . . . . . . . . . . . . . . . h
+- (5) Not applicable . . . . . . . . h
+- (x) Don’t know . . . . . . . . . . . h
+- (r) Refusal . . . . . . . . . . . . . h
+
+**A2C. Does a physical condition OR mental condition OR health problem REDUCE THE AMOUNT OR THE**
+**KIND OF ACTIVITY ..... can do in other activities, for example, transportation or leisure?**
+Interviewer: Read list.Mark one only.
+
+- (1) Yes, sometimes . . . . . . . h
+- (2) Yes, often . . . . . . . . . . . . h
+- (3) No . . . . . . . . . . . . . . . . . h
+- (x) Don’t know . . . . . . . . . . . h
+- (r) Refusal . . . . . . . . . . . . . h
+
+**B1. I’m going to ask you about .....’s ability to do certain activities. Please tell me only about those**
+**difficulties that have lasted, or are expected to last six months or more.**
+**Does ..... use a hearing aid or hearing aids?**
+
+- (1) Yes . . . . . . . . . . . . . . . . h
+- (3) No . . . . . . . . . . . . . . . . . h
+- (x) Don’t know . . . . . . . . . . . h Go to B4
+- (r) Refusal . . . . . . . . . . . . . h
+
+Check box “General — Limitation” on Profile Sheet
+Check box “General — Limitation” on Profile Sheet
+Check box “General — Limitation” on Profile Sheet
+Check box “General — Limitation” on Profile Sheet
+SECTION A — FILTER QUESTIONS
+
+## SECTION B — ACTIVITY LIMITATIONS
+
+<!-- page 3 printed="03" read_by="text_layer" -->
+
+**B2. WITH HEARING AID(S), how would you describe his/her ability to hear?**
+Interviewer: Read list.Mark one only.
+
+- (1) Child has no problem hearing . . . . h Go to B11
+- (2) Child has difficulty hearing . . . . . . h Check box “Hearing — Limitation” on Profile Sheet
+- (x) Don’t know . . . . . . . . . . . . . . . . . . h
+- (r) Refusal . . . . . . . . . . . . . . . . . . . . h
+
+**B3. How much difficulty?**
+Interviewer: Read list.Mark one only.
+
+- (1) Some difficulty . . . . . . . . . . . . . . . h
+- (2) A lot of difficulty . . . . . . . . . . . . . . h
+- (x) Don’t know . . . . . . . . . . . . . . . . . . h
+- (r) Refusal . . . . . . . . . . . . . . . . . . . . h
 
-**Severity:** LOW
-**PDF evidence:** pp. 31-35 (E13: province selection, E14: Newfoundland grades, E15: Prince Edward Island grades, E16: Nova Scotia grades, E17: Quebec grades, E18: Ontario grades, E19: default grades for remaining provinces/territories)
+**B4. How would you describe .....’s ability to hear?**
+Interviewer: Read list.Mark one only.
 
-**Problem:** The Education section (E) implements 6 parallel grade-level questions, one for each of the following province groupings:
+- (1) Child has no problem hearing . . . . h Go to B11
+- (2) Child has difficulty hearing . . . . . . h Check box “Hearing — Limitation” on Profile Sheet
+- (3) Child cannot hear . . . . . . . . . . . . . h Check box “Hearing — Limitation” on Profile Sheet
 
-| Question | Province | Grade Range | Kindergarten Route |
-|----------|----------|-------------|-------------------|
-| E14 | Newfoundland | K, Gr 1-9, Level 1-3 Secondary, Ungraded | K -> E24 |
-| E15 | Prince Edward Island | Gr 1-12, Ungraded | No kindergarten option |
-| E16 | Nova Scotia | Primary, Gr 1-12, Ungraded | Primary -> E24 |
-| E17 | Quebec | Jr K, K, Gr 1-6, Sec I-V, Ungraded | Jr K/K -> E24 |
-| E18 | Ontario | Jr K, K, Gr 1-8, Gr 9-12, OAC, Ungraded | Jr K/K -> E24 |
-| E19 | All others | K, Gr 1-12, Ungraded | K -> E24 |
+**Go to B6.edit**
 
-All 6 variants ask the same conceptual question ("In what grade was the child enrolled?") and route identically: kindergarten-level responses skip to E24 (school activities), while all other grades proceed to E20 (education type). The only difference is the provincial naming convention for grade levels (e.g., Newfoundland uses "Level 1 Secondary" while Ontario uses "Grade 9"; Quebec uses "Secondary I-V").
+- (x) Don’t know . . . . . . . . . . . . . . . . . . h
+- (r) Refusal . . . . . . . . . . . . . . . . . . . . h
 
-**In the imperative version:** E13 routes the interviewer to the correct page based on province. Each province variant occupies a separate physical page, so the redundancy is hidden by page boundaries. The interviewer sees only one version.
+**B5. How much difficulty?**
+Interviewer: Read list.Mark one only.
 
-**In the declarative version:** All 6 variants must be modeled with mutually exclusive preconditions on the `e13_province` variable. The QML makes the structural redundancy explicit: 6 items where a single parameterized question with province-appropriate labels would suffice. The Z3 solver confirms all 6 are CONDITIONAL with non-overlapping province ranges. Additionally, Prince Edward Island (E15) notably lacks a kindergarten option, meaning PEI children in kindergarten have no valid response -- they must select "Ungraded" and proceed to E20, missing the E24 kindergarten shortcut available to children in all other provinces.
+- (1) Some difficulty . . . . . . . . . . . . . . . h
+- (2) A lot of difficulty . . . . . . . . . . . . . . h
+- (x) Don’t know . . . . . . . . . . . . . . . . . . h
+- (r) Refusal . . . . . . . . . . . . . . . . . . . . h
 
-### P4: Complete Absence of Cross-Field Validation (Zero Postconditions)
+**B6.**
+**edit**
 
-**Severity:** MEDIUM
-**PDF evidence:** Entire questionnaire (57 pages) -- no range checks, consistency checks, or conditional validation instructions appear anywhere in the source
+**B6. Does .... USE any aids, specialized equipment or services for children with hearing difficulties, for**
+**example, a volume control telephone or T.V. decoder?**
 
-**Problem:** Across all 247 QML items derived from 223 source questions, there are **zero postconditions**. The original questionnaire contains no instructions for the interviewer to validate that responses are internally consistent. Specific examples where postconditions would be expected:
+- (1) Yes . . . . . . . . . . . . . . . . . . . . . . . . h Check box “Hearing — USE Aid” on Profile Sheet
+- (3) No . . . . . . . . . . . . . . . . . . . . . . . . h
+- (x) Don’t know . . . . . . . . . . . . . . . . . . h Go to B8
+- (r) Refusal . . . . . . . . . . . . . . . . . . . . h
 
-1. **B62 (p. 15)**: "How old was the child when you suspected the condition?" accepts 0-14 but has no check against the child's actual age. An interviewer could record "suspected at age 12" for a 3-year-old.
-2. **B66 (p. 15)**: "How old was the child when you obtained a diagnosis?" has no check that diagnosis age <= suspected age (B62), nor that diagnosis age <= current age.
-3. **B76/B82/B91 (pp. 17-20)**: Out-of-pocket expense amounts accept $1-$999,999 with no reasonableness check. There is no validation that costs are positive or that the expense group (B77/B83/B92) is consistent with the specific amount if one was provided.
-4. **D3/D5 (p. 27)**: Child care hours per week are unconstrained. There is no check that total hours across main and other arrangements do not exceed 168 (hours in a week).
-5. **F1a_hrs through F16d_hrs (pp. 39-44)**: "How many hours a day?" for each activity accepts any numeric value. An answer of "24 hours a day" for an activity done "less than once a month" is structurally allowed.
+**Interviewer: If child was born AFTER May 15,1996,go to B11 (page 04).**
+**Otherwise,continue.**
+**Go to B6.edit**
+**Go to B11**
+**Go to B6.edit**
+**Go to B11**
+PALS 03
 
-**In the imperative version:** The paper form relies entirely on interviewer judgment to catch implausible responses. There is no built-in validation mechanism because a paper form cannot perform runtime checks. This is a fundamental limitation of PAPI (paper-and-pencil interviewing) compared to CAPI or CATI systems.
+<!-- page 4 printed="04" read_by="text_layer" -->
 
-**In the declarative version:** The QML faithfully reproduces the original design by omitting postconditions. The Z3 solver correctly reports all postcondition classifications as NONE. The absence of validation constraints means the questionnaire cannot prevent logically inconsistent data from being recorded. A CAPI implementation would be expected to add edit checks, but the source instrument provides no specification for what those checks should be.
+PALS 04
+B7. Does he/she now use:
+Interviewer: Read list.
 
-### P5: DK/Refusal Routing Asymmetry Across Parallel Subsections
+- (1) (3) (x) (r)
 
-**Severity:** MEDIUM
-**PDF evidence:** B1 (p. 2: DK/R -> "Go to B4"), B11 (p. 4: DK/R -> "Go to B14"), B6 (p. 4: DK/R -> "Go to B8"), B8 (p. 4: DK/R -> "Go to B10"), B17 (p. 5: DK/R -> "Go to B19"), B19 (p. 5: DK/R -> "Go to B21"), B27 (p. 7: DK/R -> "Go to B29"), B29 (p. 7: DK/R -> "Go to B31"), B33 (p. 8: DK/R -> "Go to B35"), B35 (p. 8: DK/R -> "Go to B37"), B39 (p. 9: DK/R -> "Go to B41"), B41 (p. 9: DK/R -> "Go to B43"), B47 (p. 11: DK/R -> "Go to B49"), B49 (p. 11: DK/R -> "Go to B51.edit")
+Yes No DK Ref
 
-**Problem:** The five disability subsections in Section B (Hearing, Seeing, Communication, Walking, Hands/Fingers) follow a parallel structure: screen -> severity -> USE aids -> which aids -> NEED aids -> which aids needed. However, DK/Refusal routing is inconsistent at the initial screening questions:
+- (a) a volume control telephone . . . . . . . . . . . . . . . . . . . . . . . . . . . . . h h h h
+- (b) a closed caption TV or decoder . . . . . . . . . . . . . . . . . . . . . . . . . . h h h h
+- (c) a TTY or TDD . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . h h h h
+- (d) an amplifier, such as FM or infrared. . . . . . . . . . . . . . . . . . . . . . . h h h h
+- (e) a computer to communicate (e.g.e-mail or chat service) . . . . . . . h h h h
+- (f) a Sign language interpreter . . . . . . . . . . . . . . . . . . . . . . . . . . . . . h h h h
+- (g) other aid, specify. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . h h h h
 
-| Subsection | Initial Screen | DK/R Route | Effect |
-|------------|---------------|------------|--------|
-| Hearing | B1 (uses hearing aid?) | DK/R -> B4 (ability without aid) | Child still assessed for hearing difficulty via alternate path |
-| Vision | B11 (wears glasses?) | DK/R -> B14 (ability without glasses) | Child still assessed for vision difficulty via alternate path |
-| Communication | B21 (difficulty speaking?) | No DK/R routing specified | DK/R responses have no explicit routing instruction |
-| Walking | B31 (difficulty walking?) | DK/R -> "Go to B37" | Child skips entire walking subsection (severity, USE aids, NEED aids) |
-| Hands/Fingers | B37 (difficulty using hands?) | DK/R -> "Go to B43" | Child skips entire hands/fingers subsection |
+**B8. Are there any aids or services for children with hearing difficulties that ..... CURRENTLY needs,**
+**but does not have?**
 
-For Hearing and Vision, DK/Refusal at the initial screening still allows the child to be assessed via an alternate path (B4 "How would you describe ability to hear?" or B14 "How would you describe vision ability?"). For Walking and Hands/Fingers, DK/Refusal at the initial screening causes the child to skip the entire subsection, including the severity and aids questions. This means a DK response at B31 results in no walking data at all, while a DK response at B1 still produces hearing assessment data.
+- (1) Yes . . . . . . . . . . . . . . . . h Check box “Hearing — NEED Aid” on Profile Sheet
+- (3) No . . . . . . . . . . . . . . . . . h
+- (x) Don’t know . . . . . . . . . . . h Go to B10
+- (r) Refusal . . . . . . . . . . . . . h
 
-The Communication subsection (B21) has no explicit DK/R routing at the initial screen. The source document shows response codes `{1: "Yes", 3: "No", x: "Don't know", r: "Refusal"}` but only specifies routing for Yes (-> B23) and No/DK/R (-> B22). This conflates "No difficulty" with "Don't know" by sending both down the same path.
+**B9. Which aids or services does he/she NEED, but does not have?**
+Interviewer: Do NOT read list.Mark all that apply.
 
-**In the imperative version:** The inconsistency is spread across 20 pages and is not apparent to the interviewer, who simply follows the routing instruction at each question. The parallel structure of the subsections creates an expectation of parallel DK/R handling that is not fulfilled.
+- (a) A hearing aid or hearing aids. . . . . . . . . . . . . . . . . . . . . . . . . . . . l
+- (b) A volume control telephone . . . . . . . . . . . . . . . . . . . . . . . . . . . . . l
+- (c) A closed caption T.V.or decoder . . . . . . . . . . . . . . . . . . . . . . . . . l
+- (d) A TTY or TDD . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . l
+- (e) An amplifier, such as FM or infrared. . . . . . . . . . . . . . . . . . . . . . . l
+- (f) A computer to communicate (e.g.e-mail or chat service) . . . . . . . l
+- (g) A Sign language interpreter. . . . . . . . . . . . . . . . . . . . . . . . . . . . . l
+- (h) Other aid, specify . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . l
 
-**In the declarative version:** The QML preconditions make the asymmetry visible. B4 has `precondition: q_b1.outcome == 8 or q_b1.outcome == 9` (DK/R route to alternate assessment), while B32 and B38 have `precondition: q_b31.outcome == 1 or q_b31.outcome == 2` (only Yes answers proceed; DK/R is silently dropped). The Z3 solver confirms all items are reachable but cannot detect the semantic inconsistency in DK handling across parallel subsections.
+- (x) Don’t know . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . l
+- (r) Refusal . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . l
 
-### P6: Unbounded Hours-Per-Day Fields in Frequency/Duration Pairs
+**B10. This question deals with certain communication skills. Does ..... :**
+Interviewer: Read list.
 
-**Severity:** LOW
-**PDF evidence:** pp. 39-44 (F1a-F1e frequency+hours pairs, F2a-F2c frequency+hours pairs, F3 frequency+hours, F16a-F16d frequency+hours); p. 27 (D3/D5 child care hours per week)
+- (1) (3) (x) (r)
 
-**Problem:** Section F contains 13 frequency/duration question pairs where a frequency question (5-point scale from "Everyday" to "Never") is followed by a conditional "How many hours a day?" question. The hours questions have no upper bound validation and no cross-check against the frequency response. Specifically:
+Yes No DK Ref
 
-- A respondent can report "Less than once a month" (F1a=4) for organized sports and then report "24 hours a day" for the same activity. The source provides no instruction to flag this as implausible.
-- The instruction "Round to the nearest full hour" (pp. 39-40) establishes that fractional hours should be rounded, but provides no maximum. The QML models these with `max: 24` (hours in a day), but this constraint was added during conversion -- it does not exist in the source.
-- For Section F reading (F3), the hours question is triggered only for "Everyday" (F3=1), unlike all other frequency questions which trigger hours for any non-Never response. This inconsistency means reading hours are collected only for daily readers, not for weekly or monthly readers, while all other activities collect hours regardless of frequency.
+- (a) use Sign Language, such as ASL or LSQ? . . . . . . . . . . . . . . . . . h h h h
+- (b) speech read or lip read? . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . h h h h
 
-**In the imperative version:** The interviewer rounds to the nearest hour and writes the number. There is no mechanism to enforce that hours are reasonable given the frequency.
+**B11. Does ..... wear glasses or contact lenses to see up close or at a distance?**
 
-**In the declarative version:** The QML adds `min: 0, max: 24` constraints on the Editbox controls for hours questions, which provides basic domain bounding not present in the original. The reading-specific routing difference (F3: hours only for "Everyday") is faithfully preserved via `precondition: q_f3.outcome == 1`, making this asymmetry structurally visible.
+- (1) Yes . . . . . . . . . . . . . . . . h
+- (3) No . . . . . . . . . . . . . . . . . h
+- (x) Don’t know . . . . . . . . . . . h Go to B14
+- (r) Refusal . . . . . . . . . . . . . h
 
-### P7: Silent Exit Path for Children with No Confirmed Limitations
+<!-- page 5 printed="05" read_by="text_layer" -->
 
-**Severity:** LOW
-**PDF evidence:** B62.edit (p. 15: "If any box is checked in the 'Limitation Column' on the Profile Sheet, go to B62. Otherwise, go to the Follow-up Question (page 52)")
+**B12. With GLASSES or CONTACT LENSES, how would you describe his/her vision ability?**
+Interviewer: Read list.Mark one only.
 
-**Problem:** At B62.edit, children whose responses did not trigger any of the 10 limitation checkbox conditions on the Profile Sheet are routed directly to the follow-up question on page 52, skipping the remainder of Section B (B62-B97: diagnosis, health, medications, health professional contacts, aids costs), all of Section C (everyday help), Section D (child care), Sections E-H (education, leisure, home, transportation), and Section I (economic characteristics). This means the questionnaire collects essentially no substantive data for these children beyond the initial screening (A1-B61).
+- (1) Child has no problem seeing . . . . h Go to B13.edit
+- (2) Child has difficulty seeing . . . . . . . h Check box “Seeing — Limitation” on Profile Sheet
 
-This is a defensible design decision -- the PALS targets children with activity limitations, and children without confirmed limitations are not the survey's population of interest. However, the exit path is undocumented in the sense that there is no explicit instruction saying "end the interview." The routing says "go to the Follow-up Question (page 52)" which is a single re-contact consent question, after which the interview ends. A child who enters the survey (having been selected based on Census responses indicating disability) but who does not confirm any limitation during the in-depth Section B screening is collected out of the survey via this silent path.
+**Go to B13**
 
-**In the imperative version:** The interviewer follows the routing instruction and turns to page 52. The extent of what is being skipped (40 pages of substantive content) is not stated at the routing checkpoint.
+- (x) Don’t know . . . . . . . . . . . . . . . . . . h
+- (r) Refusal . . . . . . . . . . . . . . . . . . . . h
 
-**In the declarative version:** The `precondition: limitation_count > 0` on blocks b_diagnosis, b_health_meds, b_health_prof, and b_aids_costs makes the gate explicit. The QML also makes it clear that Sections C through I depend on the questionnaire reaching their entry points; the silent exit at B62.edit terminates the flow for the entire remaining questionnaire. The Z3 solver confirms this by classifying all items in blocks gated by `limitation_count > 0` as CONDITIONAL.
+**B13.**
+**edit**
 
-## Cross-Check Fixes (QML Authoring Errors)
+**B13. How much difficulty?**
+Interviewer: Read list.Mark one only.
 
-| # | Item(s) | Error | Fix | PDF Reference |
-|---|---------|-------|-----|---------------|
-| 1 | E2 routing | Initially routed E2 -> E4 (continuing to "Did child ever go to school?") | Corrected to E2 -> GO TO E37 after identifying E3.edit filter between E2 and E3 in source; children tutored at home skip the school-attendance questions | p. 28 (E2 -> E3.edit -> E37) |
-| 2 | Section header counts | Inventory initially had incorrect item counts for C (27, actual 29), E (38, actual 39), F (32, actual 38), H (16, actual 17), I (12, actual 10) | Corrected all counts after item-by-item audit against source pages | Throughout |
-| 3 | B2 precondition | Initially modeled B2 as always-shown after B1 | Corrected: B1=DK/R routes to B4 (without-aid path), so B2 requires `q_b1.outcome == 1 or q_b1.outcome == 3` | p. 2 (B1 DK/R -> B4) |
-| 4 | B40 precondition | Initially required B39=Yes to show B40 (which aids used) | Corrected: source shows B39=Yes OR B39=No both proceed to B40; only DK/R skips to B41 | p. 9 (B39 routing) |
-| 5 | Profile Sheet flag accumulation | Initially used separate counter variables; missed that limitation_general from Section A feeds into the B62.edit check | Added `limitation_general` as extern variable in Section B codeInit; included in limitation_count sum | p. 1-2 (A1/A2A/A2B/A2C), p. 15 (B62.edit) |
-| 6 | F3 hours trigger | Initially triggered hours for all non-Never responses (consistent with F1a-F2c pattern) | Corrected: source shows F3 hours only for "Everyday" (response 1), unlike all other frequency items | p. 40 (F3: only "Everyday" has hours row) |
+- (1) Some difficulty . . . . . . . . . . . . . . . h
+- (2) A lot of difficulty . . . . . . . . . . . . . . h
+- (x) Don’t know . . . . . . . . . . . . . . . . . . h
+- (r) Refusal . . . . . . . . . . . . . . . . . . . . h
 
-## Impact Assessment
+**B14. How would you describe .....’s vision ability?**
+Interviewer: Read list.Mark one only.
 
-| Category | Imperative (PDF) | Declarative (QML) |
-|----------|------------------|-------------------|
-| **Profile Sheet** | External paper tracking device requiring ~30 manual checkbox operations across 20 pages; interviewer error at any point can corrupt routing | 24 computed flag variables with deterministic `codeBlock` logic; B62.edit check is a verifiable precondition; Z3 confirms SAT |
-| **Age gate** | "Born AFTER May 15, 1996" checked at 13+ scattered points by interviewer date comparison | Single `child_under_5` extern variable applied uniformly; asymmetric application across subsections becomes visible |
-| **Province-specific grades** | 6 province variants on separate pages selected by GOTO | 6 mutually exclusive preconditions on `e13_province`; structural redundancy and PEI kindergarten gap exposed |
-| **Validation constraints** | None (paper form cannot enforce runtime checks); interviewer judgment only | Faithfully modeled as 0 postconditions; absence of validation made structurally explicit |
-| **DK/Refusal handling** | Each subsection's DK/R routing follows local GOTO instructions; inconsistency across subsections invisible | Precondition patterns make asymmetric DK handling visible across structurally parallel subsections |
-| **Frequency/hours pairing** | Sequential questions on same page; hours follow frequency implicitly | Separate items with conditional preconditions; F3 reading asymmetry and absence of cross-field validation exposed |
-| **Dependency complexity** | ~150 GOTO instructions spread across 57 pages; interviewer follows one instruction at a time | 860 dependencies captured in graph; 80% concentrated in Section B; all verified acyclic and reachable |
+- (1) Child has no problem seeing . . . . h Go to B15.edit
+- (2) Child has difficulty seeing . . . . . . . h Check box “Seeing — Limitation” on Profile Sheet
 
-## Conclusion
+**Go to B15**
 
-The Z3 QML validator found the PALS 2001 (Children under 15) questionnaire to be **structurally valid** across all 9 section files: no dependency cycles (0 cycles), no unreachable items (0 NEVER), no infeasible postconditions (0 INFEASIBLE), and at least one valid completion path (SAT) in every section. The 247-item QML representation across 25 blocks covers the full scope of the 57-page paper questionnaire.
+- (3) Child cannot see . . . . . . . . . . . . . h Check box “Seeing — Limitation” on Profile Sheet
 
-The declarative conversion exposed **7 categories of design issues** in the original questionnaire:
+**Go to B16.edit**
 
-1. **P1 (HIGH):** The Profile Sheet -- an external paper tracking device requiring ~30 manual checkbox operations -- serves as the sole mechanism for the questionnaire's most consequential routing decision (B62.edit). A single missed checkbox can silently route a respondent past 36 questions of substantive data. The QML replacement (24 computed flag variables) eliminates this single point of failure.
-2. **P2 (MEDIUM):** The "born after May 15, 1996" age gate appears at 13+ scattered filter points with no centralized determination. Its asymmetric application means under-5 children are assessed for hearing difficulty but silently excluded from communication, walking, and hands/fingers assessment.
-3. **P3 (LOW):** Province-specific grade questions (E14-E19) create 6 parallel variants where a single parameterized question would suffice. Prince Edward Island's variant lacks a kindergarten option present in all other provinces.
-4. **P4 (MEDIUM):** Zero postconditions across 247 items means the questionnaire has no cross-field validation: ages can exceed the child's actual age, expense amounts have no reasonableness bounds, and hours-per-day are unconstrained.
-5. **P5 (MEDIUM):** DK/Refusal routing is asymmetric across structurally parallel disability subsections -- hearing and vision provide alternate assessment paths for DK responses, while walking and hands/fingers skip the entire subsection.
-6. **P6 (LOW):** Frequency/duration pairs in Section F lack cross-validation (24 hours/day at "less than once a month" is structurally valid), and reading (F3) has a unique hours-trigger rule different from all other activities.
-7. **P7 (LOW):** Children with no confirmed limitations exit silently at B62.edit, skipping 40 pages of substantive content with no explicit "end of interview" instruction.
+- (x) Don’t know . . . . . . . . . . . . . . . . . . h
+- (r) Refusal . . . . . . . . . . . . . . . . . . . . h
 
-The PALS 2001's structural soundness (no cycles, no dead code) reflects its straightforward top-to-bottom design. The primary routing complexity is concentrated in Section B, where the Profile Sheet mechanism creates 684 of 860 total dependencies (80%). The conversion revealed that the questionnaire's integrity depends critically on an external administrative device (the Profile Sheet) and on consistent interviewer execution of a scattered age gate -- both of which are eliminated as error sources in the declarative QML representation.
+**B15.**
+**edit**
+
+**B15. How much difficulty?**
+Interviewer: Read list.Mark one only.
+
+- (1) Some difficulty . . . . . . . . . . . . . . . h
+- (2) A lot of difficulty . . . . . . . . . . . . . . h
+- (x) Don’t know . . . . . . . . . . . . . . . . . . h
+- (r) Refusal . . . . . . . . . . . . . . . . . . . . h
+
+**B16.**
+**edit**
+
+**B16. Has ..... been diagnosed by an eye specialist as being legally blind?**
+
+- (1) Yes . . . . . . . . . . . . . . . . . . . . . . . . h
+- (3) No . . . . . . . . . . . . . . . . . . . . . . . . h
+- (x) Don’t know . . . . . . . . . . . . . . . . . . h
+- (r) Refusal . . . . . . . . . . . . . . . . . . . . h
+
+**Interviewer: If child was born AFTER May 15,1996,go to B51 (page 12).**
+**Otherwise,continue.**
+**Go to B16.edit**
+**Interviewer: If child was born AFTER May 15,1996,go to B51 (page 12).**
+**Otherwise,go to B21 (page 06).**
+**Go to B15.edit**
+**Go to B16.edit**
+**Interviewer: If child was born AFTER May 15,1996,go to B51 (page 12).**
+**Otherwise,go to B21 (page 06).**
+**Go to B13.edit**
+PALS 05
+
+<!-- page 6 printed="06" read_by="text_layer" -->
+
+PALS 06
+B17. Does ..... USE any aids or specialized equipment for children with vision difficulties, for example,
+magnifiers or Braille reading materials?
+
+- (1) Yes . . . . . . . . . . . . . . . . . . . . . . . . h Check box “Seeing — USE Aid” on Profile Sheet
+- (3) No . . . . . . . . . . . . . . . . . . . . . . . . h
+- (x) Don’t know . . . . . . . . . . . . . . . . . . h Go to B19
+- (r) Refusal . . . . . . . . . . . . . . . . . . . . h
+
+**B18. Does he/she now use:**
+Interviewer: Read list.
+
+- (1) (3) (x) (r)
+
+Yes No DK Ref
+
+- (a) magnifiers . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . h h h h
+- (b) Braille reading materials . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . h h h h
+- (c) large print reading materials . . . . . . . . . . . . . . . . . . . . . . . . . . . . h h h h
+- (d) talking books. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . h h h h
+- (e) recording equipment . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . h h h h
+- (f) a closed circuit TV. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . h h h h
+- (g) a computer with Braille, large print, or speech access . . . . . . . . . h h h h
+- (h) other aid, specify. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . h h h h
+
+**B19. Are there any aids or specialized equipment for children with vision difficulties that ..... CURRENTLY**
+**needs, but does not have?**
+
+- (1) Yes . . . . . . . . . . . . . . . . h Check box “Seeing — NEED Aid” on Profile Sheet
+- (3) No . . . . . . . . . . . . . . . . . h
+- (x) Don’t know . . . . . . . . . . . h Go to B21
+- (r) Refusal . . . . . . . . . . . . . h
+
+**B20. Which aids does he/she NEED, but does not have?**
+Interviewer: Do NOT read list.Mark all that apply.
+
+- (a) Glasses or contact lenses . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . l
+- (b) Magnifiers . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . l
+- (c) Braille reading materials . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . l
+- (d) Large print reading materials. . . . . . . . . . . . . . . . . . . . . . . . . . . . l
+- (e) Talking books . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . l
+- (f) Recording equipment. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . l
+- (g) A closed circuit TV. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . l
+- (h) A computer with Braille, large print, or speech access . . . . . . . . . l
+- (i) Other aid, specify . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . l
+
+- (x) Don’t know . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . l
+- (r) Refusal . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . l
+
+**B21. Because of a condition or health problem, does ..... have any difficulty speaking?**
+
+- (1) Yes . . . . . . . . . . . . . . . . h Check box “Communicating — Limitation” on Profile Sheet
+
+**Go to B23**
+
+- (3) No . . . . . . . . . . . . . . . . . h
+- (x) Don’t know . . . . . . . . . . . h
+- (r) Refusal . . . . . . . . . . . . . h
+
+<!-- page 7 printed="07" read_by="text_layer" -->
+
+**B22. Because of a condition or health problem, does ..... have any difficulty making himself/herself**
+**understood when speaking?**
+
+- (1) Yes . . . . . . . . . . . . . . . . h Check box “Communicating — Limitation” on Profile Sheet
+
+**Go to B25**
+
+- (3) No . . . . . . . . . . . . . . . . . h
+- (x) Don’t know . . . . . . . . . . . h Go to B31
+- (r) Refusal . . . . . . . . . . . . . h
+
+**B23. How much difficulty does he/she have speaking?**
+Interviewer: Read list.Mark one only.
+
+- (1) Child has some difficulty . . . . . . . . h
+- (2) Child has a lot of difficulty . . . . . . . h
+- (3) Child cannot speak . . . . . . . . . . . . h Go to B26
+- (x) Don’t know . . . . . . . . . . . . . . . . . . h
+- (r) Refusal . . . . . . . . . . . . . . . . . . . . h
+
+**B24. Because of a condition or health problem, does ..... have any difficulty making himself/herself**
+**understood when speaking?**
+
+- (1) Yes . . . . . . . . . . . . . . . . . . . . . . . . h
+- (3) No . . . . . . . . . . . . . . . . . . . . . . . . h
+- (x) Don’t know . . . . . . . . . . . . . . . . . . h Go to B26
+- (r) Refusal . . . . . . . . . . . . . . . . . . . . h
+
+**B25. How well do you feel ..... is able to make himself/herself understood when speaking with:**
+Interviewer: Read categories.Mark one only.
+
+- (1) (2) (3) (x) (r)
+
+Interviewer: Read list. Completely Partially Not at all DK Ref
+
+- (a) his/her family members?. . . . . . . . . . . . . . . . . . h h h h h
+- (b) his/her friends?. . . . . . . . . . . . . . . . . . . . . . . . . h h h h h
+- (c) other people? . . . . . . . . . . . . . . . . . . . . . . . . . . h h h h h
+
+**B26. Does he/she use:**
+Interviewer: Read list.
+
+- (1) (3) (x) (r)
+
+Yes No DK Ref
+
+- (a) Sign language, such as ASL or LSQ . . . . . . . . . . . . . . . . . . . . . . h h h h
+- (b) other form of communication, specify. . . . . . . . . . . . . . . . . . . . . . h h h h
+
+**B27. Does ..... USE any aids or specialized equipment for children who have difficulty speaking or making**
+**themselves understood, for example, a voice amplifier or Blissboard?**
+
+- (1) Yes . . . . . . . . . . . . . . . . . . . . . . . . h Check box “Communicating — USE Aid” on Profile Sheet
+- (3) No . . . . . . . . . . . . . . . . . . . . . . . . h
+- (x) Don’t know . . . . . . . . . . . . . . . . . . h Go to B29
+- (r) Refusal . . . . . . . . . . . . . . . . . . . . h
+
+PALS 07
+
+<!-- page 8 printed="08" read_by="text_layer" -->
+
+PALS 08
+B28. Does he/she now use:
+Interviewer: Read list.
+
+- (1) (3) (x) (r)
+
+Yes No DK Ref
+
+- (a) a voice amplifier . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . h h h h
+- (b) a computer or keyboard device to communicate. . . . . . . . . . . . . . h h h h
+- (c) a communication board, such as a Blissboard . . . . . . . . . . . . . . . h h h h
+- (d) other aid, specify. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . h h h h
+
+**B29. Are there any aids or specialized equipment for children who have difficulty speaking or making**
+**themselves understood that ..... CURRENTLY needs, but does not have?**
+
+- (1) Yes . . . . . . . . . . . . . . . . h Check box “Communicating — NEED Aid” on Profile Sheet
+- (3) No . . . . . . . . . . . . . . . . . h
+- (x) Don’t know . . . . . . . . . . . h Go to B31
+- (r) Refusal . . . . . . . . . . . . . h
+
+**B30. Which aids does he/she NEED, but does not have?**
+Interviewer: Do NOT read list.Mark all that apply.
+
+- (a) A voice amplifier . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . l
+- (b) A computer or keyboard device to communicate . . . . . . l
+- (c) A communication board, such as a Blissboard. . . . . . . . l
+- (d) Other aid, specify . . . . . . . . . . . . . . . . . . . . . . . . . . . . . l
+
+- (x) Don’t know . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . l
+- (r) Refusal. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . l
+
+**B31. The next few questions are about .....’s ability to move around, even when using an aid or mechanical**
+**support, such as crutches or a walker. Please remember that I am asking about difficulties that have**
+**lasted or are expected to last six months or more.**
+**Because of a condition or health problem, does ..... have any difficulty walking? This means walking**
+**on a flat firm surface, such as a sidewalk or floor.**
+Interviewer: Read list.Mark one only.
+
+- (1) Yes, sometimes . . . . . . . h
+- (2) Yes, often or always . . . . h
+- (3) No . . . . . . . . . . . . . . . . . h
+- (x) Don’t know . . . . . . . . . . . h Go to B37
+- (r) Refusal . . . . . . . . . . . . . h
+
+**B32. How much difficulty does he/she have walking?**
+Interviewer: Read list.Mark one only.
+
+- (1) Some difficulty . . . . . . . . h
+- (2) A lot of difficulty . . . . . . . h
+- (3) Child cannot walk . . . . . . h
+- (x) Don’t know . . . . . . . . . . . h
+- (r) Refusal . . . . . . . . . . . . . h
+
+Check box “Walking — Limitation” on Profile Sheet
+
+<!-- page 9 printed="09" read_by="text_layer" -->
+
+**B33. Does ..... USE any aids or specialized equipment for children who have difficulty walking or moving**
+**around, such as a cane or crutches?**
+
+- (1) Yes . . . . . . . . . . . . . . . . h Check box “Walking — USE Aid” on Profile Sheet
+- (3) No . . . . . . . . . . . . . . . . . h
+- (x) Don’t know . . . . . . . . . . . h Go to B35
+- (r) Refusal . . . . . . . . . . . . . h
+
+**B34. Does he/she now use:**
+Interviewer: Read list.
+
+- (1) (3) (x) (r)
+
+Yes No DK Ref
+
+- (a) orthopaedic or medically prescribed shoes. . . . . . . . . . . . . . . . . . h h h h
+- (b) a cane or crutches. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . h h h h
+- (c) a walker. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . h h h h
+- (d) a manual wheelchair . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . h h h h
+- (e) an electric wheelchair . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . h h h h
+- (f) braces, such as a leg brace (Exclude dental braces.). . . . . . . . . . h h h h
+- (g) lift devices, such as a bed lift device . . . . . . . . . . . . . . . . . . . . . . h h h h
+- (h) other aid, specify. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . h h h h
+
+**B35. Are there any aids or specialized equipment for children who have difficulty walking or moving around**
+**that ..... CURRENTLY needs, but does not have?**
+
+- (1) Yes . . . . . . . . . . . . . . . . h Check box “Walking — NEED Aid” on Profile Sheet
+- (3) No . . . . . . . . . . . . . . . . . h
+- (x) Don’t know . . . . . . . . . . . h Go to B37
+- (r) Refusal . . . . . . . . . . . . . h
+
+**B36. Which aids does he/she NEED, but does not have?**
+Interviewer: Do NOT read list.Mark all that apply.
+
+- (a) Orthopaedic or medically prescribed shoes . . . . . . . . . . . . . . . . . l
+- (b) A cane or crutches . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . l
+- (c) A walker . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . l
+- (d) A manual wheelchair. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . l
+- (e) An electric wheelchair . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . l
+- (f) Braces, such as a leg brace (Exclude dental braces.). . . . . . . . . . l
+- (g) Lift devices, such as a bed lift device. . . . . . . . . . . . . . . . . . . . . . l
+- (h) Other aid, specify . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . l
+
+- (x) Don’t know . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . l
+- (r) Refusal . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . l
+
+**B37. Because of a condition or health problem, does ..... have any difficulty USING his/her HANDS or**
+**FINGERS to grasp or hold small objects, such as a pencil or scissors?**
+Interviewer: Read list.Mark one only.
+
+- (1) Yes, sometimes . . . . . . . h
+- (2) Yes, often or always . . . . h
+- (3) No . . . . . . . . . . . . . . . . . h
+- (x) Don’t know . . . . . . . . . . . h Go to B43
+- (r) Refusal . . . . . . . . . . . . . h
+
+Check box “Hands/Fingers — Limitation” on Profile Sheet
+PALS 09
+
+<!-- page 10 printed="10" read_by="text_layer" -->
+
+PALS 10
+B38. How much difficulty?
+Interviewer: Read list.Mark one only.
+
+- (1) Some difficulty . . . . . . . . h
+- (2) A lot of difficulty . . . . . . . h
+- (3) Completely unable . . . . . h
+- (x) Don’t know . . . . . . . . . . . h
+- (r) Refusal . . . . . . . . . . . . . h
+
+**B39. Does ..... USE any aids or specialized equipment designed to support, replace or assist in the use**
+**of hands or fingers, such as a hand or arm brace, or grasping tools?**
+
+- (1) Yes . . . . . . . . . . . . . . . . h Check box “Hands/Fingers — USE Aid” on Profile Sheet
+- (3) No . . . . . . . . . . . . . . . . . h
+- (x) Don’t know . . . . . . . . . . . h Go to B41
+- (r) Refusal . . . . . . . . . . . . . h
+
+**B40. Does he/she now use:**
+Interviewer: Read list.
+
+- (1) (3) (x) (r)
+
+Yes No DK Ref
+
+- (a) a hand or arm brace. . . . . . . . . . . . . . . . . . h h h h
+- (b) grasping tools or reach extenders. . . . . . . . h h h h
+- (c) other aid, specify . . . . . . . . . . . . . . . . . . . . h h h h
+
+**B41. Are there any aids or specialized equipment designed to support, replace or assist in the use of hands**
+**or fingers that ..... CURRENTLY needs, but does not have?**
+
+- (1) Yes . . . . . . . . . . . . . . . . h Check box “Hands/Fingers — NEED Aid” on Profile Sheet
+- (3) No . . . . . . . . . . . . . . . . . h
+- (x) Don’t know . . . . . . . . . . . h Go to B43
+- (r) Refusal . . . . . . . . . . . . . h
+
+**B42. Which aids does he/she NEED, but does not have?**
+Interviewer: Do NOT read list.Mark all that apply.
+
+- (a) A hand or arm brace. . . . . . . . . . . . . . . . . . l
+- (b) Grasping tools or reach extenders. . . . . . . . l
+- (c) Other aid, specify . . . . . . . . . . . . . . . . . . . . l
+
+- (x) Don’t know . . . . . . . . . . . . . . . . . . . . . . . . . l
+- (r) Refusal. . . . . . . . . . . . . . . . . . . . . . . . . . . . l
+
+**B43. Do you think that ..... has a learning disability, such as dyslexia, hyperactivity or attention problems?**
+
+- (1) Yes . . . . . . . . . . . . . . . . h Check box “Learning — Limitation” on Profile Sheet
+- (3) No . . . . . . . . . . . . . . . . . h
+- (x) Don’t know . . . . . . . . . . . h
+- (r) Refusal . . . . . . . . . . . . . h
+
+<!-- page 11 printed="11" read_by="text_layer" -->
+
+**B44. Has a teacher, doctor or other health professional ever said that ..... had a learning disability?**
+
+- (1) Yes . . . . . . . . . . . . . . . . h Check box “Learning — Limitation” on Profile Sheet
+- (3) No . . . . . . . . . . . . . . . . . h
+- (x) Don’t know . . . . . . . . . . . h
+- (r) Refusal . . . . . . . . . . . . . h
+
+**B45.**
+**edit**
+
+**B45. Does this condition reduce the amount or the kind of activities ..... can do?**
+Interviewer: Read list.Mark one only.
+
+- (1) Yes, sometimes . . . . . . . . . . . . . . h
+- (2) Yes, often or always . . . . . . . . . . . h
+- (3) No . . . . . . . . . . . . . . . . . . . . . . . . h
+- (x) Don’t know . . . . . . . . . . . . . . . . . . h Go to B47
+- (r) Refusal . . . . . . . . . . . . . . . . . . . . h
+
+**B46. How many ACTIVITIES does this condition USUALLY prevent him/her from doing:**
+Interviewer: Read categories.Mark one only.
+
+- (1) (2) (3) (4) (x) (r)
+
+Interviewer: Read list. None A few Many Most DK Ref
+
+- (a) at home? . . . . . . . . . . . . . . . . . . . . . . . . . . h h h h h h
+- (b) at school?. . . . . . . . . . . . . . . . . . . . . . . . . . h h h h h h
+- (c) at play or recreational activities?. . . . . . . . . h h h h h h
+
+**B47. Does ..... USE any aids, specialized equipment or services to help him/her with his/her learning**
+**difficulty?**
+
+- (1) Yes . . . . . . . . . . . . . . . . . . . . . . . . h Check box “Learning — USE Aid” on Profile Sheet
+- (3) No . . . . . . . . . . . . . . . . . . . . . . . . h
+- (x) Don’t know . . . . . . . . . . . . . . . . . . h Go to B49
+- (r) Refusal . . . . . . . . . . . . . . . . . . . . h
+
+**B48. Does he/she now use:**
+Interviewer: Read list.
+
+- (1) (3) (x) (r)
+
+Yes No DK Ref
+
+- (a) a computer as a learning aid . . . . . . . . . . . . . . . . . . . . . . . . . . . . h h h h
+- (b) a voice activated or voice synthesis computer software
+
+(e.g.Dragon Dictate, Via Voice) . . . . . . . . . . . . . . . . . . . . . . . . . . h h h h
+
+- (c) talking books. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . h h h h
+- (d) recording equipment . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . h h h h
+- (e) a tutor . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . h h h h
+- (f) other aid, specify. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . h h h h
+
+**B49. Are there any learning aids, specialized equipment or services that ..... CURRENTLY needs, but**
+**does not have?**
+
+- (1) Yes . . . . . . . . . . . . . . . . . . . . . . . . h Check box “Learning — NEED Aid” on Profile Sheet
+- (3) No . . . . . . . . . . . . . . . . . . . . . . . . h
+- (x) Don’t know . . . . . . . . . . . . . . . . . . h Go to B51.edit
+- (r) Refusal . . . . . . . . . . . . . . . . . . . . h
+
+**Interviewer: If B43 OR B44 is “Yes”,continue.Otherwise,go to B53 (page 12).**
+PALS 11
+
+<!-- page 12 printed="12" read_by="text_layer" -->
+
+PALS 12
+B50. Which aids or services does he/she NEED, but does not have?
+Interviewer: Do NOT read list.Mark all that apply.
+
+- (a) A computer as a learning aid. . . . . . . . . . . . . . . . . . . . . . . . . . . . l
+- (b) A voice activated or voice synthesis computer software
+
+## (e.g.Dragon Dictate, Via Voice) . . . . . . . . . . . . . . . . . . . . . . . . . . l
+
+- (c) Talking books . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . l
+- (d) Recording equipment. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . l
+- (e) A tutor. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . l
+- (f) Other aid, specify . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . l
+
+- (x) Don’t know . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . l
+- (r) Refusal . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . l
+
+**B51.**
+**edit**
+
+**B51. Because of a condition or health problem, does ..... have a delay in his/her development, either a**
+**physical, intellectual or another type of delay?**
+
+- (1) Yes . . . . . . . . . . . . . . . . h Check box “Developmental — Limitation” on Profile Sheet
+- (3) No . . . . . . . . . . . . . . . . . h
+- (x) Don’t know . . . . . . . . . . . h Go to B59
+- (r) Refusal . . . . . . . . . . . . . h
+
+**B52. What kind of delay is this? I will read you a list. Please answer yes or no to each.**
+Interviewer: Read list.
+
+- (1) (3) (x) (r)
+
+Yes No DK Ref
+
+- (a) A delay in his/her PHYSICAL development . . . . . . . . . . . . . . . . . h h h h
+- (b) A delay in his/her INTELLECTUAL development . . . . . . . . . . . . . h h h h
+- (c) Other type of delay, specify . . . . . . . . . . . . . . . . . . . . . . . . . . . . . h h h h
+
+**B53.**
+**edit**
+
+**B53. Has a doctor, psychologist or other health professional ever said that ..... has a developmental**
+**disability or disorder? These may include autism, Down syndrome, or mental impairment due to**
+**a lack of oxygen at birth.**
+
+- (1) Yes . . . . . . . . . . . . . . . . h Check box “Developmental — Limitation” on Profile Sheet
+- (3) No . . . . . . . . . . . . . . . . . h
+- (x) Don’t know . . . . . . . . . . . h Go to B56
+- (r) Refusal . . . . . . . . . . . . . h
+
+**Interviewer: Go to B59 (page 14).**
+**Interviewer: Go to B53.**
+
+<!-- page 13 printed="13" read_by="text_layer" -->
+
+**B54. Does this condition reduce the amount or the kind of activities ..... can do?**
+Interviewer: Read list.Mark one only.
+
+- (1) Yes, sometimes . . . . . . . h
+- (2) Yes, often or always . . . . h
+- (3) No . . . . . . . . . . . . . . . . . h
+- (x) Don’t know . . . . . . . . . . . h Go to B56
+- (r) Refusal . . . . . . . . . . . . . h
+
+**B55. How many ACTIVITIES does this condition USUALLY prevent him/her from doing:**
+Interviewer: Read categories.Mark one only.
+
+- (1) (2) (3) (4) (x) (r)
+
+Interviewer: Read list. None A few Many Most DK Ref
+
+- (a) at home? . . . . . . . . . . . . . . . . . . . . . . . . . . h h h h h h
+- (b) at school?. . . . . . . . . . . . . . . . . . . . . . . . . . h h h h h h
+- (c) at play or recreational activities?. . . . . . . . . h h h h h h
+
+**B56. Does ..... have any emotional, psychological or behavioural conditions that have lasted or are expected**
+**to last six months or more?**
+
+- (1) Yes . . . . . . . . . . . . . . . . h
+- (3) No . . . . . . . . . . . . . . . . . h
+- (x) Don’t know . . . . . . . . . . . h Go to B59
+- (r) Refusal . . . . . . . . . . . . . h
+
+**B57. Does this condition reduce the amount or the kind of activities ..... can do?**
+Interviewer: Read list.Mark one only.
+
+- (1) Yes, sometimes . . . . . . . h
+- (2) Yes, often or always . . . . h
+- (3) No . . . . . . . . . . . . . . . . . h
+- (x) Don’t know . . . . . . . . . . . h Go to B59
+- (r) Refusal . . . . . . . . . . . . . h
+
+**B58. How many ACTIVITIES does this condition USUALLY prevent him/her from doing:**
+Interviewer: Read categories.Mark one only.
+
+- (1) (2) (3) (4) (x) (r)
+
+Interviewer: Read list. None A few Many Most DK Ref
+
+- (a) at home? . . . . . . . . . . . . . . . . . . . . . . . . . . h h h h h h
+- (b) at school?. . . . . . . . . . . . . . . . . . . . . . . . . . h h h h h h
+- (c) at play or recreational activities?. . . . . . . . . h h h h h h
+
+Check box “Emotional/Psychological — Limitation” on Profile Sheet
+PALS 13
+
+<!-- page 14 printed="14" read_by="text_layer" -->
+
+PALS 14
+B59. Now I’d like to ask about any CHRONIC health conditions ..... may have. (Chronic conditions refer
+to conditions that have lasted or are expected to last six months or more.)
+Does ..... have any of the following LONG-TERM conditions which have been DIAGNOSED by
+a health professional?
+Interviewer: Read list.
+
+- (1) (3) (x) (r)
+
+Yes No DK Ref
+
+- (a) Asthma or severe allergies. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . h h h h
+- (b) Heart condition or disease. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . h h h h
+- (c) Kidney condition or disease. . . . . . . . . . . . . . . . . . . . . . . . . . . . . h h h h
+- (d) Cancer . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . h h h h
+- (e) Diabetes . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . h h h h
+- (f) Epilepsy . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . h h h h
+- (g) Autism. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . h h h h
+- (h) Cerebral Palsy. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . h h h h
+- (i) Spina Bifida. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . h h h h
+- (j) Cystic Fibrosis. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . h h h h
+- (k) Muscular Dystrophy. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . h h h h
+- (l) Migraines . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . h h h h
+- (m) Arthritis or rheumatism . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . h h h h
+- (n) Paralysis of any kind . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . h h h h
+- (o) Missing or malformed arms, legs, fingers or toes . . . . . . . . . . . . . h h h h
+- (p) Fetal Alcohol Syndrome. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . h h h h
+- (q) Attention Deficit Disorder (ADD) or Attention Deficit
+
+Hyperactivity Disorder (ADHD). . . . . . . . . . . . . . . . . . . . . . . . . . . h h h h
+
+- (r) Down syndrome . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . h h h h
+- (s) Complex medical care needs. . . . . . . . . . . . . . . . . . . . . . . . . . . . h h h h
+- (t) Any other LONG-TERM condition that has been diagnosed
+
+by a health professional, specify . . . . . . . . . . . . . . . . . . . . . . . . . h h h h
+
+**B60.**
+**edit**
+
+**B60. Does this condition (Do these conditions) reduce the amount or the kind of activities ..... can do?**
+Interviewer: Read list.Mark one only.
+
+- (1) Yes, sometimes . . . . . . . . . . . . . . h
+- (2) Yes, often or always . . . . . . . . . . . h
+- (3) No . . . . . . . . . . . . . . . . . . . . . . . . h
+- (x) Don’t know . . . . . . . . . . . . . . . . . . h Go to B62.edit
+- (r) Refusal . . . . . . . . . . . . . . . . . . . . h
+
+**B61. How many ACTIVITIES does this condition (do these conditions) USUALLY prevent him/her from**
+**doing:**
+Interviewer: Read categories.Mark one only.
+
+- (1) (2) (3) (4) (x) (r)
+
+Interviewer: Read list. None A few Many Most DK Ref
+
+- (a) at home? . . . . . . . . . . . . . . . . . . . . . . . . . . h h h h h h
+- (b) at school?. . . . . . . . . . . . . . . . . . . . . . . . . . h h h h h h
+- (c) at play or recreational activities?. . . . . . . . . h h h h h h
+
+Check box “Chronic — Limitation” on Profile Sheet
+Interviewer: If there is at least one “Yes”checked in B59,continue.Otherwise,go to
+B62.edit (page 15).
+
+<!-- page 15 printed="15" read_by="text_layer" -->
+
+**B62.**
+**edit**
+
+**B62. You mentioned earlier that because of a physical condition, mental condition or health problem .....**
+**has difficulties or activity limitations.**
+**How old was ..... when you suspected that he/she has a long-term condition or health problem?**
+(0-14) Years Interviewer: If age is less than 1 year, enter 00.
+
+- (x) Don’t know . . . . . . . . . . . h
+- (r) Refusal . . . . . . . . . . . . . h
+
+**B63. What is the MAIN condition or health problem which causes him/her difficulties or activity limitations?**
+Interviewer: Specify ONE condition or health problem only.
+
+- (x) Don’t know . . . . . . . . . . . h
+- (r) Refusal . . . . . . . . . . . . . h
+
+**B64. Which one of the following best describes the CAUSE of this condition or health problem?**
+Interviewer: Read list.Mark one only.
+
+- (1) Existed at birth, was due to premature birth or accident at birth . . . . . . . . . . . . . . . . . . . h
+- (2) A disease or illness . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . h
+- (3) Accident at home or at school. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . h
+- (4) Motor vehicle accident . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . h
+- (5) Other, specify. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . h
+
+- (x) Don’t know. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . h
+- (r) Refusal. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . h
+
+**B65. Did you get a diagnosis for .....’s condition or health problem?**
+
+- (1) Yes . . . . . . . . . . . . . . . . h
+- (3) No . . . . . . . . . . . . . . . . . h
+- (x) Don’t know . . . . . . . . . . . h Go to B68
+- (r) Refusal . . . . . . . . . . . . . h
+
+**B66. How old was ..... when you obtained a diagnosis for his/her condition or health problem?**
+(0-14) Years Interviewer: If age is less than 1 year, enter 00.
+
+- (x) Don’t know . . . . . . . . . . . h
+- (r) Refusal . . . . . . . . . . . . . h
+
+**Go to B65**
+**Interviewer: If any box is checked in the “Limitation Column”on the Profile Sheet,**
+**goto B62.Otherwise,go to the Follow-up Question (page 52).**
+PALS 15
+
+<!-- page 16 printed="16" read_by="text_layer" -->
+
+PALS 16
+B67. Did you experience any of the following situations when you were trying to obtain a diagnosis for .....’s
+condition or health problem?
+Interviewer: Read list.
+
+- (1) (3) (x) (r)
+
+Yes No DK Ref
+
+- (a) Doctor or health professional took a wait and see approach. . . . . h h h h
+- (b) Long waiting period to get the diagnosis . . . . . . . . . . . . . . . . . . . h h h h
+- (c) Difficulty getting referrals or appointments . . . . . . . . . . . . . . . . . . h h h h
+- (d) Doctor or health professional not available locally. . . . . . . . . . . . . h h h h
+- (e) Too expensive . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . h h h h
+- (f) Did not know where to get the diagnosis . . . . . . . . . . . . . . . . . . . h h h h
+- (g) Other, specify . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . h h h h
+
+**B68. How would you describe .....’s general health? Would you say that his/her health is:**
+Interviewer: Read list.Mark one only.
+
+- (1) excellent? . . . . . . . . . . . h
+- (2) very good? . . . . . . . . . . . h
+- (3) good? . . . . . . . . . . . . . . h
+- (4) fair? . . . . . . . . . . . . . . . . h
+- (5) poor? . . . . . . . . . . . . . . . h
+- (x) Don’t know . . . . . . . . . . . h
+- (r) Refusal . . . . . . . . . . . . . h
+
+**B69. The next questions are about the use of medications or drugs. Does ..... USE any prescription or**
+**non-prescription medications on a regular basis, that is, AT LEAST ONCE A WEEK?**
+
+- (1) Yes . . . . . . . . . . . . . . . . h
+- (3) No . . . . . . . . . . . . . . . . . h
+- (x) Don’t know . . . . . . . . . . . h Go to B75
+- (r) Refusal . . . . . . . . . . . . . h
+
+**B70. How many kinds of PRESCRIPTION medications does he/she take EVERYDAY?**
+Interviewer: Read list.Mark one only.
+
+- (1) None . . . . . . . . . . . . . . . h
+- (2) 1-3 kinds . . . . . . . . . . . . h
+- (3) 4 kinds or more . . . . . . . h
+- (x) Don’t know . . . . . . . . . . . h
+- (r) Refusal . . . . . . . . . . . . . h
+
+**B71. How many kinds of NON-PRESCRIPTION medications does he/she take EVERYDAY?**
+Interviewer: Read list.Mark one only.
+
+- (1) None . . . . . . . . . . . . . . . h
+- (2) 1-3 kinds . . . . . . . . . . . . h
+- (3) 4 kinds or more . . . . . . . h
+- (x) Don’t know . . . . . . . . . . . h
+- (r) Refusal . . . . . . . . . . . . . h
+
+<!-- page 17 printed="17" read_by="text_layer" -->
+
+**B72. Does ..... USE any medications regularly, but NOT DAILY?**
+
+- (1) Yes . . . . . . . . . . . . . . . . h
+- (3) No . . . . . . . . . . . . . . . . . h
+- (x) Don’t know . . . . . . . . . . . h Go to B75
+- (r) Refusal . . . . . . . . . . . . . h
+
+**B73. How many kinds of PRESCRIPTION medications does he/she take (regularly, but NOT DAILY)?**
+Interviewer: Read list.Mark one only.
+
+- (1) None . . . . . . . . . . . . . . . . . . . . . . h
+- (2) 1-3 kinds . . . . . . . . . . . . . . . . . . . h
+- (3) 4 kinds or more . . . . . . . . . . . . . . h
+- (x) Don’t know . . . . . . . . . . . . . . . . . . h
+- (r) Refusal . . . . . . . . . . . . . . . . . . . . h
+
+**B74. How many kinds of NON-PRESCRIPTION medications does he/she take (regularly, but NOT DAILY)?**
+Interviewer: Read list.Mark one only.
+
+- (1) None . . . . . . . . . . . . . . . . . . . . . . h
+- (2) 1-3 kinds . . . . . . . . . . . . . . . . . . . h
+- (3) 4 kinds or more . . . . . . . . . . . . . . h
+- (x) Don’t know . . . . . . . . . . . . . . . . . . h
+- (r) Refusal . . . . . . . . . . . . . . . . . . . . h
+
+**B75. IN THE PAST 12 MONTHS, did you or your family have any OUT-OF-POCKET expenses, that are not**
+**reimbursed by any sources, for .....’s prescription or non-prescription medications?**
+
+- (1) Yes . . . . . . . . . . . . . . . . . . . . . . . . h
+- (3) No . . . . . . . . . . . . . . . . . . . . . . . . h
+- (x) Don’t know . . . . . . . . . . . . . . . . . . h Go to B78
+- (r) Refusal . . . . . . . . . . . . . . . . . . . . h
+
+**B76. What is your best estimate of the OUT-OF-POCKET or DIRECT costs to you or your family for these**
+**extra expenses?**
+**INCLUDE amounts not covered by insurance. EXCLUDE payments for which you have been or will be**
+**reimbursed by any insurance or government program.**
+
+$ .00 Range: 1-999999 Go to B78
+
+- (x) Don’t know . . . . . . . . . . . . . . . . . . h
+- (r) Refusal . . . . . . . . . . . . . . . . . . . . h
+
+**B77. Which one of the following expense groups is the best estimate of the direct costs to you or your**
+**family? I will read you a list.**
+Interviewer: Read list.Mark one only.
+
+- (1) Less than $100 . . . . . . . . . . . . . . h
+- (2) $100 to less than $200 . . . . . . . . . h
+- (3) $200 to less than $500 . . . . . . . . . h
+- (4) $500 to less than $1000 . . . . . . . . h
+- (5) $1000 to less than $2000 . . . . . . . h
+- (6) $2000 to less than $5000 . . . . . . . h
+- (7) $5000 or more . . . . . . . . . . . . . . . h
+- (x) Don’t know . . . . . . . . . . . . . . . . . . h
+- (r) Refusal . . . . . . . . . . . . . . . . . . . . h
+
+PALS 17
+
+<!-- page 18 printed="18" read_by="text_layer" -->
+
+PALS 18
+B78. Because of a condition or health problem, does ..... CURRENTLY need any prescription or
+non-prescription medications on a regular basis, which he/she does not have?
+
+- (1) Yes . . . . . . . . . . . . . . . . . . . . . . . . h
+- (3) No . . . . . . . . . . . . . . . . . . . . . . . . h
+- (x) Don’t know . . . . . . . . . . . . . . . . . . h Go to B80
+- (r) Refusal . . . . . . . . . . . . . . . . . . . . h
+
+**B79. Why doesn’t he/she have these medications? I will read you a list. Please answer yes or no to each.**
+Interviewer: Read list.
+
+- (1) (3) (x) (r)
+
+Yes No DK Ref
+
+- (a) Not covered by insurance . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . h h h h
+- (b) Too expensive . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . h h h h
+- (c) Not approved or recommended by health professionals . . . . . . . . h h h h
+- (d) Other reason, specify. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . h h h h
+
+**B80. The next few questions are about your contact with health professionals because of .....’s condition or**
+**health problem.**
+**IN THE PAST 12 MONTHS, how OFTEN has ..... seen or received care from a:**
+Interviewer: Read categories.Mark one only.
+
+- (1) (2) (3) (4) (x) (r)
+
+At least At least Less than
+once once once
+Interviewer: Read list. a week a month a month Never DK Ref
+
+- (a) family doctor or general practitioner? h h h h h h
+- (b) medical specialist (such as a heart
+
+specialist)?. . . . . . . . . . . . . . . . . . . . h h h h h h
+
+- (c) nurse? . . . . . . . . . . . . . . . . . . . . . . . h h h h h h
+- (d) speech therapist?. . . . . . . . . . . . . . . h h h h h h
+- (e) physiotherapist?. . . . . . . . . . . . . . . . h h h h h h
+- (f) psychologist or psychotherapist? . . . h h h h h h
+- (g) chiropractor? . . . . . . . . . . . . . . . . . . h h h h h h
+- (h) other health professional, specify . . . h h h h h h
+
+**B81.**
+**edit**
+
+**B81. IN THE PAST 12 MONTHS, did you or your family have any OUT-OF-POCKET expenses, that are not**
+**reimbursed by any sources, for the services that ..... received from health professionals?**
+
+- (1) Yes . . . . . . . . . . . . . . . . h
+- (3) No . . . . . . . . . . . . . . . . . h
+- (x) Don’t know . . . . . . . . . . . h Go to B84
+- (r) Refusal . . . . . . . . . . . . . h
+
+**B82. What is your best estimate of the OUT-OF-POCKET or DIRECT costs to you or your family for these**
+**extra expenses?**
+**INCLUDE amounts not covered by insurance. EXCLUDE payments for which you have been or will be**
+**reimbursed by any insurance or government program.**
+
+$ .00 Range: 1-999999 Go to B84
+
+- (x) Don’t know . . . . . . . . . . . h
+- (r) Refusal . . . . . . . . . . . . . h
+
+**Interviewer: If there is at least one check mark in column (1) (2) or (3) of B80,**
+**continue.Otherwise,go to B84 (page 19).**
+
+<!-- page 19 printed="19" read_by="text_layer" -->
+
+**B83. Which one of the following expense groups is the best estimate of the direct costs to you or your**
+**family? I will read you a list.**
+Interviewer: Read list.Mark one only.
+
+- (1) Less than $200 . . . . . . . . . . . . . . h
+- (2) $200 to less than $500 . . . . . . . . . h
+- (3) $500 to less than $1000 . . . . . . . . h
+- (4) $1000 to less than $2000 . . . . . . . h
+- (5) $2000 to less than $5000 . . . . . . . h
+- (6) $5000 or more . . . . . . . . . . . . . . . h
+- (x) Don’t know . . . . . . . . . . . . . . . . . . h
+- (r) Refusal . . . . . . . . . . . . . . . . . . . . h
+
+**B84. IN THE PAST 12 MONTHS, was there ever a time when ..... needed health services because of his/her**
+**condition, but did not receive them?**
+
+- (1) Yes . . . . . . . . . . . . . . . . . . . . . . . . h
+- (3) No . . . . . . . . . . . . . . . . . . . . . . . . h
+- (x) Don’t know . . . . . . . . . . . . . . . . . . h Go to B87.edit
+- (r) Refusal . . . . . . . . . . . . . . . . . . . . h
+
+**B85. What kind of health services did he/she NEED, but did not receive?**
+Interviewer: Do NOT read list.Mark all that apply.
+
+- (a) Family doctor or general practitioner . . . . . . . . . . . . . . . l
+- (b) Medical specialist (such as a heart specialist) . . . . . . . . l
+- (c) Nurse for care. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . l
+- (d) Speech therapist. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . l
+- (e) Physiotherapist . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . l
+- (f) Psychologist or psychotherapist. . . . . . . . . . . . . . . . . . . l
+- (g) Chiropractor . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . l
+- (h) Other, specify . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . l
+
+- (x) Don’t know . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . l
+- (r) Refusal. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . l
+
+**B86. Why didn’t ..... receive the health service that he/she needed? I will read you a list. Please answer**
+**yes or no to each.**
+Interviewer: Read list.
+
+- (1) (3) (x) (r)
+
+Yes No DK Ref
+
+- (a) Not covered by insurance . . . . . . . . . . . . . . h h h h
+- (b) Too expensive. . . . . . . . . . . . . . . . . . . . . . . h h h h
+- (c) Not available locally . . . . . . . . . . . . . . . . . . h h h h
+- (d) Long waiting period . . . . . . . . . . . . . . . . . . h h h h
+- (e) Other reason, specify . . . . . . . . . . . . . . . . . h h h h
+
+**B87.**
+**edit**
+**Interviewer: If child was born AFTER May 15,1996,go to C12 (page 24).**
+**Otherwise,continue.**
+**Go to B87.edit**
+PALS 19
+
+<!-- page 20 printed="20" read_by="text_layer" -->
+
+PALS 20
+B87. Because of a condition or health problem, does ..... USE any aids or specialized equipment that you
+have not already mentioned?
+
+- (1) Yes . . . . . . . . . . . . . . . . h Check box “Chronic/Other — USE Aid” on Profile Sheet
+- (3) No . . . . . . . . . . . . . . . . . h
+- (x) Don’t know . . . . . . . . . . . h Go to B89.edit
+- (r) Refusal . . . . . . . . . . . . . h
+
+**B88. Does he/she now use:**
+Interviewer: Read list.
+
+- (1) (3) (x) (r)
+
+Yes No DK Ref
+
+- (a) respiratory aids, such as inhalers, puffers, oxygen . . . . . . . . . . . . h h h h
+- (b) pain management aids, such as a TENS machine . . . . . . . . . . . . h h h h
+- (c) other aid or specialized equipment, specify . . . . . . . . . . . . . . . . . h h h h
+
+**B89.**
+**edit**
+
+**B89. I would like you to think about all the aids and specialized equipment that ..... currently uses.**
+**What kind of funding was used to get these aids? I will read you a list. Please answer yes or no**
+**to each.**
+Interviewer: Read list.
+
+- (1) (3) (x) (r)
+
+Yes No DK Ref
+
+- (a) Your own money . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . h h h h
+- (b) Friends and family members . . . . . . . . . . . . . . . . . . . . . . . . . . . . h h h h
+- (c) Private health insurance . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . h h h h
+- (d) Government program. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . h h h h
+- (e) Other funding, specify . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . h h h h
+
+**B90. IN THE PAST 12 MONTHS, did you or your family have any OUT-OF-POCKET expenses (that are not**
+**reimbursed by any sources) for the purchase or maintenance of aids or specialized equipment that**
+**..... uses?**
+
+- (1) Yes . . . . . . . . . . . . . . . . h
+- (3) No . . . . . . . . . . . . . . . . . h
+- (x) Don’t know . . . . . . . . . . . h Go to B93
+- (r) Refusal . . . . . . . . . . . . . h
+
+**B91. What is your best estimate of the OUT-OF-POCKET or DIRECT costs to you or your family for these**
+**extra expenses?**
+**INCLUDE amounts not covered by insurance. EXCLUDE payments for which you have been or will be**
+**reimbursed by any insurance or government program.**
+
+$ .00 Range: 1-999999 Go to B93
+
+- (x) Don’t know . . . . . . . . . . . h
+- (r) Refusal . . . . . . . . . . . . . h
+
+**Interviewer: If any box is checked in the “USE — Aid”column on the Profile Sheet,**
+**continue.Otherwise,go to B93 (page 21).**
+
+<!-- page 21 printed="21" read_by="text_layer" -->
+
+**B92. Which one of the following expense groups is the best estimate of the direct costs to you or your**
+**family? I will read you a list.**
+Interviewer: Read list.Mark one only.
+
+- (1) Less than $200 . . . . . . . . . . . . . . h
+- (2) $200 to less than $500 . . . . . . . . . h
+- (3) $500 to less than $1000 . . . . . . . . h
+- (4) $1000 to less than $2000 . . . . . . . h
+- (5) $2000 to less than $5000 . . . . . . . h
+- (6) $5000 or more . . . . . . . . . . . . . . . h
+- (x) Don’t know . . . . . . . . . . . . . . . . . . h
+- (r) Refusal . . . . . . . . . . . . . . . . . . . . h
+
+**B93. Does ..... CURRENTLY need any aids or specialized equipment that you have not already mentioned?**
+
+- (1) Yes . . . . . . . . . . . . . . . . . . . . . . . . h Check box “Chronic/Other — NEED Aid” on Profile Sheet
+- (3) No . . . . . . . . . . . . . . . . . . . . . . . . h
+- (x) Don’t know . . . . . . . . . . . . . . . . . . h Go to B95.edit
+- (r) Refusal . . . . . . . . . . . . . . . . . . . . h
+
+**B94. Which aids does ..... NEED, but does not have?**
+Interviewer: Do NOT read list.Mark all that apply.
+
+- (a) Respiratory aids, such as inhalers, puffers, oxygen . . . . l
+- (b) Pain management aids, such as a TENS machine. . . . . l
+- (c) Other aid or specialized equipment, specify. . . . . . . . . . l
+
+- (x) Don’t know . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . l
+- (r) Refusal. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . l
+
+**B95.**
+**edit**
+
+**B95. I would like you to think about all the aids ..... CURRENTLY needs, but does not have.**
+**Why doesn’t he/she have these aids or specialized equipment? I will read you a list. Please answer**
+**yes or no to each.**
+Interviewer: Read list.
+
+- (1) (3) (x) (r)
+
+Yes No DK Ref
+
+- (a) Not covered by insurance . . . . . . . . . . . . . . h h h h
+- (b) Too expensive. . . . . . . . . . . . . . . . . . . . . . . h h h h
+- (c) Not available locally . . . . . . . . . . . . . . . . . . h h h h
+- (d) Do not know where to obtain the aid. . . . . . h h h h
+- (e) Child’s condition is not serious enough . . . . h h h h
+- (f) Only needed occasionally. . . . . . . . . . . . . . h h h h
+- (g) Other reason, specify . . . . . . . . . . . . . . . . . h h h h
+
+**Interviewer: If any box is checked in the “NEED Aid”column on the Profile Sheet,**
+**continue.Otherwise,go to C1 (page 22).**
+PALS 21
+
+<!-- page 22 printed="22" read_by="text_layer" -->
+
+PALS 22
+B96. Now, I would like you to think about all the aids or specialized equipment that he/she NEEDS, but does
+not have. Do you think that there is an impact on ..... because he/she does not have these aids?
+
+- (1) Yes . . . . . . . . . . . . . . . . h
+- (3) No . . . . . . . . . . . . . . . . . h
+- (x) Don’t know . . . . . . . . . . . h Go to C1
+- (r) Refusal . . . . . . . . . . . . . h
+
+**B97. What is the impact of not having these aids or specialized equipment? I will read you a list. Please**
+**answer yes or no to each.**
+Interviewer: Read list.
+
+- (1) (3) (x) (r)
+
+Yes No DK Ref
+
+- (a) Child’s participation in regular everyday activity is reduced. . . . . . h h h h
+- (b) Child is frustrated . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . h h h h
+- (c) Child’s self-esteem is affected . . . . . . . . . . . . . . . . . . . . . . . . . . . h h h h
+- (d) Other, specify . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . h h h h
+
+**C1. Does ..... USUALLY receive help with personal care, such as bathing, toiletting, dressing or feeding?**
+
+- (1) Yes . . . . . . . . . . . . . . . . h
+- (3) No . . . . . . . . . . . . . . . . . h
+- (x) Don’t know . . . . . . . . . . . h Go to C5
+- (r) Refusal . . . . . . . . . . . . . h
+
+**C2. Is this because of his/her condition or health problem?**
+
+- (1) Yes . . . . . . . . . . . . . . . . h
+- (3) No . . . . . . . . . . . . . . . . . h
+- (x) Don’t know . . . . . . . . . . . h Go to C5
+- (r) Refusal . . . . . . . . . . . . . h
+
+**C3. How much help does he/she need?**
+Interviewer: Read list.Mark one only.
+
+- (1) Some help . . . . . . . . . . . h
+- (2) A lot of help . . . . . . . . . . h
+- (x) Don’t know . . . . . . . . . . . h
+- (r) Refusal . . . . . . . . . . . . . h
+
+**Interviewer: If child was born AFTER May 15,1996,go to C12 (page 24).Otherwise,**
+**continue.**
+
+## SECTION C — HELP WITH EVERYDAY ACTIVITIES
+
+<!-- page 23 printed="23" read_by="text_layer" -->
+
+**C4. Who provides most of the help to ..... for his/her personal care?**
+Interviewer: Read list.Mark one only.
+
+- (1) Mostly the mother . . . . . . . . . . . . . h
+- (2) Mostly the father . . . . . . . . . . . . . . h
+- (3) Both the mother and the father . . . h
+- (4) Other family members . . . . . . . . . h
+- (5) Other, specify . . . . . . . . . . . . . . . . h
+
+- (x) Don’t know . . . . . . . . . . . . . . . . . . h
+- (r) Refusal . . . . . . . . . . . . . . . . . . . . h
+
+**C5. Does ..... USUALLY receive help with moving about inside his/her residence, such as moving from**
+**one room to another?**
+
+- (1) Yes . . . . . . . . . . . . . . . . . . . . . . . . h
+- (3) No . . . . . . . . . . . . . . . . . . . . . . . . h
+- (x) Don’t know . . . . . . . . . . . . . . . . . . h Go to C9
+- (r) Refusal . . . . . . . . . . . . . . . . . . . . h
+
+**C6. Is this because of his/her condition or health problem?**
+
+- (1) Yes . . . . . . . . . . . . . . . . . . . . . . . . h
+- (3) No . . . . . . . . . . . . . . . . . . . . . . . . h
+- (x) Don’t know . . . . . . . . . . . . . . . . . . h Go to C9
+- (r) Refusal . . . . . . . . . . . . . . . . . . . . h
+
+**C7. How much help does he/she need?**
+Interviewer: Read list.Mark one only.
+
+- (1) Some help . . . . . . . . . . . . . . . . . . h
+- (2) A lot of help . . . . . . . . . . . . . . . . . h
+- (x) Don’t know . . . . . . . . . . . . . . . . . . h
+- (r) Refusal . . . . . . . . . . . . . . . . . . . . h
+
+**C8. Who provides most of the help to ..... for moving about inside his/her residence?**
+Interviewer: Read list.Mark one only.
+
+- (1) Mostly the mother . . . . . . . . . . . . . h
+- (2) Mostly the father . . . . . . . . . . . . . . h
+- (3) Both the mother and the father . . . h
+- (4) Other family members . . . . . . . . . h
+- (5) Other, specify . . . . . . . . . . . . . . . . h
+
+- (x) Don’t know . . . . . . . . . . . . . . . . . . h
+- (r) Refusal . . . . . . . . . . . . . . . . . . . . h
+
+**C9. Because of .....’s condition, do you CURRENTLY need help or additional help with:**
+Interviewer: Read list.
+
+- (1) (3) (x) (r)
+
+Yes No DK Ref
+
+- (a) his/her personal care?. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . h h h h
+- (b) moving him/her about inside his/her residence?. . . . . . . . . . . . . . h h h h
+
+PALS 23
+
+<!-- page 24 printed="24" read_by="text_layer" -->
+
+PALS 24
+C10.
+edit
+
+**C10. How many hours per week of help or additional help do you need?**
+Interviewer: Read list.Mark one only.
+
+- (1) 1-4 hours per week . . . . . . . . . . . h
+- (2) 5-10 hours per week . . . . . . . . . . h
+- (3) More than 10 hours per week . . . . h
+- (x) Don’t know . . . . . . . . . . . . . . . . . . h
+- (r) Refusal . . . . . . . . . . . . . . . . . . . . h
+
+**C11. Why do you not receive this help? I will read you a list. Please answer yes or no to each.**
+Interviewer: Read list.
+
+- (1) (3) (x) (r)
+
+Yes No DK Ref
+
+- (a) It is too expensive . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . h h h h
+- (b) Help from family and friends is not available. . . . . . . . . . . . . . . . . h h h h
+- (c) Services or special programs (for help) are not available locally. . h h h h
+- (d) Child is presently on a waiting list . . . . . . . . . . . . . . . . . . . . . . . . h h h h
+- (e) Do not know where to look for help . . . . . . . . . . . . . . . . . . . . . . . h h h h
+- (f) Child’s condition is not serious enough . . . . . . . . . . . . . . . . . . . . h h h h
+- (g) You have not asked for help. . . . . . . . . . . . . . . . . . . . . . . . . . . . . h h h h
+- (h) Other, specify . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . h h h h
+
+**C12. The next few questions are about the help YOU or YOUR FAMILY may be receiving because of .....’s**
+**condition or health problem.The help could be from family members, friends or from agencies or**
+**organizations.**
+**Because of .....’s condition, do you USUALLY receive help with the following:**
+Interviewer: Read list.
+
+- (1) (3) (x) (r)
+
+Yes No DK Ref
+
+- (a) help with everyday housework, such as house cleaning or
+
+meal preparation . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . h h h h
+
+- (b) help to allow you to attend to other family responsibilities. . . . . . . h h h h
+- (c) help to allow you to take time off for personal activities. . . . . . . . . h h h h
+
+**C13.**
+**edit**
+
+**C13. Who USUALLY provides you this help? I will read you a list. Please answer yes or no to each.**
+Interviewer: Read list.
+
+- (1) (3) (x) (r)
+
+Yes No DK Ref
+
+- (a) Family living with you. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . h h h h
+- (b) Family not living with you. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . h h h h
+- (c) Friends or neighbours . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . h h h h
+- (d) Government organization or agency. . . . . . . . . . . . . . . . . . . . . . . h h h h
+- (e) Private organization or agency. . . . . . . . . . . . . . . . . . . . . . . . . . . h h h h
+- (f) Voluntary organization or agency. . . . . . . . . . . . . . . . . . . . . . . . . h h h h
+- (g) Other, specify . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . h h h h
+
+**Interviewer: If at least one “Yes”is checked in C12,continue.Otherwise,gotoC17**
+**(page 25).**
+**Interviewer: If C9(a) OR C9(b) is “Yes”,continue.Otherwise,go to C12.**
+
+<!-- page 25 printed="25" read_by="text_layer" -->
+
+**C14. You mentioned earlier that you usually receive help with everyday housework or help to allow you to**
+**attend to other family or personal activities.**
+**IN THE PAST 12 MONTHS, did you or your family have any OUT-OF-POCKET expenses (that are not**
+**reimbursed by any sources) for this help?**
+
+- (1) Yes . . . . . . . . . . . . . . . . . . . . . . . . h
+- (3) No . . . . . . . . . . . . . . . . . . . . . . . . h
+- (x) Don’t know . . . . . . . . . . . . . . . . . . h Go to C17
+- (r) Refusal . . . . . . . . . . . . . . . . . . . . h
+
+**C15. What is your best estimate of the OUT-OF-POCKET or DIRECT costs to you or your family for these**
+**extra expenses?**
+**INCLUDE amounts not covered by insurance. EXCLUDE payments for which you have been or will be**
+**reimbursed by any insurance or government program.**
+
+$ .00 Range: 1-999999 Go to C17
+
+- (x) Don’t know . . . . . . . . . . . . . . . . . . h
+- (r) Refusal . . . . . . . . . . . . . . . . . . . . h
+
+**C16. Which one of the following expense groups is the best estimate of the direct costs to you or your**
+**family? I will read you a list.**
+Interviewer: Read list.Mark one only.
+
+- (1) Less than $200 . . . . . . . . . . . . . . h
+- (2) $200 to less than $500 . . . . . . . . . h
+- (3) $500 to less than $1000 . . . . . . . . h
+- (4) $1000 to less than $2000 . . . . . . . h
+- (5) $2000 to less than $5000 . . . . . . . h
+- (6) $5000 or more . . . . . . . . . . . . . . . h
+- (x) Don’t know . . . . . . . . . . . . . . . . . . h
+- (r) Refusal . . . . . . . . . . . . . . . . . . . . h
+
+**C17. Because of .....’s condition, do you CURRENTLY need help or additional help with the following:**
+Interviewer: Read list.
+
+- (1) (3) (x) (r)
+
+Yes No DK Ref
+
+- (a) help with everyday housework, such as house cleaning or
+
+meal preparation . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . h h h h
+
+- (b) help to allow you to attend to other family responsibilities. . . . . . . h h h h
+- (c) help to allow you to take time off for personal activities. . . . . . . . . h h h h
+
+**C18.**
+**edit Interviewer: If at least one “Yes”is checked in C17,continue.Otherwise,gotoC19**
+**(page 26).**
+PALS 25
+
+<!-- page 26 printed="26" read_by="text_layer" -->
+
+PALS 26
+C18. Why do you not receive this help or additional help? I will read you a list. Please answer yes or no
+to each.
+Interviewer: Read list.
+
+- (1) (3) (x) (r)
+
+Yes No DK Ref
+
+- (a) It is too expensive . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . h h h h
+- (b) Help from family and friends is not available. . . . . . . . . . . . . . . . . h h h h
+- (c) Services or special programs (for help) are not available locally. . h h h h
+- (d) Child is presently on a waiting list . . . . . . . . . . . . . . . . . . . . . . . . h h h h
+- (e) Do not know where to look for help . . . . . . . . . . . . . . . . . . . . . . . h h h h
+- (f) Child’s condition is not serious enough . . . . . . . . . . . . . . . . . . . . h h h h
+- (g) You have not asked for help. . . . . . . . . . . . . . . . . . . . . . . . . . . . . h h h h
+- (h) Other, specify . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . h h h h
+
+**C19. IN THE PAST 12 MONTHS, did you have any difficulty with coordinating the care of ....., for example,**
+**making appointments, phoning or visiting health professionals and specialists?**
+
+- (1) Yes . . . . . . . . . . . . . . . . . . . . . . . . h
+- (3) No . . . . . . . . . . . . . . . . . . . . . . . . h
+- (x) Don’t know . . . . . . . . . . . . . . . . . . h Go to C21
+- (r) Refusal . . . . . . . . . . . . . . . . . . . . h
+
+**C20. What kind of difficulty did you have? I will read you a list. Please answer yes or no to each.**
+Interviewer: Read list.
+
+- (1) (3) (x) (r)
+
+Yes No DK Ref
+
+- (a) Difficulty obtaining appointments . . . . . . . . . . . . . . . . . . . . . . . . . h h h h
+- (b) Health professional or specialist not available locally . . . . . . . . . . h h h h
+- (c) A lack of communication between health professionals . . . . . . . . h h h h
+- (d) Difficulty getting information. . . . . . . . . . . . . . . . . . . . . . . . . . . . . h h h h
+- (e) Your lack of time to coordinate the care . . . . . . . . . . . . . . . . . . . . h h h h
+- (f) Work conflicts . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . h h h h
+- (g) Other difficulty, specify. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . h h h h
+
+**C21. Who USUALLY coordinates the care of .....?**
+Interviewer: Read list.Mark one only.
+
+- (1) Mostly the mother . . . . . . . . . . . . . h
+- (2) Mostly the father . . . . . . . . . . . . . . h
+- (3) Both the father and the mother . . . h
+- (4) Other family members . . . . . . . . . h
+- (5) Other, specify . . . . . . . . . . . . . . . . h
+
+- (x) Don’t know . . . . . . . . . . . . . . . . . . h
+- (r) Refusal . . . . . . . . . . . . . . . . . . . . h
+
+<!-- page 27 printed="27" read_by="text_layer" -->
+
+**C22. Because of .....’s condition or health problem, has anyone in your family EVER:**
+Interviewer: Read list.
+
+- (1) (3) (x) (r)
+
+Yes No DK Ref
+
+- (a) not taken a job in order to take care of the child?. . . . . . . . . . . . . h h h h
+- (b) quit working (other than normal maternity or paternity leave)? . . . h h h h
+- (c) changed work hours to different time of day (or night)? . . . . . . . . h h h h
+- (d) turned down a promotion or a better job?. . . . . . . . . . . . . . . . . . . h h h h
+- (e) worked fewer hours? . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . h h h h
+
+**C23.**
+**edit**
+
+**C23. Who was most affected by these work-related issues?**
+Interviewer: Read list.Mark one only.
+
+- (1) Mostly the mother . . . . . . . . . . . . . h
+- (2) Mostly the father . . . . . . . . . . . . . . h
+- (3) Both the mother and the father . . . h
+- (4) Other family members . . . . . . . . . h
+- (5) Other, specify . . . . . . . . . . . . . . . . h
+
+- (x) Don’t know . . . . . . . . . . . . . . . . . . h
+- (r) Refusal . . . . . . . . . . . . . . . . . . . . h
+
+**C24. DURING THE PAST 12 MONTHS, has your family had financial problems because of .....’s condition or**
+**health problem?**
+
+- (1) Yes . . . . . . . . . . . . . . . . . . . . . . . . h
+- (3) No . . . . . . . . . . . . . . . . . . . . . . . . h
+- (x) Don’t know . . . . . . . . . . . . . . . . . . h
+- (r) Refusal . . . . . . . . . . . . . . . . . . . . h
+
+**D1. Now, I’d like to ask you some questions about child care arrangements for ..... .**
+**Do you CURRENTLY use child care such as day care, babysitting or a before and after school program**
+**for ..... while you (or your spouse/partner) are at work or studying?**
+
+- (1) Yes . . . . . . . . . . . . . . . . . . . . . . . . h
+- (3) No . . . . . . . . . . . . . . . . . . . . . . . . h
+- (x) Don’t know . . . . . . . . . . . . . . . . . . h Go to D6
+- (r) Refusal . . . . . . . . . . . . . . . . . . . . h
+
+**Interviewer: If at least one “Yes”is checked in C22,continue.Otherwise,gotoC24.**
+PALS 27
+
+## SECTION D — CHILD CARE
+
+<!-- page 28 printed="28" read_by="text_layer" -->
+
+PALS 28
+D2. What is your MAIN child care arrangement for ..... ?
+Interviewer: Read list.Mark one only.
+
+- (1) Before and after school program . . . . . . . . . . . . . . . . . . h
+- (2) Nursery school . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . h
+- (3) Day care centre. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . h
+- (4) Care in someone else’s home by a non-relative. . . . . . . h
+- (5) Care in someone else’s home by a relative . . . . . . . . . . h
+- (6) Care in child’s home by a non-relative. . . . . . . . . . . . . . h
+- (7) Care in child’s home by a relative . . . . . . . . . . . . . . . . . h
+- (8) Other, specify . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . h
+
+- (x) Don’t know . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . h
+- (r) Refusal. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . h
+
+**D3. Approximately how many hours per WEEK is that?**
+Interviewer: This is for the MAIN child care arrangement only.
+Hours per WEEK Interviewer: Round to the nearest full hour.
+
+- (x) Don’t know . . . . . . . . . . . h
+- (r) Refusal . . . . . . . . . . . . . h
+
+**D4. Do you use any other child care arrangement for ..... ?**
+
+- (1) Yes . . . . . . . . . . . . . . . . h
+- (3) No . . . . . . . . . . . . . . . . . h
+- (x) Don’t know . . . . . . . . . . . h Go to D6
+- (r) Refusal . . . . . . . . . . . . . h
+
+**D5. Approximately how many hours per WEEK is that?**
+Hours per WEEK Interviewer: Round to the nearest full hour.
+
+- (x) Don’t know . . . . . . . . . . . h
+- (r) Refusal . . . . . . . . . . . . . h
+
+**D6. Has a child care program or service ever refused to take care of ..... because of his/her condition or**
+**health problem?**
+
+- (1) Yes . . . . . . . . . . . . . . . . h
+- (3) No . . . . . . . . . . . . . . . . . h
+- (x) Don’t know . . . . . . . . . . . h Go to D8.edit
+- (r) Refusal . . . . . . . . . . . . . h
+
+**Go to D6**
+
+<!-- page 29 printed="29" read_by="text_layer" -->
+
+**D7. What type of child care programs or services refused to provide care to ..... ? I will read you a list.**
+**Please answer yes or no to each.**
+Interviewer: Read list.
+
+- (1) (3) (x) (r)
+
+Yes No DK Ref
+
+- (a) Before and after school program . . . . . . . . . . . . . . . . . . . . . . . . . h h h h
+- (b) Nursery school . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . h h h h
+- (c) Day care centre. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . h h h h
+- (d) Care in someone else’s home . . . . . . . . . . . . . . . . . . . . . . . . . . . h h h h
+- (e) Care in child’s home . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . h h h h
+- (f) Other, specify . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . h h h h
+
+**D8.**
+**edit**
+
+**E1. The next few questions are about education. In APRIL 2001 was ..... :**
+Interviewer: Read list.Mark one only.
+
+- (1) going to school or kindergarten . . . . . . . . . . . . . . . . . . . . . . . . . . h Go to E6
+- (2) being tutored at home through the school system . . . . . . . . . . . . h
+- (3) neither of the above (i.e.neither going to school or
+
+being tutored at home). . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . h Go to E3
+
+- (x) Don’t know . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . h
+- (r) Refusal . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . h
+
+**E2. Why was ..... being tutored at home through the school system? I will read you a list. Please answer**
+**yes or no to each.**
+Interviewer: Read list.
+
+- (1) (3) (x) (r)
+
+Yes No DK Ref
+
+- (a) Personal care such as feeding and toiletting needed,
+
+but not available at school . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . h h h h
+
+- (b) Teacher’s aides or special education classes not available in
+
+REGULAR SCHOOL. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . h h h h
+
+- (c) SPECIAL EDUCATION SCHOOL not available locally . . . . . . . . . h h h h
+- (d) Child’s condition or health problem prevented him/her from
+
+going to school . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . h h h h
+
+- (e) Parents preferred home tutoring for the child . . . . . . . . . . . . . . . . h h h h
+- (f) Other reason, specify. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . h h h h
+
+**E3.**
+**edit**
+**Interviewer: Go to E37 (page 39).**
+**Go to E4**
+**Interviewer: This section is NOT asked if child was born AFTER May 15,1996.**
+**Interviewer: If child was born AFTER May 15,1996,go to I1 (page 50).**
+**Otherwise,go to E1.**
+PALS 29
+
+## SECTION E — EDUCATION
+
+<!-- page 30 printed="30" read_by="text_layer" -->
+
+PALS 30
+E3. Why was ..... not attending school in April 2001? I will read you a list. Please answer yes or no to each.
+Interviewer: Read list.
+
+- (1) (3) (x) (r)
+
+Yes No DK Ref
+
+- (a) Personal care such as feeding and toiletting needed,
+
+but not available at school . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . h h h h
+
+- (b) Teacher’s aides or special education classes not available in
+
+REGULAR SCHOOL. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . h h h h
+
+- (c) SPECIAL EDUCATION SCHOOL not available locally . . . . . . . . . h h h h
+- (d) Child’s condition or health problem prevented him/her from
+
+going to school . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . h h h h
+
+- (e) Child not ready or too young to attend school . . . . . . . . . . . . . . . h h h h
+- (f) Other reason, specify. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . h h h h
+
+**E4. Did ..... ever go to school?**
+
+- (1) Yes . . . . . . . . . . . . . . . . h Go to E37
+- (3) No . . . . . . . . . . . . . . . . . h
+- (x) Don’t know . . . . . . . . . . . h
+- (r) Refusal . . . . . . . . . . . . . h
+
+**E5. Why did ..... never attend school?**
+Interviewer: Do NOT read list.Mark all that apply.
+
+- (a) Personal care such as feeding and toiletting needed,
+
+## but not available at school . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . l
+
+- (b) Teacher’s aides or special education classes not available
+
+## in REGULAR SCHOOL . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . l
+
+- (c) SPECIAL EDUCATION SCHOOL not available locally . . . . . . . . . l
+- (d) Child’s condition or health problem prevented him/her
+
+## from going to school . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . l
+
+- (e) Child not ready or too young to attend school . . . . . . . . . . . . . . . l
+- (f) Other reason, specify. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . l
+
+- (x) Don’t know . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . l
+- (r) Refusal . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . l
+
+**E6.**
+**edit**
+
+**E6. In APRIL 2001, what type of school was ..... attending?**
+Interviewer: Read list.Mark one only.
+
+- (1) Special education school. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . h Go to E10
+- (2) Regular school . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . h
+- (3) Regular school with special education classes. . . . . . . . . . . . . . . h
+- (4) Other, specify . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . h
+
+- (x) Don’t know . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . h
+- (r) Refusal . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . h Go to E8
+
+**Interviewer: Go to E37 (page 39).**
+**Go to E37**
+
+<!-- page 31 printed="31" read_by="text_layer" -->
+
+**E7. At this school, what type of classes was ..... attending?**
+Interviewer: Read list.Mark one only.
+
+- (1) Only regular classes . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . h
+- (2) Some regular classes and some special education classes . . . . . h
+- (3) Only special education classes . . . . . . . . . . . . . . . . . . . . . . . . . . h
+- (x) Don’t know . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . h
+- (r) Refusal . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . h
+
+**E8. Did ..... ever attend a special education school?**
+
+- (1) Yes . . . . . . . . . . . . . . . . h
+- (3) No . . . . . . . . . . . . . . . . . h
+- (x) Don’t know . . . . . . . . . . . h Go to E10.edit
+- (r) Refusal . . . . . . . . . . . . . h
+
+**E9. Why didn’t he/she attend a special education school in April 2001?**
+Interviewer: Do NOT read list.Mark all that apply.
+
+- (a) Special education school no longer available locally. . . . . . . . . . . l
+- (b) Child has moved into regular school . . . . . . . . . . . . . . . . . . . . . . l
+- (c) Other reason, specify. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . l
+
+- (x) Don’t know . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . l
+- (r) Refusal . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . l
+
+**E10.**
+**edit**
+
+**E10. What is the MAIN condition or health problem which required ..... to receive special education**
+**services? I will read you a list. Please answer yes or no to each.**
+Interviewer: Read list.
+
+- (1) (3) (x) (r)
+
+Yes No DK Ref
+
+- (a) Learning disabilities. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . h h h h
+- (b) Developmental disability or disorder. . . . . . . . . . . . . . . . . . . . . . . h h h h
+- (c) Speech or language difficulties . . . . . . . . . . . . . . . . . . . . . . . . . . h h h h
+- (d) Emotional, psychological or behavioural conditions . . . . . . . . . . . h h h h
+- (e) Hearing difficulties, including deafness. . . . . . . . . . . . . . . . . . . . . h h h h
+- (f) Vision difficulties, including blindness. . . . . . . . . . . . . . . . . . . . . . h h h h
+- (g) Difficulty with walking or moving around. . . . . . . . . . . . . . . . . . . . h h h h
+- (h) Other condition, specify. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . h h h h
+
+**E11. Did you ever have any difficulty in trying to get special education services for ..... ?**
+
+- (1) Yes . . . . . . . . . . . . . . . . h
+- (3) No . . . . . . . . . . . . . . . . . h
+- (x) Don’t know . . . . . . . . . . . h Go to E13
+- (r) Refusal . . . . . . . . . . . . . h
+
+**Interviewer: If E7 is (1) “Only regular classes”,go to E11.Otherwise,continue.**
+PALS 31
+
+<!-- page 32 printed="32" read_by="text_layer" -->
+
+PALS 32
+E12. What kind of difficulty did you have? I will read you a list. Please answer yes or no to each.
+Interviewer: Read list.
+
+- (1) (3) (x) (r)
+
+Yes No DK Ref
+
+- (a) Special education services not available locally . . . . . . . . . . . . . . h h h h
+- (b) Insufficient level of staffing or special education services . . . . . . . h h h h
+- (c) Communication problems with school . . . . . . . . . . . . . . . . . . . . . h h h h
+- (d) Difficulty to have the child tested for special education services . . h h h h
+- (e) Other difficulty, specify. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . h h h h
+
+**E13. In APRIL 2001, in which province or territory did ..... attend school?**
+Interviewer: Do NOT read list.Mark one only.
+
+- (01) Newfoundland . . . . . . . . h Go to E14
+- (02) Prince Edward Island . . h Go to E15
+- (03) Nova Scotia . . . . . . . . . h Go to E16
+- (04) New Brunswick . . . . . . . h Go to E19
+- (05) Quebec . . . . . . . . . . . . . h Go to E17
+- (06) Ontario . . . . . . . . . . . . . h Go to E18
+- (07) Manitoba . . . . . . . . . . . h
+- (08) Saskatchewan . . . . . . . h
+- (09) Alberta . . . . . . . . . . . . . h
+- (10) British Columbia . . . . . . h
+
+**Go to E19**
+
+- (11) Northwest Territory . . . . h
+- (12) Nunavut . . . . . . . . . . . . h
+- (13) Yukon . . . . . . . . . . . . . . h
+- (14) Other, specify . . . . . . . . h
+
+- (x) Don’t Know . . . . . . . . . . h
+- (r) Refusal . . . . . . . . . . . . . h
+
+E14. In what grade was ..... enrolled in APRIL 2001? (Newfoundland)
+Interviewer: Do NOT read list.Mark one only.
+
+- (01) Kindergarten . . . . . . . . . h Go to E24
+- (02) Grade 1 Elementary . . . h
+- (03) Grade 2 Elementary . . . h
+- (04) Grade 3 Elementary . . . h
+- (05) Grade 4 Elementary . . . h
+- (06) Grade 5 Elementary . . . h
+- (07) Grade 6 Elementary . . . h
+- (08) Grade 7 . . . . . . . . . . . . h
+- (09) Grade 8 . . . . . . . . . . . . h Go to E20
+- (10) Grade 9 . . . . . . . . . . . . h
+- (11) Level 1 Secondary . . . . h
+- (12) Level 2 Secondary . . . . h
+- (13) Level 3 Secondary . . . . h
+- (14) Ungraded . . . . . . . . . . . h
+- (x) Don’t know . . . . . . . . . . h
+- (r) Refusal . . . . . . . . . . . . . h
+
+**Go to E19**
+
+<!-- page 33 printed="33" read_by="text_layer" -->
+
+E15. In what grade was ..... enrolled in APRIL 2001? (Prince Edward Island)
+Interviewer: Do NOT read list.Mark one only.
+
+- (01) Grade 1 . . . . . . . . . . . . h
+- (02) Grade 2 . . . . . . . . . . . . h
+- (03) Grade 3 . . . . . . . . . . . . h
+- (04) Grade 4 . . . . . . . . . . . . h
+- (05) Grade 5 . . . . . . . . . . . . h
+- (06) Grade 6 . . . . . . . . . . . . h
+- (07) Grade 7 . . . . . . . . . . . . h
+- (08) Grade 8 . . . . . . . . . . . . h Go to E20
+- (09) Grade 9 . . . . . . . . . . . . h
+- (10) Grade 10 . . . . . . . . . . . h
+- (11) Grade 11 . . . . . . . . . . . h
+- (12) Grade 12 . . . . . . . . . . . h
+- (13) Ungraded . . . . . . . . . . . h
+- (x) Don’t know . . . . . . . . . . h
+- (r) Refusal . . . . . . . . . . . . . h
+
+E16. In what grade was ..... enrolled in APRIL 2001? (Nova Scotia)
+Interviewer: Do NOT read list.Mark one only.
+
+- (01) Primary . . . . . . . . . . . . . h Go to E24
+- (02) Grade 1 . . . . . . . . . . . . h
+- (03) Grade 2 . . . . . . . . . . . . h
+- (04) Grade 3 . . . . . . . . . . . . h
+- (05) Grade 4 . . . . . . . . . . . . h
+- (06) Grade 5 . . . . . . . . . . . . h
+- (07) Grade 6 . . . . . . . . . . . . h
+- (08) Grade 7 . . . . . . . . . . . . h
+- (09) Grade 8 . . . . . . . . . . . . h Go to E20
+- (10) Grade 9 . . . . . . . . . . . . h
+- (11) Grade 10 . . . . . . . . . . . h
+- (12) Grade 11 . . . . . . . . . . . h
+- (13) Grade 12 . . . . . . . . . . . h
+- (14) Ungraded . . . . . . . . . . . h
+- (x) Don’t know . . . . . . . . . . h
+- (r) Refusal . . . . . . . . . . . . . h
+
+PALS 33
+
+<!-- page 34 printed="34" read_by="text_layer" -->
+
+PALS 34
+E17. In what grade was ..... enrolled in APRIL 2001? (Quebec)
+Interviewer: Do NOT read list.Mark one only.
+
+- (01) Junior Kindergarten . . . h
+- (02) Kindergarten . . . . . . . . . h
+- (03) Grade 1 Elementary . . . h
+- (04) Grade 2 Elementary . . . h
+- (05) Grade 3 Elementary . . . h
+- (06) Grade 4 Elementary . . . h
+- (07) Grade 5 Elementary . . . h
+- (08) Grade 6 Elementary . . . h
+- (09) Secondary I . . . . . . . . . h
+
+**Go to E20**
+
+- (10) Secondary II . . . . . . . . . h
+- (11) Secondary III . . . . . . . . h
+- (12) Secondary IV . . . . . . . . h
+- (13) Secondary V . . . . . . . . . h
+- (14) Ungraded . . . . . . . . . . . h
+- (x) Don’t know . . . . . . . . . . h
+- (r) Refusal . . . . . . . . . . . . . h
+
+E18. In what grade was ..... enrolled in APRIL 2001? (Ontario)
+Interviewer: Do NOT read list.Mark one only.
+
+- (01) Junior Kindergarten . . . h
+- (02) Kindergarten . . . . . . . . . h
+- (03) Grade 1 . . . . . . . . . . . . h
+- (04) Grade 2 . . . . . . . . . . . . h
+- (05) Grade 3 . . . . . . . . . . . . h
+- (06) Grade 4 . . . . . . . . . . . . h
+- (07) Grade 5 . . . . . . . . . . . . h
+- (08) Grade 6 . . . . . . . . . . . . h
+- (09) Grade 7 . . . . . . . . . . . . h
+- (10) Grade 8 . . . . . . . . . . . . h
+- (11) Grade 9 . . . . . . . . . . . . h
+
+**Go to E20**
+
+- (12) Grade 10 . . . . . . . . . . . h
+- (13) Grade 11 . . . . . . . . . . . h
+- (14) Grade 12 . . . . . . . . . . . h
+- (15) OAC Grade 13 . . . . . . . h
+- (16) Ungraded . . . . . . . . . . . h
+- (x) Don’t know . . . . . . . . . . h
+- (r) Refusal . . . . . . . . . . . . . h
+
+**Go to E24**
+**Go to E24**
+
+<!-- page 35 printed="35" read_by="text_layer" -->
+
+**E19. In what grade was ..... enrolled in APRIL 2001?**
+Interviewer: Do NOT read list.Mark one only.
+
+- (01) Kindergarten . . . . . . . . . h Go to E24
+- (02) Grade 1 . . . . . . . . . . . . h
+- (03) Grade 2 . . . . . . . . . . . . h
+- (04) Grade 3 . . . . . . . . . . . . h
+- (05) Grade 4 . . . . . . . . . . . . h
+- (06) Grade 5 . . . . . . . . . . . . h
+- (07) Grade 6 . . . . . . . . . . . . h
+- (08) Grade 7 . . . . . . . . . . . . h
+- (09) Grade 8 . . . . . . . . . . . . h Go to E20
+- (10) Grade 9 . . . . . . . . . . . . h
+- (11) Grade 10 . . . . . . . . . . . h
+- (12) Grade 11 . . . . . . . . . . . h
+- (13) Grade 12 . . . . . . . . . . . h
+- (14) Ungraded . . . . . . . . . . . h
+- (x) Don’t know . . . . . . . . . . h
+- (r) Refusal . . . . . . . . . . . . . h
+
+**E20. In APRIL 2001, what type of education, training or therapy was ..... receiving at school? I will read you**
+**a list. Please answer yes or no to each.**
+Interviewer: Read list.
+
+- (1) (3) (x) (r)
+
+Yes No DK Ref
+
+- (a) Academic subjects . . . . . . . . . . . . . . . . . . . h h h h
+- (b) Life skills . . . . . . . . . . . . . . . . . . . . . . . . . . h h h h
+- (c) Speech and language therapy . . . . . . . . . . h h h h
+- (d) Mental health or counselling services . . . . . h h h h
+
+**E21. The next few questions are about the last school year, that is to say, the one which finished in**
+**June 2001.**
+**Based on your knowledge of his/her school work, including his/her report cards, how did .....**
+**do during the last school year?**
+Interviewer: Read list.Mark one only.
+
+- (1) Very well . . . . . . . . . . . . . . . . . . . h
+- (2) Well . . . . . . . . . . . . . . . . . . . . . . . h
+- (3) Average . . . . . . . . . . . . . . . . . . . . h
+- (4) Poorly . . . . . . . . . . . . . . . . . . . . . h
+- (5) Very poorly . . . . . . . . . . . . . . . . . . h
+- (6) Not applicable . . . . . . . . . . . . . . . h
+- (x) Don’t know . . . . . . . . . . . . . . . . . . h
+- (r) Refusal . . . . . . . . . . . . . . . . . . . . h
+
+PALS 35
+
+<!-- page 36 printed="36" read_by="text_layer" -->
+
+PALS 36
+E22. How often did you (or your spouse/partner) check .....’s homework or provide help with his/her
+homework during the last school year?
+Interviewer: Read list.Mark one only.
+
+- (1) Never or rarely . . . . . . . . . . . . . . . h
+- (2) Less than once a month . . . . . . . . h
+- (3) At least once a month . . . . . . . . . h
+- (4) At least once a week . . . . . . . . . . h
+- (5) A few times a week . . . . . . . . . . . h
+- (6) Every day . . . . . . . . . . . . . . . . . . . h
+- (x) Don’t know . . . . . . . . . . . . . . . . . . h
+- (r) Refusal . . . . . . . . . . . . . . . . . . . . h
+
+**E23. Because of a condition or health problem:**
+Interviewer: Read list.
+
+- (1) (3) (x) (r)
+
+Yes No DK Ref
+
+- (a) did .....have to leave his/her community to attend school? . . . . . . h h h h
+- (b) was his/her schooling interrupted for long periods of time?. . . . . . h h h h
+- (c) did .....take fewer courses or academic subjects at school?. . . . . h h h h
+- (d) did it take .....longer to achieve his/her present level
+
+of education?. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . h h h h
+
+**E24. Did a condition or health problem limit .....’s participation in any of the following SCHOOL ACTIVITIES**
+**during the last school year (which ended in June 2001)?**
+Interviewer: Read list.
+
+- (1) (3) (x) (r)
+
+Yes No DK Ref
+
+- (a) Taking part in physical education or organized games requiring
+
+physical activity . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . h h h h
+
+- (b) Playing with others during recess or lunch hour . . . . . . . . . . . . . . h h h h
+- (c) Taking part in school outings, such as visits to a museum . . . . . . h h h h
+- (d) Classroom participation. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . h h h h
+
+**E25. Please remember the questions are about the last school year, that is to say, the one which finished**
+**in June 2001.**
+**Because of a condition or health problem, did ..... USE any special building features or equipment,**
+**such as ramps or automatic door openers AT SCHOOL?**
+
+- (1) Yes . . . . . . . . . . . . . . . . h
+- (3) No . . . . . . . . . . . . . . . . . h
+- (x) Don’t know . . . . . . . . . . . h Go to E27
+- (r) Refusal . . . . . . . . . . . . . h
+
+**E26. Which kind of special features did he/she USE at school? I will read you a list. Please answer**
+**yes or no to each.**
+Interviewer: Read list.
+
+- (1) (3) (x) (r)
+
+Yes No DK Ref
+
+- (a) Ramps or street level entrances . . . . . . . . . h h h h
+- (b) Widened doorways or hallways. . . . . . . . . . h h h h
+- (c) Automatic or easy to open doors. . . . . . . . . h h h h
+- (d) An elevator or lift device . . . . . . . . . . . . . . . h h h h
+- (e) Special railings in washrooms. . . . . . . . . . . h h h h
+- (f) Other feature, specify . . . . . . . . . . . . . . . . . h h h h
+
+<!-- page 37 printed="37" read_by="text_layer" -->
+
+**E27. Because of a condition or a health problem, did ..... NEED any special features or equipment, such as**
+**ramps or automatic door openers AT SCHOOL, which were not available?**
+
+- (1) Yes . . . . . . . . . . . . . . . . h
+- (3) No . . . . . . . . . . . . . . . . . h
+- (x) Don’t know . . . . . . . . . . . h Go to E29
+- (r) Refusal . . . . . . . . . . . . . h
+
+**E28. What kind of special features or equipment did he/she need AT SCHOOL, but did not have?**
+Interviewer: Do NOT read list.Mark all that apply.
+
+- (a) Ramps or street level entrances . . . . . . . . . . . . . . . . . . l
+- (b) Widened doorways or hallways . . . . . . . . . . . . . . . . . . . l
+- (c) Automatic or easy to open doors. . . . . . . . . . . . . . . . . . l
+- (d) An elevator or lift device . . . . . . . . . . . . . . . . . . . . . . . . l
+- (e) Special railings in washrooms . . . . . . . . . . . . . . . . . . . . l
+- (f) Other feature, specify . . . . . . . . . . . . . . . . . . . . . . . . . . l
+
+- (x) Don’t know . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . l
+- (r) Refusal. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . l
+
+**E29. During the last school year, did ..... USE any assistive aids, devices or services AT SCHOOL? I will**
+**read you a list. Please answer yes or no to each.**
+Interviewer: Read list.
+
+- (1) (3) (x) (r)
+
+Yes No DK Ref
+
+- (a) Tutors or teacher’s aides. . . . . . . . . . . . . . . h h h h
+- (b) Note takers or readers . . . . . . . . . . . . . . . . h h h h
+- (c) Sign language interpreters . . . . . . . . . . . . . h h h h
+- (d) Attendant care services . . . . . . . . . . . . . . . h h h h
+- (e) Amplifiers, such as FM or infrared. . . . . . . . h h h h
+- (f) Talking books . . . . . . . . . . . . . . . . . . . . . . . h h h h
+- (g) Magnifiers. . . . . . . . . . . . . . . . . . . . . . . . . . h h h h
+- (h) Recording equipment . . . . . . . . . . . . . . . . . h h h h
+- (i) A computer with Braille or speech access. . h h h h
+- (j) Other aid or service, specify . . . . . . . . . . . . h h h h
+
+**E30. Were there any assistive aids, devices or services that ..... needed AT SCHOOL, but did not have?**
+
+- (1) Yes . . . . . . . . . . . . . . . . h
+- (3) No . . . . . . . . . . . . . . . . . h
+- (x) Don’t know . . . . . . . . . . . h Go to E33
+- (r) Refusal . . . . . . . . . . . . . h
+
+PALS 37
+
+<!-- page 38 printed="38" read_by="text_layer" -->
+
+PALS 38
+E31. What kind of assistive aids or services did he/she need AT SCHOOL, but did not have?
+Interviewer: Do NOT read list.Mark all that apply.
+
+- (a) Tutors or teacher’s aides. . . . . . . . . . . . . . . l
+- (b) Note takers or readers . . . . . . . . . . . . . . . . l
+- (c) Sign language interpreters . . . . . . . . . . . . . l
+- (d) Attendant care services . . . . . . . . . . . . . . . l
+- (e) Amplifiers, such as FM or infrared. . . . . . . . l
+- (f) Talking books . . . . . . . . . . . . . . . . . . . . . . . l
+- (g) Magnifiers. . . . . . . . . . . . . . . . . . . . . . . . . . l
+- (h) Recording equipment . . . . . . . . . . . . . . . . . l
+- (i) A computer with Braille or speech access. . l
+- (j) Other aid or service, specify . . . . . . . . . . . . l
+
+- (x) Don’t know . . . . . . . . . . . . . . . . . . . . . . . . . l
+- (r) Refusal. . . . . . . . . . . . . . . . . . . . . . . . . . . . l
+
+**E32. Why didn’t ..... have these aids or services AT SCHOOL? I will read you a list. Please answer yes or no**
+**to each.**
+Interviewer: Read list.
+
+- (1) (3) (x) (r)
+
+Yes No DK Ref
+
+- (a) School funding cutbacks or lack of funding in the school system . h h h h
+- (b) School did not think child needed assistive aids or services. . . . . h h h h
+- (c) Child did not want to use assistive aids or services . . . . . . . . . . . h h h h
+- (d) Other reason, specify. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . h h h h
+
+**E33. During the last school year, have you (or your partner/spouse) done any of the following for ..... ? I will**
+**read you a list. Please answer yes or no to each.**
+Interviewer: Read list.
+
+- (1) (3) (x) (r)
+
+Yes No DK Ref
+
+- (a) Spoken to, visited or corresponded with child’s teacher . . . . . . . . h h h h
+- (b) Attended a school event in which child participated,
+
+for example, a play, sports competition, or science fair. . . . . . . . . h h h h
+
+- (c) Volunteered in child’s class or helped with a class trip . . . . . . . . . h h h h
+- (d) Helped elsewhere in the school, such as in the library or
+
+computer room . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . h h h h
+
+- (e) Attended a parent-school association, parent advisory
+
+committee or parent council meeting . . . . . . . . . . . . . . . . . . . . . . h h h h
+
+- (f) Fundraising for school . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . h h h h
+- (g) Other activity, specify. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . h h h h
+
+**Go to E33**
+
+<!-- page 39 printed="39" read_by="text_layer" -->
+
+**E34. Do you strongly agree, agree, disagree, or strongly disagree with the following descriptions of the**
+**school that ..... attended during the last school year?**
+Interviewer: Read list.
+
+- (1) (2) (3) (4) (x) (r)
+
+Strongly Strongly
+agree Agree Disagree disagree DK Ref
+
+- (a) The school offered parents many
+
+opportunities to be involved in the
+school activities. . . . . . . . . . . . . . . . . . . . . . h h h h h h
+
+- (b) Parents were made to feel welcome
+
+in the school. . . . . . . . . . . . . . . . . . . . . . . . h h h h h h
+
+- (c) Overall, the school accommodated the
+
+child’s condition or health problem . . . . . . . h h h h h h
+
+**E35. With regard to how he/she feels about school, how often did ..... look forward to going to school during**
+**the last school year?**
+Interviewer: Read list.Mark one only.
+
+- (1) Almost never . . . . . . . . . h
+- (2) Rarely . . . . . . . . . . . . . . h
+- (3) Sometimes . . . . . . . . . . h
+- (4) Often . . . . . . . . . . . . . . . h
+- (5) Almost always . . . . . . . . h
+- (x) Don’t know . . . . . . . . . . . h
+- (r) Refusal . . . . . . . . . . . . . h
+
+**E36. During the last school year, what was the method of transportation ..... used MOST OFTEN to get**
+**to school?**
+Interviewer: Read list.Mark one only.
+
+- (1) Was driven to school by family motor vehicle. . . . . . . . . h
+- (2) School bus . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . h
+- (3) Regular city bus . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . h
+- (4) Specialized bus services for persons with disabilities. . . h
+- (5) Walked or biked to school . . . . . . . . . . . . . . . . . . . . . . . h
+- (6) Other, specify . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . h
+
+- (x) Don’t know . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . h
+- (r) Refusal. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . h
+
+**E37. Has a professional assessment ever been done to determine .....’s educational needs?**
+
+- (1) Yes . . . . . . . . . . . . . . . . h
+- (3) No . . . . . . . . . . . . . . . . . h
+- (x) Don’t know . . . . . . . . . . . h Go to F1 (page 40)
+- (r) Refusal . . . . . . . . . . . . . h
+
+PALS 39
+
+<!-- page 40 printed="40" read_by="text_layer" -->
+
+PALS 40
+E38. Who completed this assessment? I will read you a list. Please answer yes or no to each.
+Interviewer: Read list.
+
+- (1) (3) (x) (r)
+
+Yes No DK Ref
+
+- (a) Psychologist or psychiatrist. . . . . . . . . . . . . h h h h
+- (b) Social worker . . . . . . . . . . . . . . . . . . . . . . . h h h h
+- (c) Special education consultant. . . . . . . . . . . . h h h h
+- (d) Speech or language therapist. . . . . . . . . . . h h h h
+- (e) Other professional or specialist, specify . . . h h h h
+
+**F1. The next few questions are about .....’s interests and activities.**
+**In the last 12 months, OUTSIDE OF SCHOOL HOURS, how often has he/she:**
+Interviewer: Read categories.Mark one only.
+
+- (1) (2) (3) (4) (5) (x) (r)
+
+At At Less
+least least than
+Every- once a once a once a
+Interviewer: Read list. day week month month Never DK Ref
+
+- (a) taken part in sports with a coach or
+
+instructor (except dance or gymnastics)? . . . h h h h h h h
+
+**How many hours a day?**
+Interviewer: Round to the nearest full hour.
+
+- (b) taken lessons or instruction in other
+
+organized physical activities with
+a coach or instructor, such as dance,
+gymnastics or martial arts?. . . . . . . . . . . . . . h h h h h h h
+
+**How many hours a day?**
+Interviewer: Round to the nearest full hour.
+
+- (c) taken part in unorganized sports or
+
+physical activities without a coach
+or instructor? . . . . . . . . . . . . . . . . . . . . . . . . h h h h h h h
+
+**How many hours a day?**
+Interviewer: Round to the nearest full hour.
+
+- (d) taken lessons or instruction in music,
+
+art or other non-sport activities? . . . . . . . . . . h h h h h h h
+
+**How many hours a day?**
+Interviewer: Round to the nearest full hour.
+
+- (e) taken part in clubs, groups or
+
+community programs, such as church
+groups, Girl or Boy Scouts? . . . . . . . . . . . . . h h h h h h h
+
+**How many hours a day?**
+Interviewer: Round to the nearest full hour.
+Interviewer: This section is NOT asked if child was born AFTER May 15,1996.
+SECTION F — LEISURE AND RECREATION ACTIVITIES
+
+<!-- page 41 printed="41" read_by="text_layer" -->
+
+**F2. How often does he/she:**
+Interviewer: Read categories.Mark one only.
+
+- (1) (2) (3) (4) (5) (x) (r)
+
+At At Less
+least least than
+Every- once once once
+Interviewer: Read list. day a week a month a month Never DK Ref
+
+- (a) watch T.V.?. . . . . . . . . . . . . . . . . . . . . . . . . . h h h h h h h
+
+**How many hours a day?**
+Interviewer: Round to the nearest full hour.
+
+- (b) play computer or video games . . . . . . . . . . . h h h h h h h
+
+**How many hours a day?**
+Interviewer: Round to the nearest full hour.
+
+- (c) talk on the phone with friends. . . . . . . . . . . . h h h h h h h
+
+**How many hours a day?**
+Interviewer: Round to the nearest full hour.
+
+**F3. How often does ..... read or have books read to him/her (for pleasure)? Please do not include reading**
+**that is required for school.**
+Interviewer: Read list.Mark one only.
+
+- (1) Everyday . . . . . . . . . . . . . . . . . . . . . . . . . . h
+
+**How many hours a day?**
+Interviewer: Round to the nearest full hour.
+
+- (2) At least once a week . . . . . . . . . . . . . . . . . h
+- (3) At least once a month. . . . . . . . . . . . . . . . . h
+- (4) Less than once a month . . . . . . . . . . . . . . . h
+- (5) Never . . . . . . . . . . . . . . . . . . . . . . . . . . . . . h
+- (x) Don’t know . . . . . . . . . . . . . . . . . . . . . . . . . h
+- (r) Refusal. . . . . . . . . . . . . . . . . . . . . . . . . . . . h
+
+**F4. Outside of school hours, how often does he/she play alone, for example, riding a bike or doing a craft?**
+Interviewer: Read list.Mark one only.
+
+- (1) Often . . . . . . . . . . . . . . . h
+- (2) Sometimes . . . . . . . . . . h
+- (3) Seldom . . . . . . . . . . . . . h
+- (4) Never . . . . . . . . . . . . . . . h
+- (x) Don’t know . . . . . . . . . . . h
+- (r) Refusal . . . . . . . . . . . . . h
+
+**F5. Has ..... ever gone to summer camps (including regular or special camps)?**
+
+- (1) Yes . . . . . . . . . . . . . . . . h
+- (3) No . . . . . . . . . . . . . . . . . h
+- (x) Don’t know . . . . . . . . . . . h Go to F7
+- (r) Refusal . . . . . . . . . . . . . h
+
+PALS 41
+
+<!-- page 42 printed="42" read_by="text_layer" -->
+
+PALS 42
+F6. Was this a camp for children with a health problem or condition?
+
+- (1) Yes . . . . . . . . . . . . . . . . h
+- (3) No . . . . . . . . . . . . . . . . . h
+- (x) Don’t know . . . . . . . . . . . h
+- (r) Refusal . . . . . . . . . . . . . h
+
+**F7. Because of a condition or health problem, is ..... prevented from taking part in any social or physical**
+**leisure activities?**
+
+- (1) Yes . . . . . . . . . . . . . . . . h
+- (3) No . . . . . . . . . . . . . . . . . h
+- (x) Don’t know . . . . . . . . . . . h Go to F9
+- (r) Refusal . . . . . . . . . . . . . h
+
+**F8. What prevents ..... from doing more social or physical leisure activities? I will read you a list. Please**
+**answer yes or no to each.**
+Interviewer: Read list.
+
+- (1) (3) (x) (r)
+
+Yes No DK Ref
+
+- (a) Recreational facilities or programs not available locally. . . . . . . . . h h h h
+- (b) Buildings and equipment not physically accessible. . . . . . . . . . . . h h h h
+- (c) Inadequate transportation services . . . . . . . . . . . . . . . . . . . . . . . h h h h
+- (d) Too expensive . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . h h h h
+- (e) Child is physically unable to do more. . . . . . . . . . . . . . . . . . . . . . h h h h
+- (f) Child needs someone’s assistance . . . . . . . . . . . . . . . . . . . . . . . h h h h
+- (g) Child needs specialized aids or equipment, but he/she
+
+doesn’t have them. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . h h h h
+
+- (h) Other reason, specify. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . h h h h
+
+**F9. DURING THE PAST SIX MONTHS, how well has ..... gotten along with other children, such as friends or**
+**classmates (excluding brothers or sisters)?**
+Interviewer: Read list.Mark one only.
+
+- (1) Very well (or no problems) . . . . . . . . . . . . . h
+- (2) Quite well (or hardly any problems). . . . . . . h
+- (3) Pretty well (or occasional problems) . . . . . . h
+- (4) Not too well (or frequent problems). . . . . . . h
+- (5) Not well at all (or constant problems) . . . . . h
+- (x) Don’t know . . . . . . . . . . . . . . . . . . . . . . . . . h
+- (r) Refusal. . . . . . . . . . . . . . . . . . . . . . . . . . . . h
+
+**F10. The next few questions deal with the use of the computer and the Internet.**
+**How many personal computers are there in your home?**
+Interviewer: Do NOT read list.Mark one only.
+
+- (1) None . . . . . . . . . . . . . . . h
+- (2) One . . . . . . . . . . . . . . . . h
+- (3) Two . . . . . . . . . . . . . . . . h Go to F12
+- (4) Three or more . . . . . . . . h
+- (x) Don’t know . . . . . . . . . . . h
+- (r) Refusal . . . . . . . . . . . . . h
+
+**Go to G1 (page 45)**
+
+<!-- page 43 printed="43" read_by="text_layer" -->
+
+**F11. What are the reasons that keep you from purchasing a personal computer?**
+Interviewer: Do NOT read list.Mark all that apply.
+
+- (a) Cost. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . l
+- (b) Not needed at home. . . . . . . . . . . . . . . . . . l
+- (c) Not interested. . . . . . . . . . . . . . . . . . . . . . . l
+- (d) Lack of computer skills or training. . . . . . . . l
+- (e) Fear of technology . . . . . . . . . . . . . . . . . . . l
+- (f) Disability. . . . . . . . . . . . . . . . . . . . . . . . . . . l
+- (g) Other, specify. . . . . . . . . . . . . . . . . . . . . . . l
+
+- (x) Don’t know . . . . . . . . . . . . . . . . . . . . . . . . . l
+- (r) Refusal. . . . . . . . . . . . . . . . . . . . . . . . . . . . l
+
+**F12.**
+**edit**
+
+**F12. Is your household connected to the Internet?**
+
+- (1) Yes . . . . . . . . . . . . . . . . h Go to F14
+- (3) No . . . . . . . . . . . . . . . . . h
+- (x) Don’t know . . . . . . . . . . . h
+- (r) Refusal . . . . . . . . . . . . . h
+
+**F13. What are the reasons that keep you from getting Internet access for your HOME?**
+Interviewer: Do NOT read list.Mark all that apply.
+
+- (a) Cost. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . l
+- (b) Not needed at home. . . . . . . . . . . . . . . . . . l
+- (c) Not interested. . . . . . . . . . . . . . . . . . . . . . . l
+- (d) Lack of computer skills or training. . . . . . . . l
+- (e) Fear of technology . . . . . . . . . . . . . . . . . . . l
+- (f) Disability. . . . . . . . . . . . . . . . . . . . . . . . . . . l
+- (g) Other, specify. . . . . . . . . . . . . . . . . . . . . . . l
+
+- (x) Don’t know . . . . . . . . . . . . . . . . . . . . . . . . . l
+- (r) Refusal. . . . . . . . . . . . . . . . . . . . . . . . . . . . l
+
+**F13.**
+**edit**
+
+**F14. Does ..... use the Internet AT HOME?**
+
+- (1) Yes . . . . . . . . . . . . . . . . h Go to F16
+- (3) No . . . . . . . . . . . . . . . . . h
+- (x) Don’t know . . . . . . . . . . . h
+- (r) Refusal . . . . . . . . . . . . . h
+
+**Go to G1 (page 45)**
+**Interviewer: Go to G1 (page 45).**
+**Go to G1 (page 45)**
+**Interviewer: Go to G1 (page 45).**
+PALS 43
+
+<!-- page 44 printed="44" read_by="text_layer" -->
+
+PALS 44
+F15. What are the reasons that keep ..... from using the Internet at home?
+Interviewer: Do NOT read list.Mark all that apply.
+
+- (a) Child too young or not ready to use it . . . . . . . . . . . . . . l
+- (b) Child does not need it. . . . . . . . . . . . . . . . . . . . . . . . . . l
+- (c) Child is not interested . . . . . . . . . . . . . . . . . . . . . . . . . . l
+- (d) Child does not have the computer skills or training. . . . . l
+- (e) Child’s condition or health problem . . . . . . . . . . . . . . . . l
+- (f) Other, specify . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . l
+
+- (x) Don’t know . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . l
+- (r) Refusal. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . l
+
+**F16.**
+**edit**
+
+**F16. AT HOME, how often does he/she use:**
+Interviewer: Read categories.Mark one only.
+
+- (1) (2) (3) (4) (5) (x) (r)
+
+At At Less
+least least than
+Every- once once once
+Interviewer: Read list. day a week a month a month Never DK Ref
+
+- (a) Internet to participate in newsgroups
+
+or chat groups? . . . . . . . . . . . . . . . . . . . . . . h h h h h h h
+
+**How many hours a day?**
+Interviewer: Round to the nearest full hour.
+
+- (b) Internet for school work?. . . . . . . . . . . . . . . . h h h h h h h
+
+**How many hours a day?**
+Interviewer: Round to the nearest full hour.
+
+- (c) Internet for personal interest or
+
+entertainment? . . . . . . . . . . . . . . . . . . . . . . . h h h h h h h
+
+**How many hours a day?**
+Interviewer: Round to the nearest full hour.
+
+- (d) E-mail to stay in touch with friends? . . . . . . . h h h h h h h
+
+**How many hours a day?**
+Interviewer: Round to the nearest full hour.
+Interviewer: Go to G1 (page 45).
+
+<!-- page 45 printed="45" read_by="text_layer" -->
+
+**G1. Because of a condition or health problem, does ..... USE any special features, such as access ramps or**
+**automatic door openers to ENTER or LEAVE his/her residence?**
+
+- (1) Yes . . . . . . . . . . . . . . . . h
+- (3) No . . . . . . . . . . . . . . . . . h
+- (x) Don’t know . . . . . . . . . . . h Go to G3
+- (r) Refusal . . . . . . . . . . . . . h
+
+**G2. Which special features does he/she use? I will read you a list. Please answer yes or no to each.**
+Interviewer: Read list.
+
+- (1) (3) (x) (r)
+
+Yes No DK Ref
+
+- (a) Ramps or street level entrances . . . . . . . . . h h h h
+- (b) Widened doorways or hallways. . . . . . . . . . h h h h
+- (c) Automatic or easy to open doors. . . . . . . . . h h h h
+- (d) An elevator or lift device . . . . . . . . . . . . . . . h h h h
+- (e) Other feature, specify . . . . . . . . . . . . . . . . . h h h h
+
+**G3. Does ..... CURRENTLY need any special features to enter or leave his/her residence, which he/she**
+**does not have?**
+
+- (1) Yes . . . . . . . . . . . . . . . . h
+- (3) No . . . . . . . . . . . . . . . . . h
+- (x) Don’t know . . . . . . . . . . . h Go to G6
+- (r) Refusal . . . . . . . . . . . . . h
+
+**G4. Which special features does ..... NEED, but does not have?**
+Interviewer: Do NOT read list.Mark all that apply.
+
+- (a) Ramps or street level entrances . . . . . . . . . l
+- (b) Widened doorways or hallways. . . . . . . . . . l
+- (c) Automatic or easy to open doors. . . . . . . . . l
+- (d) An elevator or lift device . . . . . . . . . . . . . . . l
+- (e) Other feature, specify . . . . . . . . . . . . . . . . . l
+
+- (x) Don’t know . . . . . . . . . . . . . . . . . . . . . . . . . l
+- (r) Refusal. . . . . . . . . . . . . . . . . . . . . . . . . . . . l
+
+**Go to G6**
+**Interviewer: This section is NOT asked if child was born AFTER May 15,1996.**
+PALS 45
+SECTION G — HOME ACCOMMODATION
+
+<!-- page 46 printed="46" read_by="text_layer" -->
+
+PALS 46
+G5. Why doesn’t ..... have these special features that he/she needs to enter or leave his/her residence?
+I will read you a list. Please answer yes or no to each.
+Interviewer: Read list.
+
+- (1) (3) (x) (r)
+
+Yes No DK Ref
+
+- (a) Not covered by insurance . . . . . . . . . . . . . . h h h h
+- (b) Too expensive. . . . . . . . . . . . . . . . . . . . . . . h h h h
+- (c) Landlord/landlady not willing. . . . . . . . . . . . h h h h
+- (d) Only needed occasionally. . . . . . . . . . . . . . h h h h
+- (e) Other reason, specify . . . . . . . . . . . . . . . . . h h h h
+
+**G6. Because of a condition or health problem, does ..... USE any special features, such as special railings,**
+**grab bars or lift devices INSIDE his/her residence?**
+
+- (1) Yes . . . . . . . . . . . . . . . . h
+- (3) No . . . . . . . . . . . . . . . . . h
+- (x) Don’t know . . . . . . . . . . . h Go to G8
+- (r) Refusal . . . . . . . . . . . . . h
+
+**G7. Which special features does ..... use INSIDE his/her residence? I will read you a list. Please answer**
+**yes or no to each.**
+Interviewer: Read list.
+
+- (1) (3) (x) (r)
+
+Yes No DK Ref
+
+- (a) Grab bars or bath lift device in the bathroom . . . . . . . . . . . . . . . . h h h h
+- (b) Lowered counters, sinks or switches in the kitchen. . . . . . . . . . . . h h h h
+- (c) An elevator or lift device. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . h h h h
+- (d) Widened doorways or hallways . . . . . . . . . . . . . . . . . . . . . . . . . . h h h h
+- (e) Automatic or easy to open doors . . . . . . . . . . . . . . . . . . . . . . . . . h h h h
+- (f) Visual or flashing alarms . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . h h h h
+- (g) Audio warning devices. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . h h h h
+- (h) Other feature, specify . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . h h h h
+
+**G8. Does ..... CURRENTLY need any special features INSIDE his/her residence, which he/she does**
+**not have?**
+
+- (1) Yes . . . . . . . . . . . . . . . . h
+- (3) No . . . . . . . . . . . . . . . . . h
+- (x) Don’t know . . . . . . . . . . . h Go to H1 (page 47)
+- (r) Refusal . . . . . . . . . . . . . h
+
+<!-- page 47 printed="47" read_by="text_layer" -->
+
+**G9. Which special features does ..... NEED, but does not have?**
+Interviewer: Do NOT read list.Mark all that apply.
+
+- (a) Grab bars or bath lift device in the bathroom . . . . . . . . . l
+- (b) Lowered counters, sinks or switches in the kitchen . . . . l
+- (c) An elevator or lift device . . . . . . . . . . . . . . . . . . . . . . . . l
+- (d) Widened doorways or hallways . . . . . . . . . . . . . . . . . . . l
+- (e) Automatic or easy to open doors. . . . . . . . . . . . . . . . . . l
+- (f) Visual or flashing alarms. . . . . . . . . . . . . . . . . . . . . . . . l
+- (g) Audio warning devices. . . . . . . . . . . . . . . . . . . . . . . . . . l
+- (h) Other feature, specify . . . . . . . . . . . . . . . . . . . . . . . . . . l
+
+- (x) Don’t know . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . l
+- (r) Refusal. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . l
+
+**G10. Why doesn’t ..... have these special features INSIDE his/her residence? I will read you a list. Please**
+**answer yes or no to each.**
+Interviewer: Read list.
+
+- (1) (3) (x) (r)
+
+Yes No DK Ref
+
+- (a) Not covered by insurance . . . . . . . . . . . . . . h h h h
+- (b) Too expensive. . . . . . . . . . . . . . . . . . . . . . . h h h h
+- (c) Landlord/landlady not willing. . . . . . . . . . . . h h h h
+- (d) Only needed occasionally. . . . . . . . . . . . . . h h h h
+- (e) Other reason, specify . . . . . . . . . . . . . . . . . h h h h
+
+**H1. I would like to ask you about the means of transportation that ..... uses for local travel on his/her own**
+**or with someone else.This includes trips to the doctor, recreational events or any other local trips**
+**under 80 km (50 miles).**
+**Because of .....’s condition, does your car have special features or equipment, such as a lift device or**
+**a large trunk to carry a wheelchair?**
+
+- (1) Yes . . . . . . . . . . . . . . . . h
+- (3) No . . . . . . . . . . . . . . . . . h Go to H3
+- (5) DO NOT OWN A CAR . . h Go to H5
+- (x) Don’t know . . . . . . . . . . . h
+- (r) Refusal . . . . . . . . . . . . . h
+
+**H2. Do you NEED ANY OTHER special features or equipment for your car because of .....’s condition?**
+
+- (1) Yes . . . . . . . . . . . . . . . . h Go to H4
+- (3) No . . . . . . . . . . . . . . . . . h
+- (x) Don’t know . . . . . . . . . . . h Go to H5
+- (r) Refusal . . . . . . . . . . . . . h
+
+**Go to H3**
+**Interviewer: This section is NOT asked if child was born AFTER May 15,1996.**
+**Go to H1 (page 47)**
+PALS 47
+
+## SECTION H — TRANSPORTATION
+
+<!-- page 48 printed="48" read_by="text_layer" -->
+
+PALS 48
+H3. Because of .....’s condition, do you NEED any special features or equipment (for your car)?
+
+- (1) Yes . . . . . . . . . . . . . . . . h
+- (3) No . . . . . . . . . . . . . . . . . h
+- (x) Don’t know . . . . . . . . . . . h Go to H5
+- (r) Refusal . . . . . . . . . . . . . h
+
+**H4. Why do you not have these special features or equipment for your car? I will read you a list. Please**
+**answer yes or no to each.**
+Interviewer: Read list.
+
+- (1) (3) (x) (r)
+
+Yes No DK Ref
+
+- (a) Not covered by insurance. . . . . . . h h h h
+- (b) Too expensive . . . . . . . . . . . . . . . h h h h
+- (c) Only needed occasionally. . . . . . . h h h h
+- (d) Other reason, specify. . . . . . . . . . h h h h
+
+**H5. Some communities have a specialized bus service for people who have difficulty using regular**
+transportation services. (To use this service, people can call ahead and ask to be picked up).
+Is this service available in your area?
+
+- (1) Yes . . . . . . . . . . . . . . . . h Go to H7
+- (3) No . . . . . . . . . . . . . . . . . h
+- (x) Don’t know . . . . . . . . . . . h
+- (r) Refusal . . . . . . . . . . . . . h
+
+**H6. Does ..... NEED this service?**
+
+- (1) Yes . . . . . . . . . . . . . . . . h
+- (3) No . . . . . . . . . . . . . . . . . h
+- (x) Don’t know . . . . . . . . . . . h
+- (r) Refusal . . . . . . . . . . . . . h
+
+**H7. Does ..... use this service?**
+
+- (1) Yes . . . . . . . . . . . . . . . . h
+- (3) No . . . . . . . . . . . . . . . . . h
+- (x) Don’t know . . . . . . . . . . . h Go to H11
+- (r) Refusal . . . . . . . . . . . . . h
+
+**H8. How often does he/she use this service?**
+Interviewer: Read list.Mark one only.
+
+- (1) Almost everyday for at least some part of the year. . . . . h
+- (2) Frequently. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . h
+- (3) Occasionally . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . h
+- (4) Seldom. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . h
+- (x) Don’t know . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . h
+- (r) Refusal. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . h
+
+**H9. IN THE PAST 12 MONTHS, did ..... have any difficulty using this service?**
+
+- (1) Yes . . . . . . . . . . . . . . . . h
+- (3) No . . . . . . . . . . . . . . . . . h
+- (x) Don’t know . . . . . . . . . . . h Go to H11
+- (r) Refusal . . . . . . . . . . . . . h
+
+**Go to H11**
+
+<!-- page 49 printed="49" read_by="text_layer" -->
+
+**H10. What kind of difficulty did he/she have? I will read you a list. Please answer yes or no to each.**
+Interviewer: Read list.
+
+- (1) (3) (x) (r)
+
+Yes No DK Ref
+
+- (a) Service is needed more often than currently offered. . . . . . . . . . . h h h h
+- (b) Impractical scheduling for child’s needs . . . . . . . . . . . . . . . . . . . . h h h h
+- (c) Booking rules don’t allow for last minute arrangements . . . . . . . . h h h h
+- (d) Too expensive . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . h h h h
+- (e) Other reason, specify. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . h h h h
+
+**H11. IN THE PAST 12 MONTHS has ..... had to use a taxi service because of his/her condition or**
+**health problem?**
+
+- (1) Yes . . . . . . . . . . . . . . . . h
+- (3) No . . . . . . . . . . . . . . . . . h
+- (x) Don’t know . . . . . . . . . . . h Go to H13
+- (r) Refusal . . . . . . . . . . . . . h
+
+**H12. How often did he/she use a taxi service?**
+Interviewer: Read list.Mark one only.
+
+- (1) Almost everyday for at least some part of the year. . . . . h
+- (2) Frequently. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . h
+- (3) Occasionally . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . h
+- (4) Seldom. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . h
+- (x) Don’t know . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . h
+- (r) Refusal. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . h
+
+**H13. IN THE PAST 12 MONTHS, for local trips which you must take with ....., have you had to cancel or**
+**reschedule some activities because of problems with transportation services?**
+
+- (1) Yes . . . . . . . . . . . . . . . . h
+- (3) No . . . . . . . . . . . . . . . . . h
+- (x) Don’t know . . . . . . . . . . . h
+- (r) Refusal . . . . . . . . . . . . . h
+
+**H14. IN THE PAST 12 MONTHS, did you or your family have any OUT-OF-POCKET expenses for .....’s**
+**transportation, for example, his/her travel to and from treatment, therapy or other medical or**
+**rehabilitation services?**
+
+- (1) Yes . . . . . . . . . . . . . . . . h
+- (3) No . . . . . . . . . . . . . . . . . h
+- (x) Don’t know . . . . . . . . . . . h Go to I1 (page 50)
+- (r) Refusal . . . . . . . . . . . . . h
+
+**H15. What is your best estimate of the OUT-OF-POCKET or DIRECT costs to you or your family for these**
+**extra expenses?**
+
+$ .00 Range: 1-999999 Go to I1 (page 50)
+
+- (x) Don’t know . . . . . . . . . . . h
+- (r) Refusal . . . . . . . . . . . . . h
+
+PALS 49
+
+<!-- page 50 printed="50" read_by="text_layer" -->
+
+PALS 50
+H16. Which one of the following expense groups is the best estimate of the direct costs to you or your
+family? I will read you a list.
+Interviewer: Read list.Mark one only.
+
+- (1) Less than $100 . . . . . . . . . . . . . . h
+- (2) $100 to less than $200 . . . . . . . . . h
+- (3) $200 to less than $500 . . . . . . . . . h
+- (4) $500 to less than $1000 . . . . . . . . h
+- (5) $1000 to less than $2000 . . . . . . . h
+- (6) $2000 to less than $5000 . . . . . . . h
+- (7) $5000 or more . . . . . . . . . . . . . . . h
+- (x) Don’t know . . . . . . . . . . . . . . . . . . h
+- (r) Refusal . . . . . . . . . . . . . . . . . . . . h
+
+**I1. This question is about insurance coverage. Please include any private, government or employer-paid**
+**plans. Do you have insurance that covers all or part of:**
+Interviewer: Read list.
+
+- (1) (3) (x) (r)
+
+Yes No DK Ref
+
+- (a) the cost of .....’s prescription medications? . . . . . . . . . . . . . . . . . . h h h h
+- (b) the cost of ....’s eye glasses or contact lenses? . . . . . . . . . . . . . . h h h h
+- (c) hospital charges for a private or semi-private room?. . . . . . . . . . . h h h h
+
+**I2. The next few questions are about FEDERAL income tax credits.**
+**Did you claim Child Care Expenses for ..... with your 2000 income tax return?**
+
+- (1) Yes . . . . . . . . . . . . . . . . h
+- (3) No . . . . . . . . . . . . . . . . . h
+- (x) Don’t know . . . . . . . . . . . h Go to I4
+- (r) Refusal . . . . . . . . . . . . . h
+
+**I3. Did you receive it?**
+
+- (1) Yes . . . . . . . . . . . . . . . . h
+- (3) No . . . . . . . . . . . . . . . . . h
+- (x) Don’t know . . . . . . . . . . . h
+- (r) Refusal . . . . . . . . . . . . . h
+
+**I4. Did you claim Medical Expenses for ..... with your 2000 income tax return?**
+
+- (1) Yes . . . . . . . . . . . . . . . . h
+- (3) No . . . . . . . . . . . . . . . . . h
+- (x) Don’t know . . . . . . . . . . . h Go to I6
+- (r) Refusal . . . . . . . . . . . . . h
+
+**I5. Did you receive it?**
+
+- (1) Yes . . . . . . . . . . . . . . . . h
+- (3) No . . . . . . . . . . . . . . . . . h
+- (x) Don’t know . . . . . . . . . . . h
+- (r) Refusal . . . . . . . . . . . . . h
+
+## SECTION I — ECONOMIC CHARACTERISTICS
+
+<!-- page 51 printed="51" read_by="text_layer" -->
+
+**I6. Did you claim a Disability Tax Credit for ...... with your 2000 income tax return?**
+
+- (1) Yes . . . . . . . . . . . . . . . . h
+- (3) No . . . . . . . . . . . . . . . . . h Go to I8
+- (x) Don’t know . . . . . . . . . . . h
+- (r) Refusal . . . . . . . . . . . . . h
+
+**I7. Did you receive it?**
+
+- (1) Yes . . . . . . . . . . . . . . . . h
+- (3) No . . . . . . . . . . . . . . . . . h
+- (x) Don’t know . . . . . . . . . . . h
+- (r) Refusal . . . . . . . . . . . . . h
+
+**I8. Why did you not claim the Disability Tax Credit?**
+Interviewer: Read list.
+
+- (1) (3) (x) (r)
+
+Yes No DK Ref
+
+- (a) You did not know it existed . . . . . . . . . . . . . . . . . . . . . . h Go to I9 h h h
+- (b) You did not think that .....would meet the eligibility
+
+requirements. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . h h h h
+
+- (c) You were not able to obtain the disability certificate
+
+(Form T2201) from your doctor . . . . . . . . . . . . . . . . . . . h h h h
+
+- (d) Other reason, specify . . . . . . . . . . . . . . . . . . . . . . . . . . h h h h
+
+**I9. For the year ending December 31, 2000, what is your best estimate of the total income, before taxes**
+**and deductions, of all household members, including yourself, from all sources?**
+
+$ .00 . . . . . . . . . . . . .
+Go to Follow-up Question (page 52)
+
+- (a) No income or loss . . . . . . . . . . . . h
+- (x) Don’t know . . . . . . . . . . . . . . . . . . h
+- (r) Refusal . . . . . . . . . . . . . . . . . . . . h
+
+**I10. Can you estimate in which of the following groups your HOUSEHOLD INCOME fell? I will read you**
+**a list.**
+Interviewer: Read list.Mark one only.
+
+- (1) $1 to less than $5000 . . . . . . . . . h
+- (2) $5,000 to less than $10,000 . . . . h
+- (3) $10,000 to less than $15,000 . . . h
+- (4) $15,000 to less than $20,000 . . . h
+- (5) $20,000 to less than $30,000 . . . h
+- (6) $30,000 to less than $40,000 . . . h
+
+**Go to Follow-up Question (page 52)**
+
+- (7) $40,000 to less than $50,000 . . . h
+- (8) $50,000 to less than $60,000 . . . h
+- (9) $60,000 to less than $80,000 . . . h
+- (10) $80,000 or more . . . . . . . . . . . . . h
+- (x) Don’t know . . . . . . . . . . . . . . . . . h
+- (r) Refusal . . . . . . . . . . . . . . . . . . . . h
+
+**Go to I9**
+**Go to I9**
+PALS 51
+
+<!-- page 52 read_by="text_layer" -->
+
+**That’s the end of our questions. Someone from Statistics Canada may contact you (.....’s parent/guardian) in a**
+**year or two to find out more about ..... . In case there are difficulties reaching you (them), could you please**
+**give me the name, address and telephone number of a family member or friend we could contact? We will**
+**only call this person if you move (the parent/guardian moves) and then only to obtain the new address or**
+**telephone number.**
+
+- (1) Yes . . . . . . . . . . h Go to Name and Address of Other Contact
+- (3) No . . . . . . . . . . . h
+- (r) Refusal . . . . . . . h
+
+## END OF INTERVIEW
+
+## THANK RESPONDENT
+
+**Question No.**
+**Go to End of Interview**
+
+Province or Territory
+Initial(s)
+Number and Street or lot and concession or exact location
+City, Town, Village or Municipality
+Area code Telephone No.
+Telephone:
+Address:
+Postal Code
+First name(s) Family name
+Apt.No.
+
+—
+COMMENTS
+
+Page 52
+PALS 52
+FOLLOW-UP
+
+**Name and Address of Other Contact:**
+
+<!-- page 53 read_by="vision" -->
+
+PALS 53
+
+## RECORD OF CALLS AND VISITS
+
+| Visit/call number | Date | Time | Observations |
+|---|---|---|---|
+|  |  |  |  |
+|  |  |  |  |
+|  |  |  |  |
+|  |  |  |  |
+|  |  |  |  |
+|  |  |  |  |
+|  |  |  |  |
+|  |  |  |  |
+
+## RECORD OF INTERVIEWS
+
+| Interview number | Date | Month | Began | Ended |
+|---|---|---|---|---|
+| 1 | ___ ___ | ___ ___ | ___ ___ : ___ ___ | ___ ___ : ___ ___ |
+| 2 | ___ ___ | ___ ___ | ___ ___ : ___ ___ | ___ ___ : ___ ___ |
+| 3 | ___ ___ | ___ ___ | ___ ___ : ___ ___ | ___ ___ : ___ ___ |
+| 4 | ___ ___ | ___ ___ | ___ ___ : ___ ___ | ___ ___ : ___ ___ |
+
+## FIELD STATUS CODE
+
+___ ___  ___ ___  ___ ___  ___ ___  ___ ___  ___ ___  ___ ___  ___ ___  ___ ___  ___ ___  ___ ___  ___ ___
+
+## FINAL STATUS CODE
+
+- 00 Complete
+- 01 Partial
+- 20 Duplicate (already interviewed)
+- 28 Death of the child
+- 50 Refusal
+- 52 Parent/Guardian unable to respond — Proxy not available
+- 53 Parent/Guardian does not speak English or French — Proxy not available
+- 54 Impossible to contact/recontact parent/guardian
+- 55 Impossible to trace parent/guardian
+- 56 Parent/Guardian absent for duration of survey — Proxy not available
+- 57 Child no longer living in Canada
+
+___ ___
+
+| Interviewer's Name (Please print) | Interviewer's Telephone Number | Interviewer's Identification Number |
+|---|---|---|
+|  | ___ ___ ___ ___ ___ ___ ___ ___ ___ ___ | ___ ___ ___ ___ ___ ___ ___ |
+
+Page 53
+
+<!-- page 54 printed="54" read_by="text_layer" -->
+
+<!-- page 55 printed="55" read_by="text_layer" -->
+
+<!-- page 56 read_by="vision" -->
+
+PALS 56
+
+## PROFILE SHEET
+
+**Case Identification Number:** ____________________________
+
+## ACTIVITY LIMITATIONS
+
+| SECTION | ACTIVITY/CONDITION | LIMITATION | USE aid | NEED aid |
+|---|---|---|---|---|
+| A | General | ___ | | |
+| B | Hearing | ___ | ___ | ___ |
+| | Seeing | ___ | ___ | ___ |
+| | Communicating | ___ | ___ | ___ |
+| | Walking | ___ | ___ | ___ |
+| | Hands/Fingers | ___ | ___ | ___ |
+| | Learning | ___ | ___ | ___ |
+| | Developmental | ___ | | |
+| | Emotional/Psychological | ___ | | |
+| | Chronic/Other | ___ | ___ | ___ |
+
+Page 56
+
+<!-- page 57 printed="57" read_by="text_layer" -->
+
+<!-- page 58 read_by="vision" -->
