@@ -54,11 +54,44 @@ showcase the language's capabilities (and double as the test suite). Highlights:
 [`evaluation/`](evaluation/) evaluates QML against **real-world, publicly
 available questionnaires** rather than toy inputs — established instruments such
 as **AUDIT, BRFSS, CCHS, DHS, NHIS** and Malaria Surveillance, alongside
-national censuses and sociology/education surveys, each converted to QML and
-organized by domain. The curated source catalog — provenance and download links
-across 13 domains (health, demographics, sociology, market research, compliance,
+national censuses and sociology/education surveys, organized by domain. The
+curated source catalog — provenance and download links across 13 domains (health, demographics, sociology, market research, compliance,
 education, safety-critical, legal, infrastructure, and more) — is in
 [`evaluation/questionnaire_sources.md`](evaluation/questionnaire_sources.md).
+
+Twelve of those instruments (ACS, BRFSS, ESS12, GSS 1999 Victimization, GSS
+Time Use, LFS, NLSCY, NPHS, PALS, SAEP, SHS, SLID) were converted by
+**Askalot's questionnaire import**. Each one keeps what the import produced: the
+source as the import read it (`<NAME>.md`), its inventory
+(`<NAME>.inventory.json`) and the questionnaire (`<NAME>.qml`). The other folders
+hold the source files only, apart from CCHS 2005, an earlier hand conversion
+(its 303 pages are over the import's 300-page limit).
+[`evaluation/CLAUDE.md`](evaluation/CLAUDE.md) describes each file.
+
+## Converting a questionnaire into QML
+
+This repository holds the language, its validator and the corpus. It does not
+convert questionnaires. To turn a printed questionnaire (a PDF or a Markdown
+file) into QML, use Askalot's import:
+
+- **In Askalot** ([askalot.io](https://askalot.io)): import the file into a
+  project. The import reads every page (text layer, or vision for scanned and
+  form-like pages), builds a question inventory, writes the QML, and checks it
+  with the same Z3 validator this repository ships. The result is a draft
+  questionnaire you can review, edit and publish.
+- **From an AI agent** — the [askalot-plugin](https://github.com/askalot-io/askalot-plugin)
+  connects an agent to the same Askalot tools, the import included:
+  - **Claude Code**: install the plugin (`/plugin marketplace add askalot-io/askalot-plugin`,
+    then `/plugin install askalot@askalot`). It brings the MCP server plus
+    Askalot's skills for designing and validating QML.
+  - **Claude Desktop or Claude.ai**: these do not load plugins. Add Askalot's
+    MCP server as a custom connector instead (Settings → Connectors → Add
+    custom connector, URL `https://portor.<tenant>.askalot.io/mcp`). This gives
+    the same tools, without the skills. Walkthrough:
+    [docs.askalot.io → Integrations → Claude](https://docs.askalot.io/integrations/claude/).
+
+Either way the conversion runs in Askalot, under your account and its AI
+provider settings.
 
 ## Module Structure
 
