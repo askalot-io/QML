@@ -1,211 +1,2255 @@
-# SLID 1994 Preliminary Interview: Declarative Conversion Analysis
+---
+askalot_import: 1
+source_file: SLID_Labour_Income.pdf
+kind: pdf
+pages: 60
+vision_pages: [2, 4, 6, 52, 54, 55, 56, 57, 58, 59, 60]
+assumed_blank: false
+normalizer:
+  pages: 60
+  pages_by_route: {text: 49, hard: 11}
+  route_reasons: {no_text: 11}
+  answers_discarded: 0
+---
+
+<!-- page 1 read_by="text_layer" -->
+
+**Catalogue No. 94-10**
+
+**1994 PRELIMINARY INTERVIEW QUESTIONNAIRE**
+
+June 1994
+
+Alison Hale, Household Surveys Division
+Debbie Lutz, Household Surveys Division
+
+- ___ Mike Brule, Household Surveys Division
+
+The SLID Research Paper Series is intended to document detailed studies and
+important decisions for the Survey of Labour and Income Dynamics. These
+research papers are available in English and French. To obtain a summary
+description of available documents or to obtain a copy of any, please contact Philip
+Giles, Manager, SLID Research Paper Series, by mail at 11-D8 Jean Talon
+Building, Statistics Canada, Ottawa, Ontario, CANADA K1A 0T6, by
+INTERNET (GILES@STATCAN.CA), by telephone (613) 951-2891, or by fax
+
+- (613) 951-3253.
+
+\___
+\___
+
+<!-- page 2 read_by="vision" -->
+
+<!-- page 3 read_by="text_layer" -->
+
+**EXECUTIVE SUMMARY**
+
+A Preliminary Interview is conducted for all respondents entering the SLID
+sample. For the majority of respondents (the longitudinal respondents), this occurs
+when a new panel of respondents is introduced. However, all persons living with a
+longitudinal respondent are also interviewed for SLID. Thus, some Preliminary
+Interviews are conducted while the annual labour and income interviews are
+conducted.
+
+The Preliminary Interview for longitudinal respondents in Panel 1 were conducted
+using traditional "paper-and-pencil" collection. All subsequent Preliminary
+Interviews are collected using computer-assisted interviewing (CAI), which
+requires no "paper" questionnaire for collecting the data. The purpose of this
+document is to present the questions, answers and question flow for the CAI
+Preliminary Interview. These questions are identical to the "paper" questionnaire
+used for the longitudinal respondents.
+\___
+\___
+
+<!-- page 4 read_by="vision" -->
+
+<!-- page 5 read_by="text_layer" -->
+
+**TABLE OF CONTENTS**
+Page
+1. INTRODUCTION 1
+2. HOW TO READ THIS DOCUMENT 3
+3. EMPPRE MODULE 5
+4. EXPRE MODULE 21
+5. DEMPRE MODULE 26
+6. EDUPRE MODULE 37
+APPENDIX 1: FLOWCHARTS 47
+
+\___
+\___
+\___
+
+<!-- page 6 read_by="vision" -->
+
+<!-- page 7 read_by="text_layer" -->
+
+**1. INTRODUCTION**
+
+A Preliminary Interview is conducted for all respondents entering the SLID
+sample. For the majority of respondents (the longitudinal respondents), this occurs
+when a new panel of respondents is introduced. However, all persons living with a
+longitudinal respondent are also interviewed for SLID. Thus, some Preliminary
+Interviews are conducted concurrently with the annual labour and income
+interviews.
+
+The Preliminary Interview for longitudinal respondents in Panel 1 were conducted
+using traditional "paper-and-pencil" collection. This questionnaire is discussed in
+SLID Research Paper 92-07, Objectives and Content of the Preliminary
+Interview. All subsequent Preliminary Interviews are collected using computer-
+assisted interviewing (CAI), which requires no "paper" questionnaire for collecting
+the data. The purpose of this document is to present the questions, answers and
+question flow for the CAI Preliminary Interview. These questions are identical to
+the "paper" questionnaire used for the longitudinal respondents. However, not all
+the Preliminary Interview questions were necessary on the "paper" questionnaire.
+This questionnaire was used as a supplement to the Labour Force Survey in
+January 1993. Those questions on the SLID Preliminary Interview which were
+also on the LFS questionnaire were not necessary on the "paper" questionnaire.
+
+As mentioned, this document is a written approximation of the CAI interview, or
+the questionnaire. The CAI process is as follows:
+a) A question appearing on the computer screen is read aloud to the respondent.
+b) The respondent's answer is directly entered by the interviewer.
+c) Based on the answer given, and/or age or other flow criterion, the computer
+determines the next question to be asked and displays it on the screen.
+\___
+\___
+\___
+
+<!-- page 8 read_by="text_layer" -->
+
+- 2 -
+The CAI Preliminary Interview has four main sections: EMPPRE, EXPRE,
+DEMPRE, AND EDUPRE. The topic of each section is:
+! EMPPRE: Current or recent work activity - Information on up to two
+employers is collected
+! EXPRE: Work experience
+! DEMPRE: Basic demographics, marital history, birth history, mother
+tongue, place of birth, ethnic origin, parents' level of
+education
+! EDUPRE: Educational attainment and current educational activity
+
+Flowcharts presenting the flow of the questions are included as Appendix 1. The
+following chart presents the overall flow of modules for the Preliminary Interview.
+
+\___
+\___
+\___
+
+<!-- page 9 read_by="text_layer" -->
+
+- 3 -
+2. HOW TO READ THIS DOCUMENT
+
+Question numbers: For each section, the question numbers generally refer to the
+actual numbers used in the software and which appear on an interviewer's
+computer screen. Text in capital letters is read, as worded, by the interviewer.
+Those questions in lower case with "Interviewer:" at the beginning are questions to
+be answered directly by the interviewer without asking the respondent. Those
+questions with "Internal logic:" at the beginning are questions answered directly by
+the computer. They are invisible to the interviewer, and are required to direct
+question flow.
+
+Pre-fill items: These are items specific to each respondent's interview. The
+software adds the relevant information into the question, making it simply a matter
+of reading for the interviewer. Prefill items (given in square brackets [ ]) include:
+[respondent] - This is the first and last name of the household member that
+the questions refer to. This is not necessarily the person who is talking to
+the interviewer.
+[current year] - This is the obvious, 1994 in the case of the first annual
+interviews.
+[reference year] - This is the year for which the information is collected,
+1993 in the case of the first annual interviews.
+
+[age] - This is the respondent's age, in years.
+[response given in ...] - These prefill items contain a question name from
+earlier in the Preliminary Interview. The response given to this previous
+question is used as part of the current question.
+\___
+
+<!-- page 10 read_by="text_layer" -->
+
+- 4 -
+Headers: For each question, important information is noted at the top of the
+screen. In this document, this information is given at the beginning of each section
+description.
+
+Ranges: Hard ranges are specified for some of the questions. The hard range gives
+the highest and lowest acceptable response values. The system will not accept a
+number outside the range.
+A soft range specifies an upper and lower limit which if exceeded will result in a
+probe to confirm that the amount entered is correct. If it is correct, the entry is
+allowed as long as it is not outside the hard range. No soft ranges exist for the
+Preliminary Interview questions.
+
+Dates: All dates are entered by number in boxes, using the DD/MM/YY format.
+When a numeric value for month (1 to 12) is entered, the appropriate text flashes.
+For example, if the interviewer enters a date 26/09/93, the screen shows: 26 09
+September 1993.
+
+Function Keys: Interviewers have a number of keys on the computer (function
+keys) which are available to provide them with the following options.
+
+Comment - gives the interviewer the opportunity to add additional
+information in a note that will be attached to the data for that question.
+These comments are often useful during data processing.
+Don't know: to indicate if the respondent doesn't know the answer to the
+question. This answer is shown in this paper as DK.
+Refusal - to indicate if the respondent refuses to answer the question. This
+response is shown in the paper as R.
+\___
+\___
+
+<!-- page 11 read_by="text_layer" -->
+
+- 5 -
+Options - gives the interviewer access to some optional functions or
+information rosters. The choices available are: Household list - name, age,
+sex, marital status of each household member.
+
+**3. EMPPRE MODULE**
+
+HEADER: Employer Name (when appropriate: Questions ending in J1 refer to
+1st employer; those ending in J2 refer to 2nd employer))
+
+*** START-EMPPRE Internal logic: [age] = 15 or more?**
+Yes Go to EMPPRE-Q1
+No Go to EXPRE-Q1A
+
+**EMPPRE-Q1 DID [respondent] WORK AT A JOB OR BUSINESS**
+**AT THE BEGINNING OF JANUARY OF THIS**
+**YEAR?**
+**Interviewer: Enter a job regardless of the number of**
+**hours worked.**
+Yes Go to EMPPRE-J1.Q1
+No Go to EMPPRE-Q2
+
+- ___ Permanently
+
+unable to work Go to EMPPRE-Q5
+DK/R Go to EMPPRE-N12
+
+**EMPPRE-Q2 DID [respondent] HAVE A JOB OR BUSINESS AT**
+**WHICH HE/SHE DID NOT WORK AT THE**
+**BEGINNING OF JANUARY?**
+
+Yes Go to EMPPRE-Q3
+No/DK/R Go to EMPPRE-Q5
+\___
+
+<!-- page 12 read_by="text_layer" -->
+
+- 6 -
+EMPPRE-Q3 WHY WAS [respondent] ABSENT FROM WORK AT
+THE BEGINNING OF JANUARY?
+
+Own illness or disability
+Pregnancy
+Caring for own children
+Caring for elder relatives
+Other personal or family responsibilities
+School or educational leave
+Labour dispute
+Temporary layoff due to seasonal conditions
+Temporary layoff - non seasonal
+Unpaid or partially paid vacation
+Other (Specify)
+
+If answered "School or educational leave" go to EMPPRE-
+Q5. Otherwise, go to EMPPRE-Q4.
+
+**EMPPRE-Q4 DID [respondent] RECEIVE ANY PAY FROM**
+**HIS/HER EMPLOYER FOR THIS ABSENCE?**
+
+Yes/No/DK/R
+
+*** EMPPRE-N4 Internal logic: EMPPRE-Q3=Temporary Layoff**
+Yes Go to EMPPRE-Q8
+Otherwise go to EMPPRE-J1.Q1
+\___
+\___
+
+<!-- page 13 read_by="text_layer" -->
+
+- 7 -
+EMPPRE-Q5 DID [respondent] EVER WORK AT A JOB OR
+BUSINESS?
+
+Yes/DK/R Go to EMPPRE-Q6
+No Go to EMPPRE-N7
+
+**EMPPRE-Q6 WHEN DID [respondent] LAST WORK AT A JOB OR**
+**BUSINESS?**
+
+**Hard Range:**
+Maximum: current year
+Minimum: current year-(age-10)
+
+*** EMPPRE-N6 Internal logic: Date in EMPPRE-Q6 is before January**
+**[current year] minus 5 and EMPPRE-Q1=permanently**
+**unable to work?**
+
+Yes Go to EMPPRE-N12
+Otherwise Go to EMPPRE-Q7.
+
+**EMPPRE-Q7 WHAT WAS [respondent]'S MAIN REASON FOR**
+**LEAVING THIS JOB?**
+Own illness, disability
+Caring for own children
+Caring for elder relatives
+Other personal or family responsibilities
+Going to school
+Quit job for no specific reason
+Lost job or laid off job - Paid workers only
+\___
+
+<!-- page 14 read_by="text_layer" -->
+
+- 8 -
+Changed residence
+Dissatisfied with job
+Retired
+Other - Specify
+
+*** EMPPRE-N7 Internal logic: EMPPRE-Q1= permanently unable to**
+**work?**
+
+Yes Go to EMPPRE-N12
+Otherwise Go to EMPPRE-Q8.
+
+**EMPPRE-Q8 DID [respondent] LOOK FOR WORK IN JANUARY**
+**OF THIS YEAR?**
+
+Yes Go to EMPPRE-Q9
+No/DK/R Go to EMPPRE-Q10
+
+**EMPPRE-Q9 WHAT DID [respondent] DO TO FIND WORK?**
+
+Contacted employer directly
+
+- ___ Friend or relative
+
+Placed or answered newspaper ad
+Employment agency
+Referral from another employer
+Other - specify
+\___
+
+<!-- page 15 read_by="text_layer" -->
+
+- 9 -
+* EMPPRE-N11A Internal logic: EMPPRE-Q5=no (never worked at a job
+or business) or dates last worked (EMPPRE-Q6) is
+before January [reference year]?
+
+Yes Go to EMPPRE-N12
+Otherwise Go to EMPPRE-J1.Q1A.
+
+**EMPPRE-Q10 DID [respondent] LOOK FOR WORK AT ANY TIME**
+**IN THE 6 MONTHS BEFORE THAT?**
+
+Yes/DK/R Go to EMPPRE-Q11
+No Go to EMPPRE-N11A
+
+**EMPPRE-Q11 WHAT WERE THE REASONS [respondent] DID NOT**
+**LOOK FOR WORK IN JANUARY OF THIS YEAR?**
+**Interviewer: If only answered Own illness or Personal**
+**responsibilities, probe for other reasons.**
+
+Own illness, disability
+Caring for own children
+
+- ___ Caring for elder relatives
+
+Other personal or family responsibilities
+Going to school
+No longer interested in finding work
+Waiting for recall (to former job)
+Has found new job
+Waiting for replies from employers
+
+<!-- page 16 read_by="text_layer" -->
+
+- 10 -
+Believes no work available (in area, or suited to skills)
+No reason given
+Other - Specify
+
+Go to EMPPRE-N11A
+
+*** EMPPRE-N12 Internal logic: [age] is greater than 64 years?**
+
+Yes Go to EXPRE-Q1
+Otherwise Go to EMPPRE-Q12.
+
+**EMPPRE-Q12 IN JANUARY OF THIS YEAR, WAS [respondent]**
+**ATTENDING A SCHOOL, COLLEGE OR**
+**UNIVERSITY?**
+
+Yes Go to EMPPRE-Q13
+No/DK/R Go to EXPRE-Q1A
+
+**EMPPRE-Q13 WAS [respondent] ENROLLED AS A FULL-TIME OR**
+**PART-TIME STUDENT?**
+
+Full-time student
+Part-time student
+Some of each
+
+Go to EXPRE-Q1A
+\___
+\___
+\___
+
+<!-- page 17 read_by="text_layer" -->
+
+- 11 -
+EMPPRE-J1.Q1 I WOULD LIKE TO ASK A FEW QUESTIONS
+ABOUT [respondent]'S MAIN JOB OR BUSINESS IN
+EARLY JANUARY. FOR WHOM DID [respondent]
+WORK? (name of business, government department, or
+agency, or person)
+
+Go to EMPPRE-J1.Q2
+
+**EMPPRE-J1.Q1A I WOULD LIKE TO ASK A FEW QUESTIONS**
+**ABOUT THE LAST JOB OR BUSINESS HELD BY**
+**[respondent] IN [reference year]. FOR WHOM DID**
+[respondent] WORK? (name of business, government
+department, or agency, or person)
+
+**EMPPRE-J1.Q2 WHEN WAS THE FIRST TIME [respondent]**
+**STARTED WORKING FOR THIS EMPLOYER?**
+
+**Hard range:**
+Maximum: [current year]
+Minimum: [current year]-[age]-10
+
+*** EMPPRE-J1.N2 Internal logic: Date first started working (EMPPRE-**
+**J1.Q2) is before date last worked (EMPPRE-Q6)?**
+
+Yes Go to EMPPRE-J1.Q3
+No Go to EMPPRE-J1.Q2A
+Otherwise Go to EMPPRE-J1.Q3
+\___
+\___
+
+<!-- page 18 read_by="text_layer" -->
+
+- 12 -
+EMPPRE-J1.Q2A Interviewer: Date first started working for this
+employer (EMPPRE-J1.Q2) is after the date last
+worked (EMPPRE-Q6). Go back to EMPPRE-Q6
+and/or EMPPRE-J1.Q2 to correct inconsistencies, or
+press &lt;Enter> to continue.
+
+**EMPPRE-J1.Q3 WHAT KIND OF BUSINESS, INDUSTRY OR**
+SERVICE WAS THIS? (e.g., federal government, canning
+industry, forestry service)
+
+**EMPPRE-J1.Q4 WHAT KIND OF WORK WAS [respondent] DOING?**
+(e.g., office clerk, factory worker, forestry technician)
+
+**EMPPRE-J1.Q5 WHAT WERE [respondent]'S MOST IMPORTANT**
+ACTIVITIES OR DUTIES? (e.g., filing documents,
+drying vegetables, forest examiner)
+
+**EMPPRE-J1.Q6 IN THIS JOB, WAS [respondent] A PAID WORKER,**
+**SELF-EMPLOYED OR AN UNPAID FAMILY**
+**WORKER?**
+
+Paid worker
+Unpaid family worker
+Self-employed Incorporated - With paid help
+Self-employed Incorporated - No paid help
+Self-employed Unincorporated - With paid help
+Self-employed Unincorporated - No paid help
+
+If paid worker or DK/R Go to EMPPRE-J1.Q7A.
+Otherwise Go to EMPPRE-N12
+\___
+
+<!-- page 19 read_by="text_layer" -->
+
+- 13 -
+EMPPRE-J1.Q7A IN WHICH MONTHS OF [reference year] DID
+[respondent] WORK AT THIS JOB?
+
+All months/DK/R Go to EMPPRE-J1.Q8
+Started in [current year] Go to EMPPRE-N12
+Specify months Go to EMPPRE-J1.Q7B
+Last worked Go to EMPPRE-J1-Q7B
+before [reference year]
+
+**EMPPRE-J1.Q7B Interviewer: Specify months [respondent] worked in**
+**[reference year]**
+
+January
+February
+March
+April
+May
+June
+July
+August
+
+- ___ September
+
+October
+November
+December
+
+**EMPPRE-J1.Q8 AT THIS JOB, DID [respondent] USUALLY WORK**
+**EVERY WEEK OF THE MONTH?**
+
+Yes/DK/R Go to EMPPRE-J1.Q10
+No Go to EMPPRE-J1.Q9
+\___
+\___
+
+<!-- page 20 read_by="text_layer" -->
+
+- 14 -
+EMPPRE-J1.Q9 HOW MANY WEEKS DID [respondent] USUALLY
+WORK EACH MONTH?
+
+**Hard range:**
+Maximum: 3
+Minimum: 1
+
+**EMPPRE-J1.Q10 HOW MANY HOURS PER WEEK DID [respondent]**
+**USUALLY GET PAID?**
+
+**Hard range:**
+Maximum: 99.9
+Minimum: 1.0
+
+**EMPPRE-J1.Q11A AT THIS JOB, WHAT WAS [respondent]'S WAGE**
+**OR SALARY BEFORE TAXES AND DEDUCTIONS?**
+**(As of January of this year or when they last worked for**
+**this employer in [reference year]).**
+
+**Hard range:**
+
+- ___ Maximum: 999999.99
+
+Minimum: 0.01
+
+**EMPPRE-J1.Q11B Interviewer: Select the appropriate category for**
+**reported wage or salary**
+
+Hourly
+Weekly
+Every two weeks/twice a month
+\___
+
+<!-- page 21 read_by="text_layer" -->
+
+- 15 -
+Monthly
+Yearly
+Other (specify)
+
+If answered Other(specify) go to EMPPRE-J1.Q12,
+otherwise go to EMPPRE-J1.Q13.
+
+**EMPPRE-J1.Q12 WHAT WERE [respondent]'S TOTAL EARNINGS**
+**FROM THIS JOB IN [reference year]?**
+
+**Hard range:**
+Maximum: 999999.99
+Minimum: 0.01
+
+**EMPPRE-J1.Q13 DID [respondent] RECEIVE ANY COMMISSIONS,**
+**TIPS, BONUSES OR PAID OVERTIME FROM THIS**
+**JOB IN [reference year]?**
+
+Yes Go to EMPPRE-J1.Q14
+No/DK/R Go to EMPPRE-J2.Q1
+
+**EMPPRE-J1.Q14 WERE THESE COMMISSIONS, TIPS, BONUSES OR**
+**PAID OVERTIME INCLUDED IN THE AMOUNT**
+**JUST REPORTED?**
+
+Yes/DK/R Go to EMPPRE-J2.Q1
+No Go to EMPPRE-J1.Q15
+\___
+\___
+
+<!-- page 22 read_by="text_layer" -->
+
+- 16 -
+EMPPRE-J1.Q15 WHAT WERE [respondent]'S TOTAL EARNINGS IN
+[reference year] FROM THESE COMMISSIONS,
+TIPS, BONUSES, OR PAID OVERTIME?
+
+**Hard range:**
+Maximum: 999999.99
+Minimum: 0.01
+
+Go to EMPPRE-N12
+
+**EMPPRE-J2.Q1 DID [respondent] HAVE MORE THAN ONE JOB OR**
+**BUSINESS IN JANUARY OF THIS YEAR?**
+
+Yes Go to EMPPRE-J2.Q2
+No/DK/R Go to EMPPRE-N12
+
+**EMPPRE-J2.Q2 I WOULD LIKE TO ASK A FEW QUESTIONS**
+**ABOUT [respondent]'S OTHER JOB OR BUSINESS**
+**IN JANUARY OF THIS YEAR. FOR WHOM DID**
+[respondent] WORK? (name of business, government
+
+- ___ department, or agency, or person)
+
+**EMPPRE-J2.Q3 WHEN DID [respondent] FIRST START WORKING**
+**FOR THIS EMPLOYER?**
+
+**Hard range:**
+Maximum: [current year]
+Minimum: [current year]-[age]-10
+\___
+\___
+
+<!-- page 23 read_by="text_layer" -->
+
+- 17 -
+EMPPRE-J2.Q4 WHAT KIND OF BUSINESS, INDUSTRY OR
+SERVICE WAS THIS? (e.g., federal government, canning
+industry, forestry services)
+
+**EMPPRE-J2.Q5 WHAT KIND OF WORK WAS [respondent] DOING?**
+(e.g., office clerk, factory worker, forestry technician)
+
+**EMPPRE-J2.Q6 WHAT WERE [respondent]'S MOST IMPORTANT**
+ACTIVITIES OR DUTIES? (e.g., filing documents,
+drying vegetables, forest examiner)
+
+**EMPPRE-J2.Q7 IN THIS JOB, WAS [respondent] A PAID WORKER,**
+**SELF-EMPLOYED OR AN UNPAID FAMILY**
+**WORKER?**
+
+Paid worker
+Unpaid family worker
+Self-employed Incorporated - With paid help
+Self-employed Incorporated - No paid help
+Self-employed Unincorporated - With paid help
+
+- ___ Self-employed Unincorporated - No paid help
+
+If paid worker or DK/R Go to EMPPRE-J2.Q8A
+Otherwise Go to EMPPRE-Q12.
+
+**EMPPRE-J2.Q8A IN WHICH MONTHS OF [reference year] DID**
+**[respondent] WORK AT THIS JOB?**
+
+All months/DK/R Go to EMPPRE-J2.Q9
+\___
+
+<!-- page 24 read_by="text_layer" -->
+
+- 18 -
+Started in [current year] Go to EMPPRE-N12
+Specify months Go to EMPPRE-J2.Q8B
+Last worked Go to EMPPRE-J2.Q8B
+before [reference year]
+
+**EMPPRE-J2.Q8B Interviewer: Specify months [respondent] worked in**
+**[reference year]?**
+
+January
+February
+March
+April
+May
+June
+July
+August
+September
+October
+November
+December
 
-**Source:** Statistics Canada, Survey of Labour and Income Dynamics, 1994 Preliminary Interview Questionnaire (Catalogue No. 94-10), 46 pages + flowcharts
-**QML Files:** `evaluation/statcan-questionnaires/SLID_Labour_Income/`
-**Date:** 2026-03-29
+**EMPPRE-J2.Q9 AT THIS JOB, DID [respondent] USUALLY WORK**
+**EVERY WEEK OF THE MONTH?**
 
-## Objective
+Yes/DK/R Go to EMPPRE-J2.Q11
+No Go to EMPPRE-J2.Q10
+\___
+\___
+\___
 
-Transform the SLID 1994 Preliminary Interview questionnaire (46 pages, CATI-based with imperative GOTO routing) into a declarative QML representation, then run the Z3-based formal validator to detect structural problems hidden in the imperative version.
+<!-- page 25 read_by="text_layer" -->
 
-## Methodology
+- 19 -
+EMPPRE-J2.Q10 HOW MANY WEEKS DID [respondent] USUALLY
+WORK EACH MONTH?
 
-1. **PDF preprocessing**: Text extracted via `pdftotext -layout -nodiag` to produce `SLID_Labour_Income_ocr.md` (1670 lines)
-2. **Question inventory**: 150 nodes catalogued across 4 modules (EMPPRE, EXPRE, DEMPRE, EDUPRE) — 121 substantive questions, 29 filters/checks/constraints
-3. **Declarative QML conversion**: 4 section files with extern variable handover for age, sex, marital_status, current_year, reference_year. Complex routing converted using direct outcome references to avoid dependency cycles
-4. **Formal validation**: Z3 SMT solver run on all 4 files at Level 2 (per-item classification, global satisfiability, dependency loop detection, path-based reachability)
+**Hard range:**
+Maximum: 3
+Minimum: 1
 
-## Survey Architecture Overview
+**EMPPRE-J2.Q11 HOW MANY HOURS PER WEEK DID [respondent]**
+**USUALLY GET PAID?**
 
-| # | File | Block(s) | Items | Source Module | Purpose |
-|---|------|----------|-------|---------------|---------|
-| 01 | `01_employment_status.qml` | b_emppre_main, b_emppre_job1, b_emppre_job2 | 54 | EMPPRE | Current work status, job search, school attendance, employer details (2 jobs) |
-| 02 | `02_work_experience.qml` | b_expre | 14 | EXPRE | Full-time work history, years working |
-| 03 | `03_demographics.qml` | b_marital_history, b_birth_history, b_background | 26 | DEMPRE | Marital history, birth history (female 18+), language/ethnicity |
-| 04 | `04_education.qml` | b_edupre | 22 | EDUPRE | Elementary through university education, parents' education |
+**Hard range:**
+Maximum: 99.9
+Minimum: 1.0
 
-## Semantic Equivalence
+**EMPPRE-J2.Q12A AT THIS JOB, WHAT WAS [respondent]'S WAGE**
+**OR SALARY BEFORE TAXES AND DEDUCTIONS?**
 
-| Metric | Count |
-|--------|-------|
-| Source questions (substantive) | 102 |
-| QML items (questions + comments) | 109 |
-| Matched substantive questions | 102 |
-| "Other specify" follow-ups added | 7 |
-| Justified omissions | 48 |
+**Hard range:**
+Maximum: 999999.99
+Minimum: 0.01
 
-**Justified omissions** (48 items absorbed into declarative constructs):
+**EMPPRE-J2.Q12B Interviewer: Select the appropriate category for**
+**reported wage or salary.**
 
-| Category | Count | Details |
-|----------|-------|---------|
-| Filter/routing nodes | 16 | START-EMPPRE, EMPPRE-N4/N6/N7/N11A/N12/J1.N2, EXPRE-N1/N4/N6, DEMPRE-N1/N1A-N1F |
-| Check/compare nodes | 12 | COMPARE-Q2/Q4/9A/9B/10A/10B, VERIFY-Q1/Q9/Q11/Q13, EVAL-Q1, INPATH-Q12, DEMPRE-N11A |
-| Interviewer correction screens | 14 | DEMPRE-Q2A/Q4A/Q9A/Q9B/Q10A/Q10B/Q14A, EDUPRE-Q1A/Q9A/Q11A/Q13A, EMPPRE-J1.Q2A (Comment), EXPRE-Q4D/Q6D (Comments) |
-| Marital status cascade nodes | 6 | DEMPRE-N1E/N1F (single/DK paths that skip directly) |
+Hourly
+Weekly
+Every two weeks/twice a month
+Monthly
+\___
+\___
 
-All filters became block or item preconditions. All COMPARE/VERIFY checks became postconditions with enforcement hints. Interviewer correction screens became postcondition hints or Comment items.
+<!-- page 26 read_by="text_layer" -->
 
-## Validator Results
+- 20 -
+Yearly
+Other (specify)
 
-### Summary
+If Other - specify go to EMPPRE-J2.Q13, otherwise go to
+EMPPRE-J2.Q14.
 
-| Metric | File 01 | File 02 | File 03 | File 04 | **Total** |
-|--------|---------|---------|---------|---------|-----------|
-| Items | 54 | 14 | 26 | 22 | **116** |
-| Blocks | 3 | 1 | 3 | 1 | **8** |
-| Preconditions | 54 | 14 | 21 | 19 | **108** |
-| Postconditions | 0 | 0 | 5 | 4 | **9** |
-| Variables | 6 | 1 | 5 | 2 | **14** |
-| Dependencies | 131 | 55 | 22 | 16 | **224** |
-| Cycles | 0 | 0 | 0 | 0 | **0** |
-| Global Status | SAT | SAT | SAT | SAT | **SAT** |
-| Issues | 0 | 0 | 0 | 0 | **0** |
+**EMPPRE-J2.Q13 WHAT WERE [respondent]'S TOTAL EARNINGS**
+**FROM THIS JOB IN [reference year]?**
 
-### Z3 Item Classifications
+**Hard range:**
+Maximum: 999999.99
+Minimum: 0.01
 
-| Classification | Count |
-|---------------|-------|
-| Precondition ALWAYS | 8 |
-| Precondition CONDITIONAL | 108 |
-| Precondition NEVER | 0 |
-| Postcondition CONSTRAINING | 9 |
-| Postcondition INFEASIBLE | 0 |
-| Postcondition TAUTOLOGICAL | 0 |
-| Postcondition NONE | 107 |
+**EMPPRE-J2.Q14 DID [respondent] RECEIVE ANY COMMISSIONS,**
+**TIPS, BONUSES OR PAID OVERTIME FROM THIS**
+**JOB IN [reference year]?**
 
-**Interpretation**: All 116 items are reachable (no dead code). The 8 ALWAYS items are unconditionally shown (Q17/Q18 parents' education in EDUPRE, background questions in DEMPRE). The 108 CONDITIONAL items are gated by age, sex, marital status, or prior responses — all correctly reachable under appropriate conditions. The 9 CONSTRAINING postconditions enforce date ordering (5 in DEMPRE) and age-education consistency (4 in EDUPRE). No INFEASIBLE postconditions means all validation constraints can be satisfied.
+Yes Go to EMPPRE-J2.Q15
+No/DK/R Go to EMPPRE-N12
 
-## Section Files
+**EMPPRE-J2.Q15 WERE THESE COMMISSIONS, TIPS, BONUSES OR**
+**PAID OVERTIME INCLUDED IN THE AMOUNT**
+**JUST REPORTED?**
 
-| # | File | Block(s) | Items | Extern Variables Read | Variables Written |
-|---|------|----------|-------|-----------------------|-------------------|
-| 01 | `01_employment_status.qml` | b_emppre_main, b_emppre_job1, b_emppre_job2 | 54 | age, current_year, reference_year | has_employer_j1, temp_layoff, no_recent_work |
-| 02 | `02_work_experience.qml` | b_expre | 14 | age | — |
-| 03 | `03_demographics.qml` | b_marital_history, b_birth_history, b_background | 26 | age, sex, marital_status, current_year | current_marriage_year |
-| 04 | `04_education.qml` | b_edupre | 22 | age, current_year | — |
+Yes/DK/R Go to EMPPRE-N12
+No Go to EMPPRE-J2.Q16
+\___
 
-## Problems in the Original SLID 1994 Questionnaire (Exposed by Declarative Conversion)
+<!-- page 27 read_by="text_layer" -->
 
-### P1: J1 Commission Path Bypasses Second Employer Section
+- 21 -
+EMPPRE-J2.Q16 WHAT WERE [respondent]'S TOTAL EARNINGS IN
+[reference year] FROM THESE COMMISSIONS,
+TIPS, BONUSES, OR PAID OVERTIME?
 
-**Severity:** HIGH
-**PDF evidence:** Page 16, EMPPRE-J1.Q15; Page 16, EMPPRE-J2.Q1
+**Hard range:**
+Maximum: 999999.99
+Minimum: 0.01
 
-**Problem:** When a respondent reports commissions/tips/bonuses for their first employer (J1.Q13=Yes) that were NOT included in the reported wage (J1.Q14=No), the CATI routing after the commission amount (J1.Q15) sends the respondent directly to EMPPRE-N12 (age check/exit), completely bypassing the second employer section (J2.Q1-Q16). This means respondents with separate commission income from their first job are never asked about a second job.
+Go to EMPPRE-N12
 
-**In the imperative version:** The GOTO at J1.Q15 reads "Go to EMPPRE-N12" while J1.Q13=No and J1.Q14=Yes/DK both route to EMPPRE-J2.Q1. This asymmetry is easy to miss in the linear CATI flow because the GOTO target (N12) appears reasonable in isolation.
+**4. EXPRE MODULE**
 
-**In the declarative version:** The QML correctly routes J1.Q15 to the age check (matching the source), but the structural analysis reveals that J2.Q1 is unreachable for respondents on the J1.Q15 path. This is almost certainly a routing error — the intended target was likely EMPPRE-J2.Q1, not EMPPRE-N12.
+HEADER: None
 
-### P2: Second Employer Section Missing Date Consistency Check
+*** EXPRE-N1 Internal logic: [age] is greater than 69 years?**
 
-**Severity:** MEDIUM
-**PDF evidence:** Page 11-12, EMPPRE-J1.N2 and EMPPRE-J1.Q2A; Page 17, EMPPRE-J2.Q3
+Yes Go to DEMPRE-Q1A
+Otherwise Go to EXPRE-Q1A.
 
-**Problem:** The first employer sub-section (J1) includes an internal logic check (EMPPRE-J1.N2) that verifies the date the respondent first started working for the employer (J1.Q2) is before the date they last worked (EMPPRE-Q6). If inconsistent, an interviewer correction screen (J1.Q2A) is displayed. The second employer sub-section (J2) has no equivalent check for J2.Q3 (start date for second employer). This asymmetry means date inconsistencies for the second employer go undetected.
+**EXPRE-Q1A THE NEXT FEW QUESTIONS ARE ABOUT [respondent]'S**
 
-**In the imperative version:** The parallel structure of J1 and J2 makes it appear they are structurally identical, masking the missing check. A reviewer scanning J2 would assume the same edits apply.
+- ___ WORK EXPERIENCE, THINKING BACK TO WHEN
 
-**In the declarative version:** The QML conversion exposes the asymmetry directly: J1 has a Comment item (q_j1_q2a) and a precondition implementing the date check, while J2 has no equivalent. The dependency graph shows 131 dependencies in File 01, with J1 having a richer constraint structure than J2.
+**HE/SHE FIRST STARTED WORKING AT A JOB OR**
+**BUSINESS.**
+**DID [respondent] EVER WORK FULL-TIME?**
+(Exclude summer jobs while in school)
 
-### P3: Phantom Dependencies on Undocumented LFS Variables
+Yes
+No, never worked full-time
+\___
+\___
 
-**Severity:** MEDIUM
-**PDF evidence:** Page 5, "START-EMPPRE"; Page 26-27, DEMPRE-Q1A and DEMPRE-N1 through N1F; Page 32, DEMPRE-N11A
+<!-- page 28 read_by="text_layer" -->
 
-**Problem:** The SLID Preliminary Interview depends on five external variables never collected within the questionnaire itself: `age`, `sex`, `marital_status`, `current_year`, and `reference_year`. These are pre-fill items from the Labour Force Survey (LFS) conducted earlier. The questionnaire document states these are "based on the date of birth and marital status reported earlier in the interview" but provides no formal specification of their domains or valid values.
+- 22 -
+No, only worked full-time at summer jobs while in school
+DK/R
 
-**In the imperative version:** Pre-fill items are handled silently by the CATI system. The interviewer never sees the dependency — the computer simply knows the respondent's age and routes accordingly. There is no documentation of what happens if a pre-fill value is missing or invalid.
+If Yes go to EXPRE-Q1B.
+Otherwise go to DEMPRE-Q1A.
 
-**In the declarative version:** Each QML file must explicitly declare these as extern variables with domain constraints (e.g., `age: range(0, 120)`, `marital_status: {1, 2, 3, 4, 5, 6}`). Z3 treats them as free variables within their declared domains, enabling full path analysis. However, the original questionnaire provides no specification for edge cases (e.g., what marital status codes are valid? what if age is missing?).
+**EXPRE-Q1B HOW MANY YEARS AGO DID [respondent] FIRST**
+START WORKING FULL-TIME? (Exclude summer
+jobs while in school)
+Interviewer: Enter 00 if less than one year
 
-### P4: Asymmetric Age Thresholds Across Modules
+**Hard range:**
+Maximum: [age]-10
+Minimum: 0
 
-**Severity:** LOW
-**PDF evidence:** Page 5, START-EMPPRE (age >= 15); Page 10, EMPPRE-N12 (age > 64); Page 21, EXPRE-N1 (age > 69); Page 32, DEMPRE-N11A (age >= 18)
+If DK/R or 0 Go to DEMPRE-Q1A.
+If answered 1 year Go to EXPRE-Q3
+Otherwise Go to EXPRE-Q2A.
 
-**Problem:** Four different age thresholds gate different modules, using inconsistent boundary conventions:
+**EXPRE-Q2A IN THOSE [response given in EXPRE-Q1B] YEARS,**
 
-| Gate | Threshold | Convention | Module |
-|------|-----------|------------|--------|
-| START-EMPPRE | age >= 15 | Inclusive lower | Employment |
-| EMPPRE-N12 | age > 64 | Exclusive upper | School attendance |
-| EXPRE-N1 | age > 69 | Exclusive upper | Work experience |
-| DEMPRE-N11A | age >= 18 | Inclusive lower | Birth history |
+- ___ WERE THERE ANY YEARS WHEN [respondent]
 
-The mixing of inclusive (>=) and exclusive (>) boundaries, combined with different thresholds for related concepts (64 for school attendance relevance, 69 for work experience relevance), creates potential for boundary confusion. A 65-year-old is asked about school attendance but not work experience (they reach EXPRE but answer about full-time work for potentially 50+ years). A 15-year-old enters employment questions but is excluded from birth history regardless of sex.
+**DID NOT WORK AT A JOB OR BUSINESS?**
 
-**In the imperative version:** Each threshold appears in isolation at its GOTO checkpoint, making cross-module comparison difficult.
+Yes Go to EXPRE-Q2B
+No/DK/R Go to EXPRE-Q3
 
-**In the declarative version:** The extern variable `age: range(0, 120)` is shared across all files, and the Z3 solver tests all thresholds simultaneously. The different boundaries are visible in the precondition structure.
+<!-- page 29 read_by="text_layer" -->
 
-### P5: Probable Transcription Error in J2.Q7 Routing Target
+- 23 -
+EXPRE-Q2B HOW MANY YEARS DID [respondent] NOT WORK
+AT A JOB OR BUSINESS?
 
-**Severity:** LOW
-**PDF evidence:** Page 18, EMPPRE-J2.Q7: "Otherwise Go to EMPPRE-Q12."
+**Hard range:**
+Maximum: [response given in EXPRE-Q1B]
+Minimum: 1
 
-**Problem:** EMPPRE-J2.Q7 (class of worker for second employer) routes non-paid-workers to "EMPPRE-Q12" (school attendance question). The parallel item EMPPRE-J1.Q6 routes non-paid-workers to "EMPPRE-N12" (age check gate). Since Q12 is only reachable through N12, and the routing pattern should match J1, this is almost certainly a transcription error where "N12" was mistyped as "Q12" in the source document.
+Go to EXPRE-Q5A
 
-**In the imperative version:** The CATI software likely used the correct routing code internally; the error appears only in the paper documentation (Catalogue No. 94-10).
+**EXPRE-Q3 IN THOSE [response given in EXPRE-Q1B] YEARS,**
+**DID [respondent] WORK AT LEAST 6 MONTHS**
+**EACH AND EVERY YEAR?**
 
-**In the declarative version:** The QML implements the corrected routing (to N12 equivalent), consistent with J1's pattern and the questionnaire's logical structure.
+Yes/DK/R Go to EXPRE-Q4A
+No Go to EXPRE-Q5A
 
-### P6: Birth History Section Excludes Male Respondents and Adoptive Fathers
+**EXPRE-Q4A HOW MANY YEARS DID HE/SHE WORK ONLY**
+FULL-TIME? (by full-time I mean 30 or more hours per
+week)
+Interviewer: If none enter 00
 
-**Severity:** LOW
-**PDF evidence:** Page 32, DEMPRE-N11A: "Respondent is female 18 years of age and over?"
+**Hard range:**
+Maximum: [response given in EXPRE-Q1B]
+Minimum: 0
 
-**Problem:** The birth history section (DEMPRE-Q11 through Q15) — which covers both biological children AND adopted/raised children — is gated exclusively on `sex == female AND age >= 18`. This means:
-- Male respondents who have adopted or raised children are never asked about them
-- The number of children raised by male respondents is systematically uncaptured
-- This creates a gendered data gap in the household composition picture
+**EXPRE-Q4B HOW MANY YEARS DID HE/SHE WORK ONLY**
+**PART-TIME?**
+**Interviewer: If none enter 00**
+\___
+\___
+\___
 
-While restricting *birth history* questions to females is defensible, the adopted/raised children questions (Q14-Q15) have no biological basis for the restriction.
+<!-- page 30 read_by="text_layer" -->
 
-**In the imperative version:** The gender gate appears as a single routing checkpoint, and the fact that Q14-Q15 (adopted children) are downstream of it is not immediately apparent.
+- 24 -
+Hard range:
+Maximum: [response given in EXPRE-Q1B]
+Minimum: 0
 
-**In the declarative version:** The block-level precondition `sex == 2 and age >= 18` makes the exclusion explicit and applies uniformly to all items in the block, including the non-biological-parenthood questions.
+**EXPRE-Q4C HOW MANY YEARS DID HE/SHE ONLY WORK**
+**SOME OF EACH (full-time and part-time)**
+**Interviewer: If none enter 00**
 
-### P7: Soft Edit Pattern Permits Inconsistent Date Records
+**Hard range:**
+Maximum: [response given in EXPRE-Q1B]
+Minimum: 0
 
-**Severity:** LOW
-**PDF evidence:** Pages 29-32, COMPARE-Q2, COMPARE-Q4, COMPARE9A/9B, COMPARE10A/10B; Pages 37-43, VERIFY-Q1/Q9/Q11/Q13
+*** EXPRE-N4 Internal logic: Sum of Q4A/B/C = EXPRE-Q1B?**
 
-**Problem:** All 11 date consistency checks (COMPARE series) and age-education consistency checks (VERIFY series) in the original CATI are "soft edits" — the interviewer is shown a warning but can press Enter to continue with the inconsistent data. This means the final dataset may contain records where:
-- Marriage date is after separation date
-- First marriage date is after current marriage date
-- Years of education exceed what is possible given age
+Yes Go to DEMPRE-Q1A
+Otherwise Go to EXPRE-Q4D
 
-**In the imperative version:** Soft edits are a pragmatic CATI design choice — forcing correction can lose reluctant respondents or create interviewer frustration. The inconsistencies are intended to be cleaned during data processing.
+**EXPRE-Q4D Interviewer: [respondent] has worked full-time for**
+**[answer in EXPRE-Q4A] years, part-time for [answer**
+**in EXPRE-Q4B] years, and some of each for [answer in**
 
-**In the declarative version:** The QML converts these to hard postconditions that block progression until resolved. This is a deliberate design improvement — the Z3 solver can prove all 9 postconditions are CONSTRAINING (they restrict the answer space without being infeasible), confirming that the constraints are satisfiable. The upgrade from soft to hard edits improves data quality at the cost of interview flexibility.
+- ___ EXPRE-Q4C] years. Conflict with when started
 
-## Cross-Check Fixes (QML Authoring Decisions)
+**working full-time[answer in EXPRE-Q1B] years ago. If**
+**incorrect go back to previous questions and make**
+**necessary changes. Otherwise press &lt;Enter> to**
+**continue.**
+\___
 
-| # | Item(s) | Decision | Rationale | PDF Reference |
-|---|---------|----------|-----------|---------------|
-| 1 | Currency/hours fields | Integer min/max instead of decimal | QML Editbox uses integer constraints; approximation to min=1 from 0.01 is acceptable for survey purposes | Pages 14-16, 19-21 |
-| 2 | DK/Refused codes | Omitted from most items; included as explicit codes where routing differs | QML Switch/Radio requires definite response; DK/R modeled only where routing diverges (Q1, Q11, Q14) | Throughout |
-| 3 | "Other specify" follow-ups | Added 7 Textarea items | Source CATI shows inline specify field; QML requires separate item with precondition | Pages 7, 8, 9, 10, 35, 36, 39 |
-| 4 | EMPPRE-J2.Q7 routing | Corrected to EMPPRE-N12 | Probable transcription error in source (see P5) | Page 18 |
-| 5 | Sum verification (EXPRE N4/N6) | Modeled as Comment items, not postconditions | Source uses soft edit pattern; blocking postcondition would prevent legitimate edge cases | Pages 24-26 |
+<!-- page 31 read_by="text_layer" -->
 
-## Impact Assessment
+- 25 -
+EXPRE-Q5A SINCE [respondent] FIRST STARTED WORKING,
+HOW MANY YEARS DID HE/SHE WORK AT
+LEAST 6 MONTHS OF THE YEAR?
+Interviewer: If none enter 00
 
-The declarative conversion of the SLID 1994 Preliminary Interview reveals a questionnaire that is fundamentally well-designed for its era, with one significant routing error (P1: commission path bypasses second employer) and one structural asymmetry (P2: missing J2 date check) that were hidden by the imperative GOTO-based design.
+**Hard range:**
+Maximum: [response given in EXPRE-Q1B] minus
+[response given in EXPRE-Q2B] (if 2B not
+answered use Q1B as maximum).
+Minimum: 0
 
-The questionnaire's dependence on five undocumented LFS pre-fill variables (P3) is the most systemic issue — it creates a hidden coupling between two survey instruments that is only visible when the SLID is formally modeled as a standalone instrument.
+If 0/DK/R Go to DEMPRE-Q1A
+Otherwise Go to EXPRE-Q6A
 
-| Aspect | Paper/CATI Form | QML Representation |
-|--------|----------------|-------------------|
-| Routing errors | Hidden in linear GOTO flow | Exposed by precondition analysis (P1) |
-| Structural asymmetry | Masked by parallel section appearance | Visible in dependency graph (P2) |
-| External dependencies | Silent pre-fill | Explicit extern declarations (P3) |
-| Data consistency | Soft edits (warnings only) | Hard postconditions (enforced) |
-| Gender restrictions | Single routing checkpoint | Visible block-level gate (P6) |
+**EXPRE-Q6A IN THOSE [response given in EXPRE-Q5A] YEARS,**
+**HOW MANY DID HE/SHE WORK ONLY FULL-**
+TIME ? (by full-time I mean 30 or more hours per week)
+Interviewer: If none enter 00
 
-## Conclusion
+**Hard range:**
 
-The Z3 formal validator confirms that all 116 QML items are reachable (0 NEVER, 0 INFEASIBLE), the global formula is satisfiable across all 4 files, and there are no dependency cycles (0 cycles across 224 dependencies). The conversion exposed 7 design findings in the original questionnaire, of which 1 is HIGH severity (commission routing bypass), 2 are MEDIUM (missing J2 consistency check, phantom LFS dependencies), and 4 are LOW (asymmetric age gates, transcription error, gender restriction, soft edits).
+- ___ Maximum: [response given in EXPRE-Q5A]
 
-The SLID Preliminary Interview is a compact, well-structured instrument by 1994 CATI standards. Its 4-module architecture (employment → experience → demographics → education) maps cleanly to 4 QML files with minimal cross-file dependencies. The main complexity lies in the EMPPRE module's two-employer structure with its 57 items and intricate routing, which the declarative conversion handles through 3 consolidation variables (`has_employer_j1`, `temp_layoff`, `no_recent_work`) and 131 Z3 dependencies.
+Minimum: 0
+
+**EXPRE-Q6B IN THOSE [response given in EXPRE-Q5A] YEARS,**
+**HOW MANY DID HE/SHE WORK ONLY PART-**
+**TIME?**
+**Interviewer: If none enter 00**
+**Hard range:**
+Maximum: [response given in EXPRE-Q5A]
+Minimum: 0
+\___
+
+<!-- page 32 read_by="text_layer" -->
+
+- 26 -
+EXPRE-Q6C IN THOSE [response given in EXPRE-Q5A] YEARS,
+HOW MANY DID HE/SHE ONLY WORK SOME OF
+EACH? (full-time and part-time)
+Interviewer: If none enter 00
+
+**Hard range:**
+Maximum: [response given in EXPRE-Q5A]
+Minimum: 0
+
+*** EXPRE-N6 Internal logic: Sum of Q6A/B/C/ = EXPRE-Q5A?**
+
+Yes Go to DEMPRE-Q1A
+Otherwise Go to EXPRE-Q6D
+
+**EXPRE-Q6D Interviewer: [respondent] is shown working full-time**
+**for [answer in EXPRE-Q6A] years, part-time for**
+**[answer in EXPRE-Q6B] years, and some of each for**
+**[answer in EXPRE-Q6C] years. Conflicts with # of**
+**years they worked more than six months[answer in**
+**EXPRE-Q5A]. If incorrect go back to previous**
+
+- ___ questions and make necessary changes. Otherwise press
+
+**&lt;Enter> to continue.**
+
+**5. DEMPRE MODULE**
+
+HEADER: None
+
+**DEMPRE-Q1A THE NEXT FEW QUESTIONS ARE ABOUT**
+**[respondent]'S FAMILY BACKGROUND AND ARE**
+\___
+
+<!-- page 33 read_by="text_layer" -->
+
+- 27 -
+BASED ON THE DATE OF BIRTH AND MARITAL
+STATUS REPORTED EARLIER IN THE
+INTERVIEW.
+* DEMPRE-N1 Internal logic: Marital status = married?
+Yes Go to DEMPRE-Q2B
+* DEMPRE-N1A Internal logic: Marital status = common-in-law?
+Yes Go to DEMPRE-Q5
+* DEMPRE-N1B Internal logic: Marital status = separated?
+Yes Go to DEMPRE-Q1
+* DEMPRE-N1C Internal logic: Marital status = divorced?
+Yes Go to DEMPRE-Q1
+* DEMPRE-N1D Internal logic: Marital status = widowed?
+Yes Go to DEMPRE-Q7
+* DEMPRE-N1E Internal logic: Marital status = single (never married)?
+Yes Go to DEMPRE-N11A
+\___
+\___
+\___
+
+<!-- page 34 read_by="text_layer" -->
+
+- 28 -
+* DEMPRE-N1F Internal logic: Marital status = DK/R?
+
+Yes Go to DEMPRE-N11A
+
+**DEMPRE-Q1 WHAT WAS THE DATE OF [respondent]'S**
+SEPARATION? (Not the date of divorce)
+
+**Hard range:**
+Maximum: [current year]
+Minimum: [current year] minus [age] minus 14
+
+**DEMPRE-Q2 WHAT WAS THE DATE OF THIS MARRIAGE?**
+
+**Hard range:**
+Maximum: [current year]
+Minimum: [current year] minus [age] minus 14
+Go to COMPARE-Q2
+
+*** COMPARE-Q2 Internal logic: Date of this marriage(DEMPRE-Q2) is**
+**before date of separation (DEMPRE-Q1).**
+
+No Go to DEMPRE-Q2A
+Otherwise Go to DEMPRE-Q3
+
+**DEMPRE-Q2A Interviewer: Date of marriage [response in DEMPRE-**
+**Q2] is after date of separation [response in DEMPRE-**
+**Q1]. If information is incorrect go to previous questions**
+**to correct inconsistencies. Otherwise press &lt;Enter> to**
+**continue.**
+\___
+\___
+
+<!-- page 35 read_by="text_layer" -->
+
+- 29 -
+DEMPRE-Q2B WHAT WAS THE DATE OF [respondent]'S
+MARRIAGE?
+
+**Hard range:**
+Maximum: [current year]
+Minimum: [current year] minus [age] minus 14
+
+**DEMPRE-Q3 WAS THIS [respondent]'S FIRST MARRIAGE?**
+
+Yes/DK/R Go to DEMPRE-N11A
+No Go to DEMPRE-Q4
+
+**DEMPRE-Q4 WHAT WAS THE DATE OF [respondent]'S FIRST**
+**MARRIAGE?**
+
+**Hard range:**
+Maximum: [current year]
+Minimum: [current year] minus [age] minus 14
+
+*** COMPARE-Q4 Internal logic: Date of first marriage(DEMPRE-Q4) is**
+
+- ___ before date of current marriage(DEMPRE-Q2)?
+
+No Go to DEMPRE-Q4A
+Otherwise Go to DEMPRE-N11A
+
+**DEMPRE-Q4A Interviewer: Date of marriage [response in DEMPRE-**
+**Q4] should be before date of current marriage [response**
+**in DEMPRE-Q2B]. If information is incorrect go to**
+\___
+
+<!-- page 36 read_by="text_layer" -->
+
+- 30 -
+previous questions to correct inconsistencies. Otherwise
+press &lt;Enter> to continue.
+
+**DEMPRE-Q5 WHEN DID [respondent] AND HIS/HER PARTNER**
+**BEGIN TO LIVE TOGETHER?**
+
+**Hard range:**
+Maximum: [current year]
+Minimum: [current year] minus [age] minus 14
+
+**DEMPRE-Q6 HAS [respondent] EVER BEEN MARRIED?**
+
+Yes Go to DEMPRE-Q8
+No/DK/R Go to DEMPRE-N11A
+
+**DEMPRE-Q7 WHEN WAS [respondent] WIDOWED?**
+**Hard range:**
+Maximum: [current year]
+Minimum: [current year] minus [age] minus 14
+
+**DEMPRE-Q8 WAS THIS [respondent]'S FIRST MARRIAGE?**
+
+Yes/DK/R Go to DEMPRE-Q9
+No Go to DEMPRE-Q10
+
+**DEMPRE-Q9 WHAT WAS THE DATE OF [respondent]'S**
+**MARRIAGE?**
+**Hard range:**
+Maximum: [current year]
+Minimum: [current year] minus [age] minus 14
+\___
+\___
+
+<!-- page 37 read_by="text_layer" -->
+
+- 31 -
+* COMPARE9A Internal logic: Date of marriage (DEMPRE-Q9) is
+before date widowed (DEMPRE-Q7)?
+
+No Go to DEMPRE-Q9A
+Otherwise Go to COMPARE9B
+
+**DEMPRE-Q9A Interviewer: Date of previous marriage [answer in**
+**DEMPRE-Q9] should be before date widowed [answer**
+**in DEMPRE-Q7]. If information is incorrect go to**
+**previous questions to correct inconsistencies. Otherwise**
+**press &lt;Enter> to continue.**
+
+*** COMPARE9B Internal logic: Date of marriage (DEMPRE-Q9) is**
+**before date living together (DEMPRE-Q5)?**
+
+No Go to DEMPRE-Q9B
+Otherwise Go to DEMPRE-N11A
+
+**DEMPRE-Q9B Interviewer: Date of previous marriage [answer in**
+**DEMPRE-Q9] should be before date started living**
+
+- ___ together [answer in DEMPRE-Q5]. If information is
+
+**incorrect go to previous questions to correct**
+**inconsistencies. Otherwise press &lt;Enter> to continue.**
+
+**DEMPRE-Q10 WHAT WAS THE DATE OF [respondent]'S FIRST**
+**MARRIAGE?**
+**Hard range:**
+Maximum: [current year]
+Minimum: [current year] minus [age] minus 14
+\___
+
+<!-- page 38 read_by="text_layer" -->
+
+- 32 -
+* COMPARE10A Internal logic: Date of first marriage (DEMPRE-Q10)
+is before date started living together (DEMPRE-Q5)?
+
+No Go to DEMPRE-Q10A
+Otherwise Go to COMPARE10B
+
+**DEMPRE-Q10A Interviewer: Date of first marriage [answer in**
+**DEMPRE-Q10] should be before date started living**
+**together [answer in DEMPRE-Q5]. If information is**
+**incorrect go to previous questions to correct**
+**inconsistencies. Otherwise press &lt;Enter> to continue.**
+
+*** COMPARE10B Internal logic: Date of first marriage (DEMPRE-Q10)**
+**is before date widowed (DEMPRE-Q7)?**
+
+No Go to DEMPRE-Q10B
+Otherwise Go to DEMPRE-N11A
+
+**DEMPRE-Q10B Interviewer: Date of first marriage [answer in**
+**DEMPRE-Q10] should be before date widowed [answer**
+
+- ___ in DEMPRE-Q7]. If information is incorrect go to
+
+**previous questions to correct inconsistencies. Otherwise**
+**press &lt;Enter> to continue.**
+
+*** DEMPRE-N11A Internal logic: Respondent is female 18 years of age and**
+**over?**
+
+Yes Go to DEMPRE-Q11
+Otherwise Go to DEMPRE-Q16.
+\___
+
+<!-- page 39 read_by="text_layer" -->
+
+- 33 -
+DEMPRE-Q11 HAS [respondent] HAD ANY CHILDREN?
+
+Yes Go to DEMPRE-Q12
+No Go to DEMPRE-Q14
+DK/R Go to DEMPRE-Q16
+
+**DEMPRE-Q12 HOW MANY CHILDREN WERE EVER BORN TO**
+**[respondent]?**
+**Interviewer: Enter 00 if none**
+
+**Hard range:**
+Maximum: 20
+Minimum: 0
+
+If 0/DK/R go to DEMPRE-Q14, otherwise go to
+DEMPRE-Q13.
+
+**DEMPRE-Q13 IN WHAT YEAR DID [respondent] GIVE BIRTH TO**
+**HER FIRST CHILD?**
+
+- ___ Hard range:
+
+Maximum: [current year]
+Minimum: [current year] minus [age] minus 14
+
+**DEMPRE-Q14 (Other than children [respondent] has given birth to)**
+**HAS [respondent] ADOPTED OR RAISED ANY**
+**CHILDREN?**
+
+Yes Go to INPATH-Q12
+No/DK/R Go to DEMPRE-Q16
+\___
+
+<!-- page 40 read_by="text_layer" -->
+
+- 34 -
+* INPATH-Q12 Internal logic: DEMPRE-Q11=yes and DEMPRE-
+Q14=no and DEMPRE-Q12 = 0?
+
+Yes Go to DEMPRE-Q14A
+Otherwise Go to DEMPRE-Q15
+
+**DEMPRE-Q14A Interviewer: In previous questions (DEMPRE-Q11 and**
+**Q12) respondent stated that she had children, but none**
+**were born to her, therefore she should have raised or**
+**adopted children (DEMPRE-Q14). If incorrect go to**
+**previous questions to correct inconsistencies. Otherwise**
+**press &lt;Enter> to continue.**
+
+**DEMPRE-Q15 HOW MANY (other) CHILDREN HAS [respondent]**
+**ADOPTED OR RAISED?**
+
+**Hard range:**
+Maximum: 20
+Minimum: 1
+
+**DEMPRE-Q16 WHAT IS THE LANGUAGE THAT [respondent]**
+**FIRST LEARNED AT HOME IN CHILDHOOD AND**
+**STILL UNDERSTANDS?**
+
+English
+French
+Other (SPECIFY)
+\___
+\___
+
+<!-- page 41 read_by="text_layer" -->
+
+- 35 -
+DEMPRE-Q17 IN WHAT COUNTRY WAS [respondent] BORN?
+
+Canada
+United Kingdom
+Italy
+U.S.A.
+Germany
+Poland
+Other (SPECIFY)
+
+If answered "Canada" go to DEMPRE-Q19. Otherwise, go
+to DEMPRE-Q18.
+
+**DEMPRE-Q18 DID [respondent] IMMIGRATE TO CANADA?**
+
+Yes Go to DEMPRE-Q18B
+No(never immigrated - Canadian
+citizen by birth) Go to DEMPRE-Q19
+DK/R Go to DEMPRE-Q19
+
+**DEMPRE-Q18B IN WHAT YEAR WAS THAT?**
+
+**Hard range:**
+Maximum: [current year]
+Minimum: [current year] minus [age]
+\___
+\___
+
+<!-- page 42 read_by="text_layer" -->
+
+- 36 -
+DEMPRE-Q19 IS [respondent] A REGISTERED INDIAN AS
+DEFINED BY THE INDIAN ACT OF CANADA?
+
+Yes, Registered Indian
+No/DK/R
+
+**DEMPRE-Q20 CANADIANS COME FROM MANY ETHNIC,**
+**CULTURAL AND RACIAL BACKGROUNDS. FOR**
+**EXAMPLE, ENGLISH, FRENCH, NORTH**
+**AMERICAN INDIAN, CHINESE, BLACK, FILIPINO**
+**OR LEBANESE. WHAT IS [respondent]'S**
+**BACKGROUND?**
+**Interviewer: if indian, probe for North American or**
+**East.**
+**Mark all that apply.**
+
+English Dutch(netherlands)
+French Jewish
+German Polish
+Scottish Black
+
+- ___ Italian Métis
+
+Irish Inuit/eskimo
+Ukrainian North american indian
+Chinese East indian
+Canadian(probe for any other background)
+Other (specify)
+
+If answered "Other" go to DEMPRE-Q20A, otherwise go
+to EDUPRE-Q1.
+\___
+\___
+
+<!-- page 43 read_by="text_layer" -->
+
+- 37 -
+DEMPRE-Q20A Interviewer: Enter other ethnic background not
+already given in previous question.
+
+Go to EDUPRE-Q1
+
+**6. EDUPRE MODULE**
+
+HEADER: Two headers are displayed for different questions:
+! Type of school response from EDUPRE-Q6 is displayed for
+EDUPRE-Q7 to EDUPRE-Q10
+! Highest degree response from EDUPRE-Q14A is displayed for
+EDUPRE-Q16
+
+**EDUPRE-Q1 HOW MANY YEARS OF ELEMENTARY AND HIGH**
+**SCHOOL DID [respondent] COMPLETE?**
+
+**Hard range:**
+Maximum: 15
+Minimum: 0
+
+*** VERIFY-Q1 Internal logic: Years of schooling (EDUPRE-Q1) is**
+**greater than [age] minus 5?**
+
+No Go to EDUPRE-Q1A
+Otherwise: If answered "0" go to EDUPRE-Q17,
+otherwise go to EDUPRE-Q2.
+
+**EDUPRE-Q1A Interviewer: Years of education does not correspond**
+**with [respondent]'s age. Verify that this information is**
+\___
+\___
+
+<!-- page 44 read_by="text_layer" -->
+
+- 38 -
+correct. If incorrect go back to previous question
+(EDUPRE-Q1) and make the necessary changes.
+Otherwise press &lt;Enter> to continue.
+
+**EDUPRE-Q2 IN WHICH PROVINCE OR TERRITORY DID**
+**[respondent] GET MOST OF HIS/HER**
+**ELEMENTARY AND HIGH SCHOOL EDUCATION?**
+
+Newfoundland Manitoba
+Prince Edward Island Saskatchewan
+Nova Scotia Alberta
+New Brunswick British Columbia
+Quebec Yukon
+Ontario Northwest Territories
+Outside Canada
+
+*** EVAL-Q1 Internal logic: EDUPRE-Q1 = 1 to 9?**
+
+Yes Go to EDUPRE-Q4
+Otherwise Go to EDUPRE-Q3.
+
+**EDUPRE-Q3 DID [respondent] COMPLETE HIGH SCHOOL?**
+
+Yes
+No
+
+**EDUPRE-Q4 EXCLUDING UNIVERSITY, HAS [respondent]**
+**EVER BEEN ENROLLED IN ANY OTHER KIND OF**
+**SCHOOL, FOR EXAMPLE, A COMMUNITY**
+\___
+\___
+\___
+
+<!-- page 45 read_by="text_layer" -->
+
+- 39 -
+COLLEGE, BUSINESS SCHOOL, TRADE OR
+VOCATIONAL SCHOOL, OR CÉGEP?
+
+Yes/DK/R Go to EDUPRE-Q5
+No Go to EDUPRE-Q12
+
+**EDUPRE-Q5 HAS [respondent] RECEIVED ANY CERTIFICATES**
+**OR DIPLOMAS AS A RESULT OF THIS**
+**EDUCATION?**
+
+Yes/DK/R Go to EDUPRE-Q6
+No Go to EDUPRE-Q11
+
+**EDUPRE-Q6 THINKING OF THE MOST RECENT CERTIFICATE**
+**OR DIPLOMA (EXCLUDING UNIVERSITY) COULD**
+**YOU TELL ME WHAT TYPE OF SCHOOL OR**
+**COLLEGE [respondent] ATTENDED? WAS IT A . . .**
+
+COMMUNITY COLLEGE OR INSTITUTE OF APPLIED
+ARTS AND TECHNOLOGY?
+
+- ___ BUSINESS OR COMMERCIAL SCHOOL?
+
+TRADE OR VOCATIONAL SCHOOL?
+CÉGEP?
+SOME OTHER TYPE (Specify)
+
+**EDUPRE-Q7 HOW LONG DID IT TAKE [respondent] TO**
+**COMPLETE THIS PROGRAM?**
+
+Answer given in months Go to EDUPRE-Q7A
+
+<!-- page 46 read_by="text_layer" -->
+
+- 40 -
+Answer given in years Go to EDUPRE-Q7B
+DK/R Go to EDUPRE-Q8
+
+**EDUPRE-Q7A Interviewer: Enter # of months it took [respondent] to**
+**complete this program.**
+
+**Hard range:**
+Maximum: 99
+Minimum: 1
+
+Go to EDUPRE-Q8
+
+**EDUPRE-Q7B Interviewer: Enter # of years it took [respondent] to**
+**complete this program.**
+
+**Hard range:**
+Maximum: 9
+Minimum: 1
+
+Go to EDUPRE-Q8
+
+**EDUPRE-Q8 WAS THIS FULL-TIME, PART-TIME OR SOME OF**
+**EACH?**
+
+Full-time
+Part-time
+Some of each
+\___
+
+<!-- page 47 read_by="text_layer" -->
+
+- 41 -
+EDUPRE-Q9 IN WHAT YEAR DID [respondent] RECEIVE
+HIS/HER CERTIFICATE OR DIPLOMA?
+
+**Hard range:**
+Maximum: [current year]
+Minimum: [current year] minus [age] minus 14
+
+*** VERIFY-Q9 Internal logic: Year received diploma is between**
+**current year minus age minus 14 and current year**
+**minus age minus 20?**
+
+Yes Go to EDUPRE-Q9A
+Otherwise Go to EDUPRE-Q10
+
+**EDUPRE-Q9A Interviewer: Year respondent received certificate or**
+**diploma indicates he/she was [age - current year -**
+**EDUPRE-Q9] years old when they graduated. If year**
+**received certificate/diploma [answer in EDUPRE-Q9] is**
+**incorrect, go back to previous question (EDUPRE-Q9)**
+**and make necessary changes. Otherwise press &lt;Enter>**
+
+- ___ to continue.
+
+**EDUPRE-Q10 WHAT WAS THE MAJOR SUBJECT OR FIELD OF**
+**STUDY?**
+\___
+
+<!-- page 48 read_by="text_layer" -->
+
+- 42 -
+EDUPRE-Q11 IN TOTAL, HOW MANY YEARS OF SCHOOLING
+DID [respondent] COMPLETE AT A COMMUNITY
+COLLEGE, TECHNICAL INSTITUTE, TRADE OR
+VOCATIONAL SCHOOL, OR CÉGEP?
+Interviewer: Enter 00 if less than one year
+
+**Hard range:**
+Maximum: 20
+Minimum: 0
+
+*** VERIFY-Q11 Internal logic: Years of schooling (EDUPRE-Q11) is**
+**greater than [age] minus 14?**
+
+Yes Go to EDUPRE-Q11A
+Otherwise Go to EDUPRE-Q12
+
+**EDUPRE-Q11A Interviewer: Years of schooling completed in a**
+**community college etc. [EDUPRE-Q11] does not**
+**correspond to [respondent]'s age [age]. Verify that this**
+**is correct. If incorrect, go back to previous question**
+
+- ___ (EDUPRE-Q11) and make necessary changes.
+
+**Otherwise press &lt;Enter> to continue.**
+
+**EDUPRE-Q12 HAS [respondent] EVER BEEN ENROLLED IN A**
+**UNIVERSITY?**
+
+Yes/DK/R Go to EDUPRE-Q13
+No Go to EDUPRE-Q17
+\___
+
+<!-- page 49 read_by="text_layer" -->
+
+- 43 -
+EDUPRE-Q13 HOW MANY YEARS OF UNIVERSITY HAS
+[respondent] COMPLETED?
+Interviewer: Enter 00 if attended university but didn't
+complete the year.
+
+**Hard range:**
+Maximum: 20
+Minimum: 0
+
+*** VERIFY-Q13 Internal logic: Years of university is greater than [age]**
+**minus 14?**
+
+Yes Go to EDUPRE-Q13A
+Otherwise Go to EDUPRE-Q14
+
+**EDUPRE-Q13A Interviewer: Years of university [EDUPRE-Q13] does**
+**not correspond to [respondent]'s age [age]. Verify that**
+**this is correct. If incorrect, go back to previous**
+**question (EDUPRE-Q13) and make necessary changes.**
+**Otherwise press &lt;Enter> to continue.**
+
+**EDUPRE-Q14 WHAT DEGREES, CERTIFICATES OR DIPLOMAS**
+**HAS [respondent] RECEIVED FROM A**
+**UNIVERSITY?**
+
+None Go to EDUPRE-Q17
+Specify Degrees Go to EDUPRE-Q14A
+DK/R Go to EDUPRE-Q15
+\___
+
+<!-- page 50 read_by="text_layer" -->
+
+- 44 -
+EDUPRE-Q14A Interviewer: Specify degrees, certificates or diplomas
+[respondent] has received from a university.
+Mark all that apply.
+
+University certificate/diploma below Bachelor level
+Bachelor's degree(s)
+University certificate/diploma above Bachelor level
+Master's degree(s)
+Degree in medicine, dentistry,veterinary medicine or
+optometry
+Doctorate (PhD)
+
+**EDUPRE-Q15 WHAT YEAR DID [respondent] RECEIVE HIS/HER**
+**[highest response category given in EDUPRE-Q14A]?**
+
+Hard range: Maximum: [current year]
+Minimum: [current year] minus [age] minus
+18
+
+**EDUPRE-Q16 WHAT WAS THE MAJOR FIELD OF STUDY?**
+
+**EDUPRE-Q17 WHAT WAS THE HIGHEST LEVEL OF**
+**EDUCATION COMPLETED BY [respondent]'S**
+**MOTHER? WAS IT ...**
+
+ELEMENTARY SCHOOL (includes no schooling)?
+SOME HIGH SCHOOL?
+COMPLETED HIGH SCHOOL?
+TRADE/VOCATIONAL SCHOOL?
+\___
+
+<!-- page 51 read_by="text_layer" -->
+
+- 45 -
+POST-SECONDARY CERTIFICATE OR DIPLOMA?
+(e.g., community college, Cégep, teachers' college, school
+of nursing, etc.)
+UNIVERSITY DEGREE?
+
+**EDUPRE-Q18 WHAT WAS THE HIGHEST LEVEL OF**
+**EDUCATION COMPLETED BY [respondent]'S**
+**FATHER? WAS IT ...**
+
+ELEMENTARY SCHOOL (includes no schooling)?
+SOME HIGH SCHOOL?
+COMPLETED HIGH SCHOOL?
+TRADE/VOCATIONAL SCHOOL?
+POST-SECONDARY CERTIFICATE OR DIPLOMA?
+(e.g., community college, Cégep, teachers' college, school
+of nursing, etc.)
+UNIVERSITY DEGREE?
+
+\___
+
+<!-- page 52 read_by="vision" -->
+
+<!-- page 53 read_by="text_layer" -->
+
+- 47 -
+APPENDIX 1
+FLOWCHARTS
+\___
+\___
+\___
+
+<!-- page 54 read_by="vision" -->
+
+EMPPRE
+2/2/94
+
+Page 1 of 2
+
+Q1
+
+Working in Jan 94?
+
+- yes
+- no
+
+Permanently unable?
+
+- no
+- yes
+
+Q2
+
+Had a job but not at work?
+
+- yes
+- no/dk/r
+
+Q3
+
+Reason for absence
+
+school/educ leave
+
+Q4
+
+Absence paid or unpaid?
+
+N4
+
+Temporary layoff?
+
+- No
+- Yes
+
+Q5
+
+Ever worked?
+
+- yes/dk/r
+- no
+
+Q6/N6
+
+When last worked in past 5 years?
+
+- no
+- yes
+
+Q7
+
+Reason for job separation
+
+N7
+
+Permanently unable?
+
+- no
+- yes (go to N12)
+
+Q8
+
+Looked for work in 01 94?
+
+- yes
+- no/dk/r
+
+Q9
+
+What methods?
+
+Q10
+
+Looked in 6 mo before that?
+
+- no
+- yes/dk/r
+
+Q11
+
+Reason for not looking in 01/94
+
+N11A
+
+Worked in 93?
+
+- yes
+- no
+
+go to N12
+
+J1.Q1/J1.Q1A
+
+Employer name
+
+J1.Q2
+
+Date first worked for this employer
+
+J1.Q2A
+
+Date must be after answer in Q6
+
+J1.Q3
+
+Industry
+
+J1.Q4
+
+Occupation
+
+J1.Q5
+
+Main duties
+
+J1.Q6
+
+COW
+
+J1.Q7A/J1.Q7B
+
+Months worked in 93
+
+go to J1.Q8
+
+<!-- page 55 read_by="vision" -->
+
+EMPPRE
+2/2/94
+
+Page 2 of 2
+
+J1.Q8
+
+Worked in every weeek of the month?
+
+- no
+- yes/dk/r
+
+J1.Q9
+
+Weeks per month
+
+J1.Q10
+
+Paid hours per week
+
+J1.Q11A
+
+Wage or salary
+
+J1.Q11B
+
+Category used to report earnings
+
+- Code 6
+- Code 1-5
+
+J1.Q12
+
+Weeks per month
+
+J1.Q13
+
+Tips, bonuses, etc
+
+- yes
+- no/dk/r
+
+J1.Q14
+
+Included in J1.Q11A?
+
+- yes/dk/r
+- no
+
+J1.Q15
+
+How much?
+
+J2.Q1
+
+More than one job in 93?
+
+- yes
+- no/dk/r
+
+J2.Q2
+
+Employer name
+
+J2.Q3 - J2.Q16
+
+Repeat job description questions from job 1
+
+N12
+
+Age 65+?
+
+- yes
+- no
+
+Q12
+
+In school in 01/94?
+
+- no/dk/r
+- yes
+
+Q13
+
+Full-time, part-time
+Some of each
+
+goto EXPRE
+
+<!-- page 56 read_by="vision" -->
+
+EXPRE
+2/2/94
+
+Page 1 of 1
+
+Q1A
+
+Did you ever work full-time?
+
+- yes (to Q1B)
+- no/dk/r (to go to DEMPRE-N1)
+
+Q1B
+
+How many years since you first started working?
+
+- dk/r/ or if answer is zero (to go to DEMPRE-N1)
+- if answer is 1 (to Q3)
+- otherwise (to Q2A)
+
+Q2A
+
+Were there any years when ... did not work at all at a job or business?
+
+- yes (to Q2B)
+- no/dk/r (to Q3)
+
+Q2B
+
+How many years did you not work at all?
+
+(to Q5A)
+
+Q3
+
+Worked at least six months every year?
+
+- no (to Q5A)
+- yes/dk/r (to Q4A)
+
+Q4A
+
+How many years did you work full-time?
+
+Q4B
+
+How many years did you work part-time?
+
+Q4C
+
+How many years did you work some of each?
+
+N4
+
+Does Q4A+B+C = Q1B?
+
+- no (to Q4D)
+- yes (to go to DEMPRE-N1)
+
+Q4D
+
+error message
+
+Q5A
+
+Did you work at least 6 months in every one of those years?
+
+- dk/r (to go to DEMPRE-N1)
+
+(otherwise to Q6A)
+
+Q6A
+
+How many years did you work full-time?
+
+Q6B
+
+How many years did you work part-time?
+
+Q6C
+
+How many years did you work some of each?
+
+N6
+
+Does Q6A+B+C = Q1B?
+
+- no (to Q6D)
+- yes (to go to DEMPRE-N1)
+
+Q6D
+
+error message
+
+go to DEMPRE-N1
+
+<!-- page 57 read_by="vision" -->
+
+DEMPRE
+2/2/94
+
+Page 1 of 2
+
+Q1A: Read intro
+
+N1: Marital Status
+
+Attached
+
+Not attached
+
+Marital Status
+
+Common law
+
+Married
+
+Q5: Date started living together
+
+Q2B: Date of marriage
+
+Go to Q3
+
+Q6: Ever been married
+
+no
+
+yes
+
+Q8: First marriage?
+
+yes/dk/r
+
+no
+
+Q9: Date of marriage
+
+Q10: Date of first marriage
+
+verify dates
+
+Incorrect dates
+
+Q9A/B
+Q10A/B
+
+Correct dates
+
+Error message
+
+Go to N11A
+
+Marital Status
+
+Separated/ Divorced
+
+Other
+
+Q1: Date of separation
+
+Q2: Date of marriage
+
+verify dates
+
+Incorrect dates
+
+Correct dates
+
+Q2A: error message
+
+Q3: First marriage?
+
+yes/dk/r
+
+no
+
+Q4: Date of first marriage
+
+Marital Status
+
+Single
+
+widowed
+
+Q7: Date widowed
+
+Go to Q8
+
+<!-- page 58 read_by="vision" -->
+
+DEMPRE
+2/2/94
+
+Page 2 of 2
+
+N11A
+
+Female 18+?
+
+yes
+
+no
+
+Q11
+
+Ever had children?
+
+yes
+
+no
+
+dk/r
+
+Q12
+
+How many children born?
+
+0
+
+1+
+
+Q13
+
+Year of birth of first born
+
+Q14
+
+Any other children adopted or raised?
+
+yes
+
+no/dk/r
+
+Q15
+
+How many?
+
+Go to Q16
+
+Q16
+
+Mother tongue
+
+Q17
+
+In what country were you born?
+
+Canada
+
+Other
+
+Q18
+
+Immigrated to Canada?
+
+yes
+
+no/dk/r
+
+Q18B
+
+Year of immigration?
+
+Q19
+
+Registered Indian?
+
+Q20
+
+Ethnic, cultural, or racial background?
+
+to EDUPRE
+
+<!-- page 59 read_by="vision" -->
+
+EDUPRE
+2/2/94
+
+Page 1 of 2
+
+Q1
+
+How many years of elementary and secondary school completed?
+
+- 00 → Go to Q17
+- dk/r → Q2
+
+Is answer > (%age% - 5)
+
+- yes → Q1A: error message
+- no → Q2
+
+Q2
+
+In which province did you get most of your schooling?
+
+Is Q1 = 1 TO 9
+
+- yes → Q4
+- no → Q3
+
+Q3
+
+Completed high school?
+
+Q4
+
+Excluding university, enrolled in any other kind of school?
+
+- no → Go to Q12
+- yes/dk/r → Q5
+
+Q5
+
+Received certificates or diplomas?
+
+- no → Go to Q11
+- yes/dk/r → Q6
+
+Q6
+
+For your most recent certificate, what type of school?
+
+- dk/r → Q8
+
+Q7
+
+How long to complete program?
+
+- months → Q7A
+- years → Q7B
+
+Q7A
+
+# of months?
+
+Q7B
+
+# of years?
+
+Q8
+
+Was this full-time or part-time?
+
+Go to Q9
+
+<!-- page 60 read_by="vision" -->
+
+EDUPRE
+2/2/94
+
+Page 2 of 2
+
+Q9
+
+In which year did you receive certificate or diploma?
+
+dk/r (to Q10)
+
+Is answer between [%current year% - (%age% - 14)] and [*current year% - (%age% - 20)]
+
+- yes (to Q9A)
+- no (to Q10)
+
+Q9A
+
+Error message
+
+Q10
+
+Major field of study
+
+Q11
+
+In total, how many years of schooling?
+
+dk/r (to Q12)
+
+Is answer between > (%age% - 14)
+
+- yes (to Q11A)
+- no (to Q12)
+
+Q11A
+
+Error message
+
+Q12
+
+Ever enrolled in university?
+
+- yes/dk/r (to Q13)
+- no (to Q17)
+
+Q13
+
+How many years of university?
+
+- dk/r (to Q14)
+- 00 (to Q17)
+
+Is answer > (%age% - 14)
+
+- no (to Q14)
+- yes (to Q13A)
+
+Q13A
+
+Error message
+
+Q14
+
+What degree did ... get?
+
+- none (to Q17)
+
+Q14A
+
+Specify
+
+Q15
+
+What year received highest degree?
+
+Q16
+
+Major field of study?
+
+Q17
+
+Highest level of education of mother
+
+Q18
+
+Highest level of education of father
+
+end of preliminary interview

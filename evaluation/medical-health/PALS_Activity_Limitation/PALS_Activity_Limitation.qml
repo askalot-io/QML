@@ -1,4805 +1,6343 @@
-qmlVersion: "2.0"
+qmlVersion: '2.7'
 questionnaire:
-  title: "Participation and Activity Limitation Survey"
-  codeInit: |
-    # =====================================================================
-    # Cross-section variables. With a single codeInit scope and one
-    # dependency graph, variables written by an earlier block are visible
-    # to every later block without any extern declaration.
-    # =====================================================================
-    limitation_general = 0
-    limitation_hearing = 0
-    limitation_seeing = 0
-    limitation_communicating = 0
-    limitation_walking = 0
-    limitation_hands = 0
-    limitation_learning = 0
-    limitation_developmental = 0
-    limitation_emotional = 0
-    limitation_chronic = 0
-    use_aid_hearing = 0
-    use_aid_seeing = 0
-    use_aid_communicating = 0
-    use_aid_walking = 0
-    use_aid_hands = 0
-    use_aid_learning = 0
-    use_aid_chronic = 0
-    need_aid_hearing = 0
-    need_aid_seeing = 0
-    need_aid_communicating = 0
-    need_aid_walking = 0
-    need_aid_hands = 0
-    need_aid_learning = 0
-    need_aid_chronic = 0
-    limitation_count = 0
-    use_aid_count = 0
-    need_aid_count = 0
-    hearing_has_limitation = 0
-    seeing_a_lot = 0
-    comm_has_limitation = 0
-    has_any_chronic = 0
-    b80_any_seen = 0
-    b76_gave_amount = 0
-    b82_gave_amount = 0
-    b91_gave_amount = 0
-    c9_any_yes = 0
-    c12_any_yes = 0
-    c17_any_yes = 0
-    c22_any_yes = 0
-    c15_dk = 0
-    e1_path = 0
-    e4_ever_school = 0
-    e6_special_school = 0
-    e7_class_type = 0
-    e8_ever_special = 0
-    e13_province = 0
-    is_kindergarten = 0
-    e25_used_features = 0
-    e27_needed_features = 0
-    e30_unmet_aids = 0
-    e37_assessment = 0
-    dk_i9 = 0
-
+  title: Participation and Activity Limitation Survey – 2001 (Children – under 15), Form 03
   blocks:
-
-    # ===================================================================
-    # SECTION: profile_sheet (administrative preamble)
-    # ===================================================================
-    # PALS 2001 routes on a date-of-birth age gate ("born AFTER May 15, 1996"
-    # = under age 5 at the 2001 survey), carried by the external Profile Sheet
-    # the interviewer maintains alongside the form. That device fed the age
-    # comparison performed at B6.edit, B13.edit, B15.edit, B16.edit, B51.edit,
-    # B53.edit, B87.edit, C_AGE.edit, D8.edit, and the Section E/F/G/H gates.
-    # Following the SLID pattern, the administrative prefill is converted into an
-    # explicit early question capturing the selected child's age; every age gate
-    # references q_child_age.outcome directly (< 5 for under-5-only items,
-    # >= 5 for age-5-and-over items) with no pass-through alias variable.
-    # ===================================================================
-    - id: b_profile_sheet
-      kind: Group
-      title: "Profile Sheet — Selected Child"
-      items:
-        - id: q_child_age
-          kind: Question
-          title: "Interviewer: From the Profile Sheet (date of birth), what is the selected child's age in completed years? (PALS covers children under 15.)"
-          input:
-            control: Editbox
-            min: 0
-            max: 14
-            right: "years"
-
-    # ===================================================================
-    # SECTION: filter_questions
-    # ===================================================================
-    - id: b_filter_questions
-      kind: Group
-      title: "Filter Questions"
-      items:
-        - id: q_a1
-          kind: Question
-          title: "Does ..... have any DIFFICULTY hearing, seeing, communicating, walking, climbing stairs, bending, learning or doing any similar activities?"
-          input:
-            control: Radio
-            labels:
-              1: "Yes, sometimes"
-              2: "Yes, often"
-              3: "No"
-
-        - id: q_a2a
-          kind: Question
-          title: "Does a physical condition OR mental condition OR health problem REDUCE THE AMOUNT OR THE KIND OF ACTIVITY ..... can do at home?"
-          input:
-            control: Radio
-            labels:
-              1: "Yes, sometimes"
-              2: "Yes, often"
-              3: "No"
-
-        - id: q_a2b
-          kind: Question
-          title: "Does a physical condition OR mental condition OR health problem REDUCE THE AMOUNT OR THE KIND OF ACTIVITY ..... can do at work or at school?"
-          input:
-            control: Radio
-            labels:
-              1: "Yes, sometimes"
-              2: "Yes, often"
-              3: "No"
-              5: "Not applicable"
-
-        - id: q_a2c
-          kind: Question
-          title: "Does a physical condition OR mental condition OR health problem REDUCE THE AMOUNT OR THE KIND OF ACTIVITY ..... can do in other activities, for example, transportation or leisure?"
-          input:
-            control: Radio
-            labels:
-              1: "Yes, sometimes"
-              2: "Yes, often"
-              3: "No"
-          codeBlock: |
-            if q_a1.outcome == 1 or q_a1.outcome == 2:
-                limitation_general = 1
-            if q_a2a.outcome == 1 or q_a2a.outcome == 2:
-                limitation_general = 1
-            if q_a2b.outcome == 1 or q_a2b.outcome == 2:
-                limitation_general = 1
-            if q_a2c.outcome == 1 or q_a2c.outcome == 2:
-                limitation_general = 1
-
-    # ===================================================================
-    # SECTION: activity_limitations
-    # ===================================================================
-    # =====================================================================
-    # HEARING SUBSECTION (B1–B10)
-    # =====================================================================
-    - id: b_hearing
-      kind: Group
-      title: "Hearing"
-      items:
-        # B1: Uses hearing aid?
-        - id: q_b1
-          kind: Question
-          title: "I'm going to ask you about the child's ability to do certain activities. Please tell me only about those difficulties that have lasted, or are expected to last six months or more. Does the child use a hearing aid or hearing aids?"
-          input:
-            control: Radio
-            labels:
-              1: "Yes"
-              3: "No"
-              8: "Don't know"
-              9: "Refusal"
-
-        # B2: WITH hearing aid, ability to hear?
-        # Shown if B1=Yes(1) or B1=No(3) — i.e., not DK/R
-        - id: q_b2
-          kind: Question
-          title: "WITH HEARING AID(S), how would you describe the child's ability to hear?"
-          precondition:
-            - predicate: q_b1.outcome == 1 or q_b1.outcome == 3
-          input:
-            control: Radio
-            labels:
-              1: "Child has no problem hearing"
-              2: "Child has difficulty hearing"
-              8: "Don't know"
-              9: "Refusal"
-          codeBlock: |
-            if q_b2.outcome == 2:
-                limitation_hearing = 1
-                hearing_has_limitation = 1
-
-        # B3: How much difficulty? (follows B2=difficulty)
-        - id: q_b3
-          kind: Question
-          title: "How much difficulty?"
-          precondition:
-            - predicate: q_b2.outcome == 2
-          input:
-            control: Radio
-            labels:
-              1: "Some difficulty"
-              2: "A lot of difficulty"
-              8: "Don't know"
-              9: "Refusal"
-
-        # B4: WITHOUT hearing aid, ability to hear?
-        # Shown if B1=DK(8) or B1=Refusal(9) — skipped to B4
-        - id: q_b4
-          kind: Question
-          title: "How would you describe the child's ability to hear?"
-          precondition:
-            - predicate: q_b1.outcome == 8 or q_b1.outcome == 9
-          input:
-            control: Radio
-            labels:
-              1: "Child has no problem hearing"
-              2: "Child has difficulty hearing"
-              3: "Child cannot hear"
-              8: "Don't know"
-              9: "Refusal"
-          codeBlock: |
-            if q_b4.outcome == 2 or q_b4.outcome == 3:
-                limitation_hearing = 1
-                hearing_has_limitation = 1
-
-        # B5: How much difficulty? (follows B4=difficulty)
-        - id: q_b5
-          kind: Question
-          title: "How much difficulty?"
-          precondition:
-            - predicate: q_b4.outcome == 2
-          input:
-            control: Radio
-            labels:
-              1: "Some difficulty"
-              2: "A lot of difficulty"
-              8: "Don't know"
-              9: "Refusal"
-
-        # B6: USE aids for hearing? (age >= 5 only, and hearing limitation found)
-        # B6.edit: if child is under 5 (q_child_age.outcome < 5), skip to B11
-        # Reaches B6 only if hearing limitation was marked (B2=2 or B4=2/3)
-        - id: q_b6
-          kind: Question
-          title: "Does the child USE any aids, specialized equipment or services for children with hearing difficulties, for example, a volume control telephone or T.V. decoder?"
-          precondition:
-            - predicate: q_child_age.outcome >= 5
-            - predicate: hearing_has_limitation == 1
-          input:
-            control: Radio
-            labels:
-              1: "Yes"
-              3: "No"
-              8: "Don't know"
-              9: "Refusal"
-          codeBlock: |
-            if q_b6.outcome == 1:
-                use_aid_hearing = 1
-
-        # B7: Which aids does child USE? (hearing)
-        - id: qg_b7
-          kind: QuestionGroup
-          title: "Does the child now use:"
-          precondition:
-            - predicate: q_child_age.outcome >= 5
-            - predicate: hearing_has_limitation == 1
-            - predicate: q_b6.outcome == 1 or q_b6.outcome == 3
-          questions:
-            - "A volume control telephone"
-            - "A closed caption TV or decoder"
-            - "A TTY or TDD"
-            - "An amplifier, such as FM or infrared"
-            - "A computer to communicate (e.g. e-mail or chat service)"
-            - "A Sign language interpreter"
-            - "Other aid"
-          input:
-            control: Switch
-            off: "No"
-            on: "Yes"
-
-        # B8: NEED aids for hearing?
-        - id: q_b8
-          kind: Question
-          title: "Are there any aids or services for children with hearing difficulties that the child CURRENTLY needs, but does not have?"
-          precondition:
-            - predicate: q_child_age.outcome >= 5
-            - predicate: hearing_has_limitation == 1
-          input:
-            control: Radio
-            labels:
-              1: "Yes"
-              3: "No"
-              8: "Don't know"
-              9: "Refusal"
-          codeBlock: |
-            if q_b8.outcome == 1:
-                need_aid_hearing = 1
-
-        # B9: Which aids does child NEED? (hearing)
-        - id: qg_b9
-          kind: QuestionGroup
-          title: "Which aids or services does the child NEED, but does not have?"
-          precondition:
-            - predicate: q_b8.outcome == 1
-          questions:
-            - "A hearing aid or hearing aids"
-            - "A volume control telephone"
-            - "A closed caption T.V. or decoder"
-            - "A TTY or TDD"
-            - "An amplifier, such as FM or infrared"
-            - "A computer to communicate (e.g. e-mail or chat service)"
-            - "A Sign language interpreter"
-            - "Other aid"
-          input:
-            control: Switch
-            off: "No"
-            on: "Yes"
-
-        # B10: Communication skills (sign language, lip reading)
-        - id: qg_b10
-          kind: QuestionGroup
-          title: "This question deals with certain communication skills. Does the child:"
-          precondition:
-            - predicate: q_child_age.outcome >= 5
-            - predicate: hearing_has_limitation == 1
-          questions:
-            - "Use Sign Language, such as ASL or LSQ"
-            - "Speech read or lip read"
-          input:
-            control: Switch
-            off: "No"
-            on: "Yes"
-
-    # =====================================================================
-    # VISION SUBSECTION (B11–B20)
-    # =====================================================================
-    - id: b_vision
-      kind: Group
-      title: "Vision"
-      items:
-        # B11: Wears glasses/contacts?
-        - id: q_b11
-          kind: Question
-          title: "Does the child wear glasses or contact lenses to see up close or at a distance?"
-          input:
-            control: Radio
-            labels:
-              1: "Yes"
-              3: "No"
-              8: "Don't know"
-              9: "Refusal"
-
-        # B12: WITH glasses, vision ability?
-        - id: q_b12
-          kind: Question
-          title: "WITH GLASSES or CONTACT LENSES, how would you describe the child's vision ability?"
-          precondition:
-            - predicate: q_b11.outcome == 1 or q_b11.outcome == 3
-          input:
-            control: Radio
-            labels:
-              1: "Child has no problem seeing"
-              2: "Child has difficulty seeing"
-              8: "Don't know"
-              9: "Refusal"
-          codeBlock: |
-            if q_b12.outcome == 2:
-                limitation_seeing = 1
-
-        # B13: How much difficulty? (with glasses)
-        - id: q_b13
-          kind: Question
-          title: "How much difficulty?"
-          precondition:
-            - predicate: q_b12.outcome == 2
-          input:
-            control: Radio
-            labels:
-              1: "Some difficulty"
-              2: "A lot of difficulty"
-              8: "Don't know"
-              9: "Refusal"
-          codeBlock: |
-            if q_b13.outcome == 2:
-                seeing_a_lot = 1
-
-        # B14: WITHOUT glasses, vision ability?
-        - id: q_b14
-          kind: Question
-          title: "How would you describe the child's vision ability?"
-          precondition:
-            - predicate: q_b11.outcome == 8 or q_b11.outcome == 9
-          input:
-            control: Radio
-            labels:
-              1: "Child has no problem seeing"
-              2: "Child has difficulty seeing"
-              3: "Child cannot see"
-              8: "Don't know"
-              9: "Refusal"
-          codeBlock: |
-            if q_b14.outcome == 2 or q_b14.outcome == 3:
-                limitation_seeing = 1
-            if q_b14.outcome == 3:
-                seeing_a_lot = 1
-
-        # B15: How much difficulty? (without glasses)
-        - id: q_b15
-          kind: Question
-          title: "How much difficulty?"
-          precondition:
-            - predicate: q_b14.outcome == 2
-          input:
-            control: Radio
-            labels:
-              1: "Some difficulty"
-              2: "A lot of difficulty"
-              8: "Don't know"
-              9: "Refusal"
-          codeBlock: |
-            if q_b15.outcome == 2:
-                seeing_a_lot = 1
-
-        # B16: Legally blind diagnosis?
-        # Reached only with seeing limitation AND "a lot of difficulty" or "cannot see"
-        # AND not under 5
-        # B13.edit/B15.edit: under-5 → B51; B16.edit: under-5 → B51
-        # B13 some difficulty → B13.edit (under-5→B51, else→B21)
-        # B13 a lot → B16.edit (under-5→B51, else→B16)
-        # So B16 is reached only when seeing_a_lot==1 AND q_child_age.outcome >= 5
-        - id: q_b16
-          kind: Question
-          title: "Has the child been diagnosed by an eye specialist as being legally blind?"
-          precondition:
-            - predicate: q_child_age.outcome >= 5
-            - predicate: seeing_a_lot == 1
-          input:
-            control: Radio
-            labels:
-              1: "Yes"
-              3: "No"
-              8: "Don't know"
-              9: "Refusal"
-
-        # B17: USE aids for vision?
-        # Shown when seeing limitation exists AND not under 5 AND a lot of difficulty
-        - id: q_b17
-          kind: Question
-          title: "Does the child USE any aids or specialized equipment for children with vision difficulties, for example, magnifiers or Braille reading materials?"
-          precondition:
-            - predicate: q_child_age.outcome >= 5
-            - predicate: seeing_a_lot == 1
-          input:
-            control: Radio
-            labels:
-              1: "Yes"
-              3: "No"
-              8: "Don't know"
-              9: "Refusal"
-          codeBlock: |
-            if q_b17.outcome == 1:
-                use_aid_seeing = 1
-
-        # B18: Which aids does child USE? (vision)
-        - id: qg_b18
-          kind: QuestionGroup
-          title: "Does the child now use:"
-          precondition:
-            - predicate: q_child_age.outcome >= 5
-            - predicate: seeing_a_lot == 1
-            - predicate: q_b17.outcome == 1 or q_b17.outcome == 3
-          questions:
-            - "Magnifiers"
-            - "Braille reading materials"
-            - "Large print reading materials"
-            - "Talking books"
-            - "Recording equipment"
-            - "A closed circuit TV"
-            - "A computer with Braille, large print, or speech access"
-            - "Other aid"
-          input:
-            control: Switch
-            off: "No"
-            on: "Yes"
-
-        # B19: NEED aids for vision?
-        - id: q_b19
-          kind: Question
-          title: "Are there any aids or specialized equipment for children with vision difficulties that the child CURRENTLY needs, but does not have?"
-          precondition:
-            - predicate: q_child_age.outcome >= 5
-            - predicate: seeing_a_lot == 1
-          input:
-            control: Radio
-            labels:
-              1: "Yes"
-              3: "No"
-              8: "Don't know"
-              9: "Refusal"
-          codeBlock: |
-            if q_b19.outcome == 1:
-                need_aid_seeing = 1
-
-        # B20: Which aids does child NEED? (vision)
-        - id: qg_b20
-          kind: QuestionGroup
-          title: "Which aids does the child NEED, but does not have?"
-          precondition:
-            - predicate: q_b19.outcome == 1
-          questions:
-            - "Glasses or contact lenses"
-            - "Magnifiers"
-            - "Braille reading materials"
-            - "Large print reading materials"
-            - "Talking books"
-            - "Recording equipment"
-            - "A closed circuit TV"
-            - "A computer with Braille, large print, or speech access"
-            - "Other aid"
-          input:
-            control: Switch
-            off: "No"
-            on: "Yes"
-
-    # =====================================================================
-    # COMMUNICATION SUBSECTION (B21–B30)
-    # Routing: under-5 children skip this entirely (B13.edit/B15.edit → B51)
-    # For age >= 5: from vision subsection, reach B21 when:
-    #   - no seeing limitation (B12=1/DK/R → B13.edit → B21)
-    #   - some seeing difficulty not a lot (B13=1 → B13.edit → B21)
-    #   - B14=1/DK/R → B15.edit → B21
-    #   - B15=1 → B15.edit → B21
-    #   - after B16-B20 vision aids section → B21
-    # So for age >= 5, everyone reaches B21 eventually
-    # =====================================================================
-    - id: b_communication
-      kind: Group
-      title: "Communication"
+  - id: b_s1_preamble
+    title: Interview setup
+    items:
+    - id: BORN_AFTER_19960515
+      kind: Question
+      title: External input derived from the cover page date of birth (DOB), used by the interviewer instruction 'If child was born AFTER May 15, 1996'
+      external: true
+      input:
+        control: Radio
+        labels:
+          1: Born AFTER May 15, 1996
+          2: Born on or before May 15, 1996
+  - id: b_s1_cover
+    title: FORM 03 – INFORMATION SOURCE (cover page)
+    items:
+    - id: FIRST_NAME
+      kind: Question
+      title: First name(s) [child; cover page field, printed without an id]
+      input:
+        control: Textarea
+    - id: INITIALS
+      kind: Question
+      title: Initial(s) [cover page field, printed without an id]
+      input:
+        control: Textarea
+    - id: FAMILY_NAME
+      kind: Question
+      title: Family name [child; cover page field, printed without an id]
+      input:
+        control: Textarea
+    - id: ADDRESS
+      kind: Question
+      title: 'Address: Number and Street or lot and concession or exact location [cover page field, printed without an id]'
+      input:
+        control: Textarea
+    - id: APT_NO
+      kind: Question
+      title: Apt. No. [cover page field, printed without an id]
+      input:
+        control: Textarea
+    - id: CITY
+      kind: Question
+      title: City, Town, Village or Municipality [cover page field, printed without an id]
+      input:
+        control: Textarea
+    - id: PROVINCE
+      kind: Question
+      title: Province or Territory [cover page field, printed without an id]
+      input:
+        control: Textarea
+    - id: POSTAL_CODE
+      kind: Question
+      title: Postal Code [cover page field, printed without an id]
+      input:
+        control: Textarea
+    - id: TELEPHONE
+      kind: Question
+      title: 'Telephone: Area code, Telephone No. [cover page field, printed without an id]'
+      input:
+        control: Textarea
+    - id: SEX
+      kind: Question
+      title: 'Sex: Male / Female [cover page field, printed without an id; the source prints no codes, 1 and 2 follow printed order]'
+      input:
+        control: Radio
+        labels:
+          1: Male
+          2: Female
+    - id: DOB
+      kind: Question
+      title: 'Date of birth: Year Month Day [cover page field, printed without an id]'
+      input:
+        control: Textarea
+    - id: RESIDENTS_ADULTS
+      kind: Question
+      title: 'Number of residents in the household: Adults (15 and over) [cover page field, printed without an id]'
+      input:
+        control: Editbox
+        min: 0
+        max: 99
+    - id: RESIDENTS_CHILDREN
+      kind: Question
+      title: 'Number of residents in the household: Children (0-14) [cover page field, printed without an id]'
+      input:
+        control: Editbox
+        min: 0
+        max: 99
+  - id: b_s1_respondent
+    title: Respondent and proxy status
+    items:
+    - id: PROXY_NAME
+      kind: Question
+      title: 'Name of parent/guardian or proxy: First name(s), Family name [cover page field, printed without an id]'
+      input:
+        control: Textarea
+    - id: PROXY_REASON
+      kind: Question
+      title: 'Reason for proxy: (1) Parent/Guardian does not speak English or French; (2) Parent/Guardian unable to respond; (3) Parent/Guardian absent – duration of survey [printed without an id]'
+      input:
+        control: Radio
+        labels:
+          1: (1) Parent/Guardian does not speak English or French
+          2: (2) Parent/Guardian unable to respond
+          3: (3) Parent/Guardian absent – duration of survey
+    - id: INFO_SOURCE
+      kind: Question
+      title: 'Non-Proxy: (1) Parent/Guardian; (2) Parent/Guardian (via interpreter). Proxy: (3) Other household member; (4) Other, specify [printed without an id; one code list 1-4 covering Non-Proxy and Proxy]'
+      input:
+        control: Radio
+        labels:
+          1: '(1) Non-Proxy: Parent/Guardian'
+          2: '(2) Non-Proxy: Parent/Guardian (via interpreter)'
+          3: '(3) Proxy: Other household member'
+          4: '(4) Proxy: Other, specify'
+  - id: b_s2_filter
+    title: SECTION A — FILTER QUESTIONS
+    items:
+    - id: A1
+      kind: Question
+      title: 'Does ..... have any DIFFICULTY hearing, seeing, communicating, walking, climbing stairs, bending, learning or doing any similar activities? Interviewer: Read list. Mark one only.'
+      input:
+        control: Radio
+        labels:
+          1: (1) Yes, sometimes
+          2: (2) Yes, often
+          3: (3) No
+          98: (x) Don’t know
+          99: (r) Refusal
+    - id: A2A
+      kind: Question
+      title: 'Does a physical condition OR mental condition OR health problem REDUCE THE AMOUNT OR THE KIND OF ACTIVITY ..... can do at home? Interviewer: Read list. Mark one only.'
+      input:
+        control: Radio
+        labels:
+          1: (1) Yes, sometimes
+          2: (2) Yes, often
+          3: (3) No
+          98: (x) Don’t know
+          99: (r) Refusal
+    - id: A2B
+      kind: Question
+      title: 'Does a physical condition OR mental condition OR health problem REDUCE THE AMOUNT OR THE KIND OF ACTIVITY ..... can do at work or at school? Interviewer: Read list. Mark one only.'
+      input:
+        control: Radio
+        labels:
+          1: (1) Yes, sometimes
+          2: (2) Yes, often
+          3: (3) No
+          5: (5) Not applicable
+          98: (x) Don’t know
+          99: (r) Refusal
+    - id: A2C
+      kind: Question
+      title: 'Does a physical condition OR mental condition OR health problem REDUCE THE AMOUNT OR THE KIND OF ACTIVITY ..... can do in other activities, for example, transportation or leisure? Interviewer: Read list. Mark one only.'
+      input:
+        control: Radio
+        labels:
+          1: (1) Yes, sometimes
+          2: (2) Yes, often
+          3: (3) No
+          98: (x) Don’t know
+          99: (r) Refusal
+  - id: b_s3_p1_hearing_aid
+    title: Hearing aid use
+    items:
+    - id: B1
+      kind: Question
+      title: I’m going to ask you about .....’s ability to do certain activities. Please tell me only about those difficulties that have lasted, or are expected to last six months or more. Does ..... use a hearing aid or hearing aids?
+      input:
+        control: Radio
+        labels:
+          1: (1) Yes
+          3: (3) No
+          98: (x) Don’t know
+          99: (r) Refusal
+  - id: b_s3_p1_hearing_with_aid
+    title: Hearing with hearing aid
+    precondition:
+    - predicate: not (B1.outcome in [3, 98])
+      hint: Asked only when question B1 is none of "(3) No", "(x) Don’t know".
+    items:
+    - id: B2
+      kind: Question
+      title: 'WITH HEARING AID(S), how would you describe his/her ability to hear? Interviewer: Read list. Mark one only.'
+      input:
+        control: Radio
+        labels:
+          1: (1) Child has no problem hearing
+          2: (2) Child has difficulty hearing
+          98: (x) Don’t know
+          99: (r) Refusal
+    - id: B3
+      kind: Question
+      title: 'How much difficulty? Interviewer: Read list. Mark one only.'
       precondition:
-        - predicate: q_child_age.outcome >= 5
-      items:
-        # B21: Difficulty speaking?
-        - id: q_b21
-          kind: Question
-          title: "Because of a condition or health problem, does the child have any difficulty speaking?"
-          input:
-            control: Radio
-            labels:
-              1: "Yes"
-              3: "No"
-              8: "Don't know"
-              9: "Refusal"
-          codeBlock: |
-            if q_b21.outcome == 1:
-                limitation_communicating = 1
-                comm_has_limitation = 1
-
-        # B22: Difficulty making understood? (only if B21=No/DK/R)
-        # B21=Yes → skip to B23
-        - id: q_b22
-          kind: Question
-          title: "Because of a condition or health problem, does the child have any difficulty making himself/herself understood when speaking?"
-          precondition:
-            - predicate: q_b21.outcome != 1
-          input:
-            control: Radio
-            labels:
-              1: "Yes"
-              3: "No"
-              8: "Don't know"
-              9: "Refusal"
-          codeBlock: |
-            if q_b22.outcome == 1:
-                limitation_communicating = 1
-                comm_has_limitation = 1
-
-        # B23: How much difficulty speaking?
-        # Shown if B21=Yes (has difficulty speaking)
-        - id: q_b23
-          kind: Question
-          title: "How much difficulty does the child have speaking?"
-          precondition:
-            - predicate: q_b21.outcome == 1
-          input:
-            control: Radio
-            labels:
-              1: "Child has some difficulty"
-              2: "Child has a lot of difficulty"
-              3: "Child cannot speak"
-              8: "Don't know"
-              9: "Refusal"
-          # B23=cannot speak(3) routing is handled directly via q_b23.outcome in
-          # the B24 and B26 gates below; no separate "cannot speak" flag is kept.
-
-        # B24: Difficulty making understood? (after B23, if child can speak)
-        # B23=cannot speak(3) → skip to B26
-        - id: q_b24
-          kind: Question
-          title: "Because of a condition or health problem, does the child have any difficulty making himself/herself understood when speaking?"
-          precondition:
-            - predicate: q_b21.outcome == 1
-            - predicate: q_b23.outcome != 3 and q_b23.outcome != 8 and q_b23.outcome != 9
-          input:
-            control: Radio
-            labels:
-              1: "Yes"
-              3: "No"
-              8: "Don't know"
-              9: "Refusal"
-
-        # B25: How well understood when speaking? (sub-items: family, friends, others)
-        # Reached if: B22=Yes(1) → B25, or B24=Yes(1) → B25
-        - id: qg_b25
-          kind: QuestionGroup
-          title: "How well do you feel the child is able to make himself/herself understood when speaking with:"
-          precondition:
-            - predicate: (q_b21.outcome != 1 and q_b22.outcome == 1) or (q_b21.outcome == 1 and q_b23.outcome != 3 and q_b23.outcome != 8 and q_b23.outcome != 9 and q_b24.outcome == 1)
-          questions:
-            - "Family members"
-            - "Friends"
-            - "Other people"
-          input:
-            control: Radio
-            labels:
-              1: "Completely"
-              2: "Partially"
-              3: "Not at all"
-
-        # B26: Uses sign language or other communication?
-        # Reached by all children with communication limitation
-        # (B21=Yes path OR B22=Yes path OR B23=cannot speak)
-        - id: qg_b26
-          kind: QuestionGroup
-          title: "Does the child use:"
-          precondition:
-            - predicate: comm_has_limitation == 1
-          questions:
-            - "Sign language, such as ASL or LSQ"
-            - "Other form of communication"
-          input:
-            control: Switch
-            off: "No"
-            on: "Yes"
-
-        # B27: USE aids for communication?
-        - id: q_b27
-          kind: Question
-          title: "Does the child USE any aids or specialized equipment for children who have difficulty speaking or making themselves understood, for example, a voice amplifier or Blissboard?"
-          precondition:
-            - predicate: comm_has_limitation == 1
-          input:
-            control: Radio
-            labels:
-              1: "Yes"
-              3: "No"
-              8: "Don't know"
-              9: "Refusal"
-          codeBlock: |
-            if q_b27.outcome == 1:
-                use_aid_communicating = 1
-
-        # B28: Which aids does child USE? (communication)
-        - id: qg_b28
-          kind: QuestionGroup
-          title: "Does the child now use:"
-          precondition:
-            - predicate: q_b27.outcome == 1 or q_b27.outcome == 3
-          questions:
-            - "A voice amplifier"
-            - "A computer or keyboard device to communicate"
-            - "A communication board, such as a Blissboard"
-            - "Other aid"
-          input:
-            control: Switch
-            off: "No"
-            on: "Yes"
-
-        # B29: NEED aids for communication?
-        - id: q_b29
-          kind: Question
-          title: "Are there any aids or specialized equipment for children who have difficulty speaking or making themselves understood that the child CURRENTLY needs, but does not have?"
-          precondition:
-            - predicate: comm_has_limitation == 1
-          input:
-            control: Radio
-            labels:
-              1: "Yes"
-              3: "No"
-              8: "Don't know"
-              9: "Refusal"
-          codeBlock: |
-            if q_b29.outcome == 1:
-                need_aid_communicating = 1
-
-        # B30: Which aids does child NEED? (communication)
-        - id: qg_b30
-          kind: QuestionGroup
-          title: "Which aids does the child NEED, but does not have?"
-          precondition:
-            - predicate: q_b29.outcome == 1
-          questions:
-            - "A voice amplifier"
-            - "A computer or keyboard device to communicate"
-            - "A communication board, such as a Blissboard"
-            - "Other aid"
-          input:
-            control: Switch
-            off: "No"
-            on: "Yes"
-
-    # =====================================================================
-    # WALKING/MOBILITY SUBSECTION (B31–B36)
-    # Everyone age >= 5 reaches B31; under-5 are in b_communication block
-    # which is gated, but B31 is in its own block with same gate
-    # =====================================================================
-    - id: b_walking
-      kind: Group
-      title: "Walking / Mobility"
+      - predicate: not (B2.outcome == 1)
+        hint: Asked only when question B2 is not "(1) Child has no problem hearing".
+      input:
+        control: Radio
+        labels:
+          1: (1) Some difficulty
+          2: (2) A lot of difficulty
+          98: (x) Don’t know
+          99: (r) Refusal
+  - id: b_s3_p1_hearing_unaided
+    title: Hearing ability
+    precondition:
+    - predicate: not (B2.outcome == 1)
+      hint: Asked only when question B2 is not "(1) Child has no problem hearing".
+    - predicate: not (BORN_AFTER_19960515.outcome == 1)
+      hint: Asked only when question BORN_AFTER_19960515 is not "Born AFTER May 15, 1996".
+    items:
+    - id: B4
+      kind: Question
+      title: 'How would you describe .....’s ability to hear? Interviewer: Read list. Mark one only.'
+      input:
+        control: Radio
+        labels:
+          1: (1) Child has no problem hearing
+          2: (2) Child has difficulty hearing
+          3: (3) Child cannot hear
+          98: (x) Don’t know
+          99: (r) Refusal
+    - id: B5
+      kind: Question
+      title: 'How much difficulty? Interviewer: Read list. Mark one only.'
       precondition:
-        - predicate: q_child_age.outcome >= 5
-      items:
-        # B31: Difficulty walking?
-        - id: q_b31
-          kind: Question
-          title: "Because of a condition or health problem, does the child have any difficulty walking? This means walking on a flat firm surface, such as a sidewalk or floor."
-          input:
-            control: Radio
-            labels:
-              1: "Yes, sometimes"
-              2: "Yes, often or always"
-              3: "No"
-              8: "Don't know"
-              9: "Refusal"
-          codeBlock: |
-            if q_b31.outcome == 1 or q_b31.outcome == 2:
-                limitation_walking = 1
-
-        # B32: How much difficulty walking?
-        - id: q_b32
-          kind: Question
-          title: "How much difficulty does the child have walking?"
-          precondition:
-            - predicate: q_b31.outcome == 1 or q_b31.outcome == 2
-          input:
-            control: Radio
-            labels:
-              1: "Some difficulty"
-              2: "A lot of difficulty"
-              3: "Child cannot walk"
-              8: "Don't know"
-              9: "Refusal"
-
-        # B33: USE aids for walking?
-        - id: q_b33
-          kind: Question
-          title: "Does the child USE any aids or specialized equipment for children who have difficulty walking or moving around, such as a cane or crutches?"
-          precondition:
-            - predicate: q_b31.outcome == 1 or q_b31.outcome == 2
-          input:
-            control: Radio
-            labels:
-              1: "Yes"
-              3: "No"
-              8: "Don't know"
-              9: "Refusal"
-          codeBlock: |
-            if q_b33.outcome == 1:
-                use_aid_walking = 1
-
-        # B34: Which aids does child USE? (walking)
-        - id: qg_b34
-          kind: QuestionGroup
-          title: "Does the child now use:"
-          precondition:
-            - predicate: q_b33.outcome == 1 or q_b33.outcome == 3
-          questions:
-            - "Orthopaedic or medically prescribed shoes"
-            - "A cane or crutches"
-            - "A walker"
-            - "A manual wheelchair"
-            - "An electric wheelchair"
-            - "Braces, such as a leg brace (exclude dental braces)"
-            - "Lift devices, such as a bed lift device"
-            - "Other aid"
-          input:
-            control: Switch
-            off: "No"
-            on: "Yes"
-
-        # B35: NEED aids for walking?
-        - id: q_b35
-          kind: Question
-          title: "Are there any aids or specialized equipment for children who have difficulty walking or moving around that the child CURRENTLY needs, but does not have?"
-          precondition:
-            - predicate: q_b31.outcome == 1 or q_b31.outcome == 2
-          input:
-            control: Radio
-            labels:
-              1: "Yes"
-              3: "No"
-              8: "Don't know"
-              9: "Refusal"
-          codeBlock: |
-            if q_b35.outcome == 1:
-                need_aid_walking = 1
-
-        # B36: Which aids does child NEED? (walking)
-        - id: qg_b36
-          kind: QuestionGroup
-          title: "Which aids does the child NEED, but does not have?"
-          precondition:
-            - predicate: q_b35.outcome == 1
-          questions:
-            - "Orthopaedic or medically prescribed shoes"
-            - "A cane or crutches"
-            - "A walker"
-            - "A manual wheelchair"
-            - "An electric wheelchair"
-            - "Braces, such as a leg brace (exclude dental braces)"
-            - "Lift devices, such as a bed lift device"
-            - "Other aid"
-          input:
-            control: Switch
-            off: "No"
-            on: "Yes"
-
-    # =====================================================================
-    # HANDS/FINGERS SUBSECTION (B37–B42)
-    # =====================================================================
-    - id: b_hands
-      kind: Group
-      title: "Hands / Fingers"
+      - predicate: not (B4.outcome == 1)
+        hint: Asked only when question B4 is not "(1) Child has no problem hearing".
+      - predicate: not (B4.outcome == 3 and BORN_AFTER_19960515.outcome == 1)
+        hint: Not asked when the child cannot hear.
+      - predicate: not (B4.outcome == 3 and BORN_AFTER_19960515.outcome == 2)
+        hint: Not asked when the child cannot hear.
+      input:
+        control: Radio
+        labels:
+          1: (1) Some difficulty
+          2: (2) A lot of difficulty
+          98: (x) Don’t know
+          99: (r) Refusal
+  - id: b_s3_p1_hearing_use
+    title: Hearing aids used
+    precondition:
+    - predicate: not (B2.outcome == 1)
+      hint: Asked only when question B2 is not "(1) Child has no problem hearing".
+    - predicate: not (BORN_AFTER_19960515.outcome == 1)
+      hint: Asked only when question BORN_AFTER_19960515 is not "Born AFTER May 15, 1996".
+    - predicate: not (B4.outcome == 1)
+      hint: Asked only when question B4 is not "(1) Child has no problem hearing".
+    - predicate: not (B4.outcome == 3 and BORN_AFTER_19960515.outcome == 1)
+      hint: Not asked when the child cannot hear.
+    items:
+    - id: B6
+      kind: Question
+      title: Does .... USE any aids, specialized equipment or services for children with hearing difficulties, for example, a volume control telephone or T.V. decoder?
+      input:
+        control: Radio
+        labels:
+          1: (1) Yes
+          3: (3) No
+          98: (x) Don’t know
+          99: (r) Refusal
+  - id: b_s3_p1_hearing_now
+    title: Hearing aids now used
+    precondition:
+    - predicate: not (B2.outcome == 1)
+      hint: Asked only when question B2 is not "(1) Child has no problem hearing".
+    - predicate: not (BORN_AFTER_19960515.outcome == 1)
+      hint: Asked only when question BORN_AFTER_19960515 is not "Born AFTER May 15, 1996".
+    - predicate: not (B4.outcome == 1)
+      hint: Asked only when question B4 is not "(1) Child has no problem hearing".
+    - predicate: not (B4.outcome == 3 and BORN_AFTER_19960515.outcome == 1)
+      hint: Not asked when the child cannot hear.
+    - predicate: not (B6.outcome in [3, 98])
+      hint: Asked only when question B6 is none of "(3) No", "(x) Don’t know".
+    items:
+    - id: B7_a
+      kind: Question
+      title: 'Does he/she now use: (a) a volume control telephone Interviewer: Read list.'
+      input:
+        control: Radio
+        labels:
+          1: (1) Yes
+          3: (3) No
+          98: (x) DK
+          99: (r) Ref
+    - id: B7_b
+      kind: Question
+      title: 'Does he/she now use: (b) a closed caption TV or decoder'
+      input:
+        control: Radio
+        labels:
+          1: (1) Yes
+          3: (3) No
+          98: (x) DK
+          99: (r) Ref
+    - id: B7_c
+      kind: Question
+      title: 'Does he/she now use: (c) a TTY or TDD'
+      input:
+        control: Radio
+        labels:
+          1: (1) Yes
+          3: (3) No
+          98: (x) DK
+          99: (r) Ref
+    - id: B7_d
+      kind: Question
+      title: 'Does he/she now use: (d) an amplifier, such as FM or infrared'
+      input:
+        control: Radio
+        labels:
+          1: (1) Yes
+          3: (3) No
+          98: (x) DK
+          99: (r) Ref
+    - id: B7_e
+      kind: Question
+      title: 'Does he/she now use: (e) a computer to communicate (e.g.e-mail or chat service)'
+      input:
+        control: Radio
+        labels:
+          1: (1) Yes
+          3: (3) No
+          98: (x) DK
+          99: (r) Ref
+    - id: B7_f
+      kind: Question
+      title: 'Does he/she now use: (f) a Sign language interpreter'
+      input:
+        control: Radio
+        labels:
+          1: (1) Yes
+          3: (3) No
+          98: (x) DK
+          99: (r) Ref
+    - id: B7_g
+      kind: Question
+      title: 'Does he/she now use: (g) other aid, specify'
+      input:
+        control: Radio
+        labels:
+          1: (1) Yes
+          3: (3) No
+          98: (x) DK
+          99: (r) Ref
+  - id: b_s3_p1_hearing_need
+    title: Hearing aids needed and communication
+    precondition:
+    - predicate: not (B2.outcome == 1)
+      hint: Asked only when question B2 is not "(1) Child has no problem hearing".
+    - predicate: not (BORN_AFTER_19960515.outcome == 1)
+      hint: Asked only when question BORN_AFTER_19960515 is not "Born AFTER May 15, 1996".
+    - predicate: not (B4.outcome == 1)
+      hint: Asked only when question B4 is not "(1) Child has no problem hearing".
+    - predicate: not (B4.outcome == 3 and BORN_AFTER_19960515.outcome == 1)
+      hint: Not asked when the child cannot hear.
+    items:
+    - id: B8
+      kind: Question
+      title: Are there any aids or services for children with hearing difficulties that ..... CURRENTLY needs, but does not have?
+      input:
+        control: Radio
+        labels:
+          1: (1) Yes
+          3: (3) No
+          98: (x) Don’t know
+          99: (r) Refusal
+    - id: B9
+      kind: Question
+      title: 'Which aids or services does he/she NEED, but does not have? Interviewer: Do NOT read list. Mark all that apply.'
+      input:
+        control: Checkbox
+        labels:
+          1: (a) A hearing aid or hearing aids
+          2: (b) A volume control telephone
+          4: (c) A closed caption T.V. or decoder
+          8: (d) A TTY or TDD
+          16: (e) An amplifier, such as FM or infrared
+          32: (f) A computer to communicate (e.g. e-mail or chat service)
+          64: (g) A Sign language interpreter
+          128: (h) Other aid, specify
+          256: (x) Don’t know
+          512: (r) Refusal
+    - id: B10_a
+      kind: Question
+      title: 'This question deals with certain communication skills. Does ..... : (a) use Sign Language, such as ASL or LSQ? Interviewer: Read list.'
+      input:
+        control: Radio
+        labels:
+          1: (1) Yes
+          3: (3) No
+          98: (x) DK
+          99: (r) Ref
+    - id: B10_b
+      kind: Question
+      title: 'This question deals with certain communication skills. Does ..... : (b) speech read or lip read?'
+      input:
+        control: Radio
+        labels:
+          1: (1) Yes
+          3: (3) No
+          98: (x) DK
+          99: (r) Ref
+  - id: b_s3_p1_vision_glasses
+    title: Glasses or contact lenses
+    items:
+    - id: B11
+      kind: Question
+      title: Does ..... wear glasses or contact lenses to see up close or at a distance?
+      input:
+        control: Radio
+        labels:
+          1: (1) Yes
+          3: (3) No
+          98: (x) Don’t know
+          99: (r) Refusal
+  - id: b_s3_p1_vision_with
+    title: Vision with glasses or contact lenses
+    precondition:
+    - predicate: not (B11.outcome in [3, 98])
+      hint: Asked only when question B11 is none of "(3) No", "(x) Don’t know".
+    items:
+    - id: B12
+      kind: Question
+      title: 'With GLASSES or CONTACT LENSES, how would you describe his/her vision ability? Interviewer: Read list. Mark one only.'
+      input:
+        control: Radio
+        labels:
+          1: (1) Child has no problem seeing
+          2: (2) Child has difficulty seeing
+          98: (x) Don’t know
+          99: (r) Refusal
+    - id: B13
+      kind: Question
+      title: 'How much difficulty? Interviewer: Read list. Mark one only.'
       precondition:
-        - predicate: q_child_age.outcome >= 5
-      items:
-        # B37: Difficulty using hands/fingers?
-        - id: q_b37
-          kind: Question
-          title: "Because of a condition or health problem, does the child have any difficulty USING his/her HANDS or FINGERS to grasp or hold small objects, such as a pencil or scissors?"
-          input:
-            control: Radio
-            labels:
-              1: "Yes, sometimes"
-              2: "Yes, often or always"
-              3: "No"
-              8: "Don't know"
-              9: "Refusal"
-          codeBlock: |
-            if q_b37.outcome == 1 or q_b37.outcome == 2:
-                limitation_hands = 1
-
-        # B38: How much difficulty?
-        - id: q_b38
-          kind: Question
-          title: "How much difficulty?"
-          precondition:
-            - predicate: q_b37.outcome == 1 or q_b37.outcome == 2
-          input:
-            control: Radio
-            labels:
-              1: "Some difficulty"
-              2: "A lot of difficulty"
-              3: "Completely unable"
-              8: "Don't know"
-              9: "Refusal"
-
-        # B39: USE aids for hands/fingers?
-        - id: q_b39
-          kind: Question
-          title: "Does the child USE any aids or specialized equipment designed to support, replace or assist in the use of hands or fingers, such as a hand or arm brace, or grasping tools?"
-          precondition:
-            - predicate: q_b37.outcome == 1 or q_b37.outcome == 2
-          input:
-            control: Radio
-            labels:
-              1: "Yes"
-              3: "No"
-              8: "Don't know"
-              9: "Refusal"
-          codeBlock: |
-            if q_b39.outcome == 1:
-                use_aid_hands = 1
-
-        # B40: Which aids does child USE? (hands)
-        - id: qg_b40
-          kind: QuestionGroup
-          title: "Does the child now use:"
-          precondition:
-            - predicate: q_b39.outcome == 1
-          questions:
-            - "A hand or arm brace"
-            - "Grasping tools or reach extenders"
-            - "Other aid"
-          input:
-            control: Switch
-            off: "No"
-            on: "Yes"
-
-        # B41: NEED aids for hands/fingers?
-        - id: q_b41
-          kind: Question
-          title: "Are there any aids or specialized equipment designed to support, replace or assist in the use of hands or fingers that the child CURRENTLY needs, but does not have?"
-          precondition:
-            - predicate: q_b37.outcome == 1 or q_b37.outcome == 2
-          input:
-            control: Radio
-            labels:
-              1: "Yes"
-              3: "No"
-              8: "Don't know"
-              9: "Refusal"
-          codeBlock: |
-            if q_b41.outcome == 1:
-                need_aid_hands = 1
-
-        # B42: Which aids does child NEED? (hands)
-        - id: qg_b42
-          kind: QuestionGroup
-          title: "Which aids does the child NEED, but does not have?"
-          precondition:
-            - predicate: q_b41.outcome == 1
-          questions:
-            - "A hand or arm brace"
-            - "Grasping tools or reach extenders"
-            - "Other aid"
-          input:
-            control: Switch
-            off: "No"
-            on: "Yes"
-
-    # =====================================================================
-    # LEARNING DISABILITY SUBSECTION (B43–B50)
-    # =====================================================================
-    - id: b_learning
-      kind: Group
-      title: "Learning Disability"
+      - predicate: not (B12.outcome == 1 and BORN_AFTER_19960515.outcome == 1)
+        hint: Not asked when the child has no problem seeing.
+      - predicate: not (B12.outcome == 1 and BORN_AFTER_19960515.outcome == 2)
+        hint: Not asked when the child has no problem seeing.
+      input:
+        control: Radio
+        labels:
+          1: (1) Some difficulty
+          2: (2) A lot of difficulty
+          98: (x) Don’t know
+          99: (r) Refusal
+  - id: b_s3_p1_vision_unaided
+    title: Vision ability
+    precondition:
+    - predicate: not (B12.outcome == 1 and BORN_AFTER_19960515.outcome == 1)
+      hint: Not asked when the child has no problem seeing.
+    - predicate: not (B12.outcome == 1 and BORN_AFTER_19960515.outcome == 2)
+      hint: Not asked when the child has no problem seeing.
+    - predicate: not (BORN_AFTER_19960515.outcome == 1)
+      hint: Asked only when question BORN_AFTER_19960515 is not "Born AFTER May 15, 1996".
+    items:
+    - id: B14
+      kind: Question
+      title: 'How would you describe .....’s vision ability? Interviewer: Read list. Mark one only.'
+      input:
+        control: Radio
+        labels:
+          1: (1) Child has no problem seeing
+          2: (2) Child has difficulty seeing
+          3: (3) Child cannot see
+          98: (x) Don’t know
+          99: (r) Refusal
+    - id: B15
+      kind: Question
+      title: 'How much difficulty? Interviewer: Read list. Mark one only.'
       precondition:
-        - predicate: q_child_age.outcome >= 5
-      items:
-        # B43: Think child has learning disability?
-        - id: q_b43
-          kind: Question
-          title: "Do you think that the child has a learning disability, such as dyslexia, hyperactivity or attention problems?"
-          input:
-            control: Radio
-            labels:
-              1: "Yes"
-              3: "No"
-              8: "Don't know"
-              9: "Refusal"
-          codeBlock: |
-            if q_b43.outcome == 1:
-                limitation_learning = 1
-
-        # B44: Professional ever said learning disability?
-        - id: q_b44
-          kind: Question
-          title: "Has a teacher, doctor or other health professional ever said that the child had a learning disability?"
-          input:
-            control: Radio
-            labels:
-              1: "Yes"
-              3: "No"
-              8: "Don't know"
-              9: "Refusal"
-          codeBlock: |
-            if q_b44.outcome == 1:
-                limitation_learning = 1
-
-        # B45: Does condition reduce activities?
-        # B45.edit: only if B43=Yes OR B44=Yes
-        - id: q_b45
-          kind: Question
-          title: "Does this condition reduce the amount or the kind of activities the child can do?"
-          precondition:
-            - predicate: q_b43.outcome == 1 or q_b44.outcome == 1
-          input:
-            control: Radio
-            labels:
-              1: "Yes, sometimes"
-              2: "Yes, often or always"
-              3: "No"
-              8: "Don't know"
-              9: "Refusal"
-
-        # B46: How many activities prevented? (3 sub-items)
-        - id: qg_b46
-          kind: QuestionGroup
-          title: "How many ACTIVITIES does this condition USUALLY prevent the child from doing:"
-          precondition:
-            - predicate: q_b45.outcome == 1 or q_b45.outcome == 2 or q_b45.outcome == 3
-          questions:
-            - "At home"
-            - "At school"
-            - "At play or recreational activities"
-          input:
-            control: Radio
-            labels:
-              1: "None"
-              2: "A few"
-              3: "Many"
-              4: "Most"
-
-        # B47: USE aids for learning?
-        - id: q_b47
-          kind: Question
-          title: "Does the child USE any aids, specialized equipment or services to help with the learning difficulty?"
-          precondition:
-            - predicate: q_b43.outcome == 1 or q_b44.outcome == 1
-          input:
-            control: Radio
-            labels:
-              1: "Yes"
-              3: "No"
-              8: "Don't know"
-              9: "Refusal"
-          codeBlock: |
-            if q_b47.outcome == 1:
-                use_aid_learning = 1
-
-        # B48: Which aids does child USE? (learning)
-        - id: qg_b48
-          kind: QuestionGroup
-          title: "Does the child now use:"
-          precondition:
-            - predicate: q_b47.outcome == 1 or q_b47.outcome == 3
-          questions:
-            - "A computer as a learning aid"
-            - "Voice activated or voice synthesis computer software"
-            - "Talking books"
-            - "Recording equipment"
-            - "A tutor"
-            - "Other aid"
-          input:
-            control: Switch
-            off: "No"
-            on: "Yes"
-
-        # B49: NEED aids for learning?
-        - id: q_b49
-          kind: Question
-          title: "Are there any learning aids, specialized equipment or services that the child CURRENTLY needs, but does not have?"
-          precondition:
-            - predicate: q_b43.outcome == 1 or q_b44.outcome == 1
-          input:
-            control: Radio
-            labels:
-              1: "Yes"
-              3: "No"
-              8: "Don't know"
-              9: "Refusal"
-          codeBlock: |
-            if q_b49.outcome == 1:
-                need_aid_learning = 1
-
-        # B50: Which aids does child NEED? (learning)
-        - id: qg_b50
-          kind: QuestionGroup
-          title: "Which aids or services does the child NEED, but does not have?"
-          precondition:
-            - predicate: q_b49.outcome == 1
-          questions:
-            - "A computer as a learning aid"
-            - "Voice activated or voice synthesis computer software"
-            - "Talking books"
-            - "Recording equipment"
-            - "A tutor"
-            - "Other aid"
-          input:
-            control: Switch
-            off: "No"
-            on: "Yes"
-
-    # =====================================================================
-    # DEVELOPMENTAL DELAY SUBSECTION (B51–B55)
-    # B51.edit: under-5 → B51; age >= 5 → B53
-    # B53.edit: under-5 → B59; age >= 5 → B53
-    # So B51-B52 are for UNDER-5 children only
-    # B53-B55 are for age >= 5 children only
-    # =====================================================================
-    - id: b_developmental
-      kind: Group
-      title: "Developmental Delay / Disability"
-      items:
-        # B51: Delay in development? (under-5 only)
-        - id: q_b51
-          kind: Question
-          title: "Because of a condition or health problem, does the child have a delay in his/her development, either a physical, intellectual or another type of delay?"
-          precondition:
-            - predicate: q_child_age.outcome < 5
-          input:
-            control: Radio
-            labels:
-              1: "Yes"
-              3: "No"
-              8: "Don't know"
-              9: "Refusal"
-          codeBlock: |
-            if q_b51.outcome == 1:
-                limitation_developmental = 1
-
-        # B52: What kind of delay? (under-5 only, B51=Yes or No)
-        - id: qg_b52
-          kind: QuestionGroup
-          title: "What kind of delay is this? Please answer yes or no to each."
-          precondition:
-            - predicate: q_child_age.outcome < 5
-            - predicate: q_b51.outcome == 1 or q_b51.outcome == 3
-          questions:
-            - "A delay in his/her PHYSICAL development"
-            - "A delay in his/her INTELLECTUAL development"
-            - "Other type of delay"
-          input:
-            control: Switch
-            off: "No"
-            on: "Yes"
-
-        # B53: Professional said developmental disability? (age >= 5 only)
-        # B53.edit: under-5 → B59, age >= 5 → B53
-        - id: q_b53
-          kind: Question
-          title: "Has a doctor, psychologist or other health professional ever said that the child has a developmental disability or disorder? These may include autism, Down syndrome, or mental impairment due to a lack of oxygen at birth."
-          precondition:
-            - predicate: q_child_age.outcome >= 5
-          input:
-            control: Radio
-            labels:
-              1: "Yes"
-              3: "No"
-              8: "Don't know"
-              9: "Refusal"
-          codeBlock: |
-            if q_b53.outcome == 1:
-                limitation_developmental = 1
-
-        # B54: Does condition reduce activities? (age >= 5)
-        - id: q_b54
-          kind: Question
-          title: "Does this condition reduce the amount or the kind of activities the child can do?"
-          precondition:
-            - predicate: q_child_age.outcome >= 5
-            - predicate: q_b53.outcome == 1 or q_b53.outcome == 3
-          input:
-            control: Radio
-            labels:
-              1: "Yes, sometimes"
-              2: "Yes, often or always"
-              3: "No"
-              8: "Don't know"
-              9: "Refusal"
-
-        # B55: How many activities prevented? (age >= 5)
-        - id: qg_b55
-          kind: QuestionGroup
-          title: "How many ACTIVITIES does this condition USUALLY prevent the child from doing:"
-          precondition:
-            - predicate: q_b54.outcome == 1 or q_b54.outcome == 2 or q_b54.outcome == 3
-          questions:
-            - "At home"
-            - "At school"
-            - "At play or recreational activities"
-          input:
-            control: Radio
-            labels:
-              1: "None"
-              2: "A few"
-              3: "Many"
-              4: "Most"
-
-    # =====================================================================
-    # EMOTIONAL/PSYCHOLOGICAL SUBSECTION (B56–B58)
-    # =====================================================================
-    - id: b_emotional
-      kind: Group
-      title: "Emotional / Psychological"
-      items:
-        # B56: Any emotional/psychological/behavioural conditions?
-        - id: q_b56
-          kind: Question
-          title: "Does the child have any emotional, psychological or behavioural conditions that have lasted or are expected to last six months or more?"
-          input:
-            control: Radio
-            labels:
-              1: "Yes"
-              3: "No"
-              8: "Don't know"
-              9: "Refusal"
-
-        # B57: Does condition reduce activities?
-        - id: q_b57
-          kind: Question
-          title: "Does this condition reduce the amount or the kind of activities the child can do?"
-          precondition:
-            - predicate: q_b56.outcome == 1 or q_b56.outcome == 3
-          input:
-            control: Radio
-            labels:
-              1: "Yes, sometimes"
-              2: "Yes, often or always"
-              3: "No"
-              8: "Don't know"
-              9: "Refusal"
-          codeBlock: |
-            if q_b57.outcome == 1 or q_b57.outcome == 2:
-                limitation_emotional = 1
-
-        # B58: How many activities prevented?
-        - id: qg_b58
-          kind: QuestionGroup
-          title: "How many ACTIVITIES does this condition USUALLY prevent the child from doing:"
-          precondition:
-            - predicate: q_b57.outcome == 1 or q_b57.outcome == 2
-          questions:
-            - "At home"
-            - "At school"
-            - "At play or recreational activities"
-          input:
-            control: Radio
-            labels:
-              1: "None"
-              2: "A few"
-              3: "Many"
-              4: "Most"
-
-    # =====================================================================
-    # CHRONIC CONDITIONS SUBSECTION (B59–B61)
-    # =====================================================================
-    - id: b_chronic
-      kind: Group
-      title: "Chronic Conditions"
-      items:
-        # B59: Long-term diagnosed conditions checklist (20 sub-items)
-        - id: qg_b59
-          kind: QuestionGroup
-          title: "Does the child have any of the following LONG-TERM conditions which have been DIAGNOSED by a health professional?"
-          questions:
-            - "Asthma or severe allergies"
-            - "Heart condition or disease"
-            - "Kidney condition or disease"
-            - "Cancer"
-            - "Diabetes"
-            - "Epilepsy"
-            - "Autism"
-            - "Cerebral Palsy"
-            - "Spina Bifida"
-            - "Cystic Fibrosis"
-            - "Muscular Dystrophy"
-            - "Migraines"
-            - "Arthritis or rheumatism"
-            - "Paralysis of any kind"
-            - "Missing or malformed arms, legs, fingers or toes"
-            - "Fetal Alcohol Syndrome"
-            - "Attention Deficit Disorder (ADD) or ADHD"
-            - "Down syndrome"
-            - "Complex medical care needs"
-            - "Any other long-term condition diagnosed by a health professional"
-          input:
-            control: Switch
-            off: "No"
-            on: "Yes"
-          codeBlock: |
-            has_any_chronic = 0
-            if qg_b59.outcome[0] == 1:
-                has_any_chronic = 1
-            if qg_b59.outcome[1] == 1:
-                has_any_chronic = 1
-            if qg_b59.outcome[2] == 1:
-                has_any_chronic = 1
-            if qg_b59.outcome[3] == 1:
-                has_any_chronic = 1
-            if qg_b59.outcome[4] == 1:
-                has_any_chronic = 1
-            if qg_b59.outcome[5] == 1:
-                has_any_chronic = 1
-            if qg_b59.outcome[6] == 1:
-                has_any_chronic = 1
-            if qg_b59.outcome[7] == 1:
-                has_any_chronic = 1
-            if qg_b59.outcome[8] == 1:
-                has_any_chronic = 1
-            if qg_b59.outcome[9] == 1:
-                has_any_chronic = 1
-            if qg_b59.outcome[10] == 1:
-                has_any_chronic = 1
-            if qg_b59.outcome[11] == 1:
-                has_any_chronic = 1
-            if qg_b59.outcome[12] == 1:
-                has_any_chronic = 1
-            if qg_b59.outcome[13] == 1:
-                has_any_chronic = 1
-            if qg_b59.outcome[14] == 1:
-                has_any_chronic = 1
-            if qg_b59.outcome[15] == 1:
-                has_any_chronic = 1
-            if qg_b59.outcome[16] == 1:
-                has_any_chronic = 1
-            if qg_b59.outcome[17] == 1:
-                has_any_chronic = 1
-            if qg_b59.outcome[18] == 1:
-                has_any_chronic = 1
-            if qg_b59.outcome[19] == 1:
-                has_any_chronic = 1
-
-        # B60: Does condition reduce activities?
-        # B60.edit: only if any B59 = Yes
-        - id: q_b60
-          kind: Question
-          title: "Does this condition (do these conditions) reduce the amount or the kind of activities the child can do?"
-          precondition:
-            - predicate: has_any_chronic == 1
-          input:
-            control: Radio
-            labels:
-              1: "Yes, sometimes"
-              2: "Yes, often or always"
-              3: "No"
-              8: "Don't know"
-              9: "Refusal"
-          codeBlock: |
-            if q_b60.outcome == 1 or q_b60.outcome == 2:
-                limitation_chronic = 1
-
-        # B61: How many activities prevented?
-        - id: qg_b61
-          kind: QuestionGroup
-          title: "How many ACTIVITIES does this condition (do these conditions) USUALLY prevent the child from doing:"
-          precondition:
-            - predicate: q_b60.outcome == 1 or q_b60.outcome == 2
-          questions:
-            - "At home"
-            - "At school"
-            - "At play or recreational activities"
-          input:
-            control: Radio
-            labels:
-              1: "None"
-              2: "A few"
-              3: "Many"
-              4: "Most"
-
-    # =====================================================================
-    # PROFILE SHEET CHECK (B62.edit)
-    # Compute limitation_count. If 0, skip to end (follow-up).
-    # =====================================================================
-    - id: b_profile_check
-      kind: Group
-      title: "Profile Sheet Check"
-      items:
-        # Compute aggregate counts using a Comment with codeBlock
-        - id: q_profile_check
-          kind: Comment
-          title: "Interviewer: Checking Profile Sheet for limitations."
-          codeBlock: |
-            limitation_count = limitation_general + limitation_hearing + limitation_seeing + limitation_communicating + limitation_walking + limitation_hands + limitation_learning + limitation_developmental + limitation_emotional + limitation_chronic
-
-    # =====================================================================
-    # DIAGNOSIS AND CAUSE SUBSECTION (B62–B67)
-    # B62.edit: if limitation_count > 0, continue; else end section
-    # =====================================================================
-    - id: b_diagnosis
-      kind: Group
-      title: "Diagnosis and Cause"
+      - predicate: not (B14.outcome == 1 and BORN_AFTER_19960515.outcome == 1)
+        hint: Not asked when the child has no problem seeing.
+      - predicate: not (B14.outcome == 1 and BORN_AFTER_19960515.outcome == 2)
+        hint: Not asked when the child has no problem seeing.
+      - predicate: not (B14.outcome == 3 and BORN_AFTER_19960515.outcome == 1)
+        hint: Not asked when the child cannot see.
+      - predicate: not (B14.outcome == 3 and BORN_AFTER_19960515.outcome == 2)
+        hint: Not asked when the child cannot see.
+      input:
+        control: Radio
+        labels:
+          1: (1) Some difficulty
+          2: (2) A lot of difficulty
+          98: (x) Don’t know
+          99: (r) Refusal
+  - id: b_s3_p1_vision_diag
+    title: Legal blindness and vision aids used
+    precondition:
+    - predicate: not (B12.outcome == 1 and BORN_AFTER_19960515.outcome == 1)
+      hint: Not asked when the child has no problem seeing.
+    - predicate: not (B12.outcome == 1 and BORN_AFTER_19960515.outcome == 2)
+      hint: Not asked when the child has no problem seeing.
+    - predicate: not (BORN_AFTER_19960515.outcome == 1)
+      hint: Asked only when question BORN_AFTER_19960515 is not "Born AFTER May 15, 1996".
+    - predicate: not (B14.outcome == 1 and BORN_AFTER_19960515.outcome == 1)
+      hint: Not asked when the child has no problem seeing.
+    - predicate: not (B14.outcome == 1 and BORN_AFTER_19960515.outcome == 2)
+      hint: Not asked when the child has no problem seeing.
+    - predicate: not (B14.outcome == 3 and BORN_AFTER_19960515.outcome == 1)
+      hint: Not asked when the child cannot see.
+    items:
+    - id: B16
+      kind: Question
+      title: Has ..... been diagnosed by an eye specialist as being legally blind?
+      input:
+        control: Radio
+        labels:
+          1: (1) Yes
+          3: (3) No
+          98: (x) Don’t know
+          99: (r) Refusal
+    - id: B17
+      kind: Question
+      title: Does ..... USE any aids or specialized equipment for children with vision difficulties, for example, magnifiers or Braille reading materials?
+      input:
+        control: Radio
+        labels:
+          1: (1) Yes
+          3: (3) No
+          98: (x) Don’t know
+          99: (r) Refusal
+  - id: b_s3_p1_vision_now
+    title: Vision aids now used
+    precondition:
+    - predicate: not (B12.outcome == 1 and BORN_AFTER_19960515.outcome == 1)
+      hint: Not asked when the child has no problem seeing.
+    - predicate: not (B12.outcome == 1 and BORN_AFTER_19960515.outcome == 2)
+      hint: Not asked when the child has no problem seeing.
+    - predicate: not (BORN_AFTER_19960515.outcome == 1)
+      hint: Asked only when question BORN_AFTER_19960515 is not "Born AFTER May 15, 1996".
+    - predicate: not (B14.outcome == 1 and BORN_AFTER_19960515.outcome == 1)
+      hint: Not asked when the child has no problem seeing.
+    - predicate: not (B14.outcome == 1 and BORN_AFTER_19960515.outcome == 2)
+      hint: Not asked when the child has no problem seeing.
+    - predicate: not (B14.outcome == 3 and BORN_AFTER_19960515.outcome == 1)
+      hint: Not asked when the child cannot see.
+    - predicate: not (B17.outcome in [3, 98])
+      hint: Asked only when question B17 is none of "(3) No", "(x) Don’t know".
+    items:
+    - id: B18_a
+      kind: Question
+      title: 'Does he/she now use: (a) magnifiers Interviewer: Read list.'
+      input:
+        control: Radio
+        labels:
+          1: (1) Yes
+          3: (3) No
+          98: (x) DK
+          99: (r) Ref
+    - id: B18_b
+      kind: Question
+      title: 'Does he/she now use: (b) Braille reading materials'
+      input:
+        control: Radio
+        labels:
+          1: (1) Yes
+          3: (3) No
+          98: (x) DK
+          99: (r) Ref
+    - id: B18_c
+      kind: Question
+      title: 'Does he/she now use: (c) large print reading materials'
+      input:
+        control: Radio
+        labels:
+          1: (1) Yes
+          3: (3) No
+          98: (x) DK
+          99: (r) Ref
+    - id: B18_d
+      kind: Question
+      title: 'Does he/she now use: (d) talking books'
+      input:
+        control: Radio
+        labels:
+          1: (1) Yes
+          3: (3) No
+          98: (x) DK
+          99: (r) Ref
+    - id: B18_e
+      kind: Question
+      title: 'Does he/she now use: (e) recording equipment'
+      input:
+        control: Radio
+        labels:
+          1: (1) Yes
+          3: (3) No
+          98: (x) DK
+          99: (r) Ref
+    - id: B18_f
+      kind: Question
+      title: 'Does he/she now use: (f) a closed circuit TV'
+      input:
+        control: Radio
+        labels:
+          1: (1) Yes
+          3: (3) No
+          98: (x) DK
+          99: (r) Ref
+    - id: B18_g
+      kind: Question
+      title: 'Does he/she now use: (g) a computer with Braille, large print, or speech access'
+      input:
+        control: Radio
+        labels:
+          1: (1) Yes
+          3: (3) No
+          98: (x) DK
+          99: (r) Ref
+    - id: B18_h
+      kind: Question
+      title: 'Does he/she now use: (h) other aid, specify'
+      input:
+        control: Radio
+        labels:
+          1: (1) Yes
+          3: (3) No
+          98: (x) DK
+          99: (r) Ref
+  - id: b_s3_p1_vision_need
+    title: Vision aids needed
+    precondition:
+    - predicate: not (B12.outcome == 1 and BORN_AFTER_19960515.outcome == 1)
+      hint: Not asked when the child has no problem seeing.
+    - predicate: not (B12.outcome == 1 and BORN_AFTER_19960515.outcome == 2)
+      hint: Not asked when the child has no problem seeing.
+    - predicate: not (BORN_AFTER_19960515.outcome == 1)
+      hint: Asked only when question BORN_AFTER_19960515 is not "Born AFTER May 15, 1996".
+    - predicate: not (B14.outcome == 1 and BORN_AFTER_19960515.outcome == 1)
+      hint: Not asked when the child has no problem seeing.
+    - predicate: not (B14.outcome == 1 and BORN_AFTER_19960515.outcome == 2)
+      hint: Not asked when the child has no problem seeing.
+    - predicate: not (B14.outcome == 3 and BORN_AFTER_19960515.outcome == 1)
+      hint: Not asked when the child cannot see.
+    items:
+    - id: B19
+      kind: Question
+      title: Are there any aids or specialized equipment for children with vision difficulties that ..... CURRENTLY needs, but does not have?
+      input:
+        control: Radio
+        labels:
+          1: (1) Yes
+          3: (3) No
+          98: (x) Don’t know
+          99: (r) Refusal
+  - id: b_s3_p1_vision_need_which
+    title: Which vision aids needed
+    precondition:
+    - predicate: not (B12.outcome == 1 and BORN_AFTER_19960515.outcome == 1)
+      hint: Not asked when the child has no problem seeing.
+    - predicate: not (B12.outcome == 1 and BORN_AFTER_19960515.outcome == 2)
+      hint: Not asked when the child has no problem seeing.
+    - predicate: not (BORN_AFTER_19960515.outcome == 1)
+      hint: Asked only when question BORN_AFTER_19960515 is not "Born AFTER May 15, 1996".
+    - predicate: not (B14.outcome == 1 and BORN_AFTER_19960515.outcome == 1)
+      hint: Not asked when the child has no problem seeing.
+    - predicate: not (B14.outcome == 1 and BORN_AFTER_19960515.outcome == 2)
+      hint: Not asked when the child has no problem seeing.
+    - predicate: not (B14.outcome == 3 and BORN_AFTER_19960515.outcome == 1)
+      hint: Not asked when the child cannot see.
+    - predicate: not (B19.outcome in [3, 98])
+      hint: Asked only when question B19 is none of "(3) No", "(x) Don’t know".
+    items:
+    - id: B20
+      kind: Question
+      title: 'Which aids does he/she NEED, but does not have? Interviewer: Do NOT read list. Mark all that apply.'
+      input:
+        control: Checkbox
+        labels:
+          1: (a) Glasses or contact lenses
+          2: (b) Magnifiers
+          4: (c) Braille reading materials
+          8: (d) Large print reading materials
+          16: (e) Talking books
+          32: (f) Recording equipment
+          64: (g) A closed circuit TV
+          128: (h) A computer with Braille, large print, or speech access
+          256: (i) Other aid, specify
+          512: (x) Don’t know
+          1024: (r) Refusal
+  - id: b_s3_p1_speech_start
+    title: Speaking
+    precondition:
+    - predicate: not (B12.outcome == 1 and BORN_AFTER_19960515.outcome == 1)
+      hint: Not asked when the child has no problem seeing.
+    - predicate: not (BORN_AFTER_19960515.outcome == 1)
+      hint: Asked only when question BORN_AFTER_19960515 is not "Born AFTER May 15, 1996".
+    - predicate: not (B14.outcome == 1 and BORN_AFTER_19960515.outcome == 1)
+      hint: Not asked when the child has no problem seeing.
+    - predicate: not (B14.outcome == 3 and BORN_AFTER_19960515.outcome == 1)
+      hint: Not asked when the child cannot see.
+    items:
+    - id: B21
+      kind: Question
+      title: Because of a condition or health problem, does ..... have any difficulty speaking?
+      input:
+        control: Radio
+        labels:
+          1: (1) Yes
+          3: (3) No
+          98: (x) Don’t know
+          99: (r) Refusal
+    - id: B22
+      kind: Question
+      title: Because of a condition or health problem, does ..... have any difficulty making himself/herself understood when speaking?
       precondition:
-        - predicate: limitation_count > 0
-      items:
-        # B62: Age when condition suspected
-        - id: q_b62
-          kind: Question
-          title: "You mentioned earlier that because of a physical condition, mental condition or health problem the child has difficulties or activity limitations. How old was the child when you suspected that he/she has a long-term condition or health problem?"
-          input:
-            control: Editbox
-            min: 0
-            max: 14
-            right: "years (enter 0 if less than 1 year)"
-
-        # B63: Main condition causing limitations
-        - id: q_b63
-          kind: Question
-          title: "What is the MAIN condition or health problem which causes the child difficulties or activity limitations?"
-          input:
-            control: Textarea
-            placeholder: "Specify one condition"
-            maxLength: 200
-
-        # B64: Cause of condition
-        - id: q_b64
-          kind: Question
-          title: "Which one of the following best describes the CAUSE of this condition or health problem?"
-          input:
-            control: Radio
-            labels:
-              1: "Existed at birth, was due to premature birth or accident at birth"
-              2: "A disease or illness"
-              3: "Accident at home or at school"
-              4: "Motor vehicle accident"
-              5: "Other"
-              8: "Don't know"
-              9: "Refusal"
-
-        # B65: Got a diagnosis?
-        - id: q_b65
-          kind: Question
-          title: "Did you get a diagnosis for the child's condition or health problem?"
-          input:
-            control: Radio
-            labels:
-              1: "Yes"
-              3: "No"
-              8: "Don't know"
-              9: "Refusal"
-
-        # B66: Age at diagnosis
-        - id: q_b66
-          kind: Question
-          title: "How old was the child when you obtained a diagnosis for his/her condition or health problem?"
-          precondition:
-            - predicate: q_b65.outcome == 1 or q_b65.outcome == 3
-          input:
-            control: Editbox
-            min: 0
-            max: 14
-            right: "years (enter 0 if less than 1 year)"
-
-        # B67: Difficulties getting diagnosis?
-        - id: qg_b67
-          kind: QuestionGroup
-          title: "Did you experience any of the following situations when you were trying to obtain a diagnosis for the child's condition or health problem?"
-          precondition:
-            - predicate: q_b65.outcome == 1 or q_b65.outcome == 3
-          questions:
-            - "Doctor or health professional took a wait and see approach"
-            - "Long waiting period to get the diagnosis"
-            - "Difficulty getting referrals or appointments"
-            - "Doctor or health professional not available locally"
-            - "Too expensive"
-            - "Did not know where to get the diagnosis"
-            - "Other"
-          input:
-            control: Switch
-            off: "No"
-            on: "Yes"
-
-    # =====================================================================
-    # GENERAL HEALTH AND MEDICATIONS SUBSECTION (B68–B79)
-    # =====================================================================
-    - id: b_health_meds
-      kind: Group
-      title: "General Health and Medications"
+      - predicate: not (B21.outcome == 1)
+        hint: Asked only when question B21 is not "(1) Yes".
+      input:
+        control: Radio
+        labels:
+          1: (1) Yes
+          3: (3) No
+          98: (x) Don’t know
+          99: (r) Refusal
+  - id: b_s3_p1_speech_detail
+    title: Speaking difficulty detail
+    precondition:
+    - predicate: not (B12.outcome == 1 and BORN_AFTER_19960515.outcome == 1)
+      hint: Not asked when the child has no problem seeing.
+    - predicate: not (BORN_AFTER_19960515.outcome == 1)
+      hint: Asked only when question BORN_AFTER_19960515 is not "Born AFTER May 15, 1996".
+    - predicate: not (B14.outcome == 1 and BORN_AFTER_19960515.outcome == 1)
+      hint: Not asked when the child has no problem seeing.
+    - predicate: not (B14.outcome == 3 and BORN_AFTER_19960515.outcome == 1)
+      hint: Not asked when the child cannot see.
+    - predicate: not (B22.outcome == 98)
+      hint: Asked only when question B22 is not "(x) Don’t know".
+    items:
+    - id: B23
+      kind: Question
+      title: 'How much difficulty does he/she have speaking? Interviewer: Read list. Mark one only.'
+      input:
+        control: Radio
+        labels:
+          1: (1) Child has some difficulty
+          2: (2) Child has a lot of difficulty
+          3: (3) Child cannot speak
+          98: (x) Don’t know
+          99: (r) Refusal
+    - id: B24
+      kind: Question
+      title: Because of a condition or health problem, does ..... have any difficulty making himself/herself understood when speaking?
+      input:
+        control: Radio
+        labels:
+          1: (1) Yes
+          3: (3) No
+          98: (x) Don’t know
+          99: (r) Refusal
+    - id: B25_a
+      kind: Question
+      title: 'How well do you feel ..... is able to make himself/herself understood when speaking with: (a) his/her family members? Interviewer: Read categories. Mark one only. Read list.'
+      input:
+        control: Radio
+        labels:
+          1: (1) Completely
+          2: (2) Partially
+          3: (3) Not at all
+          98: (x) DK
+          99: (r) Ref
+    - id: B25_b
+      kind: Question
+      title: 'How well do you feel ..... is able to make himself/herself understood when speaking with: (b) his/her friends?'
+      input:
+        control: Radio
+        labels:
+          1: (1) Completely
+          2: (2) Partially
+          3: (3) Not at all
+          98: (x) DK
+          99: (r) Ref
+    - id: B25_c
+      kind: Question
+      title: 'How well do you feel ..... is able to make himself/herself understood when speaking with: (c) other people?'
+      input:
+        control: Radio
+        labels:
+          1: (1) Completely
+          2: (2) Partially
+          3: (3) Not at all
+          98: (x) DK
+          99: (r) Ref
+  - id: b_s3_p2_speech_comm
+    title: 'Speaking: ways of communicating and aids used'
+    precondition:
+    - predicate: not (B12.outcome == 1 and BORN_AFTER_19960515.outcome == 1)
+      hint: Not asked when B12 is Yes and the child was born after May 15, 1996.
+    - predicate: not (BORN_AFTER_19960515.outcome == 1)
+      hint: Asked only when the child was not born after May 15, 1996.
+    - predicate: not (B14.outcome == 1 and BORN_AFTER_19960515.outcome == 1)
+      hint: Not asked when B14 is Yes and the child was born after May 15, 1996.
+    - predicate: not (B14.outcome == 3 and BORN_AFTER_19960515.outcome == 1)
+      hint: Not asked when B14 is No and the child was born after May 15, 1996.
+    - predicate: not (B22.outcome == 98)
+      hint: Asked only when B22 is not Don't know.
+    items:
+    - id: B26_a
+      kind: Question
+      title: 'Does he/she use: (a) Sign language, such as ASL or LSQ Interviewer: Read list.'
+      input:
+        control: Radio
+        labels:
+          1: (1) Yes
+          3: (3) No
+          98: (x) DK
+          99: (r) Ref
+    - id: B26_b
+      kind: Question
+      title: 'Does he/she use: (b) other form of communication, specify'
+      input:
+        control: Radio
+        labels:
+          1: (1) Yes
+          3: (3) No
+          98: (x) DK
+          99: (r) Ref
+    - id: B27
+      kind: Question
+      title: Does ..... USE any aids or specialized equipment for children who have difficulty speaking or making themselves understood, for example, a voice amplifier or Blissboard?
+      input:
+        control: Radio
+        labels:
+          1: (1) Yes
+          3: (3) No
+          98: (x) Don’t know
+          99: (r) Refusal
+  - id: b_s3_p2_speech_now_use
+    title: 'Speaking: aids now used'
+    precondition:
+    - predicate: not (B12.outcome == 1 and BORN_AFTER_19960515.outcome == 1)
+      hint: Not asked when B12 is Yes and the child was born after May 15, 1996.
+    - predicate: not (BORN_AFTER_19960515.outcome == 1)
+      hint: Asked only when the child was not born after May 15, 1996.
+    - predicate: not (B14.outcome == 1 and BORN_AFTER_19960515.outcome == 1)
+      hint: Not asked when B14 is Yes and the child was born after May 15, 1996.
+    - predicate: not (B14.outcome == 3 and BORN_AFTER_19960515.outcome == 1)
+      hint: Not asked when B14 is No and the child was born after May 15, 1996.
+    - predicate: not (B22.outcome == 98)
+      hint: Asked only when B22 is not Don't know.
+    - predicate: not (B27.outcome in [3, 98])
+      hint: Asked only when B27 is none of No, Don't know.
+    items:
+    - id: B28_a
+      kind: Question
+      title: 'Does he/she now use: (a) a voice amplifier Interviewer: Read list.'
+      input:
+        control: Radio
+        labels:
+          1: (1) Yes
+          3: (3) No
+          98: (x) DK
+          99: (r) Ref
+    - id: B28_b
+      kind: Question
+      title: 'Does he/she now use: (b) a computer or keyboard device to communicate'
+      input:
+        control: Radio
+        labels:
+          1: (1) Yes
+          3: (3) No
+          98: (x) DK
+          99: (r) Ref
+    - id: B28_c
+      kind: Question
+      title: 'Does he/she now use: (c) a communication board, such as a Blissboard'
+      input:
+        control: Radio
+        labels:
+          1: (1) Yes
+          3: (3) No
+          98: (x) DK
+          99: (r) Ref
+    - id: B28_d
+      kind: Question
+      title: 'Does he/she now use: (d) other aid, specify'
+      input:
+        control: Radio
+        labels:
+          1: (1) Yes
+          3: (3) No
+          98: (x) DK
+          99: (r) Ref
+  - id: b_s3_p2_speech_need
+    title: 'Speaking: aids needed'
+    precondition:
+    - predicate: not (B12.outcome == 1 and BORN_AFTER_19960515.outcome == 1)
+      hint: Not asked when B12 is Yes and the child was born after May 15, 1996.
+    - predicate: not (BORN_AFTER_19960515.outcome == 1)
+      hint: Asked only when the child was not born after May 15, 1996.
+    - predicate: not (B14.outcome == 1 and BORN_AFTER_19960515.outcome == 1)
+      hint: Not asked when B14 is Yes and the child was born after May 15, 1996.
+    - predicate: not (B14.outcome == 3 and BORN_AFTER_19960515.outcome == 1)
+      hint: Not asked when B14 is No and the child was born after May 15, 1996.
+    - predicate: not (B22.outcome == 98)
+      hint: Asked only when B22 is not Don't know.
+    items:
+    - id: B29
+      kind: Question
+      title: Are there any aids or specialized equipment for children who have difficulty speaking or making themselves understood that ..... CURRENTLY needs, but does not have?
+      input:
+        control: Radio
+        labels:
+          1: (1) Yes
+          3: (3) No
+          98: (x) Don’t know
+          99: (r) Refusal
+  - id: b_s3_p2_speech_need_which
+    title: 'Speaking: which aids are needed'
+    precondition:
+    - predicate: not (B12.outcome == 1 and BORN_AFTER_19960515.outcome == 1)
+      hint: Not asked when B12 is Yes and the child was born after May 15, 1996.
+    - predicate: not (BORN_AFTER_19960515.outcome == 1)
+      hint: Asked only when the child was not born after May 15, 1996.
+    - predicate: not (B14.outcome == 1 and BORN_AFTER_19960515.outcome == 1)
+      hint: Not asked when B14 is Yes and the child was born after May 15, 1996.
+    - predicate: not (B14.outcome == 3 and BORN_AFTER_19960515.outcome == 1)
+      hint: Not asked when B14 is No and the child was born after May 15, 1996.
+    - predicate: not (B22.outcome == 98)
+      hint: Asked only when B22 is not Don't know.
+    - predicate: not (B29.outcome in [3, 98])
+      hint: Asked only when B29 is none of No, Don't know.
+    items:
+    - id: B30
+      kind: Question
+      title: 'Which aids does he/she NEED, but does not have? Interviewer: Do NOT read list. Mark all that apply.'
+      input:
+        control: Checkbox
+        labels:
+          1: (a) A voice amplifier
+          2: (b) A computer or keyboard device to communicate
+          4: (c) A communication board, such as a Blissboard
+          8: (d) Other aid, specify
+          16: (x) Don’t know
+          32: (r) Refusal
+  - id: b_s3_p2_walking
+    title: Walking
+    precondition:
+    - predicate: not (B12.outcome == 1 and BORN_AFTER_19960515.outcome == 1)
+      hint: Not asked when B12 is Yes and the child was born after May 15, 1996.
+    - predicate: not (BORN_AFTER_19960515.outcome == 1)
+      hint: Asked only when the child was not born after May 15, 1996.
+    - predicate: not (B14.outcome == 1 and BORN_AFTER_19960515.outcome == 1)
+      hint: Not asked when B14 is Yes and the child was born after May 15, 1996.
+    - predicate: not (B14.outcome == 3 and BORN_AFTER_19960515.outcome == 1)
+      hint: Not asked when B14 is No and the child was born after May 15, 1996.
+    items:
+    - id: B31
+      kind: Question
+      title: 'The next few questions are about .....’s ability to move around, even when using an aid or mechanical support, such as crutches or a walker. Please remember that I am asking about difficulties that have lasted or are expected to last six months or more. Because of a condition or health problem, does ..... have any difficulty walking? This means walking on a flat firm surface, such as a sidewalk or floor. Interviewer: Read list. Mark one only.'
+      input:
+        control: Radio
+        labels:
+          1: (1) Yes, sometimes
+          2: (2) Yes, often or always
+          3: (3) No
+          98: (x) Don’t know
+          99: (r) Refusal
+  - id: b_s3_p2_walking_detail
+    title: 'Walking: difficulty and aid use'
+    precondition:
+    - predicate: not (B12.outcome == 1 and BORN_AFTER_19960515.outcome == 1)
+      hint: Not asked when B12 is Yes and the child was born after May 15, 1996.
+    - predicate: not (BORN_AFTER_19960515.outcome == 1)
+      hint: Asked only when the child was not born after May 15, 1996.
+    - predicate: not (B14.outcome == 1 and BORN_AFTER_19960515.outcome == 1)
+      hint: Not asked when B14 is Yes and the child was born after May 15, 1996.
+    - predicate: not (B14.outcome == 3 and BORN_AFTER_19960515.outcome == 1)
+      hint: Not asked when B14 is No and the child was born after May 15, 1996.
+    - predicate: not (B31.outcome == 98)
+      hint: Asked only when B31 is not Don't know.
+    items:
+    - id: B32
+      kind: Question
+      title: 'How much difficulty does he/she have walking? Interviewer: Read list. Mark one only.'
+      input:
+        control: Radio
+        labels:
+          1: (1) Some difficulty
+          2: (2) A lot of difficulty
+          3: (3) Child cannot walk
+          98: (x) Don’t know
+          99: (r) Refusal
+    - id: B33
+      kind: Question
+      title: Does ..... USE any aids or specialized equipment for children who have difficulty walking or moving around, such as a cane or crutches?
+      input:
+        control: Radio
+        labels:
+          1: (1) Yes
+          3: (3) No
+          98: (x) Don’t know
+          99: (r) Refusal
+  - id: b_s3_p2_walking_now_use
+    title: 'Walking: aids now used'
+    precondition:
+    - predicate: not (B12.outcome == 1 and BORN_AFTER_19960515.outcome == 1)
+      hint: Not asked when B12 is Yes and the child was born after May 15, 1996.
+    - predicate: not (BORN_AFTER_19960515.outcome == 1)
+      hint: Asked only when the child was not born after May 15, 1996.
+    - predicate: not (B14.outcome == 1 and BORN_AFTER_19960515.outcome == 1)
+      hint: Not asked when B14 is Yes and the child was born after May 15, 1996.
+    - predicate: not (B14.outcome == 3 and BORN_AFTER_19960515.outcome == 1)
+      hint: Not asked when B14 is No and the child was born after May 15, 1996.
+    - predicate: not (B31.outcome == 98)
+      hint: Asked only when B31 is not Don't know.
+    - predicate: not (B33.outcome in [3, 98])
+      hint: Asked only when B33 is none of No, Don't know.
+    items:
+    - id: B34_a
+      kind: Question
+      title: 'Does he/she now use: (a) orthopaedic or medically prescribed shoes Interviewer: Read list.'
+      input:
+        control: Radio
+        labels:
+          1: (1) Yes
+          3: (3) No
+          98: (x) DK
+          99: (r) Ref
+    - id: B34_b
+      kind: Question
+      title: 'Does he/she now use: (b) a cane or crutches'
+      input:
+        control: Radio
+        labels:
+          1: (1) Yes
+          3: (3) No
+          98: (x) DK
+          99: (r) Ref
+    - id: B34_c
+      kind: Question
+      title: 'Does he/she now use: (c) a walker'
+      input:
+        control: Radio
+        labels:
+          1: (1) Yes
+          3: (3) No
+          98: (x) DK
+          99: (r) Ref
+    - id: B34_d
+      kind: Question
+      title: 'Does he/she now use: (d) a manual wheelchair'
+      input:
+        control: Radio
+        labels:
+          1: (1) Yes
+          3: (3) No
+          98: (x) DK
+          99: (r) Ref
+    - id: B34_e
+      kind: Question
+      title: 'Does he/she now use: (e) an electric wheelchair'
+      input:
+        control: Radio
+        labels:
+          1: (1) Yes
+          3: (3) No
+          98: (x) DK
+          99: (r) Ref
+    - id: B34_f
+      kind: Question
+      title: 'Does he/she now use: (f) braces, such as a leg brace (Exclude dental braces.)'
+      input:
+        control: Radio
+        labels:
+          1: (1) Yes
+          3: (3) No
+          98: (x) DK
+          99: (r) Ref
+    - id: B34_g
+      kind: Question
+      title: 'Does he/she now use: (g) lift devices, such as a bed lift device'
+      input:
+        control: Radio
+        labels:
+          1: (1) Yes
+          3: (3) No
+          98: (x) DK
+          99: (r) Ref
+    - id: B34_h
+      kind: Question
+      title: 'Does he/she now use: (h) other aid, specify'
+      input:
+        control: Radio
+        labels:
+          1: (1) Yes
+          3: (3) No
+          98: (x) DK
+          99: (r) Ref
+  - id: b_s3_p2_walking_need
+    title: 'Walking: aids needed'
+    precondition:
+    - predicate: not (B12.outcome == 1 and BORN_AFTER_19960515.outcome == 1)
+      hint: Not asked when B12 is Yes and the child was born after May 15, 1996.
+    - predicate: not (BORN_AFTER_19960515.outcome == 1)
+      hint: Asked only when the child was not born after May 15, 1996.
+    - predicate: not (B14.outcome == 1 and BORN_AFTER_19960515.outcome == 1)
+      hint: Not asked when B14 is Yes and the child was born after May 15, 1996.
+    - predicate: not (B14.outcome == 3 and BORN_AFTER_19960515.outcome == 1)
+      hint: Not asked when B14 is No and the child was born after May 15, 1996.
+    - predicate: not (B31.outcome == 98)
+      hint: Asked only when B31 is not Don't know.
+    items:
+    - id: B35
+      kind: Question
+      title: Are there any aids or specialized equipment for children who have difficulty walking or moving around that ..... CURRENTLY needs, but does not have?
+      input:
+        control: Radio
+        labels:
+          1: (1) Yes
+          3: (3) No
+          98: (x) Don’t know
+          99: (r) Refusal
+  - id: b_s3_p2_walking_need_which
+    title: 'Walking: which aids are needed'
+    precondition:
+    - predicate: not (B12.outcome == 1 and BORN_AFTER_19960515.outcome == 1)
+      hint: Not asked when B12 is Yes and the child was born after May 15, 1996.
+    - predicate: not (BORN_AFTER_19960515.outcome == 1)
+      hint: Asked only when the child was not born after May 15, 1996.
+    - predicate: not (B14.outcome == 1 and BORN_AFTER_19960515.outcome == 1)
+      hint: Not asked when B14 is Yes and the child was born after May 15, 1996.
+    - predicate: not (B14.outcome == 3 and BORN_AFTER_19960515.outcome == 1)
+      hint: Not asked when B14 is No and the child was born after May 15, 1996.
+    - predicate: not (B31.outcome == 98)
+      hint: Asked only when B31 is not Don't know.
+    - predicate: not (B35.outcome in [3, 98])
+      hint: Asked only when B35 is none of No, Don't know.
+    items:
+    - id: B36
+      kind: Question
+      title: 'Which aids does he/she NEED, but does not have? Interviewer: Do NOT read list. Mark all that apply.'
+      input:
+        control: Checkbox
+        labels:
+          1: (a) Orthopaedic or medically prescribed shoes
+          2: (b) A cane or crutches
+          4: (c) A walker
+          8: (d) A manual wheelchair
+          16: (e) An electric wheelchair
+          32: (f) Braces, such as a leg brace (Exclude dental braces.)
+          64: (g) Lift devices, such as a bed lift device
+          128: (h) Other aid, specify
+          256: (x) Don’t know
+          512: (r) Refusal
+  - id: b_s3_p2_hands
+    title: Hands and fingers
+    precondition:
+    - predicate: not (B12.outcome == 1 and BORN_AFTER_19960515.outcome == 1)
+      hint: Not asked when B12 is Yes and the child was born after May 15, 1996.
+    - predicate: not (BORN_AFTER_19960515.outcome == 1)
+      hint: Asked only when the child was not born after May 15, 1996.
+    - predicate: not (B14.outcome == 1 and BORN_AFTER_19960515.outcome == 1)
+      hint: Not asked when B14 is Yes and the child was born after May 15, 1996.
+    - predicate: not (B14.outcome == 3 and BORN_AFTER_19960515.outcome == 1)
+      hint: Not asked when B14 is No and the child was born after May 15, 1996.
+    items:
+    - id: B37
+      kind: Question
+      title: 'Because of a condition or health problem, does ..... have any difficulty USING his/her HANDS or FINGERS to grasp or hold small objects, such as a pencil or scissors? Interviewer: Read list. Mark one only.'
+      input:
+        control: Radio
+        labels:
+          1: (1) Yes, sometimes
+          2: (2) Yes, often or always
+          3: (3) No
+          98: (x) Don’t know
+          99: (r) Refusal
+  - id: b_s4_p1_hands
+    title: Hands and fingers
+    precondition:
+    - predicate: not (B12.outcome == 1 and BORN_AFTER_19960515.outcome == 1)
+      hint: Asked only when the child is not both in B12 = Yes and born after May 15, 1996
+    - predicate: not (BORN_AFTER_19960515.outcome == 1)
+      hint: Asked only when question BORN_AFTER_19960515 is not "Born AFTER May 15, 1996".
+    - predicate: not (B14.outcome == 1 and BORN_AFTER_19960515.outcome == 1)
+      hint: Not asked when B14 = Yes and the child was born after May 15, 1996
+    - predicate: not (B14.outcome == 3 and BORN_AFTER_19960515.outcome == 1)
+      hint: Not asked when B14 = No and the child was born after May 15, 1996
+    - predicate: not (B37.outcome == 98)
+      hint: Asked only when question B37 is not "(x) Don’t know".
+    items:
+    - id: B38
+      kind: Question
+      title: 'How much difficulty? Interviewer: Read list.Mark one only.'
+      input:
+        control: Radio
+        labels:
+          1: (1) Some difficulty
+          2: (2) A lot of difficulty
+          3: (3) Completely unable
+          8: (x) Don’t know
+          9: (r) Refusal
+    - id: B39
+      kind: Question
+      title: 'Does ..... USE any aids or specialized equipment designed to support, replace or assist in the use of hands or fingers, such as a hand or arm brace, or grasping tools? [If Yes (1): Check box “Hands/Fingers — USE Aid” on Profile Sheet]'
+      input:
+        control: Radio
+        labels:
+          1: (1) Yes
+          3: (3) No
+          8: (x) Don’t know
+          9: (r) Refusal
+    - id: B40a
+      kind: Question
+      title: 'B40. Does he/she now use: (a) a hand or arm brace. Interviewer: Read list.'
       precondition:
-        - predicate: limitation_count > 0
-      items:
-        # B68: General health
-        - id: q_b68
-          kind: Question
-          title: "How would you describe the child's general health? Would you say that his/her health is:"
-          input:
-            control: Radio
-            labels:
-              1: "Excellent"
-              2: "Very good"
-              3: "Good"
-              4: "Fair"
-              5: "Poor"
-
-        # B69: Uses medications regularly?
-        - id: q_b69
-          kind: Question
-          title: "Does the child USE any prescription or non-prescription medications on a regular basis, that is, AT LEAST ONCE A WEEK?"
-          input:
-            control: Radio
-            labels:
-              1: "Yes"
-              3: "No"
-              8: "Don't know"
-              9: "Refusal"
-
-        # B70: How many PRESCRIPTION meds daily?
-        - id: q_b70
-          kind: Question
-          title: "How many kinds of PRESCRIPTION medications does the child take EVERYDAY?"
-          precondition:
-            - predicate: q_b69.outcome == 1
-          input:
-            control: Radio
-            labels:
-              1: "None"
-              2: "1-3 kinds"
-              3: "4 kinds or more"
-
-        # B71: How many NON-PRESCRIPTION meds daily?
-        - id: q_b71
-          kind: Question
-          title: "How many kinds of NON-PRESCRIPTION medications does the child take EVERYDAY?"
-          precondition:
-            - predicate: q_b69.outcome == 1
-          input:
-            control: Radio
-            labels:
-              1: "None"
-              2: "1-3 kinds"
-              3: "4 kinds or more"
-
-        # B72: Uses medications regularly but NOT daily?
-        - id: q_b72
-          kind: Question
-          title: "Does the child USE any medications regularly, but NOT DAILY?"
-          precondition:
-            - predicate: q_b69.outcome == 1
-          input:
-            control: Radio
-            labels:
-              1: "Yes"
-              3: "No"
-              8: "Don't know"
-              9: "Refusal"
-
-        # B73: How many PRESCRIPTION meds not daily?
-        - id: q_b73
-          kind: Question
-          title: "How many kinds of PRESCRIPTION medications does the child take (regularly, but NOT DAILY)?"
-          precondition:
-            - predicate: q_b72.outcome == 1
-          input:
-            control: Radio
-            labels:
-              1: "None"
-              2: "1-3 kinds"
-              3: "4 kinds or more"
-
-        # B74: How many NON-PRESCRIPTION meds not daily?
-        - id: q_b74
-          kind: Question
-          title: "How many kinds of NON-PRESCRIPTION medications does the child take (regularly, but NOT DAILY)?"
-          precondition:
-            - predicate: q_b72.outcome == 1
-          input:
-            control: Radio
-            labels:
-              1: "None"
-              2: "1-3 kinds"
-              3: "4 kinds or more"
-
-        # B75: Out-of-pocket expenses for medications?
-        - id: q_b75
-          kind: Question
-          title: "IN THE PAST 12 MONTHS, did you or your family have any OUT-OF-POCKET expenses, that are not reimbursed by any sources, for the child's prescription or non-prescription medications?"
-          input:
-            control: Radio
-            labels:
-              1: "Yes"
-              3: "No"
-              8: "Don't know"
-              9: "Refusal"
-
-        # B76: Estimate of medication costs
-        - id: q_b76
-          kind: Question
-          title: "What is your best estimate of the OUT-OF-POCKET or DIRECT costs to you or your family for these extra expenses? INCLUDE amounts not covered by insurance. EXCLUDE payments for which you have been or will be reimbursed."
-          precondition:
-            - predicate: q_b75.outcome == 1
-          input:
-            control: Editbox
-            min: 0
-            max: 999999
-            left: "$"
-          codeBlock: |
-            if q_b76.outcome > 0:
-                b76_gave_amount = 1
-
-        # B77: Expense group for medications (if B76 amount not given)
-        - id: q_b77
-          kind: Question
-          title: "Which one of the following expense groups is the best estimate of the direct costs to you or your family?"
-          precondition:
-            - predicate: q_b75.outcome == 1
-            - predicate: b76_gave_amount == 0
-          input:
-            control: Radio
-            labels:
-              1: "Less than $100"
-              2: "$100 to less than $200"
-              3: "$200 to less than $500"
-              4: "$500 to less than $1,000"
-              5: "$1,000 to less than $2,000"
-              6: "$2,000 to less than $5,000"
-              7: "$5,000 or more"
-
-        # B78: Currently needs medications not having?
-        - id: q_b78
-          kind: Question
-          title: "Because of a condition or health problem, does the child CURRENTLY need any prescription or non-prescription medications on a regular basis, which he/she does not have?"
-          input:
-            control: Radio
-            labels:
-              1: "Yes"
-              3: "No"
-              8: "Don't know"
-              9: "Refusal"
-
-        # B79: Why doesn't child have needed medications?
-        - id: qg_b79
-          kind: QuestionGroup
-          title: "Why doesn't the child have these medications?"
-          precondition:
-            - predicate: q_b78.outcome == 1
-          questions:
-            - "Not covered by insurance"
-            - "Too expensive"
-            - "Not approved or recommended by health professionals"
-            - "Other reason"
-          input:
-            control: Switch
-            off: "No"
-            on: "Yes"
-
-    # =====================================================================
-    # HEALTH PROFESSIONAL CONTACTS AND COSTS (B80–B86)
-    # =====================================================================
-    - id: b_health_prof
-      kind: Group
-      title: "Health Professional Contacts and Costs"
+      - predicate: not (B39.outcome == 8)
+        hint: Asked only when question B39 is not "(x) Don’t know".
+      input:
+        control: Radio
+        labels:
+          1: (1) Yes
+          3: (3) No
+          8: (x) DK
+          9: (r) Ref
+    - id: B40b
+      kind: Question
+      title: 'B40. Does he/she now use: (b) grasping tools or reach extenders.'
       precondition:
-        - predicate: limitation_count > 0
-      items:
-        # B80: Frequency of health professional visits (8 sub-items)
-        - id: qg_b80
-          kind: QuestionGroup
-          title: "IN THE PAST 12 MONTHS, how OFTEN has the child seen or received care from:"
-          questions:
-            - "Family doctor or general practitioner"
-            - "Medical specialist (such as a heart specialist)"
-            - "Nurse"
-            - "Speech therapist"
-            - "Physiotherapist"
-            - "Psychologist or psychotherapist"
-            - "Chiropractor"
-            - "Other health professional"
-          input:
-            control: Radio
-            labels:
-              1: "At least once a week"
-              2: "At least once a month"
-              3: "Less than once a month"
-              4: "Never"
-          codeBlock: |
-            b80_any_seen = 0
-            if qg_b80.outcome[0] == 1 or qg_b80.outcome[0] == 2 or qg_b80.outcome[0] == 3:
-                b80_any_seen = 1
-            if qg_b80.outcome[1] == 1 or qg_b80.outcome[1] == 2 or qg_b80.outcome[1] == 3:
-                b80_any_seen = 1
-            if qg_b80.outcome[2] == 1 or qg_b80.outcome[2] == 2 or qg_b80.outcome[2] == 3:
-                b80_any_seen = 1
-            if qg_b80.outcome[3] == 1 or qg_b80.outcome[3] == 2 or qg_b80.outcome[3] == 3:
-                b80_any_seen = 1
-            if qg_b80.outcome[4] == 1 or qg_b80.outcome[4] == 2 or qg_b80.outcome[4] == 3:
-                b80_any_seen = 1
-            if qg_b80.outcome[5] == 1 or qg_b80.outcome[5] == 2 or qg_b80.outcome[5] == 3:
-                b80_any_seen = 1
-            if qg_b80.outcome[6] == 1 or qg_b80.outcome[6] == 2 or qg_b80.outcome[6] == 3:
-                b80_any_seen = 1
-            if qg_b80.outcome[7] == 1 or qg_b80.outcome[7] == 2 or qg_b80.outcome[7] == 3:
-                b80_any_seen = 1
-
-        # B81: Out-of-pocket expenses for health professionals?
-        # B81.edit: only if any B80 seen (col 1, 2, or 3)
-        - id: q_b81
-          kind: Question
-          title: "IN THE PAST 12 MONTHS, did you or your family have any OUT-OF-POCKET expenses, that are not reimbursed by any sources, for the services that the child received from health professionals?"
-          precondition:
-            - predicate: b80_any_seen == 1
-          input:
-            control: Radio
-            labels:
-              1: "Yes"
-              3: "No"
-              8: "Don't know"
-              9: "Refusal"
-
-        # B82: Estimate of health professional costs
-        - id: q_b82
-          kind: Question
-          title: "What is your best estimate of the OUT-OF-POCKET or DIRECT costs to you or your family for these extra expenses? INCLUDE amounts not covered by insurance. EXCLUDE payments for which you have been or will be reimbursed."
-          precondition:
-            - predicate: q_b81.outcome == 1
-          input:
-            control: Editbox
-            min: 0
-            max: 999999
-            left: "$"
-          codeBlock: |
-            if q_b82.outcome > 0:
-                b82_gave_amount = 1
-
-        # B83: Expense group for health professional costs
-        - id: q_b83
-          kind: Question
-          title: "Which one of the following expense groups is the best estimate of the direct costs to you or your family?"
-          precondition:
-            - predicate: q_b81.outcome == 1
-            - predicate: b82_gave_amount == 0
-          input:
-            control: Radio
-            labels:
-              1: "Less than $200"
-              2: "$200 to less than $500"
-              3: "$500 to less than $1,000"
-              4: "$1,000 to less than $2,000"
-              5: "$2,000 to less than $5,000"
-              6: "$5,000 or more"
-
-        # B84: Ever needed health services but didn't receive?
-        - id: q_b84
-          kind: Question
-          title: "IN THE PAST 12 MONTHS, was there ever a time when the child needed health services because of his/her condition, but did not receive them?"
-          input:
-            control: Radio
-            labels:
-              1: "Yes"
-              3: "No"
-              8: "Don't know"
-              9: "Refusal"
-
-        # B85: What kind of services needed but not received?
-        - id: qg_b85
-          kind: QuestionGroup
-          title: "What kind of health services did the child NEED, but did not receive?"
-          precondition:
-            - predicate: q_b84.outcome == 1
-          questions:
-            - "Family doctor or general practitioner"
-            - "Medical specialist (such as a heart specialist)"
-            - "Nurse for care"
-            - "Speech therapist"
-            - "Physiotherapist"
-            - "Psychologist or psychotherapist"
-            - "Chiropractor"
-            - "Other"
-          input:
-            control: Switch
-            off: "No"
-            on: "Yes"
-
-        # B86: Why didn't child receive services?
-        - id: qg_b86
-          kind: QuestionGroup
-          title: "Why didn't the child receive the health service that he/she needed?"
-          precondition:
-            - predicate: q_b84.outcome == 1
-          questions:
-            - "Not covered by insurance"
-            - "Too expensive"
-            - "Not available locally"
-            - "Long waiting period"
-            - "Other reason"
-          input:
-            control: Switch
-            off: "No"
-            on: "Yes"
-
-    # =====================================================================
-    # AIDS USAGE AND COSTS SUBSECTION (B87–B97)
-    # B87.edit: under-5 → skip to Section C (end of this file)
-    # =====================================================================
-    - id: b_aids_costs
-      kind: Group
-      title: "Aids Usage and Costs"
+      - predicate: not (B39.outcome == 8)
+        hint: Asked only when question B39 is not "(x) Don’t know".
+      input:
+        control: Radio
+        labels:
+          1: (1) Yes
+          3: (3) No
+          8: (x) DK
+          9: (r) Ref
+    - id: B40c
+      kind: Question
+      title: 'B40. Does he/she now use: (c) other aid, specify'
       precondition:
-        - predicate: limitation_count > 0
-        - predicate: q_child_age.outcome >= 5
-      items:
-        # B87: USE any other aids not already mentioned?
-        - id: q_b87
-          kind: Question
-          title: "Because of a condition or health problem, does the child USE any aids or specialized equipment that you have not already mentioned?"
-          input:
-            control: Radio
-            labels:
-              1: "Yes"
-              3: "No"
-              8: "Don't know"
-              9: "Refusal"
-          codeBlock: |
-            if q_b87.outcome == 1:
-                use_aid_chronic = 1
-
-        # B88: Which other aids does child USE?
-        - id: qg_b88
-          kind: QuestionGroup
-          title: "Does the child now use:"
-          precondition:
-            - predicate: q_b87.outcome == 1
-          questions:
-            - "Respiratory aids, such as inhalers, puffers, oxygen"
-            - "Pain management aids, such as a TENS machine"
-            - "Other aid or specialized equipment"
-          input:
-            control: Switch
-            off: "No"
-            on: "Yes"
-
-        # Compute use_aid_count before B89.edit check
-        - id: q_use_aid_check
-          kind: Comment
-          title: "Interviewer: Checking Profile Sheet for USE Aid flags."
-          codeBlock: |
-            use_aid_count = use_aid_hearing + use_aid_seeing + use_aid_communicating + use_aid_walking + use_aid_hands + use_aid_learning + use_aid_chronic
-
-        # B89: Funding for aids (if any USE Aid checked)
-        - id: qg_b89
-          kind: QuestionGroup
-          title: "I would like you to think about all the aids and specialized equipment that the child currently uses. What kind of funding was used to get these aids?"
-          precondition:
-            - predicate: use_aid_count > 0
-          questions:
-            - "Your own money"
-            - "Friends and family members"
-            - "Private health insurance"
-            - "Government program"
-            - "Other funding"
-          input:
-            control: Switch
-            off: "No"
-            on: "Yes"
-
-        # B90: Out-of-pocket expenses for aids?
-        - id: q_b90
-          kind: Question
-          title: "IN THE PAST 12 MONTHS, did you or your family have any OUT-OF-POCKET expenses (that are not reimbursed by any sources) for the purchase or maintenance of aids or specialized equipment that the child uses?"
-          precondition:
-            - predicate: use_aid_count > 0
-          input:
-            control: Radio
-            labels:
-              1: "Yes"
-              3: "No"
-              8: "Don't know"
-              9: "Refusal"
-
-        # B91: Estimate of aids costs
-        - id: q_b91
-          kind: Question
-          title: "What is your best estimate of the OUT-OF-POCKET or DIRECT costs to you or your family for these extra expenses? INCLUDE amounts not covered by insurance. EXCLUDE payments for which you have been or will be reimbursed."
-          precondition:
-            - predicate: q_b90.outcome == 1
-          input:
-            control: Editbox
-            min: 0
-            max: 999999
-            left: "$"
-          codeBlock: |
-            if q_b91.outcome > 0:
-                b91_gave_amount = 1
-
-        # B92: Expense group for aids costs
-        - id: q_b92
-          kind: Question
-          title: "Which one of the following expense groups is the best estimate of the direct costs to you or your family?"
-          precondition:
-            - predicate: q_b90.outcome == 1
-            - predicate: b91_gave_amount == 0
-          input:
-            control: Radio
-            labels:
-              1: "Less than $200"
-              2: "$200 to less than $500"
-              3: "$500 to less than $1,000"
-              4: "$1,000 to less than $2,000"
-              5: "$2,000 to less than $5,000"
-              6: "$5,000 or more"
-
-        # B93: CURRENTLY need any other aids not mentioned?
-        - id: q_b93
-          kind: Question
-          title: "Does the child CURRENTLY need any aids or specialized equipment that you have not already mentioned?"
-          input:
-            control: Radio
-            labels:
-              1: "Yes"
-              3: "No"
-              8: "Don't know"
-              9: "Refusal"
-          codeBlock: |
-            if q_b93.outcome == 1:
-                need_aid_chronic = 1
-
-        # B94: Which aids does child NEED?
-        - id: qg_b94
-          kind: QuestionGroup
-          title: "Which aids does the child NEED, but does not have?"
-          precondition:
-            - predicate: q_b93.outcome == 1
-          questions:
-            - "Respiratory aids, such as inhalers, puffers, oxygen"
-            - "Pain management aids, such as a TENS machine"
-            - "Other aid or specialized equipment"
-          input:
-            control: Switch
-            off: "No"
-            on: "Yes"
-
-        # Compute need_aid_count before B95.edit check
-        - id: q_need_aid_check
-          kind: Comment
-          title: "Interviewer: Checking Profile Sheet for NEED Aid flags."
-          codeBlock: |
-            need_aid_count = need_aid_hearing + need_aid_seeing + need_aid_communicating + need_aid_walking + need_aid_hands + need_aid_learning + need_aid_chronic
-
-        # B95: Why doesn't child have needed aids? (if any NEED Aid checked)
-        - id: qg_b95
-          kind: QuestionGroup
-          title: "I would like you to think about all the aids the child CURRENTLY needs, but does not have. Why doesn't the child have these aids or specialized equipment?"
-          precondition:
-            - predicate: need_aid_count > 0
-          questions:
-            - "Not covered by insurance"
-            - "Too expensive"
-            - "Not available locally"
-            - "Do not know where to obtain the aid"
-            - "Child's condition is not serious enough"
-            - "Only needed occasionally"
-            - "Other reason"
-          input:
-            control: Switch
-            off: "No"
-            on: "Yes"
-
-        # B96: Impact of not having aids?
-        - id: q_b96
-          kind: Question
-          title: "Now, I would like you to think about all the aids or specialized equipment that the child NEEDS, but does not have. Do you think that there is an impact on the child because he/she does not have these aids?"
-          precondition:
-            - predicate: need_aid_count > 0
-          input:
-            control: Radio
-            labels:
-              1: "Yes"
-              3: "No"
-              8: "Don't know"
-              9: "Refusal"
-
-        # B97: What is the impact?
-        - id: qg_b97
-          kind: QuestionGroup
-          title: "What is the impact of not having these aids or specialized equipment?"
-          precondition:
-            - predicate: q_b96.outcome == 1
-          questions:
-            - "Child's participation in regular everyday activity is reduced"
-            - "Child is frustrated"
-            - "Child's self-esteem is affected"
-            - "Other"
-          input:
-            control: Switch
-            off: "No"
-            on: "Yes"
-
-    # ===================================================================
-    # SECTION: everyday_help
-    # ===================================================================
-    # =========================================================================
-    # BLOCK 1: PERSONAL CARE AND MOBILITY HELP (C1-C11)
-    # =========================================================================
-    # C_AGE.edit: children under 5 skip this entire block → go to C12 block
-    # C1: receive personal care help? Yes → C2, No/DK/R → C5
-    # C2: condition-related? Yes → C3, No/DK/R → C5
-    # C3: how much help?  → C4
-    # C4: who provides?   → C5
-    # C5: moving about help? Yes → C6, No/DK/R → C9
-    # C6: condition-related? Yes → C7, No/DK/R → C9
-    # C7: how much help? → C8
-    # C8: who provides?  → C9
-    # C9: need MORE help? (2 sub-items) → C9.edit (codeBlock sets c9_any_yes)
-    # C9.edit: c9_any_yes == 1 → C10, else → C12 block
-    # C10: hours of help needed → C11
-    # C11: why not receiving (8 sub-items) → C12 block
-    # =========================================================================
-    - id: b_personal_mobility
-      kind: Group
-      title: "Personal Care and Mobility Help"
+      - predicate: not (B39.outcome == 8)
+        hint: Asked only when question B39 is not "(x) Don’t know".
+      input:
+        control: Radio
+        labels:
+          1: (1) Yes
+          3: (3) No
+          8: (x) DK
+          9: (r) Ref
+    - id: B41
+      kind: Question
+      title: 'Are there any aids or specialized equipment designed to support, replace or assist in the use of hands or fingers that ..... CURRENTLY needs, but does not have? [If Yes (1): Check box “Hands/Fingers — NEED Aid” on Profile Sheet]'
+      input:
+        control: Radio
+        labels:
+          1: (1) Yes
+          3: (3) No
+          8: (x) Don’t know
+          9: (r) Refusal
+    - id: B42
+      kind: Question
+      title: 'Which aids does he/she NEED, but does not have? Interviewer: Do NOT read list.Mark all that apply.'
       precondition:
-        - predicate: q_child_age.outcome >= 5
-
-      items:
-        # C1: Personal care help
-        - id: q_c1
-          kind: Question
-          title: "Does ..... USUALLY receive help with personal care, such as bathing, toiletting, dressing or feeding?"
-          input:
-            control: Radio
-            labels:
-              1: "Yes"
-              3: "No"
-              8: "Don't know"
-              9: "Refusal"
-
-        # C2: Condition-related personal care
-        # Precondition: C1 = Yes
-        - id: q_c2
-          kind: Question
-          title: "Is this because of his/her condition or health problem?"
-          precondition:
-            - predicate: q_c1.outcome == 1
-          input:
-            control: Radio
-            labels:
-              1: "Yes"
-              3: "No"
-              8: "Don't know"
-              9: "Refusal"
-
-        # C3: Amount of personal care help needed
-        # Precondition: C1=Yes AND C2=Yes
-        - id: q_c3
-          kind: Question
-          title: "How much help does he/she need?"
-          precondition:
-            - predicate: q_c1.outcome == 1
-            - predicate: q_c2.outcome == 1
-          input:
-            control: Radio
-            labels:
-              1: "Some help"
-              2: "A lot of help"
-              8: "Don't know"
-              9: "Refusal"
-
-        # C4: Who provides personal care help
-        # Precondition: C1=Yes AND C2=Yes (follows C3)
-        - id: q_c4
-          kind: Question
-          title: "Who provides most of the help to ..... for his/her personal care?"
-          precondition:
-            - predicate: q_c1.outcome == 1
-            - predicate: q_c2.outcome == 1
-          input:
-            control: Radio
-            labels:
-              1: "Mostly the mother"
-              2: "Mostly the father"
-              3: "Both the mother and the father"
-              4: "Other family members"
-              5: "Other, specify"
-              8: "Don't know"
-              9: "Refusal"
-
-        # C5: Moving about help
-        - id: q_c5
-          kind: Question
-          title: "Does ..... USUALLY receive help with moving about inside his/her residence, such as moving from one room to another?"
-          input:
-            control: Radio
-            labels:
-              1: "Yes"
-              3: "No"
-              8: "Don't know"
-              9: "Refusal"
-
-        # C6: Condition-related mobility help
-        # Precondition: C5 = Yes
-        - id: q_c6
-          kind: Question
-          title: "Is this because of his/her condition or health problem?"
-          precondition:
-            - predicate: q_c5.outcome == 1
-          input:
-            control: Radio
-            labels:
-              1: "Yes"
-              3: "No"
-              8: "Don't know"
-              9: "Refusal"
-
-        # C7: Amount of mobility help needed
-        # Precondition: C5=Yes AND C6=Yes
-        - id: q_c7
-          kind: Question
-          title: "How much help does he/she need?"
-          precondition:
-            - predicate: q_c5.outcome == 1
-            - predicate: q_c6.outcome == 1
-          input:
-            control: Radio
-            labels:
-              1: "Some help"
-              2: "A lot of help"
-              8: "Don't know"
-              9: "Refusal"
-
-        # C8: Who provides mobility help
-        # Precondition: C5=Yes AND C6=Yes (follows C7)
-        - id: q_c8
-          kind: Question
-          title: "Who provides most of the help to ..... for moving about inside his/her residence?"
-          precondition:
-            - predicate: q_c5.outcome == 1
-            - predicate: q_c6.outcome == 1
-          input:
-            control: Radio
-            labels:
-              1: "Mostly the mother"
-              2: "Mostly the father"
-              3: "Both the mother and the father"
-              4: "Other family members"
-              5: "Other, specify"
-              8: "Don't know"
-              9: "Refusal"
-
-        # C9: Need more help (2 sub-items: personal care, moving about)
-        # codeBlock sets c9_any_yes routing flag
-        - id: qg_c9
-          kind: QuestionGroup
-          title: "Because of .....'s condition, do you CURRENTLY need help or additional help with:"
-          questions:
-            - "His/her personal care?"
-            - "Moving him/her about inside his/her residence?"
-          codeBlock: |
-            if qg_c9.outcome[0] == 1 or qg_c9.outcome[1] == 1:
-              c9_any_yes = 1
-            else:
-              c9_any_yes = 0
-          input:
-            control: Switch
-            off: "No"
-            on: "Yes"
-
-        # C10: Hours of help needed per week
-        # Precondition: any C9 = Yes
-        - id: q_c10
-          kind: Question
-          title: "How many hours per week of help or additional help do you need?"
-          precondition:
-            - predicate: c9_any_yes == 1
-          input:
-            control: Radio
-            labels:
-              1: "1–4 hours per week"
-              2: "5–10 hours per week"
-              3: "More than 10 hours per week"
-              8: "Don't know"
-              9: "Refusal"
-
-        # C11: Why not receiving needed help (8 sub-items)
-        # Precondition: any C9 = Yes (follows C10)
-        - id: qg_c11
-          kind: QuestionGroup
-          title: "Why do you not receive this help? I will read you a list. Please answer yes or no to each."
-          precondition:
-            - predicate: c9_any_yes == 1
-          questions:
-            - "It is too expensive"
-            - "Help from family and friends is not available"
-            - "Services or special programs (for help) are not available locally"
-            - "Child is presently on a waiting list"
-            - "Do not know where to look for help"
-            - "Child's condition is not serious enough"
-            - "You have not asked for help"
-            - "Other, specify"
-          input:
-            control: Switch
-            off: "No"
-            on: "Yes"
-
-    # =========================================================================
-    # BLOCK 2: HOUSEWORK / FAMILY HELP — RECEIPT (C12-C16)
-    # =========================================================================
-    # Everyone reaches C12 (children under 5 skip block 1 but reach here)
-    # C12: receive help with housework/family/personal? (3 sub-items)
-    #   codeBlock sets c12_any_yes
-    # C12.edit: c12_any_yes == 1 → C13, else → C17 block
-    # C13: who provides (7 sub-items) → C14
-    # C14: out-of-pocket expenses? Yes → C15, No/DK/R → C17 block
-    # C15: dollar amount (Editbox; DK routes to C16 via c15_dk flag)
-    # C16: expense group (if C15 DK/R) → C17 block
-    # =========================================================================
-    - id: b_housework_received
-      kind: Group
-      title: "Help with Housework and Family Activities (Received)"
-
-      items:
-        # C12: Receive help with housework/family/personal (3 sub-items)
-        - id: qg_c12
-          kind: QuestionGroup
-          title: "Because of .....'s condition, do you USUALLY receive help with the following:"
-          questions:
-            - "Help with everyday housework, such as house cleaning or meal preparation"
-            - "Help to allow you to attend to other family responsibilities"
-            - "Help to allow you to take time off for personal activities"
-          codeBlock: |
-            if qg_c12.outcome[0] == 1 or qg_c12.outcome[1] == 1 or qg_c12.outcome[2] == 1:
-              c12_any_yes = 1
-            else:
-              c12_any_yes = 0
-          input:
-            control: Switch
-            off: "No"
-            on: "Yes"
-
-        # C13: Who provides help (7 sub-items)
-        # Precondition: any C12 = Yes
-        - id: qg_c13
-          kind: QuestionGroup
-          title: "Who USUALLY provides you this help? I will read you a list. Please answer yes or no to each."
-          precondition:
-            - predicate: c12_any_yes == 1
-          questions:
-            - "Family living with you"
-            - "Family not living with you"
-            - "Friends or neighbours"
-            - "Government organization or agency"
-            - "Private organization or agency"
-            - "Voluntary organization or agency"
-            - "Other, specify"
-          input:
-            control: Switch
-            off: "No"
-            on: "Yes"
-
-        # C14: Out-of-pocket expenses in past 12 months?
-        # Precondition: any C12 = Yes (follows C13)
-        - id: q_c14
-          kind: Question
-          title: "You mentioned earlier that you usually receive help with everyday housework or help to allow you to attend to other family or personal activities. IN THE PAST 12 MONTHS, did you or your family have any OUT-OF-POCKET expenses (that are not reimbursed by any sources) for this help?"
-          precondition:
-            - predicate: c12_any_yes == 1
-          input:
-            control: Radio
-            labels:
-              1: "Yes"
-              3: "No"
-              8: "Don't know"
-              9: "Refusal"
-
-        # C15: Dollar amount of out-of-pocket costs
-        # Precondition: C14 = Yes
-        # codeBlock: if outcome == 0 (used as sentinel for DK/R) set c15_dk=1
-        # Note: 0 is out of range (range 1-999999), so 0 = respondent chose DK/R
-        - id: q_c15
-          kind: Question
-          title: "What is your best estimate of the OUT-OF-POCKET or DIRECT costs to you or your family for these extra expenses? INCLUDE amounts not covered by insurance. EXCLUDE payments for which you have been or will be reimbursed by any insurance or government program."
-          precondition:
-            - predicate: q_c14.outcome == 1
-          codeBlock: |
-            if q_c15.outcome == 0:
-              c15_dk = 1
-            else:
-              c15_dk = 0
-          input:
-            control: Editbox
-            min: 0
-            max: 999999
-            left: "$"
-            default: 0
-
-        # C16: Expense group estimate (if C15 DK/R)
-        # Precondition: C14=Yes AND C15 was DK/R (c15_dk == 1)
-        - id: q_c16
-          kind: Question
-          title: "Which one of the following expense groups is the best estimate of the direct costs to you or your family?"
-          precondition:
-            - predicate: q_c14.outcome == 1
-            - predicate: c15_dk == 1
-          input:
-            control: Radio
-            labels:
-              1: "Less than $200"
-              2: "$200 to less than $500"
-              3: "$500 to less than $1,000"
-              4: "$1,000 to less than $2,000"
-              5: "$2,000 to less than $5,000"
-              6: "$5,000 or more"
-              8: "Don't know"
-              9: "Refusal"
-
-    # =========================================================================
-    # BLOCK 3: HOUSEWORK / FAMILY HELP — UNMET NEED (C17-C18)
-    # =========================================================================
-    # C17: currently need MORE help (3 sub-items); codeBlock sets c17_any_yes
-    # C17.edit: c17_any_yes == 1 → C18, else → C19
-    # C18: why not receiving (8 sub-items) → C19
-    # =========================================================================
-    - id: b_housework_needed
-      kind: Group
-      title: "Help with Housework and Family Activities (Unmet Need)"
-
-      items:
-        # C17: Need more help (3 sub-items)
-        - id: qg_c17
-          kind: QuestionGroup
-          title: "Because of .....'s condition, do you CURRENTLY need help or additional help with the following:"
-          questions:
-            - "Help with everyday housework, such as house cleaning or meal preparation"
-            - "Help to allow you to attend to other family responsibilities"
-            - "Help to allow you to take time off for personal activities"
-          codeBlock: |
-            if qg_c17.outcome[0] == 1 or qg_c17.outcome[1] == 1 or qg_c17.outcome[2] == 1:
-              c17_any_yes = 1
-            else:
-              c17_any_yes = 0
-          input:
-            control: Switch
-            off: "No"
-            on: "Yes"
-
-        # C18: Why not receiving help (8 sub-items)
-        # Precondition: any C17 = Yes
-        - id: qg_c18
-          kind: QuestionGroup
-          title: "Why do you not receive this help or additional help? I will read you a list. Please answer yes or no to each."
-          precondition:
-            - predicate: c17_any_yes == 1
-          questions:
-            - "It is too expensive"
-            - "Help from family and friends is not available"
-            - "Services or special programs (for help) are not available locally"
-            - "Child is presently on a waiting list"
-            - "Do not know where to look for help"
-            - "Child's condition is not serious enough"
-            - "You have not asked for help"
-            - "Other, specify"
-          input:
-            control: Switch
-            off: "No"
-            on: "Yes"
-
-    # =========================================================================
-    # BLOCK 4: CARE COORDINATION AND WORK IMPACT (C19-C24)
-    # =========================================================================
-    # C19: difficulty coordinating care? Yes → C20, No/DK/R → C21
-    # C20: what difficulty (7 sub-items) → C21
-    # C21: who coordinates care → C22
-    # C22: work impact (5 sub-items); codeBlock sets c22_any_yes
-    # C22.edit: c22_any_yes == 1 → C23, else → C24
-    # C23: who most affected → C24
-    # C24: financial problems → Section D
-    # =========================================================================
-    - id: b_coordination_work
-      kind: Group
-      title: "Care Coordination and Work Impact"
-
-      items:
-        # C19: Difficulty coordinating care
-        - id: q_c19
-          kind: Question
-          title: "IN THE PAST 12 MONTHS, did you have any difficulty with coordinating the care of ....., for example, making appointments, phoning or visiting health professionals and specialists?"
-          input:
-            control: Radio
-            labels:
-              1: "Yes"
-              3: "No"
-              8: "Don't know"
-              9: "Refusal"
-
-        # C20: What kind of difficulty (7 sub-items)
-        # Precondition: C19 = Yes
-        - id: qg_c20
-          kind: QuestionGroup
-          title: "What kind of difficulty did you have? I will read you a list. Please answer yes or no to each."
-          precondition:
-            - predicate: q_c19.outcome == 1
-          questions:
-            - "Difficulty obtaining appointments"
-            - "Health professional or specialist not available locally"
-            - "A lack of communication between health professionals"
-            - "Difficulty getting information"
-            - "Your lack of time to coordinate the care"
-            - "Work conflicts"
-            - "Other difficulty, specify"
-          input:
-            control: Switch
-            off: "No"
-            on: "Yes"
-
-        # C21: Who coordinates care
-        - id: q_c21
-          kind: Question
-          title: "Who USUALLY coordinates the care of .....?"
-          input:
-            control: Radio
-            labels:
-              1: "Mostly the mother"
-              2: "Mostly the father"
-              3: "Both the father and the mother"
-              4: "Other family members"
-              5: "Other, specify"
-              8: "Don't know"
-              9: "Refusal"
-
-        # C22: Work impact (5 sub-items)
-        # codeBlock sets c22_any_yes routing flag
-        - id: qg_c22
-          kind: QuestionGroup
-          title: "Because of .....'s condition or health problem, has anyone in your family EVER:"
-          questions:
-            - "Not taken a job in order to take care of the child?"
-            - "Quit working (other than normal maternity or paternity leave)?"
-            - "Changed work hours to different time of day (or night)?"
-            - "Turned down a promotion or a better job?"
-            - "Worked fewer hours?"
-          codeBlock: |
-            if qg_c22.outcome[0] == 1 or qg_c22.outcome[1] == 1 or qg_c22.outcome[2] == 1 or qg_c22.outcome[3] == 1 or qg_c22.outcome[4] == 1:
-              c22_any_yes = 1
-            else:
-              c22_any_yes = 0
-          input:
-            control: Switch
-            off: "No"
-            on: "Yes"
-
-        # C23: Who most affected by work-related issues
-        # Precondition: any C22 = Yes
-        - id: q_c23
-          kind: Question
-          title: "Who was most affected by these work-related issues?"
-          precondition:
-            - predicate: c22_any_yes == 1
-          input:
-            control: Radio
-            labels:
-              1: "Mostly the mother"
-              2: "Mostly the father"
-              3: "Both the mother and the father"
-              4: "Other family members"
-              5: "Other, specify"
-              8: "Don't know"
-              9: "Refusal"
-
-        # C24: Financial problems due to child's condition
-        - id: q_c24
-          kind: Question
-          title: "DURING THE PAST 12 MONTHS, has your family had financial problems because of .....'s condition or health problem?"
-          input:
-            control: Radio
-            labels:
-              1: "Yes"
-              3: "No"
-              8: "Don't know"
-              9: "Refusal"
-
-    # ===================================================================
-    # SECTION: child_care
-    # ===================================================================
-    # =========================================================================
-    # BLOCK 1: SECTION D — CHILD CARE (items D1–D7)
-    # =========================================================================
-    # D1   → Currently use child care? Radio (Yes/No/DK). DK → skip to D6.
-    # D2   → Main child care arrangement? Radio 8 options. DK → skip to D6.
-    # D3   → Hours per week (main arrangement)? Editbox. Always follows D2.
-    # D4   → Any other child care arrangement? Radio (Yes/No/DK). DK/No → D6.
-    # D5   → Hours per week (other arrangement)? Editbox. Precondition: D4 = Yes.
-    # D6   → Child care program ever refused child? Radio (Yes/No/DK). DK → skip D7.
-    # D7   → Types of programs that refused (6 sub-items, Switch). Precondition: D6 = Yes.
-    # =========================================================================
-    - id: b_child_care
-      kind: Group
-      title: "Child Care"
-      items:
-
-        # D1: Currently using child care?
-        # 1=Yes, 3=No → D2; x=Don't know → GO TO D6; r=Refusal → D2
-        # Model: code 8 = Don't know to gate D2–D5
-        - id: q_d1
-          kind: Question
-          title: "Now, I'd like to ask you some questions about child care arrangements for ..... . Do you CURRENTLY use child care such as day care, babysitting or a before and after school program for ..... while you (or your spouse/partner) are at work or studying?"
-          input:
-            control: Radio
-            labels:
-              1: "Yes"
-              3: "No"
-              8: "Don't know"
-
-        # D2: Main child care arrangement?
-        # Precondition: D1 answered and not DK (i.e. outcome != 8)
-        # x=Don't know → GO TO D6; r → D3 (both treated as code 9 here)
-        - id: q_d2
-          kind: Question
-          title: "What is your MAIN child care arrangement for .....?"
-          precondition:
-            - predicate: q_d1.outcome in [1, 3]
-          input:
-            control: Radio
-            labels:
-              1: "Before and after school program"
-              2: "Nursery school"
-              3: "Day care centre"
-              4: "Care in someone else's home by a non-relative"
-              5: "Care in someone else's home by a relative"
-              6: "Care in child's home by a non-relative"
-              7: "Care in child's home by a relative"
-              8: "Other, specify"
-              9: "Don't know"
-
-        # D3: Hours per week for main arrangement?
-        # Precondition: D2 answered (not DK, i.e. outcome != 9) AND D1 not DK
-        - id: q_d3
-          kind: Question
-          title: "Approximately how many hours per WEEK is that? (Main child care arrangement)"
-          precondition:
-            - predicate: q_d1.outcome in [1, 3]
-            - predicate: q_d2.outcome in [1, 2, 3, 4, 5, 6, 7, 8]
-          input:
-            control: Editbox
-            min: 0
-            max: 168
-            right: "hours per week"
-
-        # D4: Any other child care arrangement?
-        # Precondition: D1 not DK
-        # 1=Yes → D5; 3=No/x=DK → D6
-        - id: q_d4
-          kind: Question
-          title: "Do you use any other child care arrangement for .....?"
-          precondition:
-            - predicate: q_d1.outcome in [1, 3]
-          input:
-            control: Radio
-            labels:
-              1: "Yes"
-              3: "No"
-              8: "Don't know"
-
-        # D5: Hours per week for other arrangement?
-        # Precondition: D4 = Yes (outcome == 1)
-        - id: q_d5
-          kind: Question
-          title: "Approximately how many hours per WEEK is that? (Other child care arrangement)"
-          precondition:
-            - predicate: q_d4.outcome == 1
-          input:
-            control: Editbox
-            min: 0
-            max: 168
-            right: "hours per week"
-
-        # D6: Has a child care program ever refused to take child?
-        # 1=Yes → D7; 3=No → D7; x=DK → GO TO D8.edit (skip D7); r → D7
-        - id: q_d6
-          kind: Question
-          title: "Has a child care program or service ever refused to take care of ..... because of his/her condition or health problem?"
-          input:
-            control: Radio
-            labels:
-              1: "Yes"
-              3: "No"
-              8: "Don't know"
-
-        # D7: Types of programs that refused (multi-select Yes/No per sub-item)
-        # Precondition: D6 = Yes (outcome == 1)
-        # 6 sub-items: (a) Before/after school; (b) Nursery school; (c) Day care centre;
-        #              (d) Care in someone else's home; (e) Care in child's home; (f) Other
-        - id: qg_d7
-          kind: QuestionGroup
-          title: "What type of child care programs or services refused to provide care to .....? I will read you a list. Please answer yes or no to each."
-          precondition:
-            - predicate: q_d6.outcome == 1
-          questions:
-            - "Before and after school program"
-            - "Nursery school"
-            - "Day care centre"
-            - "Care in someone else's home"
-            - "Care in child's home"
-            - "Other, specify"
-          input:
-            control: Switch
-            on: "Yes"
-            off: "No"
-
-    # ===================================================================
-    # SECTION: education
-    # ===================================================================
-    # =========================================================================
-    # SECTION E — EDUCATION
-    # Entire section skipped for children under 5 (q_child_age.outcome < 5)
-    #
-    # E1 routing (3-way):
-    #   1 (Going to school)     → E6
-    #   2 (Tutored at home)     → E2 → GO TO E37
-    #   3 (Neither)             → E3 → E4
-    #   DK/R                   → E4
-    #
-    # E4: Did child ever go to school?
-    #   1 Yes → GO TO E37
-    #   3 No  → E5 → GO TO E37
-    #   DK/R  → GO TO E37
-    #
-    # E6=1 (special ed school) → GO TO E10
-    # E6=2/3/4/DK → E7 → E8
-    #   E8=1 (Yes) → E9 → E10
-    #   E8=3/DK/R  → E10.edit filter: E7==1 → E11; otherwise → E10
-    #
-    # E10 → E11 → E12(if E11=1) → E13 → province-specific grade
-    # Grade questions E14-E19 set is_kindergarten; → E20 or E24
-    # E20-E23 → E24 → E25 → E26(if E25=1) → E27 → E28(if E27=1) → E29
-    # → E30 → E31(if E30=1) → E32 → E33 → E34 → E35 → E36 → E37
-    # E37 → E38(if E37=1) → end
-    # =========================================================================
-    - id: b_education
-      kind: Group
-      title: "Section E — Education"
+      - predicate: not (B41.outcome == 8)
+        hint: Asked only when question B41 is not "(x) Don’t know".
+      input:
+        control: Checkbox
+        labels:
+          1: (a) A hand or arm brace
+          2: (b) Grasping tools or reach extenders
+          4: (c) Other aid, specify
+          8: (x) Don’t know
+          16: (r) Refusal
+  - id: b_s4_p1_learning
+    title: Learning
+    precondition:
+    - predicate: not (B12.outcome == 1 and BORN_AFTER_19960515.outcome == 1)
+      hint: Asked only when the child is not both in B12 = Yes and born after May 15, 1996
+    - predicate: not (BORN_AFTER_19960515.outcome == 1)
+      hint: Asked only when question BORN_AFTER_19960515 is not "Born AFTER May 15, 1996".
+    - predicate: not (B14.outcome == 1 and BORN_AFTER_19960515.outcome == 1)
+      hint: Not asked when B14 = Yes and the child was born after May 15, 1996
+    - predicate: not (B14.outcome == 3 and BORN_AFTER_19960515.outcome == 1)
+      hint: Not asked when B14 = No and the child was born after May 15, 1996
+    items:
+    - id: B43
+      kind: Question
+      title: 'Do you think that ..... has a learning disability, such as dyslexia, hyperactivity or attention problems? [If Yes (1): Check box “Learning — Limitation” on Profile Sheet]'
+      input:
+        control: Radio
+        labels:
+          1: (1) Yes
+          3: (3) No
+          8: (x) Don’t know
+          9: (r) Refusal
+    - id: B44
+      kind: Question
+      title: 'Has a teacher, doctor or other health professional ever said that ..... had a learning disability? [If Yes (1): Check box “Learning — Limitation” on Profile Sheet]'
+      input:
+        control: Radio
+        labels:
+          1: (1) Yes
+          3: (3) No
+          8: (x) Don’t know
+          9: (r) Refusal
+    - id: B45
+      kind: Question
+      title: '[B45 edit] Does this condition reduce the amount or the kind of activities ..... can do? Interviewer: Read list.Mark one only.'
+      input:
+        control: Radio
+        labels:
+          1: (1) Yes, sometimes
+          2: (2) Yes, often or always
+          3: (3) No
+          8: (x) Don’t know
+          9: (r) Refusal
+    - id: B46a
+      kind: Question
+      title: 'B46. How many ACTIVITIES does this condition USUALLY prevent him/her from doing: (a) at home? Interviewer: Read categories.Mark one only.'
       precondition:
-        - predicate: q_child_age.outcome >= 5
-
-      items:
-        # -------------------------------------------------------------------
-        # E1: School attendance status in April 2001
-        # -------------------------------------------------------------------
-        - id: q_e1
-          kind: Question
-          title: "The next few questions are about education. In APRIL 2001 was .....:"
-          input:
-            control: Radio
-            labels:
-              1: "Going to school or kindergarten"
-              2: "Being tutored at home through the school system"
-              3: "Neither of the above"
-              8: "Don't know"
-              9: "Refusal"
-          codeBlock: |
-            if q_e1.outcome == 1:
-                e1_path = 1
-            elif q_e1.outcome == 2:
-                e1_path = 2
-            elif q_e1.outcome == 3:
-                e1_path = 3
-            else:
-                e1_path = 0
-
-        # -------------------------------------------------------------------
-        # E2: Reason for home tutoring (E1=2 only) → then GO TO E37
-        # -------------------------------------------------------------------
-        - id: qg_e2
-          kind: QuestionGroup
-          title: "Why was ..... being tutored at home through the school system? I will read you a list. Please answer yes or no to each."
-          precondition:
-            - predicate: e1_path == 2
-          questions:
-            - "(a) Personal care such as feeding and toiletting needed, but not available at school"
-            - "(b) Teacher's aides or special education classes not available in REGULAR SCHOOL"
-            - "(c) SPECIAL EDUCATION SCHOOL not available locally"
-            - "(d) Child's condition or health problem prevented him/her from going to school"
-            - "(e) Parents preferred home tutoring for the child"
-            - "(f) Other reason, specify"
-          input:
-            control: Switch
-            off: "No"
-            on: "Yes"
-
-        # -------------------------------------------------------------------
-        # E3: Reason for not attending school (E1=3 only) → then E4
-        # -------------------------------------------------------------------
-        - id: qg_e3
-          kind: QuestionGroup
-          title: "Why was ..... not attending school in April 2001? I will read you a list. Please answer yes or no to each."
-          precondition:
-            - predicate: e1_path == 3
-          questions:
-            - "(a) Personal care such as feeding and toiletting needed, but not available at school"
-            - "(b) Teacher's aides or special education classes not available in REGULAR SCHOOL"
-            - "(c) SPECIAL EDUCATION SCHOOL not available locally"
-            - "(d) Child's condition or health problem prevented him/her from going to school"
-            - "(e) Child not ready or too young to attend school"
-            - "(f) Other reason, specify"
-          input:
-            control: Switch
-            off: "No"
-            on: "Yes"
-
-        # -------------------------------------------------------------------
-        # E4: Did child ever go to school? (E1=3 or E1=DK/R)
-        # -------------------------------------------------------------------
-        - id: q_e4
-          kind: Question
-          title: "Did ..... ever go to school?"
-          precondition:
-            - predicate: e1_path == 3 or e1_path == 0
-          input:
-            control: Radio
-            labels:
-              1: "Yes"
-              3: "No"
-              8: "Don't know"
-              9: "Refusal"
-          codeBlock: |
-            if q_e4.outcome == 1 or q_e4.outcome == 8 or q_e4.outcome == 9:
-                e4_ever_school = 1
-            else:
-                e4_ever_school = 0
-
-        # -------------------------------------------------------------------
-        # E5: Why never attended school (E4=3 No only) → then GO TO E37
-        # -------------------------------------------------------------------
-        - id: q_e5
-          kind: Question
-          title: "Why did ..... never attend school?"
-          precondition:
-            - predicate: e1_path == 3 or e1_path == 0
-            - predicate: e4_ever_school == 0
-          input:
-            control: Checkbox
-            labels:
-              1: "(a) Personal care such as feeding and toiletting needed, but not available at school"
-              2: "(b) Teacher's aides or special education classes not available in REGULAR SCHOOL"
-              4: "(c) SPECIAL EDUCATION SCHOOL not available locally"
-              8: "(d) Child's condition or health problem prevented him/her from going to school"
-              16: "(e) Child not ready or too young to attend school"
-              32: "(f) Other reason, specify"
-              64: "Don't know"
-              128: "Refusal"
-
-        # -------------------------------------------------------------------
-        # E6: Type of school attended in April 2001 (E1=1 only)
-        # -------------------------------------------------------------------
-        - id: q_e6
-          kind: Question
-          title: "In APRIL 2001, what type of school was ..... attending?"
-          precondition:
-            - predicate: e1_path == 1
-          input:
-            control: Radio
-            labels:
-              1: "Special education school"
-              2: "Regular school"
-              3: "Regular school with special education classes"
-              4: "Other, specify"
-              8: "Don't know"
-              9: "Refusal"
-          codeBlock: |
-            if q_e6.outcome == 1:
-                e6_special_school = 1
-            else:
-                e6_special_school = 0
-
-        # -------------------------------------------------------------------
-        # E7: Type of classes at school (E6=2/3/4/DK/R — not special ed school)
-        # -------------------------------------------------------------------
-        - id: q_e7
-          kind: Question
-          title: "At this school, what type of classes was ..... attending?"
-          precondition:
-            - predicate: e1_path == 1
-            - predicate: e6_special_school == 0
-          input:
-            control: Radio
-            labels:
-              1: "Only regular classes"
-              2: "Some regular classes and some special education classes"
-              3: "Only special education classes"
-              8: "Don't know"
-              9: "Refusal"
-          codeBlock: |
-            e7_class_type = q_e7.outcome
-
-        # -------------------------------------------------------------------
-        # E8: Ever attended a special education school
-        # Shown after E7 (E6 != 1) OR directly after E6=1 (special school)
-        # i.e. shown when e1_path == 1
-        # -------------------------------------------------------------------
-        - id: q_e8
-          kind: Question
-          title: "Did ..... ever attend a special education school?"
-          precondition:
-            - predicate: e1_path == 1
-          input:
-            control: Radio
-            labels:
-              1: "Yes"
-              3: "No"
-              8: "Don't know"
-              9: "Refusal"
-          codeBlock: |
-            if q_e8.outcome == 1:
-                e8_ever_special = 1
-            else:
-                e8_ever_special = 0
-
-        # -------------------------------------------------------------------
-        # E9: Why not attending special ed school now (E8=1 Yes)
-        # -------------------------------------------------------------------
-        - id: q_e9
-          kind: Question
-          title: "Why didn't he/she attend a special education school in April 2001?"
-          precondition:
-            - predicate: e1_path == 1
-            - predicate: e8_ever_special == 1
-          input:
-            control: Checkbox
-            labels:
-              1: "(a) Special education school no longer available locally"
-              2: "(b) Child has moved into regular school"
-              4: "(c) Other reason, specify"
-              8: "Don't know"
-              16: "Refusal"
-
-        # -------------------------------------------------------------------
-        # E10: Main condition requiring special education services
-        # Shown when: came via special ed school (E6=1)
-        #   OR came via E7 != 1 (not "only regular classes")
-        # i.e. e6_special_school==1 OR (e1_path==1 AND e7_class_type != 1)
-        # -------------------------------------------------------------------
-        - id: qg_e10
-          kind: QuestionGroup
-          title: "What is the MAIN condition or health problem which required ..... to receive special education services? I will read you a list. Please answer yes or no to each."
-          precondition:
-            - predicate: e1_path == 1
-            - predicate: e6_special_school == 1 or e7_class_type != 1
-          questions:
-            - "(a) Learning disabilities"
-            - "(b) Developmental disability or disorder"
-            - "(c) Speech or language difficulties"
-            - "(d) Emotional, psychological or behavioural conditions"
-            - "(e) Hearing difficulties, including deafness"
-            - "(f) Vision difficulties, including blindness"
-            - "(g) Difficulty with walking or moving around"
-            - "(h) Other condition, specify"
-          input:
-            control: Switch
-            off: "No"
-            on: "Yes"
-
-        # -------------------------------------------------------------------
-        # E11: Difficulty getting special education services (all going to school)
-        # -------------------------------------------------------------------
-        - id: q_e11
-          kind: Question
-          title: "Did you ever have any difficulty in trying to get special education services for .....?"
-          precondition:
-            - predicate: e1_path == 1
-          input:
-            control: Radio
-            labels:
-              1: "Yes"
-              3: "No"
-              8: "Don't know"
-              9: "Refusal"
-
-        # -------------------------------------------------------------------
-        # E12: Kind of difficulty (E11=1 Yes)
-        # -------------------------------------------------------------------
-        - id: qg_e12
-          kind: QuestionGroup
-          title: "What kind of difficulty did you have? I will read you a list. Please answer yes or no to each."
-          precondition:
-            - predicate: e1_path == 1
-            - predicate: q_e11.outcome == 1
-          questions:
-            - "(a) Special education services not available locally"
-            - "(b) Insufficient level of staffing or special education services"
-            - "(c) Communication problems with school"
-            - "(d) Difficulty to have the child tested for special education services"
-            - "(e) Other difficulty, specify"
-          input:
-            control: Switch
-            off: "No"
-            on: "Yes"
-
-        # -------------------------------------------------------------------
-        # E13: Province or territory where child attended school
-        # -------------------------------------------------------------------
-        - id: q_e13
-          kind: Question
-          title: "In APRIL 2001, in which province or territory did ..... attend school?"
-          precondition:
-            - predicate: e1_path == 1
-          input:
-            control: Dropdown
-            labels:
-              1: "Newfoundland"
-              2: "Prince Edward Island"
-              3: "Nova Scotia"
-              4: "New Brunswick"
-              5: "Quebec"
-              6: "Ontario"
-              7: "Manitoba"
-              8: "Saskatchewan"
-              9: "Alberta"
-              10: "British Columbia"
-              11: "Northwest Territory"
-              12: "Nunavut"
-              13: "Yukon"
-              14: "Other, specify"
-              98: "Don't know"
-              99: "Refusal"
-          codeBlock: |
-            e13_province = q_e13.outcome
-
-        # -------------------------------------------------------------------
-        # E14: Grade — Newfoundland (E13=1)
-        # Kindergarten (01) → E24; others → E20
-        # -------------------------------------------------------------------
-        - id: q_e14
-          kind: Question
-          title: "In what grade was ..... enrolled in APRIL 2001? (Newfoundland)"
-          precondition:
-            - predicate: e1_path == 1
-            - predicate: e13_province == 1
-          input:
-            control: Dropdown
-            labels:
-              1: "Kindergarten"
-              2: "Grade 1"
-              3: "Grade 2"
-              4: "Grade 3"
-              5: "Grade 4"
-              6: "Grade 5"
-              7: "Grade 6"
-              8: "Grade 7"
-              9: "Grade 8"
-              10: "Grade 9"
-              11: "Level 1 Secondary"
-              12: "Level 2 Secondary"
-              13: "Level 3 Secondary"
-              14: "Ungraded"
-              98: "Don't know"
-              99: "Refusal"
-          codeBlock: |
-            if q_e14.outcome == 1:
-                is_kindergarten = 1
-            else:
-                is_kindergarten = 0
-
-        # -------------------------------------------------------------------
-        # E15: Grade — Prince Edward Island (E13=2)
-        # No kindergarten option — always → E20
-        # -------------------------------------------------------------------
-        - id: q_e15
-          kind: Question
-          title: "In what grade was ..... enrolled in APRIL 2001? (Prince Edward Island)"
-          precondition:
-            - predicate: e1_path == 1
-            - predicate: e13_province == 2
-          input:
-            control: Dropdown
-            labels:
-              1: "Grade 1"
-              2: "Grade 2"
-              3: "Grade 3"
-              4: "Grade 4"
-              5: "Grade 5"
-              6: "Grade 6"
-              7: "Grade 7"
-              8: "Grade 8"
-              9: "Grade 9"
-              10: "Grade 10"
-              11: "Grade 11"
-              12: "Grade 12"
-              13: "Ungraded"
-              98: "Don't know"
-              99: "Refusal"
-          codeBlock: |
-            is_kindergarten = 0
-
-        # -------------------------------------------------------------------
-        # E16: Grade — Nova Scotia (E13=3)
-        # Primary (01) → E24; others → E20
-        # -------------------------------------------------------------------
-        - id: q_e16
-          kind: Question
-          title: "In what grade was ..... enrolled in APRIL 2001? (Nova Scotia)"
-          precondition:
-            - predicate: e1_path == 1
-            - predicate: e13_province == 3
-          input:
-            control: Dropdown
-            labels:
-              1: "Primary"
-              2: "Grade 1"
-              3: "Grade 2"
-              4: "Grade 3"
-              5: "Grade 4"
-              6: "Grade 5"
-              7: "Grade 6"
-              8: "Grade 7"
-              9: "Grade 8"
-              10: "Grade 9"
-              11: "Grade 10"
-              12: "Grade 11"
-              13: "Grade 12"
-              14: "Ungraded"
-              98: "Don't know"
-              99: "Refusal"
-          codeBlock: |
-            if q_e16.outcome == 1:
-                is_kindergarten = 1
-            else:
-                is_kindergarten = 0
-
-        # -------------------------------------------------------------------
-        # E17: Grade — Quebec (E13=5)
-        # Junior Kindergarten/Kindergarten (01-02) → E24; others → E20
-        # -------------------------------------------------------------------
-        - id: q_e17
-          kind: Question
-          title: "In what grade was ..... enrolled in APRIL 2001? (Quebec)"
-          precondition:
-            - predicate: e1_path == 1
-            - predicate: e13_province == 5
-          input:
-            control: Dropdown
-            labels:
-              1: "Junior Kindergarten"
-              2: "Kindergarten"
-              3: "Grade 1 Elementary"
-              4: "Grade 2 Elementary"
-              5: "Grade 3 Elementary"
-              6: "Grade 4 Elementary"
-              7: "Grade 5 Elementary"
-              8: "Grade 6 Elementary"
-              9: "Secondary I"
-              10: "Secondary II"
-              11: "Secondary III"
-              12: "Secondary IV"
-              13: "Secondary V"
-              14: "Ungraded"
-              98: "Don't know"
-              99: "Refusal"
-          codeBlock: |
-            if q_e17.outcome == 1 or q_e17.outcome == 2:
-                is_kindergarten = 1
-            else:
-                is_kindergarten = 0
-
-        # -------------------------------------------------------------------
-        # E18: Grade — Ontario (E13=6)
-        # Junior Kindergarten/Kindergarten (01-02) → E24; others → E20
-        # -------------------------------------------------------------------
-        - id: q_e18
-          kind: Question
-          title: "In what grade was ..... enrolled in APRIL 2001? (Ontario)"
-          precondition:
-            - predicate: e1_path == 1
-            - predicate: e13_province == 6
-          input:
-            control: Dropdown
-            labels:
-              1: "Junior Kindergarten"
-              2: "Kindergarten"
-              3: "Grade 1"
-              4: "Grade 2"
-              5: "Grade 3"
-              6: "Grade 4"
-              7: "Grade 5"
-              8: "Grade 6"
-              9: "Grade 7"
-              10: "Grade 8"
-              11: "Grade 9"
-              12: "Grade 10"
-              13: "Grade 11"
-              14: "Grade 12"
-              15: "OAC"
-              16: "Ungraded"
-              98: "Don't know"
-              99: "Refusal"
-          codeBlock: |
-            if q_e18.outcome == 1 or q_e18.outcome == 2:
-                is_kindergarten = 1
-            else:
-                is_kindergarten = 0
-
-        # -------------------------------------------------------------------
-        # E19: Grade — All other provinces/territories (E13 not in 1,2,3,5,6)
-        # Kindergarten (01) → E24; others → E20
-        # -------------------------------------------------------------------
-        - id: q_e19
-          kind: Question
-          title: "In what grade was ..... enrolled in APRIL 2001?"
-          precondition:
-            - predicate: e1_path == 1
-            - predicate: e13_province not in [1, 2, 3, 5, 6]
-          input:
-            control: Dropdown
-            labels:
-              1: "Kindergarten"
-              2: "Grade 1"
-              3: "Grade 2"
-              4: "Grade 3"
-              5: "Grade 4"
-              6: "Grade 5"
-              7: "Grade 6"
-              8: "Grade 7"
-              9: "Grade 8"
-              10: "Grade 9"
-              11: "Grade 10"
-              12: "Grade 11"
-              13: "Grade 12"
-              14: "Ungraded"
-              98: "Don't know"
-              99: "Refusal"
-          codeBlock: |
-            if q_e19.outcome == 1:
-                is_kindergarten = 1
-            else:
-                is_kindergarten = 0
-
-        # -------------------------------------------------------------------
-        # E20: Type of education/training/therapy at school (non-kindergarten only)
-        # -------------------------------------------------------------------
-        - id: qg_e20
-          kind: QuestionGroup
-          title: "In APRIL 2001, what type of education, training or therapy was ..... receiving at school? I will read you a list. Please answer yes or no to each."
-          precondition:
-            - predicate: e1_path == 1
-            - predicate: is_kindergarten == 0
-          questions:
-            - "(a) Academic subjects"
-            - "(b) Life skills"
-            - "(c) Speech and language therapy"
-            - "(d) Mental health or counselling services"
-          input:
-            control: Switch
-            off: "No"
-            on: "Yes"
-
-        # -------------------------------------------------------------------
-        # E21: Academic performance during last school year (non-kindergarten)
-        # -------------------------------------------------------------------
-        - id: q_e21
-          kind: Question
-          title: "Based on your knowledge of his/her school work, including his/her report cards, how did ..... do during the last school year?"
-          precondition:
-            - predicate: e1_path == 1
-            - predicate: is_kindergarten == 0
-          input:
-            control: Radio
-            labels:
-              1: "Very well"
-              2: "Well"
-              3: "Average"
-              4: "Poorly"
-              5: "Very poorly"
-              6: "Not applicable"
-              8: "Don't know"
-              9: "Refusal"
-
-        # -------------------------------------------------------------------
-        # E22: Homework help frequency (non-kindergarten)
-        # -------------------------------------------------------------------
-        - id: q_e22
-          kind: Question
-          title: "How often did you (or your spouse/partner) check .....''s homework or provide help with his/her homework during the last school year?"
-          precondition:
-            - predicate: e1_path == 1
-            - predicate: is_kindergarten == 0
-          input:
-            control: Radio
-            labels:
-              1: "Never or rarely"
-              2: "Less than once a month"
-              3: "At least once a month"
-              4: "At least once a week"
-              5: "A few times a week"
-              6: "Every day"
-              8: "Don't know"
-              9: "Refusal"
-
-        # -------------------------------------------------------------------
-        # E23: Education impacts (non-kindergarten)
-        # -------------------------------------------------------------------
-        - id: qg_e23
-          kind: QuestionGroup
-          title: "Because of a condition or health problem:"
-          precondition:
-            - predicate: e1_path == 1
-            - predicate: is_kindergarten == 0
-          questions:
-            - "(a) Did ..... have to leave his/her community to attend school?"
-            - "(b) Was his/her schooling interrupted for long periods of time?"
-            - "(c) Did ..... take fewer courses or academic subjects at school?"
-            - "(d) Did it take ..... longer to achieve his/her present level of education?"
-          input:
-            control: Switch
-            off: "No"
-            on: "Yes"
-
-        # -------------------------------------------------------------------
-        # E24: School activity limitations (all going to school, including kindergarten)
-        # -------------------------------------------------------------------
-        - id: qg_e24
-          kind: QuestionGroup
-          title: "Did a condition or health problem limit .....''s participation in any of the following SCHOOL ACTIVITIES during the last school year (which ended in June 2001)?"
-          precondition:
-            - predicate: e1_path == 1
-          questions:
-            - "(a) Taking part in physical education or organized games requiring physical activity"
-            - "(b) Playing with others during recess or lunch hour"
-            - "(c) Taking part in school outings, such as visits to a museum"
-            - "(d) Classroom participation"
-          input:
-            control: Switch
-            off: "No"
-            on: "Yes"
-
-        # -------------------------------------------------------------------
-        # E25: Use of special building features at school
-        # -------------------------------------------------------------------
-        - id: q_e25
-          kind: Question
-          title: "Because of a condition or health problem, did ..... USE any special building features or equipment, such as ramps or automatic door openers AT SCHOOL?"
-          precondition:
-            - predicate: e1_path == 1
-          input:
-            control: Radio
-            labels:
-              1: "Yes"
-              3: "No"
-              8: "Don't know"
-              9: "Refusal"
-          codeBlock: |
-            if q_e25.outcome == 1:
-                e25_used_features = 1
-            else:
-                e25_used_features = 0
-
-        # -------------------------------------------------------------------
-        # E26: Which special features used at school (E25=1)
-        # -------------------------------------------------------------------
-        - id: qg_e26
-          kind: QuestionGroup
-          title: "Which kind of special features did he/she USE at school? I will read you a list. Please answer yes or no to each."
-          precondition:
-            - predicate: e1_path == 1
-            - predicate: e25_used_features == 1
-          questions:
-            - "(a) Ramps or street level entrances"
-            - "(b) Widened doorways or hallways"
-            - "(c) Automatic or easy to open doors"
-            - "(d) An elevator or lift device"
-            - "(e) Special railings in washrooms"
-            - "(f) Other feature, specify"
-          input:
-            control: Switch
-            off: "No"
-            on: "Yes"
-
-        # -------------------------------------------------------------------
-        # E27: Need for special features not available at school
-        # -------------------------------------------------------------------
-        - id: q_e27
-          kind: Question
-          title: "Because of a condition or a health problem, did ..... NEED any special features or equipment, such as ramps or automatic door openers AT SCHOOL, which were not available?"
-          precondition:
-            - predicate: e1_path == 1
-          input:
-            control: Radio
-            labels:
-              1: "Yes"
-              3: "No"
-              8: "Don't know"
-              9: "Refusal"
-          codeBlock: |
-            if q_e27.outcome == 1:
-                e27_needed_features = 1
-            else:
-                e27_needed_features = 0
-
-        # -------------------------------------------------------------------
-        # E28: What features needed but not available (E27=1)
-        # -------------------------------------------------------------------
-        - id: qg_e28
-          kind: QuestionGroup
-          title: "What kind of special features or equipment did he/she need AT SCHOOL, but did not have?"
-          precondition:
-            - predicate: e1_path == 1
-            - predicate: e27_needed_features == 1
-          questions:
-            - "(a) Ramps or street level entrances"
-            - "(b) Widened doorways or hallways"
-            - "(c) Automatic or easy to open doors"
-            - "(d) An elevator or lift device"
-            - "(e) Special railings in washrooms"
-            - "(f) Other feature, specify"
-          input:
-            control: Switch
-            off: "No"
-            on: "Yes"
-
-        # -------------------------------------------------------------------
-        # E29: Assistive aids/devices/services used at school
-        # -------------------------------------------------------------------
-        - id: qg_e29
-          kind: QuestionGroup
-          title: "During the last school year, did ..... USE any assistive aids, devices or services AT SCHOOL? I will read you a list. Please answer yes or no to each."
-          precondition:
-            - predicate: e1_path == 1
-          questions:
-            - "(a) Tutors or teacher's aides"
-            - "(b) Note takers or readers"
-            - "(c) Sign language interpreters"
-            - "(d) Attendant care services"
-            - "(e) Amplifiers, such as FM or infrared"
-            - "(f) Talking books"
-            - "(g) Magnifiers"
-            - "(h) Recording equipment"
-            - "(i) A computer with Braille or speech access"
-            - "(j) Other aid or service, specify"
-          input:
-            control: Switch
-            off: "No"
-            on: "Yes"
-
-        # -------------------------------------------------------------------
-        # E30: Unmet assistive aid needs at school
-        # -------------------------------------------------------------------
-        - id: q_e30
-          kind: Question
-          title: "Were there any assistive aids, devices or services that ..... needed AT SCHOOL, but did not have?"
-          precondition:
-            - predicate: e1_path == 1
-          input:
-            control: Radio
-            labels:
-              1: "Yes"
-              3: "No"
-              8: "Don't know"
-              9: "Refusal"
-          codeBlock: |
-            if q_e30.outcome == 1:
-                e30_unmet_aids = 1
-            else:
-                e30_unmet_aids = 0
-
-        # -------------------------------------------------------------------
-        # E31: What aids needed but not available (E30=1)
-        # -------------------------------------------------------------------
-        - id: qg_e31
-          kind: QuestionGroup
-          title: "What kind of assistive aids or services did he/she need AT SCHOOL, but did not have?"
-          precondition:
-            - predicate: e1_path == 1
-            - predicate: e30_unmet_aids == 1
-          questions:
-            - "(a) Tutors or teacher's aides"
-            - "(b) Note takers or readers"
-            - "(c) Sign language interpreters"
-            - "(d) Attendant care services"
-            - "(e) Amplifiers, such as FM or infrared"
-            - "(f) Talking books"
-            - "(g) Magnifiers"
-            - "(h) Recording equipment"
-            - "(i) A computer with Braille or speech access"
-            - "(j) Other aid or service, specify"
-          input:
-            control: Switch
-            off: "No"
-            on: "Yes"
-
-        # -------------------------------------------------------------------
-        # E32: Why aids not available (shown after E31)
-        # -------------------------------------------------------------------
-        - id: qg_e32
-          kind: QuestionGroup
-          title: "Why didn't ..... have these aids or services AT SCHOOL? I will read you a list. Please answer yes or no to each."
-          precondition:
-            - predicate: e1_path == 1
-            - predicate: e30_unmet_aids == 1
-          questions:
-            - "(a) School funding cutbacks or lack of funding in the school system"
-            - "(b) School did not think child needed assistive aids or services"
-            - "(c) Child did not want to use assistive aids or services"
-            - "(d) Other reason, specify"
-          input:
-            control: Switch
-            off: "No"
-            on: "Yes"
-
-        # -------------------------------------------------------------------
-        # E33: Parental involvement activities during last school year
-        # -------------------------------------------------------------------
-        - id: qg_e33
-          kind: QuestionGroup
-          title: "During the last school year, have you (or your partner/spouse) done any of the following for .....? I will read you a list. Please answer yes or no to each."
-          precondition:
-            - predicate: e1_path == 1
-          questions:
-            - "(a) Spoken to, visited or corresponded with child's teacher"
-            - "(b) Attended a school event in which child participated"
-            - "(c) Volunteered in child's class or helped with a class trip"
-            - "(d) Helped elsewhere in the school"
-            - "(e) Attended a parent-school association meeting"
-            - "(f) Fundraising for school"
-            - "(g) Other activity, specify"
-          input:
-            control: Switch
-            off: "No"
-            on: "Yes"
-
-        # -------------------------------------------------------------------
-        # E34: Agreement with descriptions of school (3 sub-items, 4-point scale)
-        # -------------------------------------------------------------------
-        - id: qg_e34
-          kind: QuestionGroup
-          title: "Do you strongly agree, agree, disagree, or strongly disagree with the following descriptions of the school that ..... attended during the last school year?"
-          precondition:
-            - predicate: e1_path == 1
-          questions:
-            - "(a) The school offered parents many opportunities to be involved in the school activities"
-            - "(b) Parents were made to feel welcome in the school"
-            - "(c) Overall, the school accommodated the child's condition or health problem"
-          input:
-            control: Radio
-            labels:
-              1: "Strongly agree"
-              2: "Agree"
-              3: "Disagree"
-              4: "Strongly disagree"
-              8: "Don't know"
-              9: "Refusal"
-
-        # -------------------------------------------------------------------
-        # E35: How often child looked forward to school
-        # -------------------------------------------------------------------
-        - id: q_e35
-          kind: Question
-          title: "With regard to how he/she feels about school, how often did ..... look forward to going to school during the last school year?"
-          precondition:
-            - predicate: e1_path == 1
-          input:
-            control: Radio
-            labels:
-              1: "Almost never"
-              2: "Rarely"
-              3: "Sometimes"
-              4: "Often"
-              5: "Almost always"
-              8: "Don't know"
-              9: "Refusal"
-
-        # -------------------------------------------------------------------
-        # E36: Transportation to school
-        # -------------------------------------------------------------------
-        - id: q_e36
-          kind: Question
-          title: "During the last school year, what was the method of transportation ..... used MOST OFTEN to get to school?"
-          precondition:
-            - predicate: e1_path == 1
-          input:
-            control: Radio
-            labels:
-              1: "Was driven to school by family motor vehicle"
-              2: "School bus"
-              3: "Regular city bus"
-              4: "Specialized bus services for persons with disabilities"
-              5: "Walked or biked to school"
-              6: "Other, specify"
-              8: "Don't know"
-              9: "Refusal"
-
-        # -------------------------------------------------------------------
-        # E37: Professional assessment for educational needs
-        # Convergence point — reached from all paths:
-        #   e1_path==2 (after E2)
-        #   e1_path==3 AND e4_ever_school==1 (E4=Yes/DK/R)
-        #   e1_path==0 AND e4_ever_school==1 (E4=Yes/DK/R, came from DK/R on E1)
-        #   e1_path==3 AND e4_ever_school==0 (after E5)
-        #   e1_path==1 (after E36)
-        # So: shown to everyone in the section
-        # -------------------------------------------------------------------
-        - id: q_e37
-          kind: Question
-          title: "Has a professional assessment ever been done to determine .....''s educational needs?"
-          input:
-            control: Radio
-            labels:
-              1: "Yes"
-              3: "No"
-              8: "Don't know"
-              9: "Refusal"
-          codeBlock: |
-            if q_e37.outcome == 1:
-                e37_assessment = 1
-            else:
-                e37_assessment = 0
-
-        # -------------------------------------------------------------------
-        # E38: Who completed the professional assessment (E37=1)
-        # -------------------------------------------------------------------
-        - id: qg_e38
-          kind: QuestionGroup
-          title: "Who completed this assessment? I will read you a list. Please answer yes or no to each."
-          precondition:
-            - predicate: e37_assessment == 1
-          questions:
-            - "(a) Psychologist or psychiatrist"
-            - "(b) Social worker"
-            - "(c) Special education consultant"
-            - "(d) Speech or language therapist"
-            - "(e) Other professional or specialist, specify"
-          input:
-            control: Switch
-            off: "No"
-            on: "Yes"
-
-    # ===================================================================
-    # SECTION: leisure_recreation
-    # ===================================================================
-    # =========================================================================
-    # SECTION F — Leisure and Recreation Activities
-    # Entire section skipped if child is under 5 (q_child_age.outcome < 5)
-    # =========================================================================
-    # F1a–F1e: Organized activity frequency + hours (outside school hours)
-    # F2a–F2c: Passive/home activity frequency + hours
-    # F3: Reading frequency + hours (Everyday only triggers hours)
-    # F4: Unorganized play frequency (4-point scale, no hours)
-    # F5: Summer camp attendance → F6 (camp type) if Yes
-    # F7: Prevented from leisure activities → F8 (barrier list) if Yes
-    # F9: Getting along with other children (5-point)
-    # F10: Computers in home
-    #   None → F11 (no-computer barriers) → end
-    #   1+   → F12 (Internet?)
-    #     No  → F13 (no-internet barriers) → end
-    #     Yes → F14 (child uses Internet?)
-    #       No  → F15 (non-use barriers) → end
-    #       Yes → F16a–F16d (Internet usage frequency + hours)
-    # =========================================================================
-    - id: b_leisure_recreation
-      kind: Group
-      title: "Leisure and Recreation Activities"
+      - predicate: not (B45.outcome == 8)
+        hint: Asked only when question B45 is not "(x) Don’t know".
+      input:
+        control: Radio
+        labels:
+          1: (1) None
+          2: (2) A few
+          3: (3) Many
+          4: (4) Most
+          8: (x) DK
+          9: (r) Ref
+    - id: B46b
+      kind: Question
+      title: 'B46. How many ACTIVITIES does this condition USUALLY prevent him/her from doing: (b) at school?'
       precondition:
-        - predicate: q_child_age.outcome >= 5
-      items:
-
-        # -----------------------------------------------------------------
-        # F1a: Organized sports with coach/instructor
-        # -----------------------------------------------------------------
-        - id: q_f1a
-          kind: Question
-          title: "In the last 12 months, OUTSIDE OF SCHOOL HOURS, how often has he/she taken part in sports with a coach or instructor (except dance or gymnastics)?"
-          input:
-            control: Radio
-            labels:
-              1: "Everyday"
-              2: "At least once a week"
-              3: "At least once a month"
-              4: "Less than once a month"
-              5: "Never"
-
-        # F1a_hrs: Hours per day — only if F1a not Never
-        - id: q_f1a_hrs
-          kind: Question
-          title: "How many hours a day does he/she take part in sports with a coach or instructor?"
-          precondition:
-            - predicate: q_f1a.outcome in [1, 2, 3, 4]
-          input:
-            control: Editbox
-            min: 0
-            max: 24
-            right: "hours per day"
-
-        # -----------------------------------------------------------------
-        # F1b: Organized lessons in dance, gymnastics, martial arts, etc.
-        # -----------------------------------------------------------------
-        - id: q_f1b
-          kind: Question
-          title: "In the last 12 months, OUTSIDE OF SCHOOL HOURS, how often has he/she taken lessons or instruction in other organized physical activities with a coach or instructor, such as dance, gymnastics or martial arts?"
-          input:
-            control: Radio
-            labels:
-              1: "Everyday"
-              2: "At least once a week"
-              3: "At least once a month"
-              4: "Less than once a month"
-              5: "Never"
-
-        # F1b_hrs: Hours per day — only if F1b not Never
-        - id: q_f1b_hrs
-          kind: Question
-          title: "How many hours a day does he/she take lessons or instruction in other organized physical activities?"
-          precondition:
-            - predicate: q_f1b.outcome in [1, 2, 3, 4]
-          input:
-            control: Editbox
-            min: 0
-            max: 24
-            right: "hours per day"
-
-        # -----------------------------------------------------------------
-        # F1c: Unorganized sports/physical activities
-        # -----------------------------------------------------------------
-        - id: q_f1c
-          kind: Question
-          title: "In the last 12 months, OUTSIDE OF SCHOOL HOURS, how often has he/she taken part in unorganized sports or physical activities without a coach or instructor?"
-          input:
-            control: Radio
-            labels:
-              1: "Everyday"
-              2: "At least once a week"
-              3: "At least once a month"
-              4: "Less than once a month"
-              5: "Never"
-
-        # F1c_hrs: Hours per day — only if F1c not Never
-        - id: q_f1c_hrs
-          kind: Question
-          title: "How many hours a day does he/she take part in unorganized sports or physical activities?"
-          precondition:
-            - predicate: q_f1c.outcome in [1, 2, 3, 4]
-          input:
-            control: Editbox
-            min: 0
-            max: 24
-            right: "hours per day"
-
-        # -----------------------------------------------------------------
-        # F1d: Lessons in music, art, or other non-sport activities
-        # -----------------------------------------------------------------
-        - id: q_f1d
-          kind: Question
-          title: "In the last 12 months, OUTSIDE OF SCHOOL HOURS, how often has he/she taken lessons or instruction in music, art or other non-sport activities?"
-          input:
-            control: Radio
-            labels:
-              1: "Everyday"
-              2: "At least once a week"
-              3: "At least once a month"
-              4: "Less than once a month"
-              5: "Never"
-
-        # F1d_hrs: Hours per day — only if F1d not Never
-        - id: q_f1d_hrs
-          kind: Question
-          title: "How many hours a day does he/she take lessons or instruction in music, art or other non-sport activities?"
-          precondition:
-            - predicate: q_f1d.outcome in [1, 2, 3, 4]
-          input:
-            control: Editbox
-            min: 0
-            max: 24
-            right: "hours per day"
-
-        # -----------------------------------------------------------------
-        # F1e: Clubs, groups, community programs
-        # -----------------------------------------------------------------
-        - id: q_f1e
-          kind: Question
-          title: "In the last 12 months, OUTSIDE OF SCHOOL HOURS, how often has he/she taken part in clubs, groups or community programs, such as church groups, Girl or Boy Scouts?"
-          input:
-            control: Radio
-            labels:
-              1: "Everyday"
-              2: "At least once a week"
-              3: "At least once a month"
-              4: "Less than once a month"
-              5: "Never"
-
-        # F1e_hrs: Hours per day — only if F1e not Never
-        - id: q_f1e_hrs
-          kind: Question
-          title: "How many hours a day does he/she take part in clubs, groups or community programs?"
-          precondition:
-            - predicate: q_f1e.outcome in [1, 2, 3, 4]
-          input:
-            control: Editbox
-            min: 0
-            max: 24
-            right: "hours per day"
-
-        # -----------------------------------------------------------------
-        # F2a: Watch TV
-        # -----------------------------------------------------------------
-        - id: q_f2a
-          kind: Question
-          title: "How often does he/she watch T.V.?"
-          input:
-            control: Radio
-            labels:
-              1: "Everyday"
-              2: "At least once a week"
-              3: "At least once a month"
-              4: "Less than once a month"
-              5: "Never"
-
-        # F2a_hrs: Hours per day — only if F2a not Never
-        - id: q_f2a_hrs
-          kind: Question
-          title: "How many hours a day does he/she watch T.V.?"
-          precondition:
-            - predicate: q_f2a.outcome in [1, 2, 3, 4]
-          input:
-            control: Editbox
-            min: 0
-            max: 24
-            right: "hours per day"
-
-        # -----------------------------------------------------------------
-        # F2b: Computer or video games
-        # -----------------------------------------------------------------
-        - id: q_f2b
-          kind: Question
-          title: "How often does he/she play computer or video games?"
-          input:
-            control: Radio
-            labels:
-              1: "Everyday"
-              2: "At least once a week"
-              3: "At least once a month"
-              4: "Less than once a month"
-              5: "Never"
-
-        # F2b_hrs: Hours per day — only if F2b not Never
-        - id: q_f2b_hrs
-          kind: Question
-          title: "How many hours a day does he/she play computer or video games?"
-          precondition:
-            - predicate: q_f2b.outcome in [1, 2, 3, 4]
-          input:
-            control: Editbox
-            min: 0
-            max: 24
-            right: "hours per day"
-
-        # -----------------------------------------------------------------
-        # F2c: Talk on phone with friends
-        # -----------------------------------------------------------------
-        - id: q_f2c
-          kind: Question
-          title: "How often does he/she talk on the phone with friends?"
-          input:
-            control: Radio
-            labels:
-              1: "Everyday"
-              2: "At least once a week"
-              3: "At least once a month"
-              4: "Less than once a month"
-              5: "Never"
-
-        # F2c_hrs: Hours per day — only if F2c not Never
-        - id: q_f2c_hrs
-          kind: Question
-          title: "How many hours a day does he/she talk on the phone with friends?"
-          precondition:
-            - predicate: q_f2c.outcome in [1, 2, 3, 4]
-          input:
-            control: Editbox
-            min: 0
-            max: 24
-            right: "hours per day"
-
-        # -----------------------------------------------------------------
-        # F3: Reading for pleasure
-        # Note: inventory says 1 → F3_hrs; 2–5 → F4
-        # i.e., only "Everyday" triggers the hours follow-up
-        # -----------------------------------------------------------------
-        - id: q_f3
-          kind: Question
-          title: "How often does ..... read or have books read to him/her (for pleasure)? Please do not include reading that is required for school."
-          input:
-            control: Radio
-            labels:
-              1: "Everyday"
-              2: "At least once a week"
-              3: "At least once a month"
-              4: "Less than once a month"
-              5: "Never"
-
-        # F3_hrs: Hours per day — only if F3 = Everyday
-        - id: q_f3_hrs
-          kind: Question
-          title: "How many hours a day does he/she read or have books read to him/her?"
-          precondition:
-            - predicate: q_f3.outcome == 1
-          input:
-            control: Editbox
-            min: 0
-            max: 24
-            right: "hours per day"
-
-        # -----------------------------------------------------------------
-        # F4: Playing alone
-        # 4-point scale (Often/Sometimes/Seldom/Never) — no hours follow-up
-        # -----------------------------------------------------------------
-        - id: q_f4
-          kind: Question
-          title: "Outside of school hours, how often does he/she play alone, for example, riding a bike or doing a craft?"
-          input:
-            control: Radio
-            labels:
-              1: "Often"
-              2: "Sometimes"
-              3: "Seldom"
-              4: "Never"
-
-        # -----------------------------------------------------------------
-        # F5: Summer camp attendance
-        # -----------------------------------------------------------------
-        - id: q_f5
-          kind: Question
-          title: "Has ..... ever gone to summer camps (including regular or special camps)?"
-          input:
-            control: Radio
-            labels:
-              1: "Yes"
-              3: "No"
-
-        # F6: Camp for children with health problem — only if F5 = Yes
-        - id: q_f6
-          kind: Question
-          title: "Was this a camp for children with a health problem or condition?"
-          precondition:
-            - predicate: q_f5.outcome == 1
-          input:
-            control: Radio
-            labels:
-              1: "Yes"
-              3: "No"
-
-        # -----------------------------------------------------------------
-        # F7: Prevented from leisure activities
-        # -----------------------------------------------------------------
-        - id: q_f7
-          kind: Question
-          title: "Because of a condition or health problem, is ..... prevented from taking part in any social or physical leisure activities?"
-          input:
-            control: Radio
-            labels:
-              1: "Yes"
-              3: "No"
-
-        # F8: Barriers to leisure — only if F7 = Yes
-        # 8 sub-items, Yes/No per item → QuestionGroup with Switch
-        - id: qg_f8
-          kind: QuestionGroup
-          title: "What prevents ..... from doing more social or physical leisure activities? I will read you a list. Please answer yes or no to each."
-          precondition:
-            - predicate: q_f7.outcome == 1
-          questions:
-            - "Recreational facilities or programs not available locally"
-            - "Buildings and equipment not physically accessible"
-            - "Inadequate transportation services"
-            - "Too expensive"
-            - "Child is physically unable to do more"
-            - "Child needs someone's assistance"
-            - "Child needs specialized aids or equipment, but he/she doesn't have them"
-            - "Other reason"
-          input:
-            control: Switch
-            off: "No"
-            on: "Yes"
-
-        # -----------------------------------------------------------------
-        # F9: Getting along with other children
-        # -----------------------------------------------------------------
-        - id: q_f9
-          kind: Question
-          title: "DURING THE PAST SIX MONTHS, how well has ..... gotten along with other children, such as friends or classmates (excluding brothers or sisters)?"
-          input:
-            control: Radio
-            labels:
-              1: "Very well (or no problems)"
-              2: "Quite well (or hardly any problems)"
-              3: "Pretty well (or occasional problems)"
-              4: "Not too well (or frequent problems)"
-              5: "Not well at all (or constant problems)"
-
-        # -----------------------------------------------------------------
-        # F10: Personal computers in home
-        # -----------------------------------------------------------------
-        - id: q_f10
-          kind: Question
-          title: "How many personal computers are there in your home?"
-          input:
-            control: Radio
-            labels:
-              1: "None"
-              2: "One"
-              3: "Two"
-              4: "Three or more"
-
-        # -----------------------------------------------------------------
-        # F11: No-computer barriers — only if F10 = None (1)
-        # Multi-select: Why no computer?
-        # -----------------------------------------------------------------
-        - id: qg_f11
-          kind: QuestionGroup
-          title: "What are the reasons that keep you from purchasing a personal computer? (Please answer yes or no to each)"
-          precondition:
-            - predicate: q_f10.outcome == 1
-          questions:
-            - "Cost"
-            - "Not needed at home"
-            - "Not interested"
-            - "Lack of computer skills or training"
-            - "Fear of technology"
-            - "Disability"
-            - "Other"
-          input:
-            control: Switch
-            off: "No"
-            on: "Yes"
-
-        # -----------------------------------------------------------------
-        # F12: Internet connection — only if F10 = 1+ computer (2, 3, or 4)
-        # -----------------------------------------------------------------
-        - id: q_f12
-          kind: Question
-          title: "Is your household connected to the Internet?"
-          precondition:
-            - predicate: q_f10.outcome in [2, 3, 4]
-          input:
-            control: Radio
-            labels:
-              1: "Yes"
-              3: "No"
-
-        # -----------------------------------------------------------------
-        # F13: No-internet barriers — only if F12 = No (3)
-        # Multi-select: Why no Internet at home?
-        # -----------------------------------------------------------------
-        - id: qg_f13
-          kind: QuestionGroup
-          title: "What are the reasons that keep you from getting Internet access for your HOME? (Please answer yes or no to each)"
-          precondition:
-            - predicate: q_f10.outcome in [2, 3, 4]
-            - predicate: q_f12.outcome == 3
-          questions:
-            - "Cost"
-            - "Not needed at home"
-            - "Not interested"
-            - "Lack of computer skills or training"
-            - "Fear of technology"
-            - "Disability"
-            - "Other"
-          input:
-            control: Switch
-            off: "No"
-            on: "Yes"
-
-        # -----------------------------------------------------------------
-        # F14: Child uses Internet at home — only if F12 = Yes (1)
-        # -----------------------------------------------------------------
-        - id: q_f14
-          kind: Question
-          title: "Does ..... use the Internet AT HOME?"
-          precondition:
-            - predicate: q_f10.outcome in [2, 3, 4]
-            - predicate: q_f12.outcome == 1
-          input:
-            control: Radio
-            labels:
-              1: "Yes"
-              3: "No"
-
-        # -----------------------------------------------------------------
-        # F15: Child non-use barriers — only if F14 = No (3)
-        # Multi-select: Why doesn't child use Internet?
-        # -----------------------------------------------------------------
-        - id: qg_f15
-          kind: QuestionGroup
-          title: "What are the reasons that keep ..... from using the Internet at home? (Please answer yes or no to each)"
-          precondition:
-            - predicate: q_f10.outcome in [2, 3, 4]
-            - predicate: q_f12.outcome == 1
-            - predicate: q_f14.outcome == 3
-          questions:
-            - "Child too young or not ready to use it"
-            - "Child does not need it"
-            - "Child is not interested"
-            - "Child does not have the computer skills or training"
-            - "Child's condition or health problem"
-            - "Other"
-          input:
-            control: Switch
-            off: "No"
-            on: "Yes"
-
-        # -----------------------------------------------------------------
-        # F16a: Internet newsgroups/chat — only if F14 = Yes (1)
-        # -----------------------------------------------------------------
-        - id: q_f16a
-          kind: Question
-          title: "AT HOME, how often does he/she use Internet to participate in newsgroups or chat groups?"
-          precondition:
-            - predicate: q_f10.outcome in [2, 3, 4]
-            - predicate: q_f12.outcome == 1
-            - predicate: q_f14.outcome == 1
-          input:
-            control: Radio
-            labels:
-              1: "Everyday"
-              2: "At least once a week"
-              3: "At least once a month"
-              4: "Less than once a month"
-              5: "Never"
-
-        # F16a_hrs: Hours per day — only if F16a not Never
-        - id: q_f16a_hrs
-          kind: Question
-          title: "How many hours a day does he/she use Internet for newsgroups or chat groups?"
-          precondition:
-            - predicate: q_f10.outcome in [2, 3, 4]
-            - predicate: q_f12.outcome == 1
-            - predicate: q_f14.outcome == 1
-            - predicate: q_f16a.outcome in [1, 2, 3, 4]
-          input:
-            control: Editbox
-            min: 0
-            max: 24
-            right: "hours per day"
-
-        # -----------------------------------------------------------------
-        # F16b: Internet for school work
-        # -----------------------------------------------------------------
-        - id: q_f16b
-          kind: Question
-          title: "AT HOME, how often does he/she use Internet for school work?"
-          precondition:
-            - predicate: q_f10.outcome in [2, 3, 4]
-            - predicate: q_f12.outcome == 1
-            - predicate: q_f14.outcome == 1
-          input:
-            control: Radio
-            labels:
-              1: "Everyday"
-              2: "At least once a week"
-              3: "At least once a month"
-              4: "Less than once a month"
-              5: "Never"
-
-        # F16b_hrs: Hours per day — only if F16b not Never
-        - id: q_f16b_hrs
-          kind: Question
-          title: "How many hours a day does he/she use Internet for school work?"
-          precondition:
-            - predicate: q_f10.outcome in [2, 3, 4]
-            - predicate: q_f12.outcome == 1
-            - predicate: q_f14.outcome == 1
-            - predicate: q_f16b.outcome in [1, 2, 3, 4]
-          input:
-            control: Editbox
-            min: 0
-            max: 24
-            right: "hours per day"
-
-        # -----------------------------------------------------------------
-        # F16c: Internet for personal interest/entertainment
-        # -----------------------------------------------------------------
-        - id: q_f16c
-          kind: Question
-          title: "AT HOME, how often does he/she use Internet for personal interest or entertainment?"
-          precondition:
-            - predicate: q_f10.outcome in [2, 3, 4]
-            - predicate: q_f12.outcome == 1
-            - predicate: q_f14.outcome == 1
-          input:
-            control: Radio
-            labels:
-              1: "Everyday"
-              2: "At least once a week"
-              3: "At least once a month"
-              4: "Less than once a month"
-              5: "Never"
-
-        # F16c_hrs: Hours per day — only if F16c not Never
-        - id: q_f16c_hrs
-          kind: Question
-          title: "How many hours a day does he/she use Internet for personal interest or entertainment?"
-          precondition:
-            - predicate: q_f10.outcome in [2, 3, 4]
-            - predicate: q_f12.outcome == 1
-            - predicate: q_f14.outcome == 1
-            - predicate: q_f16c.outcome in [1, 2, 3, 4]
-          input:
-            control: Editbox
-            min: 0
-            max: 24
-            right: "hours per day"
-
-        # -----------------------------------------------------------------
-        # F16d: Internet e-mail to stay in touch with friends
-        # -----------------------------------------------------------------
-        - id: q_f16d
-          kind: Question
-          title: "AT HOME, how often does he/she use E-mail to stay in touch with friends?"
-          precondition:
-            - predicate: q_f10.outcome in [2, 3, 4]
-            - predicate: q_f12.outcome == 1
-            - predicate: q_f14.outcome == 1
-          input:
-            control: Radio
-            labels:
-              1: "Everyday"
-              2: "At least once a week"
-              3: "At least once a month"
-              4: "Less than once a month"
-              5: "Never"
-
-        # F16d_hrs: Hours per day — only if F16d not Never
-        - id: q_f16d_hrs
-          kind: Question
-          title: "How many hours a day does he/she use E-mail to stay in touch with friends?"
-          precondition:
-            - predicate: q_f10.outcome in [2, 3, 4]
-            - predicate: q_f12.outcome == 1
-            - predicate: q_f14.outcome == 1
-            - predicate: q_f16d.outcome in [1, 2, 3, 4]
-          input:
-            control: Editbox
-            min: 0
-            max: 24
-            right: "hours per day"
-
-    # ===================================================================
-    # SECTION: home_accommodation
-    # ===================================================================
-    # =========================================================================
-    # SECTION G — HOME ACCOMMODATION
-    # =========================================================================
-    # G_AGE.edit: Section G is NOT asked if child was born AFTER May 15, 1996
-    # (child under 5: q_child_age.outcome < 5 → skip entire block).
-    #
-    # ENTERING/LEAVING subsection:
-    #   G1 (use?) → Yes → G2 (which?); No/DK/R → G3
-    #   G2 multi-select (Yes/No per sub-item) → G3
-    #   G3 (need?) → Yes → G4; No/DK/R → G6
-    #   G4 multi-select → G5
-    #   G5 multi-select (Yes/No per sub-item, why not) → G6
-    #
-    # INSIDE residence subsection:
-    #   G6 (use?) → Yes → G7; No/DK/R → G8
-    #   G7 multi-select (Yes/No per sub-item) → G8
-    #   G8 (need?) → Yes → G9; No/DK/R → end
-    #   G9 multi-select → G10
-    #   G10 multi-select (Yes/No per sub-item, why not) → end
-    # =========================================================================
-    - id: b_home_accommodation
-      kind: Group
-      title: "Home Accommodation"
+      - predicate: not (B45.outcome == 8)
+        hint: Asked only when question B45 is not "(x) Don’t know".
+      input:
+        control: Radio
+        labels:
+          1: (1) None
+          2: (2) A few
+          3: (3) Many
+          4: (4) Most
+          8: (x) DK
+          9: (r) Ref
+    - id: B46c
+      kind: Question
+      title: 'B46. How many ACTIVITIES does this condition USUALLY prevent him/her from doing: (c) at play or recreational activities?'
       precondition:
-        - predicate: q_child_age.outcome >= 5
-
-      items:
-
-        # ------------------------------------------------------------------
-        # ENTERING / LEAVING RESIDENCE
-        # ------------------------------------------------------------------
-
-        # G1: Does child USE special features to enter/leave residence?
-        - id: q_g1
-          kind: Question
-          title: "Because of a condition or health problem, does ..... USE any special features, such as access ramps or automatic door openers to ENTER or LEAVE his/her residence?"
-          input:
-            control: Radio
-            labels:
-              1: "Yes"
-              3: "No"
-              8: "Don't know"
-              9: "Refusal"
-
-        # G2: Which entering/leaving features does child USE?
-        # Asked only if G1 = Yes (1)
-        - id: qg_g2
-          kind: QuestionGroup
-          title: "Which special features does he/she use? I will read you a list. Please answer yes or no to each."
-          precondition:
-            - predicate: q_g1.outcome == 1
-          questions:
-            - "Ramps or street level entrances"
-            - "Widened doorways or hallways"
-            - "Automatic or easy to open doors"
-            - "An elevator or lift device"
-            - "Other feature, specify"
-          input:
-            control: Switch
-            on: "Yes"
-            off: "No"
-
-        # G3: Does child NEED special features to enter/leave that he/she does not have?
-        # Asked after G2 (always) or after G1 No/DK/R
-        - id: q_g3
-          kind: Question
-          title: "Does ..... CURRENTLY need any special features to enter or leave his/her residence, which he/she does not have?"
-          input:
-            control: Radio
-            labels:
-              1: "Yes"
-              3: "No"
-              8: "Don't know"
-              9: "Refusal"
-
-        # G4: Which entering/leaving features does child NEED but not have?
-        # Asked only if G3 = Yes (1)
-        - id: qg_g4
-          kind: QuestionGroup
-          title: "Which special features does ..... NEED, but does not have?"
-          precondition:
-            - predicate: q_g3.outcome == 1
-          questions:
-            - "Ramps or street level entrances"
-            - "Widened doorways or hallways"
-            - "Automatic or easy to open doors"
-            - "An elevator or lift device"
-            - "Other feature, specify"
-          input:
-            control: Switch
-            on: "Yes"
-            off: "No"
-
-        # G5: Why doesn't child have the needed entering/leaving features?
-        # Asked only if G3 = Yes (1)
-        - id: qg_g5
-          kind: QuestionGroup
-          title: "Why doesn't ..... have these special features that he/she needs to enter or leave his/her residence? I will read you a list. Please answer yes or no to each."
-          precondition:
-            - predicate: q_g3.outcome == 1
-          questions:
-            - "Not covered by insurance"
-            - "Too expensive"
-            - "Landlord/landlady not willing"
-            - "Only needed occasionally"
-            - "Other reason, specify"
-          input:
-            control: Switch
-            on: "Yes"
-            off: "No"
-
-        # ------------------------------------------------------------------
-        # INSIDE RESIDENCE
-        # ------------------------------------------------------------------
-
-        # G6: Does child USE special features inside residence?
-        - id: q_g6
-          kind: Question
-          title: "Because of a condition or health problem, does ..... USE any special features, such as special railings, grab bars or lift devices INSIDE his/her residence?"
-          input:
-            control: Radio
-            labels:
-              1: "Yes"
-              3: "No"
-              8: "Don't know"
-              9: "Refusal"
-
-        # G7: Which inside features does child USE?
-        # Asked only if G6 = Yes (1)
-        - id: qg_g7
-          kind: QuestionGroup
-          title: "Which special features does ..... use INSIDE his/her residence? I will read you a list. Please answer yes or no to each."
-          precondition:
-            - predicate: q_g6.outcome == 1
-          questions:
-            - "Grab bars or bath lift device in the bathroom"
-            - "Lowered counters, sinks or switches in the kitchen"
-            - "An elevator or lift device"
-            - "Widened doorways or hallways"
-            - "Automatic or easy to open doors"
-            - "Visual or flashing alarms"
-            - "Audio warning devices"
-            - "Other feature, specify"
-          input:
-            control: Switch
-            on: "Yes"
-            off: "No"
-
-        # G8: Does child NEED special features inside that he/she does not have?
-        # Asked after G7 (always) or after G6 No/DK/R
-        - id: q_g8
-          kind: Question
-          title: "Does ..... CURRENTLY need any special features INSIDE his/her residence, which he/she does not have?"
-          input:
-            control: Radio
-            labels:
-              1: "Yes"
-              3: "No"
-              8: "Don't know"
-              9: "Refusal"
-
-        # G9: Which inside features does child NEED but not have?
-        # Asked only if G8 = Yes (1)
-        - id: qg_g9
-          kind: QuestionGroup
-          title: "Which special features does ..... NEED, but does not have?"
-          precondition:
-            - predicate: q_g8.outcome == 1
-          questions:
-            - "Grab bars or bath lift device in the bathroom"
-            - "Lowered counters, sinks or switches in the kitchen"
-            - "An elevator or lift device"
-            - "Widened doorways or hallways"
-            - "Automatic or easy to open doors"
-            - "Visual or flashing alarms"
-            - "Audio warning devices"
-            - "Other feature, specify"
-          input:
-            control: Switch
-            on: "Yes"
-            off: "No"
-
-        # G10: Why doesn't child have the needed inside features?
-        # Asked only if G8 = Yes (1)
-        - id: qg_g10
-          kind: QuestionGroup
-          title: "Why doesn't ..... have these special features INSIDE his/her residence? I will read you a list. Please answer yes or no to each."
-          precondition:
-            - predicate: q_g8.outcome == 1
-          questions:
-            - "Not covered by insurance"
-            - "Too expensive"
-            - "Landlord/landlady not willing"
-            - "Only needed occasionally"
-            - "Other reason, specify"
-          input:
-            control: Switch
-            on: "Yes"
-            off: "No"
-
-    # ===================================================================
-    # SECTION: transportation
-    # ===================================================================
-    # =========================================================================
-    # BLOCK 1: SECTION H — TRANSPORTATION (items H1–H16)
-    # =========================================================================
-    # H1   → Car features? Radio 5-way (Yes/No/No car/DK/R). 1/DK/R→H3; 3→H2; 5→H5.
-    # H2   → Need other features? Radio Yes/No/DK. 1→H4; 3→H3; DK/R→H5.
-    # H3   → Need any features? Radio Yes/No/DK. 1/3→H4; DK/R→H5.
-    # H4   → Why not have features? QuestionGroup 4 sub-items Switch. →H5.
-    # H5   → Specialized bus service available? Radio Yes/No/DK. 1→H7; 3/DK/R→H6.
-    # H6   → Does child need this service? Radio Yes/No/DK. 1→H7; 3/DK/R→H11.
-    # H7   → Does child use this service? Radio Yes/No/DK. 1/3→H8; DK/R→H11.
-    # H8   → How often? Radio 4-point. →H9.
-    # H9   → Had difficulty? Radio Yes/No/DK. 1/3→H10/H11; DK/R→H11.
-    # H10  → What difficulty? QuestionGroup 5 sub-items Switch. →H11.
-    # H11  → Had to use taxi? Radio Yes/No/DK. 1/3→H12; DK/R→H13.
-    # H12  → How often taxi? Radio 4-point. →H13.
-    # H13  → Cancel/reschedule activities? Radio Yes/No. →H14.
-    # H14  → Out-of-pocket transport expenses? Radio Yes/No/DK. 1/3→H15; DK/R→end.
-    # H15  → Estimated dollar amount (0=DK/R). Editbox 0–999999. 0→H16; >0→end.
-    # H16  → Expense group. Radio 7 options. →end.
-    # =========================================================================
-    - id: b_transportation
-      kind: Group
-      title: "Transportation"
+      - predicate: not (B45.outcome == 8)
+        hint: Asked only when question B45 is not "(x) Don’t know".
+      input:
+        control: Radio
+        labels:
+          1: (1) None
+          2: (2) A few
+          3: (3) Many
+          4: (4) Most
+          8: (x) DK
+          9: (r) Ref
+    - id: B47
+      kind: Question
+      title: 'Does ..... USE any aids, specialized equipment or services to help him/her with his/her learning difficulty? [If Yes (1): Check box “Learning — USE Aid” on Profile Sheet]'
+      input:
+        control: Radio
+        labels:
+          1: (1) Yes
+          3: (3) No
+          8: (x) Don’t know
+          9: (r) Refusal
+    - id: B48a
+      kind: Question
+      title: 'B48. Does he/she now use: (a) a computer as a learning aid. Interviewer: Read list.'
       precondition:
-        - predicate: q_child_age.outcome >= 5
-      items:
-
-        # H1: Car has special features/equipment?
-        # 1=Yes → H3; 3=No → H2; 5=No car → H5; 8=DK → H3; 9=R → H3
-        - id: q_h1
-          kind: Question
-          title: "I would like to ask you about the means of transportation that ..... uses for local travel on his/her own or with someone else. This includes trips to the doctor, recreational events or any other local trips under 80 km (50 miles). Because of .....'s condition, does your car have special features or equipment, such as a lift device or a large trunk to carry a wheelchair?"
-          input:
-            control: Radio
-            labels:
-              1: "Yes"
-              3: "No"
-              5: "Do not own a car"
-              8: "Don't know"
-              9: "Refusal"
-
-        # H2: Need any other special features for car?
-        # Precondition: H1 = No (3 only)
-        # 1=Yes → H4; 3=No → H3; 8=DK → H5; 9=R → H5
-        - id: q_h2
-          kind: Question
-          title: "Do you NEED ANY OTHER special features or equipment for your car because of .....'s condition?"
-          precondition:
-            - predicate: q_h1.outcome == 3
-          input:
-            control: Radio
-            labels:
-              1: "Yes"
-              3: "No"
-              8: "Don't know"
-              9: "Refusal"
-
-        # H3: Need any special features for car?
-        # Precondition: H1 in {1,8,9} (Yes/DK/R) OR H2 = No (3)
-        # 1=Yes → H4; 3=No → H4; 8=DK → H5; 9=R → H5
-        - id: q_h3
-          kind: Question
-          title: "Because of .....'s condition, do you NEED any special features or equipment (for your car)?"
-          precondition:
-            - predicate: (q_h1.outcome in [1, 8, 9]) or (q_h1.outcome == 3 and q_h2.outcome == 3)
-          input:
-            control: Radio
-            labels:
-              1: "Yes"
-              3: "No"
-              8: "Don't know"
-              9: "Refusal"
-
-        # H4: Why not have special features for car? (4 sub-items)
-        # Precondition: H2 = Yes (1), OR H3 in {1, 3}
-        # Always → H5
-        - id: qg_h4
-          kind: QuestionGroup
-          title: "Why do you not have these special features or equipment for your car? I will read you a list. Please answer yes or no to each."
-          precondition:
-            - predicate: (q_h2.outcome == 1) or (q_h3.outcome in [1, 3])
-          questions:
-            - "Not covered by insurance"
-            - "Too expensive"
-            - "Only needed occasionally"
-            - "Other reason, specify"
-          input:
-            control: Switch
-            on: "Yes"
-            off: "No"
-
-        # H5: Specialized bus service available in area?
-        # No item-level precondition (reached from all car-feature paths and from H1=5)
-        # 1=Yes → H7; 3=No → H6; 8=DK → H6; 9=R → H6
-        - id: q_h5
-          kind: Question
-          title: "Some communities have a specialized bus service for people who have difficulty using regular transportation services. (To use this service, people can call ahead and ask to be picked up). Is this service available in your area?"
-          input:
-            control: Radio
-            labels:
-              1: "Yes"
-              3: "No"
-              8: "Don't know"
-              9: "Refusal"
-
-        # H6: Does child need this specialized bus service?
-        # Precondition: H5 in {3, 8, 9} (No/DK/R — service not confirmed available)
-        # 1=Yes → H7; 3=No → H11; 8=DK → H11; 9=R → H11
-        - id: q_h6
-          kind: Question
-          title: "Does ..... NEED this service?"
-          precondition:
-            - predicate: q_h5.outcome in [3, 8, 9]
-          input:
-            control: Radio
-            labels:
-              1: "Yes"
-              3: "No"
-              8: "Don't know"
-              9: "Refusal"
-
-        # H7: Does child use this specialized bus service?
-        # Precondition: H5 = Yes (1) OR H6 = Yes (1)
-        # 1=Yes → H8; 3=No → H8; 8=DK → H11; 9=R → H11
-        - id: q_h7
-          kind: Question
-          title: "Does ..... use this service?"
-          precondition:
-            - predicate: (q_h5.outcome == 1) or (q_h6.outcome == 1)
-          input:
-            control: Radio
-            labels:
-              1: "Yes"
-              3: "No"
-              8: "Don't know"
-              9: "Refusal"
-
-        # H8: How often does child use specialized bus service?
-        # Precondition: H7 in {1, 3} (Yes or No — not DK/R)
-        # Always → H9
-        - id: q_h8
-          kind: Question
-          title: "How often does he/she use this service?"
-          precondition:
-            - predicate: q_h7.outcome in [1, 3]
-          input:
-            control: Radio
-            labels:
-              1: "Almost everyday for at least some part of the year"
-              2: "Frequently"
-              3: "Occasionally"
-              4: "Seldom"
-              8: "Don't know"
-              9: "Refusal"
-
-        # H9: Had difficulty using specialized bus service in past 12 months?
-        # Precondition: H7 in {1, 3} (H8 was shown, so H9 follows H8)
-        # 1=Yes → H10; 3=No → H11; 8=DK → H11; 9=R → H11
-        - id: q_h9
-          kind: Question
-          title: "IN THE PAST 12 MONTHS, did ..... have any difficulty using this service?"
-          precondition:
-            - predicate: q_h7.outcome in [1, 3]
-          input:
-            control: Radio
-            labels:
-              1: "Yes"
-              3: "No"
-              8: "Don't know"
-              9: "Refusal"
-
-        # H10: What kind of difficulty? (5 sub-items)
-        # Precondition: H9 = Yes (1)
-        # Always → H11
-        - id: qg_h10
-          kind: QuestionGroup
-          title: "What kind of difficulty did he/she have? I will read you a list. Please answer yes or no to each."
-          precondition:
-            - predicate: q_h9.outcome == 1
-          questions:
-            - "Service is needed more often than currently offered"
-            - "Impractical scheduling for child's needs"
-            - "Booking rules don't allow for last minute arrangements"
-            - "Too expensive"
-            - "Other reason, specify"
-          input:
-            control: Switch
-            on: "Yes"
-            off: "No"
-
-        # H11: Had to use taxi service in past 12 months?
-        # No item-level precondition (convergence point from all bus-service paths)
-        # 1=Yes → H12; 3=No → H12; 8=DK → H13; 9=R → H13
-        - id: q_h11
-          kind: Question
-          title: "IN THE PAST 12 MONTHS has ..... had to use a taxi service because of his/her condition or health problem?"
-          input:
-            control: Radio
-            labels:
-              1: "Yes"
-              3: "No"
-              8: "Don't know"
-              9: "Refusal"
-
-        # H12: How often did child use taxi service?
-        # Precondition: H11 in {1, 3} (Yes or No — not DK/R)
-        # Always → H13
-        - id: q_h12
-          kind: Question
-          title: "How often did he/she use a taxi service?"
-          precondition:
-            - predicate: q_h11.outcome in [1, 3]
-          input:
-            control: Radio
-            labels:
-              1: "Almost everyday for at least some part of the year"
-              2: "Frequently"
-              3: "Occasionally"
-              4: "Seldom"
-              8: "Don't know"
-              9: "Refusal"
-
-        # H13: Had to cancel/reschedule activities due to transportation problems?
-        # No item-level precondition (universal convergence point)
-        # Always → H14
-        - id: q_h13
-          kind: Question
-          title: "IN THE PAST 12 MONTHS, for local trips which you must take with ....., have you had to cancel or reschedule some activities because of problems with transportation services?"
-          input:
-            control: Radio
-            labels:
-              1: "Yes"
-              3: "No"
-              8: "Don't know"
-              9: "Refusal"
-
-        # H14: Out-of-pocket transportation expenses in past 12 months?
-        # Always follows H13
-        # 1=Yes → H15; 3=No → H15; 8=DK → end of section; 9=R → end of section
-        - id: q_h14
-          kind: Question
-          title: "IN THE PAST 12 MONTHS, did you or your family have any OUT-OF-POCKET expenses for .....'s transportation, for example, his/her travel to and from treatment, therapy or other medical or rehabilitation services?"
-          input:
-            control: Radio
-            labels:
-              1: "Yes"
-              3: "No"
-              8: "Don't know"
-              9: "Refusal"
-
-        # H15: Best estimate of out-of-pocket transportation costs?
-        # Precondition: H14 in {1, 3} (Yes or No — not DK/R)
-        # Valid amount (>0) → end of section; 0 (DK/R proxy) → H16
-        - id: q_h15
-          kind: Question
-          title: "What is your best estimate of the OUT-OF-POCKET or DIRECT costs to you or your family for these extra expenses? (Enter 0 if you don't know or refuse to answer)"
-          precondition:
-            - predicate: q_h14.outcome in [1, 3]
-          input:
-            control: Editbox
-            min: 0
-            max: 999999
-            left: "$"
-
-        # H16: Expense group (best estimate of direct costs)?
-        # Precondition: H15 = 0 (Don't know / Refusal proxy)
-        # Always → end of section
-        - id: q_h16
-          kind: Question
-          title: "Which one of the following expense groups is the best estimate of the direct costs to you or your family?"
-          precondition:
-            - predicate: q_h14.outcome in [1, 3] and q_h15.outcome == 0
-          input:
-            control: Radio
-            labels:
-              1: "Less than $100"
-              2: "$100 to less than $200"
-              3: "$200 to less than $500"
-              4: "$500 to less than $1000"
-              5: "$1000 to less than $2000"
-              6: "$2000 to less than $5000"
-              7: "$5000 or more"
-              8: "Don't know"
-              9: "Refusal"
-
-    # ===================================================================
-    # SECTION: economic_characteristics
-    # ===================================================================
-    # =========================================================================
-    # BLOCK 1: SECTION I — ECONOMIC CHARACTERISTICS (items I1–I10)
-    # =========================================================================
-    # I1   → Insurance coverage (3 sub-items: meds, glasses, hospital). QuestionGroup Switch.
-    # I2   → Child Care Expenses tax credit claimed? Radio (Yes/No/DK/R).
-    #         Yes → I3; No/DK/R → I4.
-    # I3   → Did you receive it? (Child care credit) Radio (Yes/No/DK/R). → I4.
-    # I4   → Medical Expenses tax credit claimed? Radio (Yes/No/DK/R).
-    #         Yes → I5; No/DK/R → I6.
-    # I5   → Did you receive it? (Medical expenses credit) Radio (Yes/No/DK/R). → I6.
-    # I6   → Disability Tax Credit claimed? Radio (Yes/No/DK/R).
-    #         Yes → I7; No → I8; DK/R → I9.
-    # I7   → Did you receive it? (Disability tax credit) Radio (Yes/No/DK/R). → I9.
-    # I8   → Why not claimed DTC? (4 sub-items, Yes/No grid). → I9.
-    # I9   → Total household income (Editbox 0–999999). If answered → Follow-up.
-    #         DK/R (coded 0) → sets dk_i9=1 → I10.
-    # I10  → Income bracket Radio (10 groups). Precondition: dk_i9 == 1.
-    # =========================================================================
-    - id: b_economic
-      kind: Group
-      title: "Economic Characteristics"
-      items:
-
-        # I1: Insurance coverage — 3 sub-items (a) meds, (b) glasses, (c) hospital
-        # All respondents.
-        - id: qg_i1
-          kind: QuestionGroup
-          title: "Do you have insurance that covers all or part of: (a) the cost of .....'s prescription medications? (b) the cost of .....'s eye glasses or contact lenses? (c) hospital charges for a private or semi-private room?"
-          questions:
-            - "(a) Prescription medications"
-            - "(b) Eye glasses or contact lenses"
-            - "(c) Hospital charges for a private or semi-private room"
-          input:
-            control: Switch
-            on: "Yes"
-            off: "No"
-
-        # I2: Child Care Expenses tax credit claimed?
-        # 1=Yes → I3; 3=No → I4; 8=DK → I4; 9=Refusal → I4
-        - id: q_i2
-          kind: Question
-          title: "Did you claim Child Care Expenses for ..... with your 2000 income tax return?"
-          input:
-            control: Radio
-            labels:
-              1: "Yes"
-              3: "No"
-              8: "Don't know"
-              9: "Refusal"
-
-        # I3: Did you receive the Child Care Expenses tax credit?
-        # Precondition: I2 = Yes (outcome == 1)
-        # → I4
-        - id: q_i3
-          kind: Question
-          title: "Did you receive it? (Child Care Expenses tax credit)"
-          precondition:
-            - predicate: q_i2.outcome == 1
-          input:
-            control: Radio
-            labels:
-              1: "Yes"
-              3: "No"
-              8: "Don't know"
-              9: "Refusal"
-
-        # I4: Medical Expenses tax credit claimed?
-        # 1=Yes → I5; 3=No → I6; 8=DK → I6; 9=Refusal → I6
-        - id: q_i4
-          kind: Question
-          title: "Did you claim Medical Expenses for ..... with your 2000 income tax return?"
-          input:
-            control: Radio
-            labels:
-              1: "Yes"
-              3: "No"
-              8: "Don't know"
-              9: "Refusal"
-
-        # I5: Did you receive the Medical Expenses tax credit?
-        # Precondition: I4 = Yes (outcome == 1)
-        # → I6
-        - id: q_i5
-          kind: Question
-          title: "Did you receive it? (Medical Expenses tax credit)"
-          precondition:
-            - predicate: q_i4.outcome == 1
-          input:
-            control: Radio
-            labels:
-              1: "Yes"
-              3: "No"
-              8: "Don't know"
-              9: "Refusal"
-
-        # I6: Disability Tax Credit claimed?
-        # 1=Yes → I7; 3=No → I8; 8=DK → I9; 9=Refusal → I9
-        - id: q_i6
-          kind: Question
-          title: "Did you claim a Disability Tax Credit for ..... with your 2000 income tax return?"
-          input:
-            control: Radio
-            labels:
-              1: "Yes"
-              3: "No"
-              8: "Don't know"
-              9: "Refusal"
-
-        # I7: Did you receive the Disability Tax Credit?
-        # Precondition: I6 = Yes (outcome == 1)
-        # → GO TO I9 (skip I8)
-        - id: q_i7
-          kind: Question
-          title: "Did you receive it? (Disability Tax Credit)"
-          precondition:
-            - predicate: q_i6.outcome == 1
-          input:
-            control: Radio
-            labels:
-              1: "Yes"
-              3: "No"
-              8: "Don't know"
-              9: "Refusal"
-
-        # I8: Why did you not claim the Disability Tax Credit?
-        # 4 sub-items (a)–(d), Yes/No per sub-item.
-        # Precondition: I6 = No (outcome == 3)
-        # (a) Did not know it existed
-        # (b) Did not think child would meet eligibility requirements
-        # (c) Not able to obtain the disability certificate (Form T2201)
-        # (d) Other reason
-        # → I9
-        - id: qg_i8
-          kind: QuestionGroup
-          title: "Why did you not claim the Disability Tax Credit? I will read you a list. Please answer yes or no to each."
-          precondition:
-            - predicate: q_i6.outcome == 3
-          questions:
-            - "(a) You did not know it existed"
-            - "(b) You did not think that ..... would meet the eligibility requirements"
-            - "(c) You were not able to obtain the disability certificate (Form T2201) from your doctor"
-            - "(d) Other reason, specify"
-          input:
-            control: Switch
-            on: "Yes"
-            off: "No"
-
-        # I9: Total household income before taxes and deductions (year ending Dec 31, 2000)
-        # Amount → GO TO Follow-up; 0 treated as DK/R → I10.
-        # If respondent cannot give a precise amount (DK/R), they enter 0 which triggers I10.
-        # codeBlock sets dk_i9 = 1 when outcome == 0 to gate I10.
-        - id: q_i9
-          kind: Question
-          title: "For the year ending December 31, 2000, what is your best estimate of the total income, before taxes and deductions, of all household members, including yourself, from all sources? (Enter 0 if no income, a loss, or if unable to estimate)"
-          codeBlock: |
-            if q_i9.outcome == 0:
-                dk_i9 = 1
-            else:
-                dk_i9 = 0
-          input:
-            control: Editbox
-            min: 0
-            max: 999999
-            left: "$"
-
-        # I10: Household income bracket
-        # Precondition: I9 respondent could not give precise amount (dk_i9 == 1)
-        # → GO TO Follow-up
-        - id: q_i10
-          kind: Question
-          title: "Can you estimate in which of the following groups your HOUSEHOLD INCOME fell?"
-          precondition:
-            - predicate: dk_i9 == 1
-          input:
-            control: Radio
-            labels:
-              1: "$1 to less than $5,000"
-              2: "$5,000 to less than $10,000"
-              3: "$10,000 to less than $15,000"
-              4: "$15,000 to less than $20,000"
-              5: "$20,000 to less than $30,000"
-              6: "$30,000 to less than $40,000"
-              7: "$40,000 to less than $50,000"
-              8: "$50,000 to less than $60,000"
-              9: "$60,000 to less than $80,000"
-              10: "$80,000 or more"
-              11: "Don't know"
-              12: "Refusal"
-
-    # ===================================================================
-    # SECTION: follow_up
-    # ===================================================================
-    # FU1 — longitudinal follow-up contact capture (inventory item 267)
-    # ===================================================================
-    - id: b_follow_up
-      kind: Group
-      title: "Follow-up"
-      items:
-        - id: q_fu1
-          kind: Question
-          title: "That's the end of our questions. Someone from Statistics Canada may contact you in a year or two to find out more about this topic. In case there are difficulties reaching you, could you please give the name, address and telephone number of a family member or friend we could contact?"
-          input:
-            control: Radio
-            labels:
-              1: "Yes"
-              3: "No"
-              7: "Refusal"
-
-        - id: q_fu1_contact
-          kind: Question
-          title: "Please provide the name, address, and telephone number of the alternate contact."
-          precondition:
-            - predicate: q_fu1.outcome == 1
-          input:
-            control: Textarea
-            placeholder: "Name, address, phone number"
+      - predicate: not (B47.outcome == 8)
+        hint: Asked only when question B47 is not "(x) Don’t know".
+      input:
+        control: Radio
+        labels:
+          1: (1) Yes
+          3: (3) No
+          8: (x) DK
+          9: (r) Ref
+    - id: B48b
+      kind: Question
+      title: 'B48. Does he/she now use: (b) a voice activated or voice synthesis computer software (e.g.Dragon Dictate, Via Voice)'
+      precondition:
+      - predicate: not (B47.outcome == 8)
+        hint: Asked only when question B47 is not "(x) Don’t know".
+      input:
+        control: Radio
+        labels:
+          1: (1) Yes
+          3: (3) No
+          8: (x) DK
+          9: (r) Ref
+    - id: B48c
+      kind: Question
+      title: 'B48. Does he/she now use: (c) talking books.'
+      precondition:
+      - predicate: not (B47.outcome == 8)
+        hint: Asked only when question B47 is not "(x) Don’t know".
+      input:
+        control: Radio
+        labels:
+          1: (1) Yes
+          3: (3) No
+          8: (x) DK
+          9: (r) Ref
+    - id: B48d
+      kind: Question
+      title: 'B48. Does he/she now use: (d) recording equipment'
+      precondition:
+      - predicate: not (B47.outcome == 8)
+        hint: Asked only when question B47 is not "(x) Don’t know".
+      input:
+        control: Radio
+        labels:
+          1: (1) Yes
+          3: (3) No
+          8: (x) DK
+          9: (r) Ref
+    - id: B48e
+      kind: Question
+      title: 'B48. Does he/she now use: (e) a tutor'
+      precondition:
+      - predicate: not (B47.outcome == 8)
+        hint: Asked only when question B47 is not "(x) Don’t know".
+      input:
+        control: Radio
+        labels:
+          1: (1) Yes
+          3: (3) No
+          8: (x) DK
+          9: (r) Ref
+    - id: B48f
+      kind: Question
+      title: 'B48. Does he/she now use: (f) other aid, specify'
+      precondition:
+      - predicate: not (B47.outcome == 8)
+        hint: Asked only when question B47 is not "(x) Don’t know".
+      input:
+        control: Radio
+        labels:
+          1: (1) Yes
+          3: (3) No
+          8: (x) DK
+          9: (r) Ref
+    - id: B49
+      kind: Question
+      title: '[B49 edit] Are there any learning aids, specialized equipment or services that ..... CURRENTLY needs, but does not have? [If Yes (1): Check box “Learning — NEED Aid” on Profile Sheet] Interviewer: If B43 OR B44 is “Yes”,continue.Otherwise,go to B53 (page 12).'
+      input:
+        control: Radio
+        labels:
+          1: (1) Yes
+          3: (3) No
+          8: (x) Don’t know
+          9: (r) Refusal
+    - id: B50
+      kind: Question
+      title: 'Which aids or services does he/she NEED, but does not have? Interviewer: Do NOT read list.Mark all that apply.'
+      precondition:
+      - predicate: not (B49.outcome == 8)
+        hint: Asked only when question B49 is not "(x) Don’t know".
+      - predicate: not (not (B43.outcome == 1 or B44.outcome == 1))
+        hint: Asked only when B43 or B44 is Yes.
+      input:
+        control: Checkbox
+        labels:
+          1: (a) A computer as a learning aid
+          2: (b) A voice activated or voice synthesis computer software (e.g.Dragon Dictate, Via Voice)
+          4: (c) Talking books
+          8: (d) Recording equipment
+          16: (e) A tutor
+          32: (f) Other aid, specify
+          64: (x) Don’t know
+          128: (r) Refusal
+  - id: b_s4_p1_dev_screen
+    title: Developmental delay
+    precondition:
+    - predicate: not (not (B43.outcome == 1 or B44.outcome == 1))
+      hint: Asked only when B43 or B44 is Yes.
+    items:
+    - id: B51
+      kind: Question
+      title: '[B51 edit] Because of a condition or health problem, does ..... have a delay in his/her development, either a physical, intellectual or another type of delay? [If Yes (1): Check box “Developmental — Limitation” on Profile Sheet]'
+      input:
+        control: Radio
+        labels:
+          1: (1) Yes
+          3: (3) No
+          8: (x) Don’t know
+          9: (r) Refusal
+  - id: b_s4_p1_dev_kind
+    title: Kind of delay
+    precondition:
+    - predicate: not (not (B43.outcome == 1 or B44.outcome == 1))
+      hint: Asked only when B43 or B44 is Yes.
+    - predicate: not (B51.outcome == 3)
+      hint: Asked only when question B51 is not "(3) No".
+    items:
+    - id: B52a
+      kind: Question
+      title: 'B52. What kind of delay is this? I will read you a list. Please answer yes or no to each. Interviewer: Read list. (a) A delay in his/her PHYSICAL development'
+      input:
+        control: Radio
+        labels:
+          1: (1) Yes
+          3: (3) No
+          8: (x) DK
+          9: (r) Ref
+    - id: B52b
+      kind: Question
+      title: B52. What kind of delay is this? (b) A delay in his/her INTELLECTUAL development
+      input:
+        control: Radio
+        labels:
+          1: (1) Yes
+          3: (3) No
+          8: (x) DK
+          9: (r) Ref
+    - id: B52c
+      kind: Question
+      title: B52. What kind of delay is this? (c) Other type of delay, specify
+      input:
+        control: Radio
+        labels:
+          1: (1) Yes
+          3: (3) No
+          8: (x) DK
+          9: (r) Ref
+  - id: b_s4_p1_devdis
+    title: Developmental disability
+    items:
+    - id: B53
+      kind: Question
+      title: '[B53 edit] Has a doctor, psychologist or other health professional ever said that ..... has a developmental disability or disorder? These may include autism, Down syndrome, or mental impairment due to a lack of oxygen at birth. [If Yes (1): Check box “Developmental — Limitation” on Profile Sheet]'
+      input:
+        control: Radio
+        labels:
+          1: (1) Yes
+          3: (3) No
+          8: (x) Don’t know
+          9: (r) Refusal
+  - id: b_s4_p1_devact
+    title: 'Developmental disability: activity reduction'
+    precondition:
+    - predicate: not (B53.outcome == 8)
+      hint: Asked only when question B53 is not "(x) Don’t know".
+    items:
+    - id: B54
+      kind: Question
+      title: 'Does this condition reduce the amount or the kind of activities ..... can do? Interviewer: Read list.Mark one only.'
+      input:
+        control: Radio
+        labels:
+          1: (1) Yes, sometimes
+          2: (2) Yes, often or always
+          3: (3) No
+          8: (x) Don’t know
+          9: (r) Refusal
+    - id: B55a
+      kind: Question
+      title: 'B55. How many ACTIVITIES does this condition USUALLY prevent him/her from doing: (a) at home? Interviewer: Read categories.Mark one only.'
+      precondition:
+      - predicate: not (B54.outcome == 8)
+        hint: Asked only when question B54 is not "(x) Don’t know".
+      input:
+        control: Radio
+        labels:
+          1: (1) None
+          2: (2) A few
+          3: (3) Many
+          4: (4) Most
+          8: (x) DK
+          9: (r) Ref
+    - id: B55b
+      kind: Question
+      title: 'B55. How many ACTIVITIES does this condition USUALLY prevent him/her from doing: (b) at school?'
+      precondition:
+      - predicate: not (B54.outcome == 8)
+        hint: Asked only when question B54 is not "(x) Don’t know".
+      input:
+        control: Radio
+        labels:
+          1: (1) None
+          2: (2) A few
+          3: (3) Many
+          4: (4) Most
+          8: (x) DK
+          9: (r) Ref
+    - id: B55c
+      kind: Question
+      title: 'B55. How many ACTIVITIES does this condition USUALLY prevent him/her from doing: (c) at play or recreational activities?'
+      precondition:
+      - predicate: not (B54.outcome == 8)
+        hint: Asked only when question B54 is not "(x) Don’t know".
+      input:
+        control: Radio
+        labels:
+          1: (1) None
+          2: (2) A few
+          3: (3) Many
+          4: (4) Most
+          8: (x) DK
+          9: (r) Ref
+  - id: b_s4_p1_emotional
+    title: Emotional, psychological or behavioural conditions
+    items:
+    - id: B56
+      kind: Question
+      title: Does ..... have any emotional, psychological or behavioural conditions that have lasted or are expected to last six months or more?
+      input:
+        control: Radio
+        labels:
+          1: (1) Yes
+          3: (3) No
+          8: (x) Don’t know
+          9: (r) Refusal
+    - id: B57
+      kind: Question
+      title: 'Does this condition reduce the amount or the kind of activities ..... can do? Interviewer: Read list.Mark one only.'
+      input:
+        control: Radio
+        labels:
+          1: (1) Yes, sometimes
+          2: (2) Yes, often or always
+          3: (3) No
+          8: (x) Don’t know
+          9: (r) Refusal
+    - id: B58a
+      kind: Question
+      title: 'B58. How many ACTIVITIES does this condition USUALLY prevent him/her from doing: (a) at home? Interviewer: Read categories.Mark one only.'
+      input:
+        control: Radio
+        labels:
+          1: (1) None
+          2: (2) A few
+          3: (3) Many
+          4: (4) Most
+          8: (x) DK
+          9: (r) Ref
+    - id: B58b
+      kind: Question
+      title: 'B58. How many ACTIVITIES does this condition USUALLY prevent him/her from doing: (b) at school?'
+      input:
+        control: Radio
+        labels:
+          1: (1) None
+          2: (2) A few
+          3: (3) Many
+          4: (4) Most
+          8: (x) DK
+          9: (r) Ref
+    - id: B58c
+      kind: Question
+      title: 'B58. How many ACTIVITIES does this condition USUALLY prevent him/her from doing: (c) at play or recreational activities? [Check box “Emotional/Psychological — Limitation” on Profile Sheet]'
+      input:
+        control: Radio
+        labels:
+          1: (1) None
+          2: (2) A few
+          3: (3) Many
+          4: (4) Most
+          8: (x) DK
+          9: (r) Ref
+  - id: b_s4_p1_chronic
+    title: Chronic conditions
+    items:
+    - id: B59a
+      kind: Question
+      title: 'B59. Now I’d like to ask about any CHRONIC health conditions ..... may have. (Chronic conditions refer to conditions that have lasted or are expected to last six months or more.) Does ..... have any of the following LONG-TERM conditions which have been DIAGNOSED by a health professional? Interviewer: Read list. (a) Asthma or severe allergies'
+      input:
+        control: Radio
+        labels:
+          1: (1) Yes
+          3: (3) No
+          8: (x) DK
+          9: (r) Ref
+    - id: B59b
+      kind: Question
+      title: B59. (b) Heart condition or disease
+      input:
+        control: Radio
+        labels:
+          1: (1) Yes
+          3: (3) No
+          8: (x) DK
+          9: (r) Ref
+    - id: B59c
+      kind: Question
+      title: B59. (c) Kidney condition or disease
+      input:
+        control: Radio
+        labels:
+          1: (1) Yes
+          3: (3) No
+          8: (x) DK
+          9: (r) Ref
+    - id: B59d
+      kind: Question
+      title: B59. (d) Cancer
+      input:
+        control: Radio
+        labels:
+          1: (1) Yes
+          3: (3) No
+          8: (x) DK
+          9: (r) Ref
+    - id: B59e
+      kind: Question
+      title: B59. (e) Diabetes
+      input:
+        control: Radio
+        labels:
+          1: (1) Yes
+          3: (3) No
+          8: (x) DK
+          9: (r) Ref
+    - id: B59f
+      kind: Question
+      title: B59. (f) Epilepsy
+      input:
+        control: Radio
+        labels:
+          1: (1) Yes
+          3: (3) No
+          8: (x) DK
+          9: (r) Ref
+    - id: B59g
+      kind: Question
+      title: B59. (g) Autism
+      input:
+        control: Radio
+        labels:
+          1: (1) Yes
+          3: (3) No
+          8: (x) DK
+          9: (r) Ref
+    - id: B59h
+      kind: Question
+      title: B59. (h) Cerebral Palsy
+      input:
+        control: Radio
+        labels:
+          1: (1) Yes
+          3: (3) No
+          8: (x) DK
+          9: (r) Ref
+    - id: B59i
+      kind: Question
+      title: B59. (i) Spina Bifida
+      input:
+        control: Radio
+        labels:
+          1: (1) Yes
+          3: (3) No
+          8: (x) DK
+          9: (r) Ref
+    - id: B59j
+      kind: Question
+      title: B59. (j) Cystic Fibrosis
+      input:
+        control: Radio
+        labels:
+          1: (1) Yes
+          3: (3) No
+          8: (x) DK
+          9: (r) Ref
+    - id: B59k
+      kind: Question
+      title: B59. (k) Muscular Dystrophy
+      input:
+        control: Radio
+        labels:
+          1: (1) Yes
+          3: (3) No
+          8: (x) DK
+          9: (r) Ref
+    - id: B59l
+      kind: Question
+      title: B59. (l) Migraines
+      input:
+        control: Radio
+        labels:
+          1: (1) Yes
+          3: (3) No
+          8: (x) DK
+          9: (r) Ref
+    - id: B59m
+      kind: Question
+      title: B59. (m) Arthritis or rheumatism
+      input:
+        control: Radio
+        labels:
+          1: (1) Yes
+          3: (3) No
+          8: (x) DK
+          9: (r) Ref
+    - id: B59n
+      kind: Question
+      title: B59. (n) Paralysis of any kind
+      input:
+        control: Radio
+        labels:
+          1: (1) Yes
+          3: (3) No
+          8: (x) DK
+          9: (r) Ref
+    - id: B59o
+      kind: Question
+      title: B59. (o) Missing or malformed arms, legs, fingers or toes
+      input:
+        control: Radio
+        labels:
+          1: (1) Yes
+          3: (3) No
+          8: (x) DK
+          9: (r) Ref
+    - id: B59p
+      kind: Question
+      title: B59. (p) Fetal Alcohol Syndrome
+      input:
+        control: Radio
+        labels:
+          1: (1) Yes
+          3: (3) No
+          8: (x) DK
+          9: (r) Ref
+    - id: B59q
+      kind: Question
+      title: B59. (q) Attention Deficit Disorder (ADD) or Attention Deficit Hyperactivity Disorder (ADHD)
+      input:
+        control: Radio
+        labels:
+          1: (1) Yes
+          3: (3) No
+          8: (x) DK
+          9: (r) Ref
+    - id: B59r
+      kind: Question
+      title: B59. (r) Down syndrome
+      input:
+        control: Radio
+        labels:
+          1: (1) Yes
+          3: (3) No
+          8: (x) DK
+          9: (r) Ref
+    - id: B59s
+      kind: Question
+      title: B59. (s) Complex medical care needs
+      input:
+        control: Radio
+        labels:
+          1: (1) Yes
+          3: (3) No
+          8: (x) DK
+          9: (r) Ref
+    - id: B59t
+      kind: Question
+      title: B59. (t) Any other LONG-TERM condition that has been diagnosed by a health professional, specify
+      input:
+        control: Radio
+        labels:
+          1: (1) Yes
+          3: (3) No
+          8: (x) DK
+          9: (r) Ref
+  - id: b_s4_p1_chronic_effect
+    title: 'Chronic conditions: activity reduction'
+    precondition:
+    - predicate: not (B59a.outcome != 1 and B59b.outcome != 1 and B59c.outcome != 1 and B59d.outcome != 1 and B59e.outcome != 1 and B59f.outcome != 1 and B59g.outcome != 1 and B59h.outcome != 1 and B59i.outcome != 1 and B59j.outcome != 1 and B59k.outcome != 1 and B59l.outcome != 1 and B59m.outcome != 1 and B59n.outcome != 1 and B59o.outcome != 1 and B59p.outcome != 1 and B59q.outcome != 1 and B59r.outcome != 1 and B59s.outcome != 1 and B59t.outcome != 1)
+      hint: Asked only when at least one chronic condition in B59 is Yes.
+    items:
+    - id: B60
+      kind: Question
+      title: '[B60 edit] Does this condition (Do these conditions) reduce the amount or the kind of activities ..... can do? Interviewer: Read list.Mark one only.'
+      input:
+        control: Radio
+        labels:
+          1: (1) Yes, sometimes
+          2: (2) Yes, often or always
+          3: (3) No
+          8: (x) Don’t know
+          9: (r) Refusal
+    - id: B61a
+      kind: Question
+      title: 'B61. How many ACTIVITIES does this condition (do these conditions) USUALLY prevent him/her from doing: (a) at home? Interviewer: Read categories.Mark one only.'
+      precondition:
+      - predicate: not (B60.outcome == 8)
+        hint: Asked only when question B60 is not "(x) Don’t know".
+      input:
+        control: Radio
+        labels:
+          1: (1) None
+          2: (2) A few
+          3: (3) Many
+          4: (4) Most
+          8: (x) DK
+          9: (r) Ref
+  - id: b_s4_p2_limitation_school
+    title: Limitations at school and at play
+    precondition:
+    - predicate: not (B59a.outcome != 1 and B59b.outcome != 1 and B59c.outcome != 1 and B59d.outcome != 1 and B59e.outcome != 1 and B59f.outcome != 1 and B59g.outcome != 1 and B59h.outcome != 1 and B59i.outcome != 1 and B59j.outcome != 1 and B59k.outcome != 1 and B59l.outcome != 1 and B59m.outcome != 1 and B59n.outcome != 1 and B59o.outcome != 1 and B59p.outcome != 1 and B59q.outcome != 1 and B59r.outcome != 1 and B59s.outcome != 1 and B59t.outcome != 1)
+      hint: Asked only when at least one B59 item is Yes.
+    - predicate: not (B60.outcome == 8)
+      hint: Asked only when question B60 is not "(x) Don’t know".
+    items:
+    - id: B61b
+      kind: Question
+      title: B61. ... (b) at school?
+      input:
+        control: Radio
+        labels:
+          1: (1) None
+          2: (2) A few
+          3: (3) Many
+          4: (4) Most
+          8: (x) DK
+          9: (r) Ref
+    - id: B61c
+      kind: Question
+      title: B61. ... (c) at play or recreational activities? [Check box “Chronic — Limitation” on Profile Sheet]
+      input:
+        control: Radio
+        labels:
+          1: (1) None
+          2: (2) A few
+          3: (3) Many
+          4: (4) Most
+          8: (x) DK
+          9: (r) Ref
+  - id: b_s4_p2_condition
+    title: Main condition and diagnosis
+    items:
+    - id: B62
+      kind: Question
+      title: '[B62 edit] You mentioned earlier that because of a physical condition, mental condition or health problem ..... has difficulties or activity limitations. How old was ..... when you suspected that he/she has a long-term condition or health problem? (0-14) Years Interviewer: If age is less than 1 year, enter 00. (98 = Don’t know, 99 = Refusal)'
+      input:
+        control: Editbox
+        min: 0
+        max: 99
+        right: years
+    - id: B63
+      kind: Question
+      title: 'What is the MAIN condition or health problem which causes him/her difficulties or activity limitations? Interviewer: Specify ONE condition or health problem only.'
+      input:
+        control: Textarea
+    - id: B64
+      kind: Question
+      title: 'Which one of the following best describes the CAUSE of this condition or health problem? Interviewer: Read list.Mark one only.'
+      input:
+        control: Radio
+        labels:
+          1: (1) Existed at birth, was due to premature birth or accident at birth
+          2: (2) A disease or illness
+          3: (3) Accident at home or at school
+          4: (4) Motor vehicle accident
+          5: (5) Other, specify
+          8: (x) Don’t know
+          9: (r) Refusal
+    - id: B65
+      kind: Question
+      title: Did you get a diagnosis for .....’s condition or health problem?
+      input:
+        control: Radio
+        labels:
+          1: (1) Yes
+          3: (3) No
+          8: (x) Don’t know
+          9: (r) Refusal
+  - id: b_s4_p2_diagnosis
+    title: Obtaining a diagnosis
+    precondition:
+    - predicate: not (B65.outcome == 8)
+      hint: Asked only when question B65 is not "(x) Don’t know".
+    items:
+    - id: B66
+      kind: Question
+      title: 'How old was ..... when you obtained a diagnosis for his/her condition or health problem? (0-14) Years Interviewer: If age is less than 1 year, enter 00. (98 = Don’t know, 99 = Refusal)'
+      input:
+        control: Editbox
+        min: 0
+        max: 99
+        right: years
+    - id: B67a
+      kind: Question
+      title: 'B67. Did you experience any of the following situations when you were trying to obtain a diagnosis for .....’s condition or health problem? Interviewer: Read list. (a) Doctor or health professional took a wait and see approach'
+      input:
+        control: Radio
+        labels:
+          1: (1) Yes
+          3: (3) No
+          8: (x) DK
+          9: (r) Ref
+    - id: B67b
+      kind: Question
+      title: B67. (b) Long waiting period to get the diagnosis
+      input:
+        control: Radio
+        labels:
+          1: (1) Yes
+          3: (3) No
+          8: (x) DK
+          9: (r) Ref
+    - id: B67c
+      kind: Question
+      title: B67. (c) Difficulty getting referrals or appointments
+      input:
+        control: Radio
+        labels:
+          1: (1) Yes
+          3: (3) No
+          8: (x) DK
+          9: (r) Ref
+    - id: B67d
+      kind: Question
+      title: B67. (d) Doctor or health professional not available locally
+      input:
+        control: Radio
+        labels:
+          1: (1) Yes
+          3: (3) No
+          8: (x) DK
+          9: (r) Ref
+    - id: B67e
+      kind: Question
+      title: B67. (e) Too expensive
+      input:
+        control: Radio
+        labels:
+          1: (1) Yes
+          3: (3) No
+          8: (x) DK
+          9: (r) Ref
+    - id: B67f
+      kind: Question
+      title: B67. (f) Did not know where to get the diagnosis
+      input:
+        control: Radio
+        labels:
+          1: (1) Yes
+          3: (3) No
+          8: (x) DK
+          9: (r) Ref
+    - id: B67g
+      kind: Question
+      title: B67. (g) Other, specify
+      input:
+        control: Radio
+        labels:
+          1: (1) Yes
+          3: (3) No
+          8: (x) DK
+          9: (r) Ref
+  - id: b_s4_p2_health_meds
+    title: General health and regular medications
+    items:
+    - id: B68
+      kind: Question
+      title: 'How would you describe .....’s general health? Would you say that his/her health is: Interviewer: Read list.Mark one only.'
+      input:
+        control: Radio
+        labels:
+          1: (1) excellent?
+          2: (2) very good?
+          3: (3) good?
+          4: (4) fair?
+          5: (5) poor?
+          8: (x) Don’t know
+          9: (r) Refusal
+    - id: B69
+      kind: Question
+      title: The next questions are about the use of medications or drugs. Does ..... USE any prescription or non-prescription medications on a regular basis, that is, AT LEAST ONCE A WEEK?
+      input:
+        control: Radio
+        labels:
+          1: (1) Yes
+          3: (3) No
+          8: (x) Don’t know
+          9: (r) Refusal
+  - id: b_s4_p2_meds_detail
+    title: Medication details
+    precondition:
+    - predicate: not (B69.outcome == 8)
+      hint: Asked only when question B69 is not "(x) Don’t know".
+    items:
+    - id: B70
+      kind: Question
+      title: 'How many kinds of PRESCRIPTION medications does he/she take EVERYDAY? Interviewer: Read list.Mark one only.'
+      input:
+        control: Radio
+        labels:
+          1: (1) None
+          2: (2) 1-3 kinds
+          3: (3) 4 kinds or more
+          8: (x) Don’t know
+          9: (r) Refusal
+    - id: B71
+      kind: Question
+      title: 'How many kinds of NON-PRESCRIPTION medications does he/she take EVERYDAY? Interviewer: Read list.Mark one only.'
+      input:
+        control: Radio
+        labels:
+          1: (1) None
+          2: (2) 1-3 kinds
+          3: (3) 4 kinds or more
+          8: (x) Don’t know
+          9: (r) Refusal
+    - id: B72
+      kind: Question
+      title: Does ..... USE any medications regularly, but NOT DAILY?
+      input:
+        control: Radio
+        labels:
+          1: (1) Yes
+          3: (3) No
+          8: (x) Don’t know
+          9: (r) Refusal
+  - id: b_s4_p2_meds_not_daily
+    title: Medications taken regularly but not daily
+    precondition:
+    - predicate: not (B69.outcome == 8)
+      hint: Asked only when question B69 is not "(x) Don’t know".
+    - predicate: not (B72.outcome == 8)
+      hint: Asked only when question B72 is not "(x) Don’t know".
+    items:
+    - id: B73
+      kind: Question
+      title: 'How many kinds of PRESCRIPTION medications does he/she take (regularly, but NOT DAILY)? Interviewer: Read list.Mark one only.'
+      input:
+        control: Radio
+        labels:
+          1: (1) None
+          2: (2) 1-3 kinds
+          3: (3) 4 kinds or more
+          8: (x) Don’t know
+          9: (r) Refusal
+    - id: B74
+      kind: Question
+      title: 'How many kinds of NON-PRESCRIPTION medications does he/she take (regularly, but NOT DAILY)? Interviewer: Read list.Mark one only.'
+      input:
+        control: Radio
+        labels:
+          1: (1) None
+          2: (2) 1-3 kinds
+          3: (3) 4 kinds or more
+          8: (x) Don’t know
+          9: (r) Refusal
+  - id: b_s4_p2_med_expenses_screen
+    title: Medication expenses
+    items:
+    - id: B75
+      kind: Question
+      title: IN THE PAST 12 MONTHS, did you or your family have any OUT-OF-POCKET expenses, that are not reimbursed by any sources, for .....’s prescription or non-prescription medications?
+      input:
+        control: Radio
+        labels:
+          1: (1) Yes
+          3: (3) No
+          8: (x) Don’t know
+          9: (r) Refusal
+  - id: b_s4_p2_med_expenses
+    title: Medication expense amount
+    precondition:
+    - predicate: not (B75.outcome == 8)
+      hint: Asked only when question B75 is not "(x) Don’t know".
+    items:
+    - id: B76
+      kind: Question
+      title: 'What is your best estimate of the OUT-OF-POCKET or DIRECT costs to you or your family for these extra expenses? INCLUDE amounts not covered by insurance. EXCLUDE payments for which you have been or will be reimbursed by any insurance or government program. $ .00 Range: 1-999999 (9999998 = Don’t know, 9999999 = Refusal)'
+      input:
+        control: Editbox
+        min: 1
+        max: 9999999
+        left: $
+    - id: B77
+      kind: Question
+      title: 'Which one of the following expense groups is the best estimate of the direct costs to you or your family? I will read you a list. Interviewer: Read list.Mark one only.'
+      precondition:
+      - predicate: not (B76.outcome != 9999998 and B76.outcome != 9999999)
+        hint: Asked only when B76 is Don’t know or Refusal.
+      input:
+        control: Radio
+        labels:
+          1: (1) Less than $100
+          2: (2) $100 to less than $200
+          3: (3) $200 to less than $500
+          4: (4) $500 to less than $1000
+          5: (5) $1000 to less than $2000
+          6: (6) $2000 to less than $5000
+          7: (7) $5000 or more
+          8: (x) Don’t know
+          9: (r) Refusal
+  - id: b_s4_p2_unmet_meds
+    title: Medications needed but not had
+    items:
+    - id: B78
+      kind: Question
+      title: Because of a condition or health problem, does ..... CURRENTLY need any prescription or non-prescription medications on a regular basis, which he/she does not have?
+      input:
+        control: Radio
+        labels:
+          1: (1) Yes
+          3: (3) No
+          8: (x) Don’t know
+          9: (r) Refusal
+    - id: B79a
+      kind: Question
+      title: 'B79. Why doesn’t he/she have these medications? I will read you a list. Please answer yes or no to each. Interviewer: Read list. (a) Not covered by insurance'
+      input:
+        control: Radio
+        labels:
+          1: (1) Yes
+          3: (3) No
+          8: (x) DK
+          9: (r) Ref
+    - id: B79b
+      kind: Question
+      title: B79. (b) Too expensive
+      input:
+        control: Radio
+        labels:
+          1: (1) Yes
+          3: (3) No
+          8: (x) DK
+          9: (r) Ref
+    - id: B79c
+      kind: Question
+      title: B79. (c) Not approved or recommended by health professionals
+      input:
+        control: Radio
+        labels:
+          1: (1) Yes
+          3: (3) No
+          8: (x) DK
+          9: (r) Ref
+    - id: B79d
+      kind: Question
+      title: B79. (d) Other reason, specify
+      input:
+        control: Radio
+        labels:
+          1: (1) Yes
+          3: (3) No
+          8: (x) DK
+          9: (r) Ref
+  - id: b_s4_p2_professionals
+    title: Contact with health professionals
+    items:
+    - id: B80a
+      kind: Question
+      title: 'B80. The next few questions are about your contact with health professionals because of .....’s condition or health problem. IN THE PAST 12 MONTHS, how OFTEN has ..... seen or received care from a: Interviewer: Read categories.Mark one only. (a) family doctor or general practitioner?'
+      input:
+        control: Radio
+        labels:
+          1: (1) At least once a week
+          2: (2) At least once a month
+          3: (3) Less than once a month
+          4: (4) Never
+          8: (x) DK
+          9: (r) Ref
+    - id: B80b
+      kind: Question
+      title: B80. ... (b) medical specialist (such as a heart specialist)?
+      input:
+        control: Radio
+        labels:
+          1: (1) At least once a week
+          2: (2) At least once a month
+          3: (3) Less than once a month
+          4: (4) Never
+          8: (x) DK
+          9: (r) Ref
+    - id: B80c
+      kind: Question
+      title: B80. ... (c) nurse?
+      input:
+        control: Radio
+        labels:
+          1: (1) At least once a week
+          2: (2) At least once a month
+          3: (3) Less than once a month
+          4: (4) Never
+          8: (x) DK
+          9: (r) Ref
+    - id: B80d
+      kind: Question
+      title: B80. ... (d) speech therapist?
+      input:
+        control: Radio
+        labels:
+          1: (1) At least once a week
+          2: (2) At least once a month
+          3: (3) Less than once a month
+          4: (4) Never
+          8: (x) DK
+          9: (r) Ref
+    - id: B80e
+      kind: Question
+      title: B80. ... (e) physiotherapist?
+      input:
+        control: Radio
+        labels:
+          1: (1) At least once a week
+          2: (2) At least once a month
+          3: (3) Less than once a month
+          4: (4) Never
+          8: (x) DK
+          9: (r) Ref
+    - id: B80f
+      kind: Question
+      title: B80. ... (f) psychologist or psychotherapist?
+      input:
+        control: Radio
+        labels:
+          1: (1) At least once a week
+          2: (2) At least once a month
+          3: (3) Less than once a month
+          4: (4) Never
+          8: (x) DK
+          9: (r) Ref
+    - id: B80g
+      kind: Question
+      title: B80. ... (g) chiropractor?
+      input:
+        control: Radio
+        labels:
+          1: (1) At least once a week
+          2: (2) At least once a month
+          3: (3) Less than once a month
+          4: (4) Never
+          8: (x) DK
+          9: (r) Ref
+    - id: B80h
+      kind: Question
+      title: B80. ... (h) other health professional, specify
+      input:
+        control: Radio
+        labels:
+          1: (1) At least once a week
+          2: (2) At least once a month
+          3: (3) Less than once a month
+          4: (4) Never
+          8: (x) DK
+          9: (r) Ref
+  - id: b_s4_p2_professional_costs
+    title: Costs of health professional services
+    precondition:
+    - predicate: not (B80a.outcome not in [1, 2, 3] and B80b.outcome not in [1, 2, 3] and B80c.outcome not in [1, 2, 3] and B80d.outcome not in [1, 2, 3] and B80e.outcome not in [1, 2, 3] and B80f.outcome not in [1, 2, 3] and B80g.outcome not in [1, 2, 3] and B80h.outcome not in [1, 2, 3])
+      hint: Asked only when the child had contact with at least one health professional in B80.
+    items:
+    - id: B81
+      kind: Question
+      title: '[B81 edit] IN THE PAST 12 MONTHS, did you or your family have any OUT-OF-POCKET expenses, that are not reimbursed by any sources, for the services that ..... received from health professionals?'
+      input:
+        control: Radio
+        labels:
+          1: (1) Yes
+          3: (3) No
+          8: (x) Don’t know
+          9: (r) Refusal
+    - id: B82
+      kind: Question
+      title: 'What is your best estimate of the OUT-OF-POCKET or DIRECT costs to you or your family for these extra expenses? INCLUDE amounts not covered by insurance. EXCLUDE payments for which you have been or will be reimbursed by any insurance or government program. $ .00 Range: 1-999999 (9999998 = Don’t know, 9999999 = Refusal)'
+      precondition:
+      - predicate: not (B81.outcome == 8)
+        hint: Asked only when question B81 is not "(x) Don’t know".
+      input:
+        control: Editbox
+        min: 1
+        max: 9999999
+        left: $
+    - id: ProfileSheet_Limitation_Any
+      kind: Question
+      title: 'External input: whether any box is checked in the “Limitation Column” on the Profile Sheet (set by the check-box instructions in this part and earlier parts)'
+      external: true
+      precondition:
+      - predicate: not (B81.outcome == 8)
+        hint: Asked only when question B81 is not "(x) Don’t know".
+      - predicate: not (B82.outcome != 9999998 and B82.outcome != 9999999)
+        hint: Asked only when B82 is Don’t know or Refusal.
+      input:
+        control: Switch
+        'on': 'Yes'
+        'off': 'No'
+  - id: b_s5_external
+    title: External inputs
+    precondition:
+    - predicate: not (B80a.outcome not in [1, 2, 3] and B80b.outcome not in [1, 2, 3] and B80c.outcome not in [1, 2, 3] and B80d.outcome not in [1, 2, 3] and B80e.outcome not in [1, 2, 3] and B80f.outcome not in [1, 2, 3] and B80g.outcome not in [1, 2, 3] and B80h.outcome not in [1, 2, 3])
+      hint: Asked only when at least one of B80a to B80h was answered.
+    - predicate: not (B81.outcome == 8)
+      hint: Asked only when question B81 is not "(x) Don’t know".
+    - predicate: not (B82.outcome != 9999998 and B82.outcome != 9999999)
+      hint: Asked only when B82 is Don’t know or Refusal.
+    items:
+    - id: BORN_AFTER_1996_05_15
+      kind: Question
+      title: 'External input: whether the child was born AFTER May 15, 1996 (from the child''s date of birth in the sample or household file); used by the interviewer instructions at B87.edit and C3'
+      external: true
+      input:
+        control: Radio
+        labels:
+          1: Yes, born after May 15, 1996
+          3: No, born on or before May 15, 1996
+    - id: PROFILE_USE_AID_ANY
+      kind: Question
+      title: 'External input: whether any box is checked in the "USE — Aid" column on the Profile Sheet'
+      external: true
+      input:
+        control: Radio
+        labels:
+          1: Yes, at least one box checked
+          3: No box checked
+    - id: PROFILE_NEED_AID_ANY
+      kind: Question
+      title: 'External input: whether any box is checked in the "NEED Aid" column on the Profile Sheet'
+      external: true
+      input:
+        control: Radio
+        labels:
+          1: Yes, at least one box checked
+          3: No box checked
+  - id: b_s5_cost_group
+    title: Direct costs
+    precondition:
+    - predicate: not (B80a.outcome not in [1, 2, 3] and B80b.outcome not in [1, 2, 3] and B80c.outcome not in [1, 2, 3] and B80d.outcome not in [1, 2, 3] and B80e.outcome not in [1, 2, 3] and B80f.outcome not in [1, 2, 3] and B80g.outcome not in [1, 2, 3] and B80h.outcome not in [1, 2, 3])
+      hint: Asked only when at least one of B80a to B80h was answered.
+    - predicate: not (B81.outcome == 8)
+      hint: Asked only when question B81 is not "(x) Don’t know".
+    - predicate: not (B82.outcome != 9999998 and B82.outcome != 9999999)
+      hint: Asked only when B82 is Don’t know or Refusal.
+    items:
+    - id: B83
+      kind: Question
+      title: 'Which one of the following expense groups is the best estimate of the direct costs to you or your family? I will read you a list. Interviewer: Read list. Mark one only.'
+      input:
+        control: Radio
+        labels:
+          1: (1) Less than $200
+          2: (2) $200 to less than $500
+          3: (3) $500 to less than $1000
+          4: (4) $1000 to less than $2000
+          5: (5) $2000 to less than $5000
+          6: (6) $5000 or more
+          8: (x) Don’t know
+          9: (r) Refusal
+  - id: b_s5_unmet_screen
+    title: Unmet need for health services
+    items:
+    - id: B84
+      kind: Question
+      title: IN THE PAST 12 MONTHS, was there ever a time when ..... needed health services because of his/her condition, but did not receive them?
+      input:
+        control: Radio
+        labels:
+          1: (1) Yes
+          3: (3) No
+          8: (x) Don’t know
+          9: (r) Refusal
+  - id: b_s5_unmet_detail
+    title: Health services needed but not received
+    precondition:
+    - predicate: not (B84.outcome in [3, 8, 9] and BORN_AFTER_1996_05_15.outcome != 1)
+      hint: Asked when B84 is Yes, or when the child was born after May 15, 1996.
+    items:
+    - id: B85
+      kind: Question
+      title: 'What kind of health services did he/she NEED, but did not receive? Interviewer: Do NOT read list. Mark all that apply.'
+      input:
+        control: Checkbox
+        labels:
+          1: (a) Family doctor or general practitioner
+          2: (b) Medical specialist (such as a heart specialist)
+          4: (c) Nurse for care
+          8: (d) Speech therapist
+          16: (e) Physiotherapist
+          32: (f) Psychologist or psychotherapist
+          64: (g) Chiropractor
+          128: (h) Other, specify
+          256: (x) Don’t know
+          512: (r) Refusal
+    - id: B86_a
+      kind: Question
+      title: B86. Why didn’t ..... receive the health service that he/she needed? I will read you a list. Please answer yes or no to each. (a) Not covered by insurance
+      input:
+        control: Radio
+        labels:
+          1: (1) Yes
+          3: (3) No
+          8: (x) DK
+          9: (r) Ref
+    - id: B86_b
+      kind: Question
+      title: B86 (b) Too expensive
+      input:
+        control: Radio
+        labels:
+          1: (1) Yes
+          3: (3) No
+          8: (x) DK
+          9: (r) Ref
+    - id: B86_c
+      kind: Question
+      title: B86 (c) Not available locally
+      input:
+        control: Radio
+        labels:
+          1: (1) Yes
+          3: (3) No
+          8: (x) DK
+          9: (r) Ref
+    - id: B86_d
+      kind: Question
+      title: B86 (d) Long waiting period
+      input:
+        control: Radio
+        labels:
+          1: (1) Yes
+          3: (3) No
+          8: (x) DK
+          9: (r) Ref
+    - id: B86_e
+      kind: Question
+      title: B86 (e) Other reason, specify
+      input:
+        control: Radio
+        labels:
+          1: (1) Yes
+          3: (3) No
+          8: (x) DK
+          9: (r) Ref
+  - id: b_s5_aids_use
+    title: Aids and specialized equipment in use
+    items:
+    - id: B87
+      kind: Question
+      title: 'Because of a condition or health problem, does ..... USE any aids or specialized equipment that you have not already mentioned? (Yes: check box “Chronic/Other — USE Aid” on Profile Sheet)'
+      input:
+        control: Radio
+        labels:
+          1: (1) Yes
+          3: (3) No
+          8: (x) Don’t know
+          9: (r) Refusal
+    - id: B88_a
+      kind: Question
+      title: 'B88. Does he/she now use: (a) respiratory aids, such as inhalers, puffers, oxygen'
+      input:
+        control: Radio
+        labels:
+          1: (1) Yes
+          3: (3) No
+          8: (x) DK
+          9: (r) Ref
+    - id: B88_b
+      kind: Question
+      title: B88 (b) pain management aids, such as a TENS machine
+      input:
+        control: Radio
+        labels:
+          1: (1) Yes
+          3: (3) No
+          8: (x) DK
+          9: (r) Ref
+    - id: B88_c
+      kind: Question
+      title: B88 (c) other aid or specialized equipment, specify
+      input:
+        control: Radio
+        labels:
+          1: (1) Yes
+          3: (3) No
+          8: (x) DK
+          9: (r) Ref
+    - id: B89_a
+      kind: Question
+      title: B89. I would like you to think about all the aids and specialized equipment that ..... currently uses. What kind of funding was used to get these aids? I will read you a list. Please answer yes or no to each. (a) Your own money
+      input:
+        control: Radio
+        labels:
+          1: (1) Yes
+          3: (3) No
+          8: (x) DK
+          9: (r) Ref
+    - id: B89_b
+      kind: Question
+      title: B89 (b) Friends and family members
+      input:
+        control: Radio
+        labels:
+          1: (1) Yes
+          3: (3) No
+          8: (x) DK
+          9: (r) Ref
+    - id: B89_c
+      kind: Question
+      title: B89 (c) Private health insurance
+      input:
+        control: Radio
+        labels:
+          1: (1) Yes
+          3: (3) No
+          8: (x) DK
+          9: (r) Ref
+    - id: B89_d
+      kind: Question
+      title: B89 (d) Government program
+      input:
+        control: Radio
+        labels:
+          1: (1) Yes
+          3: (3) No
+          8: (x) DK
+          9: (r) Ref
+    - id: B89_e
+      kind: Question
+      title: B89 (e) Other funding, specify
+      input:
+        control: Radio
+        labels:
+          1: (1) Yes
+          3: (3) No
+          8: (x) DK
+          9: (r) Ref
+    - id: B90
+      kind: Question
+      title: IN THE PAST 12 MONTHS, did you or your family have any OUT-OF-POCKET expenses (that are not reimbursed by any sources) for the purchase or maintenance of aids or specialized equipment that ..... uses?
+      input:
+        control: Radio
+        labels:
+          1: (1) Yes
+          3: (3) No
+          8: (x) Don’t know
+          9: (r) Refusal
+  - id: b_s5_out_of_pocket
+    title: Out-of-pocket costs of aids
+    precondition:
+    - predicate: not (B90.outcome in [3, 8, 9])
+      hint: Asked only when question B90 is none of "(3) No", "(x) Don’t know", "(r) Refusal".
+    items:
+    - id: B91
+      kind: Question
+      title: 'What is your best estimate of the OUT-OF-POCKET or DIRECT costs to you or your family for these extra expenses? INCLUDE amounts not covered by insurance. EXCLUDE payments for which you have been or will be reimbursed by any insurance or government program. $ .00 Range: 1-999999 (9999998 = Don’t know, 9999999 = Refusal)'
+      input:
+        control: Editbox
+        min: 1
+        max: 9999999
+        left: $
+    - id: B92
+      kind: Question
+      title: 'Which one of the following expense groups is the best estimate of the direct costs to you or your family? I will read you a list. Interviewer: Read list. Mark one only.'
+      precondition:
+      - predicate: not (B91.outcome >= 1 and B91.outcome <= 999999)
+        hint: Asked only when B91 was not given as an amount.
+      - predicate: not (PROFILE_USE_AID_ANY.outcome == 3)
+        hint: Asked only when question PROFILE_USE_AID_ANY is not "No box checked".
+      input:
+        control: Radio
+        labels:
+          1: (1) Less than $200
+          2: (2) $200 to less than $500
+          3: (3) $500 to less than $1000
+          4: (4) $1000 to less than $2000
+          5: (5) $2000 to less than $5000
+          6: (6) $5000 or more
+          8: (x) Don’t know
+          9: (r) Refusal
+  - id: b_s5_aids_need
+    title: Aids and specialized equipment needed
+    items:
+    - id: B93
+      kind: Question
+      title: 'Does ..... CURRENTLY need any aids or specialized equipment that you have not already mentioned? (Yes: check box “Chronic/Other — NEED Aid” on Profile Sheet)'
+      input:
+        control: Radio
+        labels:
+          1: (1) Yes
+          3: (3) No
+          8: (x) Don’t know
+          9: (r) Refusal
+    - id: B94
+      kind: Question
+      title: 'Which aids does ..... NEED, but does not have? Interviewer: Do NOT read list. Mark all that apply.'
+      input:
+        control: Checkbox
+        labels:
+          1: (a) Respiratory aids, such as inhalers, puffers, oxygen
+          2: (b) Pain management aids, such as a TENS machine
+          4: (c) Other aid or specialized equipment, specify
+          8: (x) Don’t know
+          16: (r) Refusal
+    - id: B95_a
+      kind: Question
+      title: B95. I would like you to think about all the aids ..... CURRENTLY needs, but does not have. Why doesn’t he/she have these aids or specialized equipment? I will read you a list. Please answer yes or no to each. (a) Not covered by insurance
+      input:
+        control: Radio
+        labels:
+          1: (1) Yes
+          3: (3) No
+          8: (x) DK
+          9: (r) Ref
+    - id: B95_b
+      kind: Question
+      title: B95 (b) Too expensive
+      input:
+        control: Radio
+        labels:
+          1: (1) Yes
+          3: (3) No
+          8: (x) DK
+          9: (r) Ref
+    - id: B95_c
+      kind: Question
+      title: B95 (c) Not available locally
+      input:
+        control: Radio
+        labels:
+          1: (1) Yes
+          3: (3) No
+          8: (x) DK
+          9: (r) Ref
+    - id: B95_d
+      kind: Question
+      title: B95 (d) Do not know where to obtain the aid
+      input:
+        control: Radio
+        labels:
+          1: (1) Yes
+          3: (3) No
+          8: (x) DK
+          9: (r) Ref
+    - id: B95_e
+      kind: Question
+      title: B95 (e) Child’s condition is not serious enough
+      input:
+        control: Radio
+        labels:
+          1: (1) Yes
+          3: (3) No
+          8: (x) DK
+          9: (r) Ref
+    - id: B95_f
+      kind: Question
+      title: B95 (f) Only needed occasionally
+      input:
+        control: Radio
+        labels:
+          1: (1) Yes
+          3: (3) No
+          8: (x) DK
+          9: (r) Ref
+    - id: B95_g
+      kind: Question
+      title: B95 (g) Other reason, specify
+      input:
+        control: Radio
+        labels:
+          1: (1) Yes
+          3: (3) No
+          8: (x) DK
+          9: (r) Ref
+  - id: b_s5_need_impact_screen
+    title: Impact of not having needed aids
+    precondition:
+    - predicate: not (PROFILE_NEED_AID_ANY.outcome == 3)
+      hint: Asked only when question PROFILE_NEED_AID_ANY is not "No box checked".
+    items:
+    - id: B96
+      kind: Question
+      title: Now, I would like you to think about all the aids or specialized equipment that he/she NEEDS, but does not have. Do you think that there is an impact on ..... because he/she does not have these aids?
+      input:
+        control: Radio
+        labels:
+          1: (1) Yes
+          3: (3) No
+          8: (x) Don’t know
+          9: (r) Refusal
+  - id: b_s5_need_impact_detail
+    title: Kinds of impact
+    precondition:
+    - predicate: not (PROFILE_NEED_AID_ANY.outcome == 3)
+      hint: Asked only when question PROFILE_NEED_AID_ANY is not "No box checked".
+    - predicate: not (B96.outcome in [3, 8, 9])
+      hint: Asked only when question B96 is none of "(3) No", "(x) Don’t know", "(r) Refusal".
+    items:
+    - id: B97_a
+      kind: Question
+      title: B97. What is the impact of not having these aids or specialized equipment? I will read you a list. Please answer yes or no to each. (a) Child’s participation in regular everyday activity is reduced
+      input:
+        control: Radio
+        labels:
+          1: (1) Yes
+          3: (3) No
+          8: (x) DK
+          9: (r) Ref
+    - id: B97_b
+      kind: Question
+      title: B97 (b) Child is frustrated
+      input:
+        control: Radio
+        labels:
+          1: (1) Yes
+          3: (3) No
+          8: (x) DK
+          9: (r) Ref
+    - id: B97_c
+      kind: Question
+      title: B97 (c) Child’s self-esteem is affected
+      input:
+        control: Radio
+        labels:
+          1: (1) Yes
+          3: (3) No
+          8: (x) DK
+          9: (r) Ref
+    - id: B97_d
+      kind: Question
+      title: B97 (d) Other, specify
+      input:
+        control: Radio
+        labels:
+          1: (1) Yes
+          3: (3) No
+          8: (x) DK
+          9: (r) Ref
+  - id: b_s6_personal_care
+    title: Help with personal care
+    items:
+    - id: C1
+      kind: Question
+      title: Does ..... USUALLY receive help with personal care, such as bathing, toiletting, dressing or feeding?
+      input:
+        control: Radio
+        labels:
+          1: (1) Yes
+          3: (3) No
+          8: (x) Don’t know
+          9: (r) Refusal
+  - id: b_s6_personal_care_followup
+    title: Personal care help details
+    precondition:
+    - predicate: not (C1.outcome in [3, 8, 9])
+      hint: Asked only when question C1 is none of "(3) No", "(x) Don’t know", "(r) Refusal".
+    items:
+    - id: C2
+      kind: Question
+      title: Is this because of his/her condition or health problem?
+      input:
+        control: Radio
+        labels:
+          1: (1) Yes
+          3: (3) No
+          8: (x) Don’t know
+          9: (r) Refusal
+    - id: C3
+      kind: Question
+      title: 'How much help does he/she need? Interviewer: Read list. Mark one only.'
+      precondition:
+      - predicate: not (C2.outcome in [3, 8, 9])
+        hint: Asked only when question C2 is none of "(3) No", "(x) Don’t know", "(r) Refusal".
+      input:
+        control: Radio
+        labels:
+          1: (1) Some help
+          2: (2) A lot of help
+          8: (x) Don’t know
+          9: (r) Refusal
+    - id: C4
+      kind: Question
+      title: 'Who provides most of the help to ..... for his/her personal care? Interviewer: Read list. Mark one only.'
+      precondition:
+      - predicate: not (C2.outcome in [3, 8, 9])
+        hint: Asked only when question C2 is none of "(3) No", "(x) Don’t know", "(r) Refusal".
+      input:
+        control: Radio
+        labels:
+          1: (1) Mostly the mother
+          2: (2) Mostly the father
+          3: (3) Both the mother and the father
+          4: (4) Other family members
+          5: (5) Other, specify
+          8: (x) Don’t know
+          9: (r) Refusal
+  - id: b_s6_mobility
+    title: Help with moving about inside the residence
+    items:
+    - id: C5
+      kind: Question
+      title: Does ..... USUALLY receive help with moving about inside his/her residence, such as moving from one room to another?
+      input:
+        control: Radio
+        labels:
+          1: (1) Yes
+          3: (3) No
+          8: (x) Don’t know
+          9: (r) Refusal
+    - id: C6
+      kind: Question
+      title: Is this because of his/her condition or health problem?
+      input:
+        control: Radio
+        labels:
+          1: (1) Yes
+          3: (3) No
+          8: (x) Don’t know
+          9: (r) Refusal
+    - id: C7
+      kind: Question
+      title: 'How much help does he/she need? Interviewer: Read list. Mark one only.'
+      input:
+        control: Radio
+        labels:
+          1: (1) Some help
+          2: (2) A lot of help
+          8: (x) Don’t know
+          9: (r) Refusal
+    - id: C8
+      kind: Question
+      title: 'Who provides most of the help to ..... for moving about inside his/her residence? Interviewer: Read list. Mark one only.'
+      input:
+        control: Radio
+        labels:
+          1: (1) Mostly the mother
+          2: (2) Mostly the father
+          3: (3) Both the mother and the father
+          4: (4) Other family members
+          5: (5) Other, specify
+          8: (x) Don’t know
+          9: (r) Refusal
+  - id: b_s6_current_need
+    title: Help currently needed
+    items:
+    - id: C9_a
+      kind: Question
+      title: 'C9. Because of .....’s condition, do you CURRENTLY need help or additional help with: (a) his/her personal care?'
+      input:
+        control: Radio
+        labels:
+          1: (1) Yes
+          3: (3) No
+          8: (x) DK
+          9: (r) Ref
+    - id: C9_b
+      kind: Question
+      title: C9 (b) moving him/her about inside his/her residence?
+      input:
+        control: Radio
+        labels:
+          1: (1) Yes
+          3: (3) No
+          8: (x) DK
+          9: (r) Ref
+    - id: C10
+      kind: Question
+      title: 'How many hours per week of help or additional help do you need? Interviewer: Read list. Mark one only.'
+      input:
+        control: Radio
+        labels:
+          1: (1) 1-4 hours per week
+          2: (2) 5-10 hours per week
+          3: (3) More than 10 hours per week
+          8: (x) Don’t know
+          9: (r) Refusal
+  - id: b_s6_why_no_help
+    title: Reasons for not receiving help
+    items:
+    - id: C11_a
+      kind: Question
+      title: C11. Why do you not receive this help? I will read you a list. Please answer yes or no to each. (a) It is too expensive
+      input:
+        control: Radio
+        labels:
+          1: (1) Yes
+          3: (3) No
+          8: (x) DK
+          9: (r) Ref
+    - id: C11_b
+      kind: Question
+      title: C11 (b) Help from family and friends is not available
+      input:
+        control: Radio
+        labels:
+          1: (1) Yes
+          3: (3) No
+          8: (x) DK
+          9: (r) Ref
+    - id: C11_c
+      kind: Question
+      title: C11 (c) Services or special programs (for help) are not available locally
+      input:
+        control: Radio
+        labels:
+          1: (1) Yes
+          3: (3) No
+          8: (x) DK
+          9: (r) Ref
+    - id: C11_d
+      kind: Question
+      title: C11 (d) Child is presently on a waiting list
+      input:
+        control: Radio
+        labels:
+          1: (1) Yes
+          3: (3) No
+          8: (x) DK
+          9: (r) Ref
+    - id: C11_e
+      kind: Question
+      title: C11 (e) Do not know where to look for help
+      input:
+        control: Radio
+        labels:
+          1: (1) Yes
+          3: (3) No
+          8: (x) DK
+          9: (r) Ref
+    - id: C11_f
+      kind: Question
+      title: C11 (f) Child’s condition is not serious enough
+      input:
+        control: Radio
+        labels:
+          1: (1) Yes
+          3: (3) No
+          8: (x) DK
+          9: (r) Ref
+    - id: C11_g
+      kind: Question
+      title: C11 (g) You have not asked for help
+      input:
+        control: Radio
+        labels:
+          1: (1) Yes
+          3: (3) No
+          8: (x) DK
+          9: (r) Ref
+    - id: C11_h
+      kind: Question
+      title: C11 (h) Other, specify
+      input:
+        control: Radio
+        labels:
+          1: (1) Yes
+          3: (3) No
+          8: (x) DK
+          9: (r) Ref
+  - id: b_s6_family_help
+    title: Help received by the family
+    items:
+    - id: C12_a
+      kind: Question
+      title: 'C12. The next few questions are about the help YOU or YOUR FAMILY may be receiving because of .....’s condition or health problem. The help could be from family members, friends or from agencies or organizations. Because of .....’s condition, do you USUALLY receive help with the following: (a) help with everyday housework, such as house cleaning or meal preparation'
+      input:
+        control: Radio
+        labels:
+          1: (1) Yes
+          3: (3) No
+          8: (x) DK
+          9: (r) Ref
+    - id: C12_b
+      kind: Question
+      title: C12 (b) help to allow you to attend to other family responsibilities
+      input:
+        control: Radio
+        labels:
+          1: (1) Yes
+          3: (3) No
+          8: (x) DK
+          9: (r) Ref
+    - id: C12_c
+      kind: Question
+      title: C12 (c) help to allow you to take time off for personal activities
+      input:
+        control: Radio
+        labels:
+          1: (1) Yes
+          3: (3) No
+          8: (x) DK
+          9: (r) Ref
+    - id: C13_a
+      kind: Question
+      title: C13. Who USUALLY provides you this help? I will read you a list. Please answer yes or no to each. (a) Family living with you
+      input:
+        control: Radio
+        labels:
+          1: (1) Yes
+          3: (3) No
+          8: (x) DK
+          9: (r) Ref
+    - id: C13_b
+      kind: Question
+      title: C13 (b) Family not living with you
+      input:
+        control: Radio
+        labels:
+          1: (1) Yes
+          3: (3) No
+          8: (x) DK
+          9: (r) Ref
+    - id: C13_c
+      kind: Question
+      title: C13 (c) Friends or neighbours
+      input:
+        control: Radio
+        labels:
+          1: (1) Yes
+          3: (3) No
+          8: (x) DK
+          9: (r) Ref
+    - id: C13_d
+      kind: Question
+      title: C13 (d) Government organization or agency
+      input:
+        control: Radio
+        labels:
+          1: (1) Yes
+          3: (3) No
+          8: (x) DK
+          9: (r) Ref
+    - id: C13_e
+      kind: Question
+      title: C13 (e) Private organization or agency
+      input:
+        control: Radio
+        labels:
+          1: (1) Yes
+          3: (3) No
+          8: (x) DK
+          9: (r) Ref
+    - id: C13_f
+      kind: Question
+      title: C13 (f) Voluntary organization or agency
+      input:
+        control: Radio
+        labels:
+          1: (1) Yes
+          3: (3) No
+          8: (x) DK
+          9: (r) Ref
+    - id: C13_g
+      kind: Question
+      title: C13 (g) Other, specify
+      input:
+        control: Radio
+        labels:
+          1: (1) Yes
+          3: (3) No
+          8: (x) DK
+          9: (r) Ref
+  - id: b_s6_expenses
+    title: Out-of-pocket expenses for help
+    items:
+    - id: C14
+      kind: Question
+      title: You mentioned earlier that you usually receive help with everyday housework or help to allow you to attend to other family or personal activities. IN THE PAST 12 MONTHS, did you or your family have any OUT-OF-POCKET expenses (that are not reimbursed by any sources) for this help?
+      input:
+        control: Radio
+        labels:
+          1: (1) Yes
+          3: (3) No
+          8: (x) Don’t know
+          9: (r) Refusal
+    - id: C15
+      kind: Question
+      title: 'What is your best estimate of the OUT-OF-POCKET or DIRECT costs to you or your family for these extra expenses? INCLUDE amounts not covered by insurance. EXCLUDE payments for which you have been or will be reimbursed by any insurance or government program. $ .00 Range: 1-999999 (9999998 = (x) Don’t know, 9999999 = (r) Refusal)'
+      input:
+        control: Editbox
+        min: 1
+        max: 9999999
+        left: $
+    - id: C16
+      kind: Question
+      title: 'Which one of the following expense groups is the best estimate of the direct costs to you or your family? I will read you a list. Interviewer: Read list. Mark one only.'
+      input:
+        control: Radio
+        labels:
+          1: (1) Less than $200
+          2: (2) $200 to less than $500
+          3: (3) $500 to less than $1000
+          4: (4) $1000 to less than $2000
+          5: (5) $2000 to less than $5000
+          6: (6) $5000 or more
+          8: (x) Don’t know
+          9: (r) Refusal
+  - id: b_s6_additional_need
+    title: Help currently needed by the family
+    items:
+    - id: C17_a
+      kind: Question
+      title: 'C17. Because of .....’s condition, do you CURRENTLY need help or additional help with the following: (a) help with everyday housework, such as house cleaning or meal preparation'
+      input:
+        control: Radio
+        labels:
+          1: (1) Yes
+          3: (3) No
+          8: (x) DK
+          9: (r) Ref
+    - id: C17_b
+      kind: Question
+      title: C17 (b) help to allow you to attend to other family responsibilities
+      input:
+        control: Radio
+        labels:
+          1: (1) Yes
+          3: (3) No
+          8: (x) DK
+          9: (r) Ref
+    - id: C17_c
+      kind: Question
+      title: C17 (c) help to allow you to take time off for personal activities
+      input:
+        control: Radio
+        labels:
+          1: (1) Yes
+          3: (3) No
+          8: (x) DK
+          9: (r) Ref
+  - id: b_s6_why_no_additional_help
+    title: Reasons for not receiving help or additional help
+    precondition:
+    - predicate: not (C17_a.outcome != 1 and C17_b.outcome != 1 and C17_c.outcome != 1)
+      hint: Asked only when the respondent currently needs help with at least one item in C17.
+    items:
+    - id: C18_a
+      kind: Question
+      title: C18. Why do you not receive this help or additional help? I will read you a list. Please answer yes or no to each. (a) It is too expensive
+      input:
+        control: Radio
+        labels:
+          1: (1) Yes
+          3: (3) No
+          8: (x) DK
+          9: (r) Ref
+    - id: C18_b
+      kind: Question
+      title: C18 (b) Help from family and friends is not available
+      input:
+        control: Radio
+        labels:
+          1: (1) Yes
+          3: (3) No
+          8: (x) DK
+          9: (r) Ref
+    - id: C18_c
+      kind: Question
+      title: C18 (c) Services or special programs (for help) are not available locally
+      input:
+        control: Radio
+        labels:
+          1: (1) Yes
+          3: (3) No
+          8: (x) DK
+          9: (r) Ref
+    - id: C18_d
+      kind: Question
+      title: C18 (d) Child is presently on a waiting list
+      input:
+        control: Radio
+        labels:
+          1: (1) Yes
+          3: (3) No
+          8: (x) DK
+          9: (r) Ref
+    - id: C18_e
+      kind: Question
+      title: C18 (e) Do not know where to look for help
+      input:
+        control: Radio
+        labels:
+          1: (1) Yes
+          3: (3) No
+          8: (x) DK
+          9: (r) Ref
+    - id: C18_f
+      kind: Question
+      title: C18 (f) Child’s condition is not serious enough
+      input:
+        control: Radio
+        labels:
+          1: (1) Yes
+          3: (3) No
+          8: (x) DK
+          9: (r) Ref
+    - id: C18_g
+      kind: Question
+      title: C18 (g) You have not asked for help
+      input:
+        control: Radio
+        labels:
+          1: (1) Yes
+          3: (3) No
+          8: (x) DK
+          9: (r) Ref
+    - id: C18_h
+      kind: Question
+      title: C18 (h) Other, specify
+      input:
+        control: Radio
+        labels:
+          1: (1) Yes
+          3: (3) No
+          8: (x) DK
+          9: (r) Ref
+  - id: b_s6_care_coordination
+    title: Coordination of care
+    items:
+    - id: C19
+      kind: Question
+      title: IN THE PAST 12 MONTHS, did you have any difficulty with coordinating the care of ....., for example, making appointments, phoning or visiting health professionals and specialists?
+      input:
+        control: Radio
+        labels:
+          1: (1) Yes
+          3: (3) No
+          8: (x) Don’t know
+          9: (r) Refusal
+  - id: b_s6_coordination_difficulty
+    title: Kinds of difficulty coordinating care
+    precondition:
+    - predicate: not (C19.outcome in [3, 8, 9])
+      hint: Asked only when question C19 is none of "(3) No", "(x) Don’t know", "(r) Refusal".
+    items:
+    - id: C20_a
+      kind: Question
+      title: C20. What kind of difficulty did you have? I will read you a list. Please answer yes or no to each. (a) Difficulty obtaining appointments
+      input:
+        control: Radio
+        labels:
+          1: (1) Yes
+          3: (3) No
+          8: (x) DK
+          9: (r) Ref
+    - id: C20_b
+      kind: Question
+      title: C20 (b) Health professional or specialist not available locally
+      input:
+        control: Radio
+        labels:
+          1: (1) Yes
+          3: (3) No
+          8: (x) DK
+          9: (r) Ref
+    - id: C20_c
+      kind: Question
+      title: C20 (c) A lack of communication between health professionals
+      input:
+        control: Radio
+        labels:
+          1: (1) Yes
+          3: (3) No
+          8: (x) DK
+          9: (r) Ref
+    - id: C20_d
+      kind: Question
+      title: C20 (d) Difficulty getting information
+      input:
+        control: Radio
+        labels:
+          1: (1) Yes
+          3: (3) No
+          8: (x) DK
+          9: (r) Ref
+    - id: C20_e
+      kind: Question
+      title: C20 (e) Your lack of time to coordinate the care
+      input:
+        control: Radio
+        labels:
+          1: (1) Yes
+          3: (3) No
+          8: (x) DK
+          9: (r) Ref
+    - id: C20_f
+      kind: Question
+      title: C20 (f) Work conflicts
+      input:
+        control: Radio
+        labels:
+          1: (1) Yes
+          3: (3) No
+          8: (x) DK
+          9: (r) Ref
+    - id: C20_g
+      kind: Question
+      title: C20 (g) Other difficulty, specify
+      input:
+        control: Radio
+        labels:
+          1: (1) Yes
+          3: (3) No
+          8: (x) DK
+          9: (r) Ref
+  - id: b_s6_work_financial_impact
+    title: Work and financial impact on the family
+    items:
+    - id: C21
+      kind: Question
+      title: 'Who USUALLY coordinates the care of .....? Interviewer: Read list. Mark one only.'
+      input:
+        control: Radio
+        labels:
+          1: (1) Mostly the mother
+          2: (2) Mostly the father
+          3: (3) Both the father and the mother
+          4: (4) Other family members
+          5: (5) Other, specify
+          8: (x) Don’t know
+          9: (r) Refusal
+    - id: C22_a
+      kind: Question
+      title: 'C22. Because of .....’s condition or health problem, has anyone in your family EVER: (a) not taken a job in order to take care of the child?'
+      input:
+        control: Radio
+        labels:
+          1: (1) Yes
+          3: (3) No
+          8: (x) DK
+          9: (r) Ref
+    - id: C22_b
+      kind: Question
+      title: C22 (b) quit working (other than normal maternity or paternity leave)?
+      input:
+        control: Radio
+        labels:
+          1: (1) Yes
+          3: (3) No
+          8: (x) DK
+          9: (r) Ref
+    - id: C22_c
+      kind: Question
+      title: C22 (c) changed work hours to different time of day (or night)?
+      input:
+        control: Radio
+        labels:
+          1: (1) Yes
+          3: (3) No
+          8: (x) DK
+          9: (r) Ref
+    - id: C22_d
+      kind: Question
+      title: C22 (d) turned down a promotion or a better job?
+      input:
+        control: Radio
+        labels:
+          1: (1) Yes
+          3: (3) No
+          8: (x) DK
+          9: (r) Ref
+    - id: C22_e
+      kind: Question
+      title: C22 (e) worked fewer hours?
+      input:
+        control: Radio
+        labels:
+          1: (1) Yes
+          3: (3) No
+          8: (x) DK
+          9: (r) Ref
+    - id: C23
+      kind: Question
+      title: 'Who was most affected by these work-related issues? Interviewer: Read list. Mark one only.'
+      precondition:
+      - predicate: not (C22_a.outcome != 1 and C22_b.outcome != 1 and C22_c.outcome != 1 and C22_d.outcome != 1 and C22_e.outcome != 1)
+        hint: Asked only when at least one work-related effect in C22 was reported.
+      input:
+        control: Radio
+        labels:
+          1: (1) Mostly the mother
+          2: (2) Mostly the father
+          3: (3) Both the mother and the father
+          4: (4) Other family members
+          5: (5) Other, specify
+          8: (x) Don’t know
+          9: (r) Refusal
+    - id: C24
+      kind: Question
+      title: DURING THE PAST 12 MONTHS, has your family had financial problems because of .....’s condition or health problem?
+      input:
+        control: Radio
+        labels:
+          1: (1) Yes
+          3: (3) No
+          8: (x) Don’t know
+          9: (r) Refusal
+  - id: b_s7_child_care
+    title: SECTION D — CHILD CARE
+    items:
+    - id: D1
+      kind: Question
+      title: Now, I’d like to ask you some questions about child care arrangements for ..... . Do you CURRENTLY use child care such as day care, babysitting or a before and after school program for ..... while you (or your spouse/partner) are at work or studying?
+      input:
+        control: Radio
+        labels:
+          1: (1) Yes
+          3: (3) No
+          8: (x) Don’t know
+          9: (r) Refusal
+  - id: b_s8_care_arrangements
+    title: Child care (continued)
+    precondition:
+    - predicate: not (D1.outcome in [3, 8, 9])
+      hint: Asked only when question D1 is none of "(3) No", "(x) Don’t know", "(r) Refusal".
+    items:
+    - id: D2
+      kind: Question
+      title: 'What is your MAIN child care arrangement for ..... ? Interviewer: Read list. Mark one only.'
+      input:
+        control: Radio
+        labels:
+          1: (1) Before and after school program
+          2: (2) Nursery school
+          3: (3) Day care centre
+          4: (4) Care in someone else’s home by a non-relative
+          5: (5) Care in someone else’s home by a relative
+          6: (6) Care in child’s home by a non-relative
+          7: (7) Care in child’s home by a relative
+          8: (8) Other, specify
+          98: (x) Don’t know
+          99: (r) Refusal
+    - id: D3
+      kind: Question
+      title: 'Approximately how many hours per WEEK is that? Interviewer: This is for the MAIN child care arrangement only. Hours per WEEK Interviewer: Round to the nearest full hour.'
+      input:
+        control: Editbox
+        min: 0
+        max: 99
+        right: hours per week (98 = Don’t know, 99 = Refusal)
+    - id: D4
+      kind: Question
+      title: Do you use any other child care arrangement for ..... ?
+      input:
+        control: Radio
+        labels:
+          1: (1) Yes
+          3: (3) No
+          98: (x) Don’t know
+          99: (r) Refusal
+    - id: D5
+      kind: Question
+      title: 'Approximately how many hours per WEEK is that? Hours per WEEK Interviewer: Round to the nearest full hour.'
+      precondition:
+      - predicate: not (D4.outcome in [3, 98, 99])
+        hint: Asked only when question D4 is none of "(3) No", "(x) Don’t know", "(r) Refusal".
+      postcondition:
+      - predicate: D4.outcome != 1 or D3.outcome >= 98 or D5.outcome >= 98 or D3.outcome + D5.outcome <= 168
+        hint: Hours per week in D3 (main arrangement) and D5 (other arrangement) together cannot exceed 168, the number of hours in a week.
+        invented: true
+      input:
+        control: Editbox
+        min: 0
+        max: 99
+        right: hours per week (98 = Don’t know, 99 = Refusal)
+  - id: b_s8_refusals
+    title: Refusals by child care programs
+    items:
+    - id: D6
+      kind: Question
+      title: Has a child care program or service ever refused to take care of ..... because of his/her condition or health problem?
+      input:
+        control: Radio
+        labels:
+          1: (1) Yes
+          3: (3) No
+          98: (x) Don’t know
+          99: (r) Refusal
+    - id: D7a
+      kind: Question
+      title: 'D7. What type of child care programs or services refused to provide care to ..... ? I will read you a list. Please answer yes or no to each. Interviewer: Read list. (a) Before and after school program'
+      input:
+        control: Radio
+        labels:
+          1: (1) Yes
+          3: (3) No
+          98: (x) Don’t know
+          99: (r) Refusal
+    - id: D7b
+      kind: Question
+      title: D7. (b) Nursery school
+      input:
+        control: Radio
+        labels:
+          1: (1) Yes
+          3: (3) No
+          98: (x) Don’t know
+          99: (r) Refusal
+    - id: D7c
+      kind: Question
+      title: D7. (c) Day care centre
+      input:
+        control: Radio
+        labels:
+          1: (1) Yes
+          3: (3) No
+          98: (x) Don’t know
+          99: (r) Refusal
+    - id: D7d
+      kind: Question
+      title: D7. (d) Care in someone else’s home
+      input:
+        control: Radio
+        labels:
+          1: (1) Yes
+          3: (3) No
+          98: (x) Don’t know
+          99: (r) Refusal
+    - id: D7e
+      kind: Question
+      title: D7. (e) Care in child’s home
+      input:
+        control: Radio
+        labels:
+          1: (1) Yes
+          3: (3) No
+          98: (x) Don’t know
+          99: (r) Refusal
+    - id: D7f
+      kind: Question
+      title: D7. (f) Other, specify
+      input:
+        control: Radio
+        labels:
+          1: (1) Yes
+          3: (3) No
+          98: (x) Don’t know
+          99: (r) Refusal
+  - id: b_s9_p1_preamble
+    title: Section E setup
+    items:
+    - id: BORN_AFTER_MAY_15_1996
+      kind: Question
+      title: 'External input: whether the child was born AFTER May 15, 1996 (Interviewer: This section is NOT asked if child was born AFTER May 15,1996. If child was born AFTER May 15,1996, go to I1 (page 50). Otherwise, go to E1.)'
+      external: true
+      input:
+        control: Radio
+        labels:
+          1: Yes, born after May 15, 1996
+          3: No, born on or before May 15, 1996
+  - id: b_s9_p1_e1
+    title: Education in April 2001
+    items:
+    - id: E1
+      kind: Question
+      title: 'The next few questions are about education. In APRIL 2001 was ..... : Interviewer: Read list. Mark one only.'
+      input:
+        control: Radio
+        labels:
+          1: (1) going to school or kindergarten
+          2: (2) being tutored at home through the school system
+          3: (3) neither of the above (i.e. neither going to school or being tutored at home)
+          98: (x) Don’t know
+          99: (r) Refusal
+  - id: b_s9_p1_not_school
+    title: Not attending school
+    precondition:
+    - predicate: not (E1.outcome == 1)
+      hint: Asked only when question E1 is not "(1) going to school or kindergarten".
+    items:
+    - id: E2a
+      kind: Question
+      title: 'E2. Why was ..... being tutored at home through the school system? I will read you a list. Please answer yes or no to each. Interviewer: Read list. (a) Personal care such as feeding and toiletting needed, but not available at school'
+      input:
+        control: Radio
+        labels:
+          1: (1) Yes
+          3: (3) No
+          98: (x) Don’t know
+          99: (r) Refusal
+    - id: E2b
+      kind: Question
+      title: E2. (b) Teacher’s aides or special education classes not available in REGULAR SCHOOL
+      input:
+        control: Radio
+        labels:
+          1: (1) Yes
+          3: (3) No
+          98: (x) Don’t know
+          99: (r) Refusal
+    - id: E2c
+      kind: Question
+      title: E2. (c) SPECIAL EDUCATION SCHOOL not available locally
+      input:
+        control: Radio
+        labels:
+          1: (1) Yes
+          3: (3) No
+          98: (x) Don’t know
+          99: (r) Refusal
+    - id: E2d
+      kind: Question
+      title: E2. (d) Child’s condition or health problem prevented him/her from going to school
+      input:
+        control: Radio
+        labels:
+          1: (1) Yes
+          3: (3) No
+          98: (x) Don’t know
+          99: (r) Refusal
+    - id: E2e
+      kind: Question
+      title: E2. (e) Parents preferred home tutoring for the child
+      input:
+        control: Radio
+        labels:
+          1: (1) Yes
+          3: (3) No
+          98: (x) Don’t know
+          99: (r) Refusal
+    - id: E2f
+      kind: Question
+      title: E2. (f) Other reason, specify
+      input:
+        control: Radio
+        labels:
+          1: (1) Yes
+          3: (3) No
+          98: (x) Don’t know
+          99: (r) Refusal
+    - id: E3a
+      kind: Question
+      title: 'E3. Why was ..... not attending school in April 2001? I will read you a list. Please answer yes or no to each. Interviewer: Read list. (a) Personal care such as feeding and toiletting needed, but not available at school'
+      input:
+        control: Radio
+        labels:
+          1: (1) Yes
+          3: (3) No
+          98: (x) Don’t know
+          99: (r) Refusal
+    - id: E3b
+      kind: Question
+      title: E3. (b) Teacher’s aides or special education classes not available in REGULAR SCHOOL
+      input:
+        control: Radio
+        labels:
+          1: (1) Yes
+          3: (3) No
+          98: (x) Don’t know
+          99: (r) Refusal
+    - id: E3c
+      kind: Question
+      title: E3. (c) SPECIAL EDUCATION SCHOOL not available locally
+      input:
+        control: Radio
+        labels:
+          1: (1) Yes
+          3: (3) No
+          98: (x) Don’t know
+          99: (r) Refusal
+    - id: E3d
+      kind: Question
+      title: E3. (d) Child’s condition or health problem prevented him/her from going to school
+      input:
+        control: Radio
+        labels:
+          1: (1) Yes
+          3: (3) No
+          98: (x) Don’t know
+          99: (r) Refusal
+    - id: E3e
+      kind: Question
+      title: E3. (e) Child not ready or too young to attend school
+      input:
+        control: Radio
+        labels:
+          1: (1) Yes
+          3: (3) No
+          98: (x) Don’t know
+          99: (r) Refusal
+    - id: E3f
+      kind: Question
+      title: E3. (f) Other reason, specify
+      input:
+        control: Radio
+        labels:
+          1: (1) Yes
+          3: (3) No
+          98: (x) Don’t know
+          99: (r) Refusal
+    - id: E4
+      kind: Question
+      title: Did ..... ever go to school?
+      input:
+        control: Radio
+        labels:
+          1: (1) Yes
+          3: (3) No
+          98: (x) Don’t know
+          99: (r) Refusal
+  - id: b_s9_p1_never_attended
+    title: Never attended school
+    precondition:
+    - predicate: not (E1.outcome == 1)
+      hint: Asked only when question E1 is not "(1) going to school or kindergarten".
+    - predicate: not (E4.outcome == 1)
+      hint: Asked only when question E4 is not "(1) Yes".
+    items:
+    - id: E5
+      kind: Question
+      title: 'Why did ..... never attend school? Interviewer: Do NOT read list. Mark all that apply.'
+      input:
+        control: Checkbox
+        labels:
+          1: (a) Personal care such as feeding and toiletting needed, but not available at school
+          2: (b) Teacher’s aides or special education classes not available in REGULAR SCHOOL
+          4: (c) SPECIAL EDUCATION SCHOOL not available locally
+          8: (d) Child’s condition or health problem prevented him/her from going to school
+          16: (e) Child not ready or too young to attend school
+          32: (f) Other reason, specify
+          64: (x) Don’t know
+          128: (r) Refusal
+  - id: b_s9_p1_school_type
+    title: Type of school and classes
+    precondition:
+    - predicate: not (E4.outcome == 1)
+      hint: Asked only when question E4 is not "(1) Yes".
+    items:
+    - id: E6
+      kind: Question
+      title: 'In APRIL 2001, what type of school was ..... attending? Interviewer: Read list. Mark one only.'
+      input:
+        control: Radio
+        labels:
+          1: (1) Special education school
+          2: (2) Regular school
+          3: (3) Regular school with special education classes
+          4: (4) Other, specify
+          98: (x) Don’t know
+          99: (r) Refusal
+    - id: E7
+      kind: Question
+      title: 'At this school, what type of classes was ..... attending? Interviewer: Read list. Mark one only.'
+      precondition:
+      - predicate: not (E6.outcome == 99)
+        hint: Asked only when question E6 is not "(r) Refusal".
+      input:
+        control: Radio
+        labels:
+          1: (1) Only regular classes
+          2: (2) Some regular classes and some special education classes
+          3: (3) Only special education classes
+          98: (x) Don’t know
+          99: (r) Refusal
+  - id: b_s9_p1_special_ed
+    title: Special education
+    precondition:
+    - predicate: not (E4.outcome == 1)
+      hint: Asked only when question E4 is not "(1) Yes".
+    - predicate: not (E7.outcome == 1)
+      hint: Asked only when question E7 is not "(1) Only regular classes".
+    items:
+    - id: E8
+      kind: Question
+      title: Did ..... ever attend a special education school?
+      input:
+        control: Radio
+        labels:
+          1: (1) Yes
+          3: (3) No
+          98: (x) Don’t know
+          99: (r) Refusal
+    - id: E9
+      kind: Question
+      title: 'Why didn’t he/she attend a special education school in April 2001? Interviewer: Do NOT read list. Mark all that apply.'
+      input:
+        control: Checkbox
+        labels:
+          1: (a) Special education school no longer available locally
+          2: (b) Child has moved into regular school
+          4: (c) Other reason, specify
+          8: (x) Don’t know
+          16: (r) Refusal
+    - id: E10a
+      kind: Question
+      title: 'E10. What is the MAIN condition or health problem which required ..... to receive special education services? I will read you a list. Please answer yes or no to each. Interviewer: Read list. (a) Learning disabilities'
+      input:
+        control: Radio
+        labels:
+          1: (1) Yes
+          3: (3) No
+          98: (x) Don’t know
+          99: (r) Refusal
+    - id: E10b
+      kind: Question
+      title: E10. (b) Developmental disability or disorder
+      input:
+        control: Radio
+        labels:
+          1: (1) Yes
+          3: (3) No
+          98: (x) Don’t know
+          99: (r) Refusal
+    - id: E10c
+      kind: Question
+      title: E10. (c) Speech or language difficulties
+      input:
+        control: Radio
+        labels:
+          1: (1) Yes
+          3: (3) No
+          98: (x) Don’t know
+          99: (r) Refusal
+    - id: E10d
+      kind: Question
+      title: E10. (d) Emotional, psychological or behavioural conditions
+      input:
+        control: Radio
+        labels:
+          1: (1) Yes
+          3: (3) No
+          98: (x) Don’t know
+          99: (r) Refusal
+    - id: E10e
+      kind: Question
+      title: E10. (e) Hearing difficulties, including deafness
+      input:
+        control: Radio
+        labels:
+          1: (1) Yes
+          3: (3) No
+          98: (x) Don’t know
+          99: (r) Refusal
+    - id: E10f
+      kind: Question
+      title: E10. (f) Vision difficulties, including blindness
+      input:
+        control: Radio
+        labels:
+          1: (1) Yes
+          3: (3) No
+          98: (x) Don’t know
+          99: (r) Refusal
+    - id: E10g
+      kind: Question
+      title: E10. (g) Difficulty with walking or moving around
+      input:
+        control: Radio
+        labels:
+          1: (1) Yes
+          3: (3) No
+          98: (x) Don’t know
+          99: (r) Refusal
+    - id: E10h
+      kind: Question
+      title: E10. (h) Other condition, specify
+      input:
+        control: Radio
+        labels:
+          1: (1) Yes
+          3: (3) No
+          98: (x) Don’t know
+          99: (r) Refusal
+  - id: b_s9_p1_e11
+    title: Difficulty getting special education services
+    precondition:
+    - predicate: not (E4.outcome == 1)
+      hint: Asked only when question E4 is not "(1) Yes".
+    items:
+    - id: E11
+      kind: Question
+      title: Did you ever have any difficulty in trying to get special education services for ..... ?
+      input:
+        control: Radio
+        labels:
+          1: (1) Yes
+          3: (3) No
+          98: (x) Don’t know
+          99: (r) Refusal
+  - id: b_s9_p1_e12
+    title: Kind of difficulty
+    precondition:
+    - predicate: not (E4.outcome == 1)
+      hint: Asked only when question E4 is not "(1) Yes".
+    - predicate: not (E11.outcome in [3, 98, 99])
+      hint: Asked only when question E11 is none of "(3) No", "(x) Don’t know", "(r) Refusal".
+    items:
+    - id: E12a
+      kind: Question
+      title: 'E12. What kind of difficulty did you have? I will read you a list. Please answer yes or no to each. Interviewer: Read list. (a) Special education services not available locally'
+      input:
+        control: Radio
+        labels:
+          1: (1) Yes
+          3: (3) No
+          98: (x) Don’t know
+          99: (r) Refusal
+    - id: E12b
+      kind: Question
+      title: E12. (b) Insufficient level of staffing or special education services
+      input:
+        control: Radio
+        labels:
+          1: (1) Yes
+          3: (3) No
+          98: (x) Don’t know
+          99: (r) Refusal
+    - id: E12c
+      kind: Question
+      title: E12. (c) Communication problems with school
+      input:
+        control: Radio
+        labels:
+          1: (1) Yes
+          3: (3) No
+          98: (x) Don’t know
+          99: (r) Refusal
+    - id: E12d
+      kind: Question
+      title: E12. (d) Difficulty to have the child tested for special education services
+      input:
+        control: Radio
+        labels:
+          1: (1) Yes
+          3: (3) No
+          98: (x) Don’t know
+          99: (r) Refusal
+    - id: E12e
+      kind: Question
+      title: E12. (e) Other difficulty, specify
+      input:
+        control: Radio
+        labels:
+          1: (1) Yes
+          3: (3) No
+          98: (x) Don’t know
+          99: (r) Refusal
+  - id: b_s9_p1_province_grade
+    title: Province and grade
+    precondition:
+    - predicate: not (E4.outcome == 1)
+      hint: Asked only when question E4 is not "(1) Yes".
+    items:
+    - id: E13
+      kind: Question
+      title: 'In APRIL 2001, in which province or territory did ..... attend school? Interviewer: Do NOT read list. Mark one only.'
+      input:
+        control: Dropdown
+        labels:
+          1: (01) Newfoundland
+          2: (02) Prince Edward Island
+          3: (03) Nova Scotia
+          4: (04) New Brunswick
+          5: (05) Quebec
+          6: (06) Ontario
+          7: (07) Manitoba
+          8: (08) Saskatchewan
+          9: (09) Alberta
+          10: (10) British Columbia
+          11: (11) Northwest Territory
+          12: (12) Nunavut
+          13: (13) Yukon
+          14: (14) Other, specify
+          98: (x) Don’t Know
+          99: (r) Refusal
+    - id: E14
+      kind: Question
+      title: 'In what grade was ..... enrolled in APRIL 2001? (Newfoundland) Interviewer: Do NOT read list. Mark one only.'
+      precondition:
+      - predicate: not (E13.outcome == 2)
+        hint: Asked only when question E13 is not "(02) Prince Edward Island".
+      - predicate: not (E13.outcome == 3)
+        hint: Asked only when question E13 is not "(03) Nova Scotia".
+      - predicate: not (E13.outcome == 4)
+        hint: Asked only when question E13 is not "(04) New Brunswick".
+      - predicate: not (E13.outcome == 5)
+        hint: Asked only when question E13 is not "(05) Quebec".
+      - predicate: not (E13.outcome == 6)
+        hint: Asked only when question E13 is not "(06) Ontario".
+      - predicate: not (E13.outcome in [7, 8, 9, 10, 11, 12, 13, 14, 98, 99])
+        hint: Asked only when question E13 is none of "(07) Manitoba", "(08) Saskatchewan", "(09) Alberta", "(10) British Columbia", "(11) Northwest Territory", "(12) Nunavut", "(13) Yukon", "(14) Other, specify", "(x) Don’t Know", "(r) Refusal".
+      input:
+        control: Dropdown
+        labels:
+          1: (01) Kindergarten
+          2: (02) Grade 1 Elementary
+          3: (03) Grade 2 Elementary
+          4: (04) Grade 3 Elementary
+          5: (05) Grade 4 Elementary
+          6: (06) Grade 5 Elementary
+          7: (07) Grade 6 Elementary
+          8: (08) Grade 7
+          9: (09) Grade 8
+          10: (10) Grade 9
+          11: (11) Level 1 Secondary
+          12: (12) Level 2 Secondary
+          13: (13) Level 3 Secondary
+          14: (14) Ungraded
+          98: (x) Don’t know
+          99: (r) Refusal
+    - id: E15
+      kind: Question
+      title: 'In what grade was ..... enrolled in APRIL 2001? (Prince Edward Island) Interviewer: Do NOT read list. Mark one only.'
+      precondition:
+      - predicate: not (E13.outcome == 3)
+        hint: Asked only when question E13 is not "(03) Nova Scotia".
+      - predicate: not (E13.outcome == 4)
+        hint: Asked only when question E13 is not "(04) New Brunswick".
+      - predicate: not (E13.outcome == 5)
+        hint: Asked only when question E13 is not "(05) Quebec".
+      - predicate: not (E13.outcome == 6)
+        hint: Asked only when question E13 is not "(06) Ontario".
+      - predicate: not (E13.outcome in [7, 8, 9, 10, 11, 12, 13, 14, 98, 99])
+        hint: Asked only when question E13 is none of "(07) Manitoba", "(08) Saskatchewan", "(09) Alberta", "(10) British Columbia", "(11) Northwest Territory", "(12) Nunavut", "(13) Yukon", "(14) Other, specify", "(x) Don’t Know", "(r) Refusal".
+      - predicate: not (E14.outcome in [98, 99])
+        hint: Asked only when question E14 is none of "(x) Don’t know", "(r) Refusal".
+      input:
+        control: Dropdown
+        labels:
+          1: (01) Grade 1
+          2: (02) Grade 2
+          3: (03) Grade 3
+          4: (04) Grade 4
+          5: (05) Grade 5
+          6: (06) Grade 6
+          7: (07) Grade 7
+          8: (08) Grade 8
+          9: (09) Grade 9
+          10: (10) Grade 10
+          11: (11) Grade 11
+          12: (12) Grade 12
+          13: (13) Ungraded
+          98: (x) Don’t know
+          99: (r) Refusal
+    - id: E16
+      kind: Question
+      title: 'In what grade was ..... enrolled in APRIL 2001? (Nova Scotia) Interviewer: Do NOT read list. Mark one only.'
+      precondition:
+      - predicate: not (E13.outcome == 4)
+        hint: Asked only when question E13 is not "(04) New Brunswick".
+      - predicate: not (E13.outcome == 5)
+        hint: Asked only when question E13 is not "(05) Quebec".
+      - predicate: not (E13.outcome == 6)
+        hint: Asked only when question E13 is not "(06) Ontario".
+      - predicate: not (E13.outcome in [7, 8, 9, 10, 11, 12, 13, 14, 98, 99])
+        hint: Asked only when question E13 is none of "(07) Manitoba", "(08) Saskatchewan", "(09) Alberta", "(10) British Columbia", "(11) Northwest Territory", "(12) Nunavut", "(13) Yukon", "(14) Other, specify", "(x) Don’t Know", "(r) Refusal".
+      - predicate: not (E14.outcome in [98, 99])
+        hint: Asked only when question E14 is none of "(x) Don’t know", "(r) Refusal".
+      input:
+        control: Dropdown
+        labels:
+          1: (01) Primary
+          2: (02) Grade 1
+          3: (03) Grade 2
+          4: (04) Grade 3
+          5: (05) Grade 4
+          6: (06) Grade 5
+          7: (07) Grade 6
+          8: (08) Grade 7
+          9: (09) Grade 8
+          10: (10) Grade 9
+          11: (11) Grade 10
+          12: (12) Grade 11
+          13: (13) Grade 12
+          14: (14) Ungraded
+          98: (x) Don’t know
+          99: (r) Refusal
+    - id: E17
+      kind: Question
+      title: 'In what grade was ..... enrolled in APRIL 2001? (Quebec) Interviewer: Do NOT read list. Mark one only.'
+      precondition:
+      - predicate: not (E13.outcome == 4)
+        hint: Asked only when question E13 is not "(04) New Brunswick".
+      - predicate: not (E13.outcome == 6)
+        hint: Asked only when question E13 is not "(06) Ontario".
+      - predicate: not (E13.outcome in [7, 8, 9, 10, 11, 12, 13, 14, 98, 99])
+        hint: Asked only when question E13 is none of "(07) Manitoba", "(08) Saskatchewan", "(09) Alberta", "(10) British Columbia", "(11) Northwest Territory", "(12) Nunavut", "(13) Yukon", "(14) Other, specify", "(x) Don’t Know", "(r) Refusal".
+      - predicate: not (E14.outcome in [98, 99])
+        hint: Asked only when question E14 is none of "(x) Don’t know", "(r) Refusal".
+      input:
+        control: Dropdown
+        labels:
+          1: (01) Junior Kindergarten
+          2: (02) Kindergarten
+          3: (03) Grade 1 Elementary
+          4: (04) Grade 2 Elementary
+          5: (05) Grade 3 Elementary
+          6: (06) Grade 4 Elementary
+          7: (07) Grade 5 Elementary
+          8: (08) Grade 6 Elementary
+          9: (09) Secondary I
+          10: (10) Secondary II
+          11: (11) Secondary III
+          12: (12) Secondary IV
+          13: (13) Secondary V
+          14: (14) Ungraded
+          98: (x) Don’t know
+          99: (r) Refusal
+    - id: E18
+      kind: Question
+      title: 'In what grade was ..... enrolled in APRIL 2001? (Ontario) Interviewer: Do NOT read list. Mark one only.'
+      precondition:
+      - predicate: not (E13.outcome == 4)
+        hint: Asked only when question E13 is not "(04) New Brunswick".
+      - predicate: not (E13.outcome in [7, 8, 9, 10, 11, 12, 13, 14, 98, 99])
+        hint: Asked only when question E13 is none of "(07) Manitoba", "(08) Saskatchewan", "(09) Alberta", "(10) British Columbia", "(11) Northwest Territory", "(12) Nunavut", "(13) Yukon", "(14) Other, specify", "(x) Don’t Know", "(r) Refusal".
+      - predicate: not (E14.outcome in [98, 99])
+        hint: Asked only when question E14 is none of "(x) Don’t know", "(r) Refusal".
+      input:
+        control: Dropdown
+        labels:
+          1: (01) Junior Kindergarten
+          2: (02) Kindergarten
+          3: (03) Grade 1
+          4: (04) Grade 2
+          5: (05) Grade 3
+          6: (06) Grade 4
+          7: (07) Grade 5
+          8: (08) Grade 6
+          9: (09) Grade 7
+          10: (10) Grade 8
+          11: (11) Grade 9
+          12: (12) Grade 10
+          13: (13) Grade 11
+          14: (14) Grade 12
+          15: (15) OAC Grade 13
+          16: (16) Ungraded
+          98: (x) Don’t know
+          99: (r) Refusal
+    - id: E19
+      kind: Question
+      title: 'In what grade was ..... enrolled in APRIL 2001? Interviewer: Do NOT read list. Mark one only.'
+      input:
+        control: Dropdown
+        labels:
+          1: (01) Kindergarten
+          2: (02) Grade 1
+          3: (03) Grade 2
+          4: (04) Grade 3
+          5: (05) Grade 4
+          6: (06) Grade 5
+          7: (07) Grade 6
+          8: (08) Grade 7
+          9: (09) Grade 8
+          10: (10) Grade 9
+          11: (11) Grade 10
+          12: (12) Grade 11
+          13: (13) Grade 12
+          14: (14) Ungraded
+          98: (x) Don’t know
+          99: (r) Refusal
+  - id: b_s9_p1_school_services
+    title: Education, training, therapy and last school year
+    precondition:
+    - predicate: not (E4.outcome == 1)
+      hint: Asked only when question E4 is not "(1) Yes".
+    items:
+    - id: E20a
+      kind: Question
+      title: 'E20. In APRIL 2001, what type of education, training or therapy was ..... receiving at school? I will read you a list. Please answer yes or no to each. Interviewer: Read list. (a) Academic subjects'
+      input:
+        control: Radio
+        labels:
+          1: (1) Yes
+          3: (3) No
+          98: (x) Don’t know
+          99: (r) Refusal
+    - id: E20b
+      kind: Question
+      title: E20. (b) Life skills
+      input:
+        control: Radio
+        labels:
+          1: (1) Yes
+          3: (3) No
+          98: (x) Don’t know
+          99: (r) Refusal
+    - id: E20c
+      kind: Question
+      title: E20. (c) Speech and language therapy
+      input:
+        control: Radio
+        labels:
+          1: (1) Yes
+          3: (3) No
+          98: (x) Don’t know
+          99: (r) Refusal
+    - id: E20d
+      kind: Question
+      title: E20. (d) Mental health or counselling services
+      input:
+        control: Radio
+        labels:
+          1: (1) Yes
+          3: (3) No
+          98: (x) Don’t know
+          99: (r) Refusal
+    - id: E21
+      kind: Question
+      title: 'The next few questions are about the last school year, that is to say, the one which finished in June 2001. Based on your knowledge of his/her school work, including his/her report cards, how did ..... do during the last school year? Interviewer: Read list. Mark one only.'
+      input:
+        control: Radio
+        labels:
+          1: (1) Very well
+          2: (2) Well
+          3: (3) Average
+          4: (4) Poorly
+          5: (5) Very poorly
+          6: (6) Not applicable
+          98: (x) Don’t know
+          99: (r) Refusal
+    - id: E22
+      kind: Question
+      title: 'How often did you (or your spouse/partner) check .....’s homework or provide help with his/her homework during the last school year? Interviewer: Read list. Mark one only.'
+      input:
+        control: Radio
+        labels:
+          1: (1) Never or rarely
+          2: (2) Less than once a month
+          3: (3) At least once a month
+          4: (4) At least once a week
+          5: (5) A few times a week
+          6: (6) Every day
+          98: (x) Don’t know
+          99: (r) Refusal
+    - id: E23a
+      kind: Question
+      title: 'E23. Because of a condition or health problem: Interviewer: Read list. (a) did .....have to leave his/her community to attend school?'
+      input:
+        control: Radio
+        labels:
+          1: (1) Yes
+          3: (3) No
+          98: (x) Don’t know
+          99: (r) Refusal
+    - id: E23b
+      kind: Question
+      title: E23. (b) was his/her schooling interrupted for long periods of time?
+      input:
+        control: Radio
+        labels:
+          1: (1) Yes
+          3: (3) No
+          98: (x) Don’t know
+          99: (r) Refusal
+    - id: E23c
+      kind: Question
+      title: E23. (c) did .....take fewer courses or academic subjects at school?
+      input:
+        control: Radio
+        labels:
+          1: (1) Yes
+          3: (3) No
+          98: (x) Don’t know
+          99: (r) Refusal
+    - id: E23d
+      kind: Question
+      title: E23. (d) did it take .....longer to achieve his/her present level of education?
+      input:
+        control: Radio
+        labels:
+          1: (1) Yes
+          3: (3) No
+          98: (x) Don’t know
+          99: (r) Refusal
+    - id: E24a
+      kind: Question
+      title: 'E24. Did a condition or health problem limit .....’s participation in any of the following SCHOOL ACTIVITIES during the last school year (which ended in June 2001)? Interviewer: Read list. (a) Taking part in physical education or organized games requiring physical activity'
+      input:
+        control: Radio
+        labels:
+          1: (1) Yes
+          3: (3) No
+          98: (x) Don’t know
+          99: (r) Refusal
+    - id: E24b
+      kind: Question
+      title: E24. (b) Playing with others during recess or lunch hour
+      input:
+        control: Radio
+        labels:
+          1: (1) Yes
+          3: (3) No
+          98: (x) Don’t know
+          99: (r) Refusal
+    - id: E24c
+      kind: Question
+      title: E24. (c) Taking part in school outings, such as visits to a museum
+      input:
+        control: Radio
+        labels:
+          1: (1) Yes
+          3: (3) No
+          98: (x) Don’t know
+          99: (r) Refusal
+    - id: E24d
+      kind: Question
+      title: E24. (d) Classroom participation
+      input:
+        control: Radio
+        labels:
+          1: (1) Yes
+          3: (3) No
+          98: (x) Don’t know
+          99: (r) Refusal
+    - id: E25
+      kind: Question
+      title: Please remember the questions are about the last school year, that is to say, the one which finished in June 2001. Because of a condition or health problem, did ..... USE any special building features or equipment, such as ramps or automatic door openers AT SCHOOL?
+      input:
+        control: Radio
+        labels:
+          1: (1) Yes
+          3: (3) No
+          98: (x) Don’t know
+          99: (r) Refusal
+  - id: b_s9_p1_school_features
+    title: Special features used at school
+    precondition:
+    - predicate: not (E4.outcome == 1)
+      hint: Asked only when question E4 is not "(1) Yes".
+    - predicate: not (E25.outcome in [3, 98, 99])
+      hint: Asked only when question E25 is none of "(3) No", "(x) Don’t know", "(r) Refusal".
+    items:
+    - id: E26a
+      kind: Question
+      title: 'E26. Which kind of special features did he/she USE at school? I will read you a list. Please answer yes or no to each. Interviewer: Read list. (a) Ramps or street level entrances'
+      input:
+        control: Radio
+        labels:
+          1: (1) Yes
+          3: (3) No
+          98: (x) Don’t know
+          99: (r) Refusal
+  - id: b_s9_p2_e26
+    title: School accessibility features available
+    precondition:
+    - predicate: not (E4.outcome == 1)
+      hint: Asked only when question E4 is not "(1) Yes".
+    - predicate: not (E25.outcome in [3, 98, 99])
+      hint: Asked only when question E25 is none of "(3) No", "(x) Don’t know", "(r) Refusal".
+    items:
+    - id: E26b
+      kind: Question
+      title: E26. (b) Widened doorways or hallways
+      input:
+        control: Radio
+        labels:
+          1: (1) Yes
+          3: (3) No
+          98: (x) Don’t know
+          99: (r) Refusal
+    - id: E26c
+      kind: Question
+      title: E26. (c) Automatic or easy to open doors
+      input:
+        control: Radio
+        labels:
+          1: (1) Yes
+          3: (3) No
+          98: (x) Don’t know
+          99: (r) Refusal
+    - id: E26d
+      kind: Question
+      title: E26. (d) An elevator or lift device
+      input:
+        control: Radio
+        labels:
+          1: (1) Yes
+          3: (3) No
+          98: (x) Don’t know
+          99: (r) Refusal
+    - id: E26e
+      kind: Question
+      title: E26. (e) Special railings in washrooms
+      input:
+        control: Radio
+        labels:
+          1: (1) Yes
+          3: (3) No
+          98: (x) Don’t know
+          99: (r) Refusal
+    - id: E26f
+      kind: Question
+      title: E26. (f) Other feature, specify
+      input:
+        control: Radio
+        labels:
+          1: (1) Yes
+          3: (3) No
+          98: (x) Don’t know
+          99: (r) Refusal
+  - id: b_s9_p2_e27_e30
+    title: School features, aids and services needed
+    precondition:
+    - predicate: not (E4.outcome == 1)
+      hint: Asked only when question E4 is not "(1) Yes".
+    items:
+    - id: E27
+      kind: Question
+      title: Because of a condition or a health problem, did ..... NEED any special features or equipment, such as ramps or automatic door openers AT SCHOOL, which were not available?
+      input:
+        control: Radio
+        labels:
+          1: (1) Yes
+          3: (3) No
+          98: (x) Don’t know
+          99: (r) Refusal
+    - id: E28
+      kind: Question
+      title: 'What kind of special features or equipment did he/she need AT SCHOOL, but did not have? Interviewer: Do NOT read list. Mark all that apply.'
+      input:
+        control: Checkbox
+        labels:
+          1: (a) Ramps or street level entrances
+          2: (b) Widened doorways or hallways
+          4: (c) Automatic or easy to open doors
+          8: (d) An elevator or lift device
+          16: (e) Special railings in washrooms
+          32: (f) Other feature, specify
+          64: (x) Don’t know
+          128: (r) Refusal
+    - id: E29a
+      kind: Question
+      title: 'E29. During the last school year, did ..... USE any assistive aids, devices or services AT SCHOOL? I will read you a list. Please answer yes or no to each. Interviewer: Read list. (a) Tutors or teacher’s aides'
+      input:
+        control: Radio
+        labels:
+          1: (1) Yes
+          3: (3) No
+          98: (x) Don’t know
+          99: (r) Refusal
+    - id: E29b
+      kind: Question
+      title: E29. (b) Note takers or readers
+      input:
+        control: Radio
+        labels:
+          1: (1) Yes
+          3: (3) No
+          98: (x) Don’t know
+          99: (r) Refusal
+    - id: E29c
+      kind: Question
+      title: E29. (c) Sign language interpreters
+      input:
+        control: Radio
+        labels:
+          1: (1) Yes
+          3: (3) No
+          98: (x) Don’t know
+          99: (r) Refusal
+    - id: E29d
+      kind: Question
+      title: E29. (d) Attendant care services
+      input:
+        control: Radio
+        labels:
+          1: (1) Yes
+          3: (3) No
+          98: (x) Don’t know
+          99: (r) Refusal
+    - id: E29e
+      kind: Question
+      title: E29. (e) Amplifiers, such as FM or infrared
+      input:
+        control: Radio
+        labels:
+          1: (1) Yes
+          3: (3) No
+          98: (x) Don’t know
+          99: (r) Refusal
+    - id: E29f
+      kind: Question
+      title: E29. (f) Talking books
+      input:
+        control: Radio
+        labels:
+          1: (1) Yes
+          3: (3) No
+          98: (x) Don’t know
+          99: (r) Refusal
+    - id: E29g
+      kind: Question
+      title: E29. (g) Magnifiers
+      input:
+        control: Radio
+        labels:
+          1: (1) Yes
+          3: (3) No
+          98: (x) Don’t know
+          99: (r) Refusal
+    - id: E29h
+      kind: Question
+      title: E29. (h) Recording equipment
+      input:
+        control: Radio
+        labels:
+          1: (1) Yes
+          3: (3) No
+          98: (x) Don’t know
+          99: (r) Refusal
+    - id: E29i
+      kind: Question
+      title: E29. (i) A computer with Braille or speech access
+      input:
+        control: Radio
+        labels:
+          1: (1) Yes
+          3: (3) No
+          98: (x) Don’t know
+          99: (r) Refusal
+    - id: E29j
+      kind: Question
+      title: E29. (j) Other aid or service, specify
+      input:
+        control: Radio
+        labels:
+          1: (1) Yes
+          3: (3) No
+          98: (x) Don’t know
+          99: (r) Refusal
+    - id: E30
+      kind: Question
+      title: Were there any assistive aids, devices or services that ..... needed AT SCHOOL, but did not have?
+      input:
+        control: Radio
+        labels:
+          1: (1) Yes
+          3: (3) No
+          98: (x) Don’t know
+          99: (r) Refusal
+  - id: b_s10_preamble
+    title: Interview setup
+    precondition:
+    - predicate: not (E4.outcome == 1)
+      hint: Asked only when question E4 is not "(1) Yes".
+    items:
+    - id: BORN_AFTER_1996_05_15_2
+      kind: Question
+      title: 'External input: whether the child was born AFTER May 15, 1996 (from the sample file / child''s date of birth). Sections F, G and H are NOT asked if so.'
+      external: true
+      input:
+        control: Radio
+        labels:
+          1: Yes, born after May 15, 1996
+          3: 'No'
+  - id: b_s10_school_experience
+    title: Aids, parental involvement, school experience and transportation
+    precondition:
+    - predicate: not (E4.outcome == 1)
+      hint: Asked only when question E4 is not "(1) Yes".
+    items:
+    - id: E31
+      kind: Question
+      title: 'What kind of assistive aids or services did he/she need AT SCHOOL, but did not have? Interviewer: Do NOT read list. Mark all that apply.'
+      input:
+        control: Checkbox
+        labels:
+          1: (a) Tutors or teacher’s aides
+          2: (b) Note takers or readers
+          4: (c) Sign language interpreters
+          8: (d) Attendant care services
+          16: (e) Amplifiers, such as FM or infrared
+          32: (f) Talking books
+          64: (g) Magnifiers
+          128: (h) Recording equipment
+          256: (i) A computer with Braille or speech access
+          512: (j) Other aid or service, specify
+          1024: (x) Don’t know
+          2048: (r) Refusal
+    - id: E32a
+      kind: Question
+      title: 'Why didn’t ..... have these aids or services AT SCHOOL? (a) School funding cutbacks or lack of funding in the school system. Interviewer: Read list.'
+      input:
+        control: Radio
+        labels:
+          1: 'Yes'
+          3: 'No'
+          7: DK
+          9: Ref
+    - id: E32b
+      kind: Question
+      title: (b) School did not think child needed assistive aids or services.
+      input:
+        control: Radio
+        labels:
+          1: 'Yes'
+          3: 'No'
+          7: DK
+          9: Ref
+    - id: E32c
+      kind: Question
+      title: (c) Child did not want to use assistive aids or services.
+      input:
+        control: Radio
+        labels:
+          1: 'Yes'
+          3: 'No'
+          7: DK
+          9: Ref
+    - id: E32d
+      kind: Question
+      title: (d) Other reason, specify.
+      input:
+        control: Radio
+        labels:
+          1: 'Yes'
+          3: 'No'
+          7: DK
+          9: Ref
+    - id: E33a
+      kind: Question
+      title: 'During the last school year, have you (or your partner/spouse) done any of the following for ..... ? (a) Spoken to, visited or corresponded with child’s teacher. Interviewer: Read list.'
+      input:
+        control: Radio
+        labels:
+          1: 'Yes'
+          3: 'No'
+          7: DK
+          9: Ref
+    - id: E33b
+      kind: Question
+      title: (b) Attended a school event in which child participated, for example, a play, sports competition, or science fair.
+      input:
+        control: Radio
+        labels:
+          1: 'Yes'
+          3: 'No'
+          7: DK
+          9: Ref
+    - id: E33c
+      kind: Question
+      title: (c) Volunteered in child’s class or helped with a class trip.
+      input:
+        control: Radio
+        labels:
+          1: 'Yes'
+          3: 'No'
+          7: DK
+          9: Ref
+    - id: E33d
+      kind: Question
+      title: (d) Helped elsewhere in the school, such as in the library or computer room.
+      input:
+        control: Radio
+        labels:
+          1: 'Yes'
+          3: 'No'
+          7: DK
+          9: Ref
+    - id: E33e
+      kind: Question
+      title: (e) Attended a parent-school association, parent advisory committee or parent council meeting.
+      input:
+        control: Radio
+        labels:
+          1: 'Yes'
+          3: 'No'
+          7: DK
+          9: Ref
+    - id: E33f
+      kind: Question
+      title: (f) Fundraising for school.
+      input:
+        control: Radio
+        labels:
+          1: 'Yes'
+          3: 'No'
+          7: DK
+          9: Ref
+    - id: E33g
+      kind: Question
+      title: (g) Other activity, specify.
+      input:
+        control: Radio
+        labels:
+          1: 'Yes'
+          3: 'No'
+          7: DK
+          9: Ref
+    - id: E34a
+      kind: Question
+      title: 'Do you strongly agree, agree, disagree, or strongly disagree with the following descriptions of the school that ..... attended during the last school year? (a) The school offered parents many opportunities to be involved in the school activities. Interviewer: Read list.'
+      input:
+        control: Radio
+        labels:
+          1: Strongly agree
+          2: Agree
+          3: Disagree
+          4: Strongly disagree
+          7: DK
+          9: Ref
+    - id: E34b
+      kind: Question
+      title: (b) Parents were made to feel welcome in the school.
+      input:
+        control: Radio
+        labels:
+          1: Strongly agree
+          2: Agree
+          3: Disagree
+          4: Strongly disagree
+          7: DK
+          9: Ref
+    - id: E34c
+      kind: Question
+      title: (c) Overall, the school accommodated the child’s condition or health problem.
+      input:
+        control: Radio
+        labels:
+          1: Strongly agree
+          2: Agree
+          3: Disagree
+          4: Strongly disagree
+          7: DK
+          9: Ref
+    - id: E35
+      kind: Question
+      title: 'With regard to how he/she feels about school, how often did ..... look forward to going to school during the last school year? Interviewer: Read list. Mark one only.'
+      input:
+        control: Radio
+        labels:
+          1: Almost never
+          2: Rarely
+          3: Sometimes
+          4: Often
+          5: Almost always
+          7: Don’t know
+          9: Refusal
+    - id: E36
+      kind: Question
+      title: 'During the last school year, what was the method of transportation ..... used MOST OFTEN to get to school? Interviewer: Read list. Mark one only.'
+      input:
+        control: Radio
+        labels:
+          1: Was driven to school by family motor vehicle
+          2: School bus
+          3: Regular city bus
+          4: Specialized bus services for persons with disabilities
+          5: Walked or biked to school
+          6: Other, specify
+          7: Don’t know
+          9: Refusal
+  - id: b_s10_assessment
+    title: Professional assessment
+    items:
+    - id: E37
+      kind: Question
+      title: Has a professional assessment ever been done to determine .....’s educational needs?
+      input:
+        control: Radio
+        labels:
+          1: 'Yes'
+          3: 'No'
+          7: Don’t know
+          9: Refusal
+    - id: E38a
+      kind: Question
+      title: 'Who completed this assessment? (a) Psychologist or psychiatrist. Interviewer: Read list.'
+      input:
+        control: Radio
+        labels:
+          1: 'Yes'
+          3: 'No'
+          7: DK
+          9: Ref
+    - id: E38b
+      kind: Question
+      title: (b) Social worker.
+      input:
+        control: Radio
+        labels:
+          1: 'Yes'
+          3: 'No'
+          7: DK
+          9: Ref
+    - id: E38c
+      kind: Question
+      title: (c) Special education consultant.
+      input:
+        control: Radio
+        labels:
+          1: 'Yes'
+          3: 'No'
+          7: DK
+          9: Ref
+    - id: E38d
+      kind: Question
+      title: (d) Speech or language therapist.
+      input:
+        control: Radio
+        labels:
+          1: 'Yes'
+          3: 'No'
+          7: DK
+          9: Ref
+    - id: E38e
+      kind: Question
+      title: (e) Other professional or specialist, specify.
+      input:
+        control: Radio
+        labels:
+          1: 'Yes'
+          3: 'No'
+          7: DK
+          9: Ref
+  - id: b_s11_leisure
+    title: SECTION F — LEISURE AND RECREATION ACTIVITIES
+    precondition:
+    - predicate: BORN_AFTER_1996_05_15_2.outcome != 1
+      hint: Asked only when question BORN_AFTER_1996_05_15 is not "Yes, born after May 15, 1996".
+    items:
+    - id: F1a
+      kind: Question
+      title: 'The next few questions are about .....’s interests and activities. In the last 12 months, OUTSIDE OF SCHOOL HOURS, how often has he/she: (a) taken part in sports with a coach or instructor (except dance or gymnastics)? Interviewer: Read categories. Mark one only.'
+      input:
+        control: Radio
+        labels:
+          1: Every-day
+          2: At least once a week
+          3: At least once a month
+          4: Less than once a month
+          5: Never
+          7: DK
+          9: Ref
+    - id: F1a_hours
+      kind: Question
+      title: 'How many hours a day? Interviewer: Round to the nearest full hour. (F1a)'
+      input:
+        control: Editbox
+        min: 0
+        max: 24
+    - id: F1b
+      kind: Question
+      title: (b) taken lessons or instruction in other organized physical activities with a coach or instructor, such as dance, gymnastics or martial arts?
+      input:
+        control: Radio
+        labels:
+          1: Every-day
+          2: At least once a week
+          3: At least once a month
+          4: Less than once a month
+          5: Never
+          7: DK
+          9: Ref
+    - id: F1b_hours
+      kind: Question
+      title: 'How many hours a day? Interviewer: Round to the nearest full hour. (F1b)'
+      input:
+        control: Editbox
+        min: 0
+        max: 24
+    - id: F1c
+      kind: Question
+      title: (c) taken part in unorganized sports or physical activities without a coach or instructor?
+      input:
+        control: Radio
+        labels:
+          1: Every-day
+          2: At least once a week
+          3: At least once a month
+          4: Less than once a month
+          5: Never
+          7: DK
+          9: Ref
+    - id: F1c_hours
+      kind: Question
+      title: 'How many hours a day? Interviewer: Round to the nearest full hour. (F1c)'
+      input:
+        control: Editbox
+        min: 0
+        max: 24
+    - id: F1d
+      kind: Question
+      title: (d) taken lessons or instruction in music, art or other non-sport activities?
+      input:
+        control: Radio
+        labels:
+          1: Every-day
+          2: At least once a week
+          3: At least once a month
+          4: Less than once a month
+          5: Never
+          7: DK
+          9: Ref
+    - id: F1d_hours
+      kind: Question
+      title: 'How many hours a day? Interviewer: Round to the nearest full hour. (F1d)'
+      input:
+        control: Editbox
+        min: 0
+        max: 24
+    - id: F1e
+      kind: Question
+      title: (e) taken part in clubs, groups or community programs, such as church groups, Girl or Boy Scouts?
+      input:
+        control: Radio
+        labels:
+          1: Every-day
+          2: At least once a week
+          3: At least once a month
+          4: Less than once a month
+          5: Never
+          7: DK
+          9: Ref
+    - id: F1e_hours
+      kind: Question
+      title: 'How many hours a day? Interviewer: Round to the nearest full hour. (F1e)'
+      input:
+        control: Editbox
+        min: 0
+        max: 24
+    - id: F2a
+      kind: Question
+      title: 'How often does he/she: (a) watch T.V.? Interviewer: Read categories. Mark one only.'
+      input:
+        control: Radio
+        labels:
+          1: Every-day
+          2: At least once a week
+          3: At least once a month
+          4: Less than once a month
+          5: Never
+          7: DK
+          9: Ref
+    - id: F2a_hours
+      kind: Question
+      title: 'How many hours a day? Interviewer: Round to the nearest full hour. (F2a)'
+      input:
+        control: Editbox
+        min: 0
+        max: 24
+    - id: F2b
+      kind: Question
+      title: (b) play computer or video games
+      input:
+        control: Radio
+        labels:
+          1: Every-day
+          2: At least once a week
+          3: At least once a month
+          4: Less than once a month
+          5: Never
+          7: DK
+          9: Ref
+    - id: F2b_hours
+      kind: Question
+      title: 'How many hours a day? Interviewer: Round to the nearest full hour. (F2b)'
+      input:
+        control: Editbox
+        min: 0
+        max: 24
+    - id: F2c
+      kind: Question
+      title: (c) talk on the phone with friends
+      input:
+        control: Radio
+        labels:
+          1: Every-day
+          2: At least once a week
+          3: At least once a month
+          4: Less than once a month
+          5: Never
+          7: DK
+          9: Ref
+    - id: F2c_hours
+      kind: Question
+      title: 'How many hours a day? Interviewer: Round to the nearest full hour. (F2c)'
+      input:
+        control: Editbox
+        min: 0
+        max: 24
+    - id: F3
+      kind: Question
+      title: 'How often does ..... read or have books read to him/her (for pleasure)? Please do not include reading that is required for school. Interviewer: Read list. Mark one only.'
+      input:
+        control: Radio
+        labels:
+          1: Everyday
+          2: At least once a week
+          3: At least once a month
+          4: Less than once a month
+          5: Never
+          7: Don’t know
+          9: Refusal
+    - id: F3_hours
+      kind: Question
+      title: 'How many hours a day? Interviewer: Round to the nearest full hour. (asked under F3 option 1, Everyday)'
+      precondition:
+      - predicate: F3.outcome == 1
+        hint: Asked only when F3 is "Everyday".
+      input:
+        control: Editbox
+        min: 0
+        max: 24
+    - id: F4
+      kind: Question
+      title: 'Outside of school hours, how often does he/she play alone, for example, riding a bike or doing a craft? Interviewer: Read list. Mark one only.'
+      input:
+        control: Radio
+        labels:
+          1: Often
+          2: Sometimes
+          3: Seldom
+          4: Never
+          7: Don’t know
+          9: Refusal
+    - id: F5
+      kind: Question
+      title: Has ..... ever gone to summer camps (including regular or special camps)?
+      input:
+        control: Radio
+        labels:
+          1: 'Yes'
+          3: 'No'
+          7: Don’t know
+          9: Refusal
+    - id: F6
+      kind: Question
+      title: Was this a camp for children with a health problem or condition?
+      precondition:
+      - predicate: not (F5.outcome in [3, 7, 9])
+        hint: Asked only when question F5 is none of "No", "Don’t know", "Refusal".
+      input:
+        control: Radio
+        labels:
+          1: 'Yes'
+          3: 'No'
+          7: Don’t know
+          9: Refusal
+    - id: F7
+      kind: Question
+      title: Because of a condition or health problem, is ..... prevented from taking part in any social or physical leisure activities?
+      input:
+        control: Radio
+        labels:
+          1: 'Yes'
+          3: 'No'
+          7: Don’t know
+          9: Refusal
+  - id: b_s11_barriers
+    title: What prevents more leisure activities
+    precondition:
+    - predicate: BORN_AFTER_1996_05_15_2.outcome != 1
+      hint: Asked only when question BORN_AFTER_1996_05_15 is not "Yes, born after May 15, 1996".
+    - predicate: not (F7.outcome in [3, 7, 9])
+      hint: Asked only when question F7 is none of "No", "Don’t know", "Refusal".
+    items:
+    - id: F8a
+      kind: Question
+      title: 'What prevents ..... from doing more social or physical leisure activities? (a) Recreational facilities or programs not available locally. Interviewer: Read list.'
+      input:
+        control: Radio
+        labels:
+          1: 'Yes'
+          3: 'No'
+          7: DK
+          9: Ref
+    - id: F8b
+      kind: Question
+      title: (b) Buildings and equipment not physically accessible.
+      input:
+        control: Radio
+        labels:
+          1: 'Yes'
+          3: 'No'
+          7: DK
+          9: Ref
+    - id: F8c
+      kind: Question
+      title: (c) Inadequate transportation services
+      input:
+        control: Radio
+        labels:
+          1: 'Yes'
+          3: 'No'
+          7: DK
+          9: Ref
+    - id: F8d
+      kind: Question
+      title: (d) Too expensive
+      input:
+        control: Radio
+        labels:
+          1: 'Yes'
+          3: 'No'
+          7: DK
+          9: Ref
+    - id: F8e
+      kind: Question
+      title: (e) Child is physically unable to do more.
+      input:
+        control: Radio
+        labels:
+          1: 'Yes'
+          3: 'No'
+          7: DK
+          9: Ref
+    - id: F8f
+      kind: Question
+      title: (f) Child needs someone’s assistance
+      input:
+        control: Radio
+        labels:
+          1: 'Yes'
+          3: 'No'
+          7: DK
+          9: Ref
+    - id: F8g
+      kind: Question
+      title: (g) Child needs specialized aids or equipment, but he/she doesn’t have them.
+      input:
+        control: Radio
+        labels:
+          1: 'Yes'
+          3: 'No'
+          7: DK
+          9: Ref
+    - id: F8h
+      kind: Question
+      title: (h) Other reason, specify.
+      input:
+        control: Radio
+        labels:
+          1: 'Yes'
+          3: 'No'
+          7: DK
+          9: Ref
+  - id: b_s11_peers_computer
+    title: Getting along with other children; personal computers
+    precondition:
+    - predicate: BORN_AFTER_1996_05_15_2.outcome != 1
+      hint: Asked only when question BORN_AFTER_1996_05_15 is not "Yes, born after May 15, 1996".
+    items:
+    - id: F9
+      kind: Question
+      title: 'DURING THE PAST SIX MONTHS, how well has ..... gotten along with other children, such as friends or classmates (excluding brothers or sisters)? Interviewer: Read list. Mark one only.'
+      input:
+        control: Radio
+        labels:
+          1: Very well (or no problems)
+          2: Quite well (or hardly any problems)
+          3: Pretty well (or occasional problems)
+          4: Not too well (or frequent problems)
+          5: Not well at all (or constant problems)
+          7: Don’t know
+          9: Refusal
+    - id: F10
+      kind: Question
+      title: 'The next few questions deal with the use of the computer and the Internet. How many personal computers are there in your home? Interviewer: Do NOT read list. Mark one only.'
+      input:
+        control: Radio
+        labels:
+          1: None
+          2: One
+          3: Two
+          4: Three or more
+          7: Don’t know
+          9: Refusal
+  - id: b_s11_internet_home
+    title: Computer and Internet at home
+    precondition:
+    - predicate: BORN_AFTER_1996_05_15_2.outcome != 1
+      hint: Asked only when question BORN_AFTER_1996_05_15 is not "Yes, born after May 15, 1996".
+    - predicate: not (F10.outcome in [7, 9])
+      hint: Asked only when question F10 is none of "Don’t know", "Refusal".
+    items:
+    - id: F11
+      kind: Question
+      title: 'What are the reasons that keep you from purchasing a personal computer? Interviewer: Do NOT read list. Mark all that apply.'
+      precondition:
+      - predicate: not (F10.outcome in [2, 3, 4])
+        hint: Asked only when question F10 is none of "One", "Two", "Three or more".
+      input:
+        control: Checkbox
+        labels:
+          1: (a) Cost
+          2: (b) Not needed at home
+          4: (c) Not interested
+          8: (d) Lack of computer skills or training
+          16: (e) Fear of technology
+          32: (f) Disability
+          64: (g) Other, specify
+          128: (x) Don’t know
+          256: (r) Refusal
+    - id: F12
+      kind: Question
+      title: Is your household connected to the Internet?
+      input:
+        control: Radio
+        labels:
+          1: 'Yes'
+          3: 'No'
+          7: Don’t know
+          9: Refusal
+    - id: F13
+      kind: Question
+      title: 'What are the reasons that keep you from getting Internet access for your HOME? Interviewer: Do NOT read list. Mark all that apply.'
+      precondition:
+      - predicate: not (F12.outcome == 1)
+        hint: Asked only when question F12 is not "Yes".
+      input:
+        control: Checkbox
+        labels:
+          1: (a) Cost
+          2: (b) Not needed at home
+          4: (c) Not interested
+          8: (d) Lack of computer skills or training
+          16: (e) Fear of technology
+          32: (f) Disability
+          64: (g) Other, specify
+          128: (x) Don’t know
+          256: (r) Refusal
+    - id: F14
+      kind: Question
+      title: Does ..... use the Internet AT HOME?
+      input:
+        control: Radio
+        labels:
+          1: 'Yes'
+          3: 'No'
+          7: Don’t know
+          9: Refusal
+  - id: b_s11_internet_use
+    title: Child's Internet use at home
+    precondition:
+    - predicate: BORN_AFTER_1996_05_15_2.outcome != 1
+      hint: Asked only when question BORN_AFTER_1996_05_15 is not "Yes, born after May 15, 1996".
+    - predicate: not (F10.outcome in [7, 9])
+      hint: Asked only when question F10 is none of "Don’t know", "Refusal".
+    - predicate: not (F14.outcome in [7, 9])
+      hint: Asked only when question F14 is none of "Don’t know", "Refusal".
+    items:
+    - id: F15
+      kind: Question
+      title: 'What are the reasons that keep ..... from using the Internet at home? Interviewer: Do NOT read list. Mark all that apply.'
+      input:
+        control: Checkbox
+        labels:
+          1: (a) Child too young or not ready to use it
+          2: (b) Child does not need it
+          4: (c) Child is not interested
+          8: (d) Child does not have the computer skills or training
+          16: (e) Child’s condition or health problem
+          32: (f) Other, specify
+          64: (x) Don’t know
+          128: (r) Refusal
+    - id: F16a
+      kind: Question
+      title: 'AT HOME, how often does he/she use: (a) Internet to participate in newsgroups or chat groups? Interviewer: Read categories. Mark one only.'
+      input:
+        control: Radio
+        labels:
+          1: Every-day
+          2: At least once a week
+          3: At least once a month
+          4: Less than once a month
+          5: Never
+          7: DK
+          9: Ref
+    - id: F16a_hours
+      kind: Question
+      title: 'How many hours a day? Interviewer: Round to the nearest full hour. (F16a)'
+      input:
+        control: Editbox
+        min: 0
+        max: 24
+    - id: F16b
+      kind: Question
+      title: (b) Internet for school work?
+      input:
+        control: Radio
+        labels:
+          1: Every-day
+          2: At least once a week
+          3: At least once a month
+          4: Less than once a month
+          5: Never
+          7: DK
+          9: Ref
+    - id: F16b_hours
+      kind: Question
+      title: 'How many hours a day? Interviewer: Round to the nearest full hour. (F16b)'
+      input:
+        control: Editbox
+        min: 0
+        max: 24
+    - id: F16c
+      kind: Question
+      title: (c) Internet for personal interest or entertainment?
+      input:
+        control: Radio
+        labels:
+          1: Every-day
+          2: At least once a week
+          3: At least once a month
+          4: Less than once a month
+          5: Never
+          7: DK
+          9: Ref
+    - id: F16c_hours
+      kind: Question
+      title: 'How many hours a day? Interviewer: Round to the nearest full hour. (F16c)'
+      input:
+        control: Editbox
+        min: 0
+        max: 24
+    - id: F16d
+      kind: Question
+      title: (d) E-mail to stay in touch with friends?
+      input:
+        control: Radio
+        labels:
+          1: Every-day
+          2: At least once a week
+          3: At least once a month
+          4: Less than once a month
+          5: Never
+          7: DK
+          9: Ref
+    - id: F16d_hours
+      kind: Question
+      title: 'How many hours a day? Interviewer: Round to the nearest full hour. (F16d)'
+      input:
+        control: Editbox
+        min: 0
+        max: 24
+  - id: b_s12_g1
+    title: G1 Special features to enter or leave
+    precondition:
+    - predicate: BORN_AFTER_1996_05_15_2.outcome != 1
+      hint: Asked only when question BORN_AFTER_1996_05_15 is not "Yes, born after May 15, 1996".
+    items:
+    - id: G1
+      kind: Question
+      title: Because of a condition or health problem, does ..... USE any special features, such as access ramps or automatic door openers to ENTER or LEAVE his/her residence?
+      input:
+        control: Radio
+        labels:
+          1: 'Yes'
+          3: 'No'
+          7: Don’t know
+          9: Refusal
+  - id: b_s12_g2
+    title: G2 Which special features used to enter or leave
+    precondition:
+    - predicate: BORN_AFTER_1996_05_15_2.outcome != 1
+      hint: Asked only when question BORN_AFTER_1996_05_15 is not "Yes, born after May 15, 1996".
+    - predicate: not (G1.outcome in [3, 7, 9])
+      hint: Asked only when question G1 is none of "No", "Don’t know", "Refusal".
+    items:
+    - id: G2a
+      kind: Question
+      title: 'Which special features does he/she use? (a) Ramps or street level entrances. Interviewer: Read list.'
+      input:
+        control: Radio
+        labels:
+          1: 'Yes'
+          3: 'No'
+          7: DK
+          9: Ref
+    - id: G2b
+      kind: Question
+      title: (b) Widened doorways or hallways.
+      input:
+        control: Radio
+        labels:
+          1: 'Yes'
+          3: 'No'
+          7: DK
+          9: Ref
+    - id: G2c
+      kind: Question
+      title: (c) Automatic or easy to open doors.
+      input:
+        control: Radio
+        labels:
+          1: 'Yes'
+          3: 'No'
+          7: DK
+          9: Ref
+    - id: G2d
+      kind: Question
+      title: (d) An elevator or lift device
+      input:
+        control: Radio
+        labels:
+          1: 'Yes'
+          3: 'No'
+          7: DK
+          9: Ref
+    - id: G2e
+      kind: Question
+      title: (e) Other feature, specify
+      input:
+        control: Radio
+        labels:
+          1: 'Yes'
+          3: 'No'
+          7: DK
+          9: Ref
+  - id: b_s12_g3
+    title: G3 Needed features to enter or leave
+    precondition:
+    - predicate: BORN_AFTER_1996_05_15_2.outcome != 1
+      hint: Asked only when question BORN_AFTER_1996_05_15 is not "Yes, born after May 15, 1996".
+    items:
+    - id: G3
+      kind: Question
+      title: Does ..... CURRENTLY need any special features to enter or leave his/her residence, which he/she does not have?
+      input:
+        control: Radio
+        labels:
+          1: 'Yes'
+          3: 'No'
+          7: Don’t know
+          9: Refusal
+  - id: b_s12_g4
+    title: G4 Which features needed to enter or leave
+    precondition:
+    - predicate: BORN_AFTER_1996_05_15_2.outcome != 1
+      hint: Asked only when question BORN_AFTER_1996_05_15 is not "Yes, born after May 15, 1996".
+    - predicate: not (G3.outcome in [3, 7, 9])
+      hint: Asked only when question G3 is none of "No", "Don’t know", "Refusal".
+    items:
+    - id: G4
+      kind: Question
+      title: 'Which special features does ..... NEED, but does not have? Interviewer: Do NOT read list. Mark all that apply.'
+      input:
+        control: Checkbox
+        labels:
+          1: (a) Ramps or street level entrances
+          2: (b) Widened doorways or hallways
+          4: (c) Automatic or easy to open doors
+          8: (d) An elevator or lift device
+          16: (e) Other feature, specify
+          32: (x) Don’t know
+          64: (r) Refusal
+  - id: b_s12_g5
+    title: G5 Why features to enter or leave are missing
+    precondition:
+    - predicate: BORN_AFTER_1996_05_15_2.outcome != 1
+      hint: Asked only when question BORN_AFTER_1996_05_15 is not "Yes, born after May 15, 1996".
+    - predicate: not (G3.outcome in [3, 7, 9])
+      hint: Asked only when question G3 is none of "No", "Don’t know", "Refusal".
+    items:
+    - id: G5a
+      kind: Question
+      title: 'Why doesn’t ..... have these special features that he/she needs to enter or leave his/her residence? (a) Not covered by insurance. Interviewer: Read list.'
+      input:
+        control: Radio
+        labels:
+          1: 'Yes'
+          3: 'No'
+          7: DK
+          9: Ref
+    - id: G5b
+      kind: Question
+      title: (b) Too expensive.
+      input:
+        control: Radio
+        labels:
+          1: 'Yes'
+          3: 'No'
+          7: DK
+          9: Ref
+    - id: G5c
+      kind: Question
+      title: (c) Landlord/landlady not willing.
+      input:
+        control: Radio
+        labels:
+          1: 'Yes'
+          3: 'No'
+          7: DK
+          9: Ref
+    - id: G5d
+      kind: Question
+      title: (d) Only needed occasionally.
+      input:
+        control: Radio
+        labels:
+          1: 'Yes'
+          3: 'No'
+          7: DK
+          9: Ref
+    - id: G5e
+      kind: Question
+      title: (e) Other reason, specify
+      input:
+        control: Radio
+        labels:
+          1: 'Yes'
+          3: 'No'
+          7: DK
+          9: Ref
+  - id: b_s12_g6
+    title: G6 Special features used inside
+    precondition:
+    - predicate: BORN_AFTER_1996_05_15_2.outcome != 1
+      hint: Asked only when question BORN_AFTER_1996_05_15 is not "Yes, born after May 15, 1996".
+    items:
+    - id: G6
+      kind: Question
+      title: Because of a condition or health problem, does ..... USE any special features, such as special railings, grab bars or lift devices INSIDE his/her residence?
+      input:
+        control: Radio
+        labels:
+          1: 'Yes'
+          3: 'No'
+          7: Don’t know
+          9: Refusal
+  - id: b_s12_g7
+    title: G7 Which special features used inside
+    precondition:
+    - predicate: BORN_AFTER_1996_05_15_2.outcome != 1
+      hint: Asked only when question BORN_AFTER_1996_05_15 is not "Yes, born after May 15, 1996".
+    - predicate: not (G6.outcome in [3, 7, 9])
+      hint: Asked only when question G6 is none of "No", "Don’t know", "Refusal".
+    items:
+    - id: G7a
+      kind: Question
+      title: 'Which special features does ..... use INSIDE his/her residence? (a) Grab bars or bath lift device in the bathroom. Interviewer: Read list.'
+      input:
+        control: Radio
+        labels:
+          1: 'Yes'
+          3: 'No'
+          7: DK
+          9: Ref
+    - id: G7b
+      kind: Question
+      title: (b) Lowered counters, sinks or switches in the kitchen.
+      input:
+        control: Radio
+        labels:
+          1: 'Yes'
+          3: 'No'
+          7: DK
+          9: Ref
+    - id: G7c
+      kind: Question
+      title: (c) An elevator or lift device.
+      input:
+        control: Radio
+        labels:
+          1: 'Yes'
+          3: 'No'
+          7: DK
+          9: Ref
+    - id: G7d
+      kind: Question
+      title: (d) Widened doorways or hallways
+      input:
+        control: Radio
+        labels:
+          1: 'Yes'
+          3: 'No'
+          7: DK
+          9: Ref
+    - id: G7e
+      kind: Question
+      title: (e) Automatic or easy to open doors
+      input:
+        control: Radio
+        labels:
+          1: 'Yes'
+          3: 'No'
+          7: DK
+          9: Ref
+    - id: G7f
+      kind: Question
+      title: (f) Visual or flashing alarms
+      input:
+        control: Radio
+        labels:
+          1: 'Yes'
+          3: 'No'
+          7: DK
+          9: Ref
+    - id: G7g
+      kind: Question
+      title: (g) Audio warning devices.
+      input:
+        control: Radio
+        labels:
+          1: 'Yes'
+          3: 'No'
+          7: DK
+          9: Ref
+    - id: G7h
+      kind: Question
+      title: (h) Other feature, specify
+      input:
+        control: Radio
+        labels:
+          1: 'Yes'
+          3: 'No'
+          7: DK
+          9: Ref
+  - id: b_s12_g8
+    title: G8 Needed features inside
+    precondition:
+    - predicate: BORN_AFTER_1996_05_15_2.outcome != 1
+      hint: Asked only when question BORN_AFTER_1996_05_15 is not "Yes, born after May 15, 1996".
+    items:
+    - id: G8
+      kind: Question
+      title: Does ..... CURRENTLY need any special features INSIDE his/her residence, which he/she does not have?
+      input:
+        control: Radio
+        labels:
+          1: 'Yes'
+          3: 'No'
+          7: Don’t know
+          9: Refusal
+  - id: b_s12_g9
+    title: G9 Which features needed inside
+    precondition:
+    - predicate: BORN_AFTER_1996_05_15_2.outcome != 1
+      hint: Asked only when question BORN_AFTER_1996_05_15 is not "Yes, born after May 15, 1996".
+    - predicate: not (G8.outcome in [3, 7, 9])
+      hint: Asked only when question G8 is none of "No", "Don’t know", "Refusal".
+    items:
+    - id: G9
+      kind: Question
+      title: 'Which special features does ..... NEED, but does not have? Interviewer: Do NOT read list. Mark all that apply.'
+      input:
+        control: Checkbox
+        labels:
+          1: (a) Grab bars or bath lift device in the bathroom
+          2: (b) Lowered counters, sinks or switches in the kitchen
+          4: (c) An elevator or lift device
+          8: (d) Widened doorways or hallways
+          16: (e) Automatic or easy to open doors
+          32: (f) Visual or flashing alarms
+          64: (g) Audio warning devices
+          128: (h) Other feature, specify
+          256: (x) Don’t know
+          512: (r) Refusal
+  - id: b_s12_g10
+    title: G10 Why features inside are missing
+    precondition:
+    - predicate: BORN_AFTER_1996_05_15_2.outcome != 1
+      hint: Asked only when question BORN_AFTER_1996_05_15 is not "Yes, born after May 15, 1996".
+    - predicate: not (G8.outcome in [3, 7, 9])
+      hint: Asked only when question G8 is none of "No", "Don’t know", "Refusal".
+    items:
+    - id: G10a
+      kind: Question
+      title: 'Why doesn’t ..... have these special features INSIDE his/her residence? (a) Not covered by insurance. Interviewer: Read list.'
+      input:
+        control: Radio
+        labels:
+          1: 'Yes'
+          3: 'No'
+          7: DK
+          9: Ref
+    - id: G10b
+      kind: Question
+      title: (b) Too expensive.
+      input:
+        control: Radio
+        labels:
+          1: 'Yes'
+          3: 'No'
+          7: DK
+          9: Ref
+    - id: G10c
+      kind: Question
+      title: (c) Landlord/landlady not willing.
+      input:
+        control: Radio
+        labels:
+          1: 'Yes'
+          3: 'No'
+          7: DK
+          9: Ref
+    - id: G10d
+      kind: Question
+      title: (d) Only needed occasionally.
+      input:
+        control: Radio
+        labels:
+          1: 'Yes'
+          3: 'No'
+          7: DK
+          9: Ref
+    - id: G10e
+      kind: Question
+      title: (e) Other reason, specify
+      input:
+        control: Radio
+        labels:
+          1: 'Yes'
+          3: 'No'
+          7: DK
+          9: Ref
+  - id: b_s13_transportation
+    title: SECTION H — TRANSPORTATION
+    precondition:
+    - predicate: BORN_AFTER_1996_05_15_2.outcome != 1
+      hint: Asked only when question BORN_AFTER_1996_05_15 is not "Yes, born after May 15, 1996".
+    items:
+    - id: H1
+      kind: Question
+      title: I would like to ask you about the means of transportation that ..... uses for local travel on his/her own or with someone else. This includes trips to the doctor, recreational events or any other local trips under 80 km (50 miles). Because of .....’s condition, does your car have special features or equipment, such as a lift device or a large trunk to carry a wheelchair?
+      input:
+        control: Radio
+        labels:
+          1: 'Yes'
+          3: 'No'
+          5: DO NOT OWN A CAR
+          7: Don’t know
+          9: Refusal
+    - id: H2
+      kind: Question
+      title: Do you NEED ANY OTHER special features or equipment for your car because of .....’s condition?
+      precondition:
+      - predicate: not (H1.outcome == 3)
+        hint: Asked only when question H1 is not "No".
+      - predicate: not (H1.outcome == 5)
+        hint: Asked only when question H1 is not "DO NOT OWN A CAR".
+      input:
+        control: Radio
+        labels:
+          1: 'Yes'
+          3: 'No'
+          7: Don’t know
+          9: Refusal
+  - id: b_s14_car_equipment
+    title: Special car equipment
+    precondition:
+    - predicate: not (H1.outcome == 5)
+      hint: Asked only when question H1 is not "DO NOT OWN A CAR".
+    - predicate: not (H2.outcome in [7, 9])
+      hint: Asked only when question H2 is none of "Don’t know", "Refusal".
+    items:
+    - id: H3
+      kind: Question
+      title: Because of .....’s condition, do you NEED any special features or equipment (for your car)?
+      input:
+        control: Radio
+        labels:
+          1: 'Yes'
+          3: 'No'
+          98: (x) Don’t know
+          99: (r) Refusal
+  - id: b_s14_car_reasons
+    title: Why special car equipment is not available
+    precondition:
+    - predicate: not (H1.outcome == 5)
+      hint: Asked only when question H1 is not "DO NOT OWN A CAR".
+    - predicate: not (H2.outcome in [7, 9])
+      hint: Asked only when question H2 is none of "Don’t know", "Refusal".
+    - predicate: not (H3.outcome in [3, 98, 99])
+      hint: Asked only when question H3 is none of "No", "(x) Don’t know", "(r) Refusal".
+    items:
+    - id: H4a
+      kind: Question
+      title: 'H4. Why do you not have these special features or equipment for your car? I will read you a list. Please answer yes or no to each. Interviewer: Read list. (a) Not covered by insurance'
+      input:
+        control: Radio
+        labels:
+          1: 'Yes'
+          3: 'No'
+          98: DK
+          99: Ref
+    - id: H4b
+      kind: Question
+      title: H4. (b) Too expensive
+      input:
+        control: Radio
+        labels:
+          1: 'Yes'
+          3: 'No'
+          98: DK
+          99: Ref
+    - id: H4c
+      kind: Question
+      title: H4. (c) Only needed occasionally
+      input:
+        control: Radio
+        labels:
+          1: 'Yes'
+          3: 'No'
+          98: DK
+          99: Ref
+    - id: H4d
+      kind: Question
+      title: H4. (d) Other reason, specify
+      input:
+        control: Radio
+        labels:
+          1: 'Yes'
+          3: 'No'
+          98: DK
+          99: Ref
+  - id: b_s14_bus_service
+    title: Specialized bus service
+    items:
+    - id: H5
+      kind: Question
+      title: Some communities have a specialized bus service for people who have difficulty using regular transportation services. (To use this service, people can call ahead and ask to be picked up). Is this service available in your area?
+      input:
+        control: Radio
+        labels:
+          1: 'Yes'
+          3: 'No'
+          98: (x) Don’t know
+          99: (r) Refusal
+    - id: H6
+      kind: Question
+      title: Does ..... NEED this service?
+      precondition:
+      - predicate: not (H5.outcome == 1)
+        hint: Asked only when question H5 is not "Yes".
+      input:
+        control: Radio
+        labels:
+          1: 'Yes'
+          3: 'No'
+          98: (x) Don’t know
+          99: (r) Refusal
+    - id: H7
+      kind: Question
+      title: Does ..... use this service?
+      input:
+        control: Radio
+        labels:
+          1: 'Yes'
+          3: 'No'
+          98: (x) Don’t know
+          99: (r) Refusal
+  - id: b_s14_bus_use
+    title: Use of the specialized bus service
+    precondition:
+    - predicate: not (H7.outcome in [3, 98, 99])
+      hint: Asked only when question H7 is none of "No", "(x) Don’t know", "(r) Refusal".
+    items:
+    - id: H8
+      kind: Question
+      title: 'How often does he/she use this service? Interviewer: Read list. Mark one only.'
+      input:
+        control: Radio
+        labels:
+          1: Almost everyday for at least some part of the year
+          2: Frequently
+          3: Occasionally
+          4: Seldom
+          98: (x) Don’t know
+          99: (r) Refusal
+    - id: H9
+      kind: Question
+      title: IN THE PAST 12 MONTHS, did ..... have any difficulty using this service?
+      input:
+        control: Radio
+        labels:
+          1: 'Yes'
+          3: 'No'
+          98: (x) Don’t know
+          99: (r) Refusal
+  - id: b_s14_bus_difficulty
+    title: Difficulties using the specialized bus service
+    precondition:
+    - predicate: not (H7.outcome in [3, 98, 99])
+      hint: Asked only when question H7 is none of "No", "(x) Don’t know", "(r) Refusal".
+    - predicate: not (H9.outcome in [98, 99])
+      hint: Asked only when question H9 is none of "(x) Don’t know", "(r) Refusal".
+    - predicate: not (H9.outcome == 3)
+      hint: Asked only when question H9 is not "No".
+    items:
+    - id: H10a
+      kind: Question
+      title: 'H10. What kind of difficulty did he/she have? I will read you a list. Please answer yes or no to each. Interviewer: Read list. (a) Service is needed more often than currently offered'
+      input:
+        control: Radio
+        labels:
+          1: 'Yes'
+          3: 'No'
+          98: DK
+          99: Ref
+    - id: H10b
+      kind: Question
+      title: H10. (b) Impractical scheduling for child’s needs
+      input:
+        control: Radio
+        labels:
+          1: 'Yes'
+          3: 'No'
+          98: DK
+          99: Ref
+    - id: H10c
+      kind: Question
+      title: H10. (c) Booking rules don’t allow for last minute arrangements
+      input:
+        control: Radio
+        labels:
+          1: 'Yes'
+          3: 'No'
+          98: DK
+          99: Ref
+    - id: H10d
+      kind: Question
+      title: H10. (d) Too expensive
+      input:
+        control: Radio
+        labels:
+          1: 'Yes'
+          3: 'No'
+          98: DK
+          99: Ref
+    - id: H10e
+      kind: Question
+      title: H10. (e) Other reason, specify
+      input:
+        control: Radio
+        labels:
+          1: 'Yes'
+          3: 'No'
+          98: DK
+          99: Ref
+  - id: b_s14_taxi
+    title: Taxi use and cancelled activities
+    items:
+    - id: H11
+      kind: Question
+      title: IN THE PAST 12 MONTHS has ..... had to use a taxi service because of his/her condition or health problem?
+      input:
+        control: Radio
+        labels:
+          1: 'Yes'
+          3: 'No'
+          98: (x) Don’t know
+          99: (r) Refusal
+    - id: H12
+      kind: Question
+      title: 'How often did he/she use a taxi service? Interviewer: Read list. Mark one only.'
+      precondition:
+      - predicate: not (H11.outcome in [3, 98, 99])
+        hint: Asked only when question H11 is none of "No", "(x) Don’t know", "(r) Refusal".
+      input:
+        control: Radio
+        labels:
+          1: Almost everyday for at least some part of the year
+          2: Frequently
+          3: Occasionally
+          4: Seldom
+          98: (x) Don’t know
+          99: (r) Refusal
+    - id: H13
+      kind: Question
+      title: IN THE PAST 12 MONTHS, for local trips which you must take with ....., have you had to cancel or reschedule some activities because of problems with transportation services?
+      input:
+        control: Radio
+        labels:
+          1: 'Yes'
+          3: 'No'
+          98: (x) Don’t know
+          99: (r) Refusal
+    - id: H14
+      kind: Question
+      title: IN THE PAST 12 MONTHS, did you or your family have any OUT-OF-POCKET expenses for .....’s transportation, for example, his/her travel to and from treatment, therapy or other medical or rehabilitation services?
+      input:
+        control: Radio
+        labels:
+          1: 'Yes'
+          3: 'No'
+          98: (x) Don’t know
+          99: (r) Refusal
+  - id: b_s14_costs
+    title: Transportation costs
+    precondition:
+    - predicate: not (H14.outcome in [3, 98, 99])
+      hint: Asked only when question H14 is none of "No", "(x) Don’t know", "(r) Refusal".
+    items:
+    - id: H15
+      kind: Question
+      title: What is your best estimate of the OUT-OF-POCKET or DIRECT costs to you or your family for these extra expenses? $ .00
+      input:
+        control: Editbox
+        min: 1
+        max: 999999
+        left: $
+    - id: H16
+      kind: Question
+      title: 'Which one of the following expense groups is the best estimate of the direct costs to you or your family? I will read you a list. Interviewer: Read list. Mark one only.'
+      precondition:
+      - predicate: H15.outcome is None or not (H15.outcome >= 1)
+        hint: Asked only when no dollar amount was given in question H15.
+      input:
+        control: Radio
+        labels:
+          1: Less than $100
+          2: $100 to less than $200
+          3: $200 to less than $500
+          4: $500 to less than $1000
+          5: $1000 to less than $2000
+          6: $2000 to less than $5000
+          7: $5000 or more
+          98: (x) Don’t know
+          99: (r) Refusal
+  - id: b_s15_insurance
+    title: Insurance coverage
+    items:
+    - id: I1a
+      kind: Question
+      title: 'I1. This question is about insurance coverage. Please include any private, government or employer-paid plans. Do you have insurance that covers all or part of: Interviewer: Read list. (a) the cost of .....’s prescription medications?'
+      input:
+        control: Radio
+        labels:
+          1: 'Yes'
+          3: 'No'
+          98: DK
+          99: Ref
+    - id: I1b
+      kind: Question
+      title: I1. (b) the cost of ....’s eye glasses or contact lenses?
+      input:
+        control: Radio
+        labels:
+          1: 'Yes'
+          3: 'No'
+          98: DK
+          99: Ref
+    - id: I1c
+      kind: Question
+      title: I1. (c) hospital charges for a private or semi-private room?
+      input:
+        control: Radio
+        labels:
+          1: 'Yes'
+          3: 'No'
+          98: DK
+          99: Ref
+  - id: b_s15_tax_credits
+    title: Federal income tax credits
+    items:
+    - id: I2
+      kind: Question
+      title: The next few questions are about FEDERAL income tax credits. Did you claim Child Care Expenses for ..... with your 2000 income tax return?
+      input:
+        control: Radio
+        labels:
+          1: 'Yes'
+          3: 'No'
+          98: (x) Don’t know
+          99: (r) Refusal
+    - id: I3
+      kind: Question
+      title: Did you receive it?
+      precondition:
+      - predicate: not (I2.outcome in [3, 98, 99])
+        hint: Asked only when question I2 is none of "No", "(x) Don’t know", "(r) Refusal".
+      input:
+        control: Radio
+        labels:
+          1: 'Yes'
+          3: 'No'
+          98: (x) Don’t know
+          99: (r) Refusal
+    - id: I4
+      kind: Question
+      title: Did you claim Medical Expenses for ..... with your 2000 income tax return?
+      input:
+        control: Radio
+        labels:
+          1: 'Yes'
+          3: 'No'
+          98: (x) Don’t know
+          99: (r) Refusal
+    - id: I5
+      kind: Question
+      title: Did you receive it?
+      precondition:
+      - predicate: not (I4.outcome in [3, 98, 99])
+        hint: Asked only when question I4 is none of "No", "(x) Don’t know", "(r) Refusal".
+      input:
+        control: Radio
+        labels:
+          1: 'Yes'
+          3: 'No'
+          98: (x) Don’t know
+          99: (r) Refusal
+    - id: I6
+      kind: Question
+      title: Did you claim a Disability Tax Credit for ...... with your 2000 income tax return?
+      input:
+        control: Radio
+        labels:
+          1: 'Yes'
+          3: 'No'
+          98: (x) Don’t know
+          99: (r) Refusal
+    - id: I7
+      kind: Question
+      title: Did you receive it?
+      precondition:
+      - predicate: not (I6.outcome == 3)
+        hint: Asked only when question I6 is not "No".
+      input:
+        control: Radio
+        labels:
+          1: 'Yes'
+          3: 'No'
+          98: (x) Don’t know
+          99: (r) Refusal
+    - id: I8a
+      kind: Question
+      title: 'I8. Why did you not claim the Disability Tax Credit? Interviewer: Read list. (a) You did not know it existed'
+      input:
+        control: Radio
+        labels:
+          1: 'Yes'
+          3: 'No'
+          98: DK
+          99: Ref
+  - id: b_s15_i8_reasons
+    title: Other reasons for not claiming the Disability Tax Credit
+    precondition:
+    - predicate: not (I8a.outcome == 1)
+      hint: Asked only when question I8a is not "Yes".
+    items:
+    - id: I8b
+      kind: Question
+      title: I8. (b) You did not think that .....would meet the eligibility requirements
+      input:
+        control: Radio
+        labels:
+          1: 'Yes'
+          3: 'No'
+          98: DK
+          99: Ref
+    - id: I8c
+      kind: Question
+      title: I8. (c) You were not able to obtain the disability certificate (Form T2201) from your doctor
+      input:
+        control: Radio
+        labels:
+          1: 'Yes'
+          3: 'No'
+          98: DK
+          99: Ref
+    - id: I8d
+      kind: Question
+      title: I8. (d) Other reason, specify
+      input:
+        control: Radio
+        labels:
+          1: 'Yes'
+          3: 'No'
+          98: DK
+          99: Ref
+  - id: b_s15_income
+    title: Household income
+    items:
+    - id: I9
+      kind: Question
+      title: For the year ending December 31, 2000, what is your best estimate of the total income, before taxes and deductions, of all household members, including yourself, from all sources? $ .00 (Enter 0 for no income or loss, 98 for Don’t know, 99 for Refusal)
+      input:
+        control: Editbox
+        min: 0
+        max: 9999999
+        left: $
+    - id: I10
+      kind: Question
+      title: 'Can you estimate in which of the following groups your HOUSEHOLD INCOME fell? I will read you a list. Interviewer: Read list. Mark one only.'
+      precondition:
+      - predicate: not (I9.outcome >= 0 and I9.outcome != 98 and I9.outcome != 99)
+        hint: Asked only when the income in I9 was not given (Don’t know or Refusal).
+      input:
+        control: Dropdown
+        labels:
+          1: $1 to less than $5000
+          2: $5,000 to less than $10,000
+          3: $10,000 to less than $15,000
+          4: $15,000 to less than $20,000
+          5: $20,000 to less than $30,000
+          6: $30,000 to less than $40,000
+          7: $40,000 to less than $50,000
+          8: $50,000 to less than $60,000
+          9: $60,000 to less than $80,000
+          10: $80,000 or more
+          98: (x) Don’t know
+          99: (r) Refusal
+  - id: b_s16_follow_up
+    title: FOLLOW-UP
+    items:
+    - id: FOLLOW_UP
+      kind: Question
+      title: That’s the end of our questions. Someone from Statistics Canada may contact you (.....’s parent/guardian) in a year or two to find out more about ..... . In case there are difficulties reaching you (them), could you please give me the name, address and telephone number of a family member or friend we could contact? We will only call this person if you move (the parent/guardian moves) and then only to obtain the new address or telephone number.
+      input:
+        control: Radio
+        labels:
+          1: 'Yes'
+          3: 'No'
+          99: (r) Refusal
+  - id: b_s16_contact
+    title: Name and Address of Other Contact
+    precondition:
+    - predicate: not (FOLLOW_UP.outcome in [3, 99])
+      hint: Asked only when question FOLLOW-UP is none of "No", "(r) Refusal".
+    items:
+    - id: CONTACT_FIRSTNAME
+      kind: Question
+      title: 'Name and Address of Other Contact: First name(s)'
+      input:
+        control: Textarea
+    - id: CONTACT_FAMILYNAME
+      kind: Question
+      title: 'Name and Address of Other Contact: Family name'
+      input:
+        control: Textarea
+    - id: CONTACT_APT
+      kind: Question
+      title: 'Address: Apt. No.'
+      input:
+        control: Textarea
+    - id: CONTACT_STREET
+      kind: Question
+      title: 'Address: Number and Street or lot and concession or exact location'
+      input:
+        control: Textarea
+    - id: CONTACT_CITY
+      kind: Question
+      title: 'Address: City, Town, Village or Municipality'
+      input:
+        control: Textarea
+    - id: CONTACT_PROVINCE
+      kind: Question
+      title: 'Address: Province or Territory'
+      input:
+        control: Textarea
+    - id: CONTACT_POSTAL
+      kind: Question
+      title: 'Address: Postal Code'
+      input:
+        control: Textarea
+    - id: CONTACT_AREACODE
+      kind: Question
+      title: 'Telephone: Area code'
+      input:
+        control: Textarea
+    - id: CONTACT_PHONE
+      kind: Question
+      title: 'Telephone: Telephone No.'
+      input:
+        control: Textarea
+    - id: CONTACT_COMMENTS
+      kind: Question
+      title: COMMENTS
+      input:
+        control: Textarea

@@ -1,4135 +1,6305 @@
-qmlVersion: "2.0"
+qmlVersion: '2.7'
 questionnaire:
-  title: "Behavioral Risk Factor Surveillance System 2023"
-  codeInit: |
-    # =====================================================================
-    # Cross-section state. One codeInit scope, one dependency graph: a
-    # variable written by an earlier block is visible to every later block.
-    # Only three variables survive the state-variable contract — everything
-    # else references q_<item>.outcome directly (inside the Z3-verified
-    # envelope). Each earns its place under exactly one justification class:
-    #   sex            — CONSOLIDATE: one respondent sex (1=male, 2=female,
-    #                    0=unknown) folded from the two mutually-exclusive
-    #                    intro frames (landline LL09/LL10, cell CP05/CP06).
-    #                    Consumed by the pregnancy filter (CDEM.16) and the
-    #                    sex-gated modules (breast/cervical, prostate, SOGI).
-    #   interview_mode — CLASSIFY: 1=landline, 2=cell, set on each frame's
-    #                    gender item. Gates the landline-only phone-count
-    #                    items CDEM.09/CDEM.10.
-    #   method_count   — ACCUMULATE: number of marijuana consumption methods
-    #                    reported Yes across MMU.02–06. Gates MMU.07.
-    # =====================================================================
-    sex = 0
-    interview_mode = 0
-    method_count = 0
-
+  title: 2023 BRFSS Questionnaire
   blocks:
-
-    # ===================================================================
-    # SECTION: landline_intro
-    # ===================================================================
-    # =========================================================================
-    # BLOCK 1: PHONE AND RESIDENCE SCREENING (LL01–LL05)
-    # =========================================================================
-    # LL01: Confirm phone number
-    # LL02: Private residence? (2=No, non-business → LL03; 3=Business → TERMINATE)
-    #        Note: response code 3 (business) is a TERMINATE path not modeled.
-    #        Labels here reflect substantive respondent choices only.
-    # LL03: College housing? (only asked if LL02=2); 2→TERMINATE not modeled
-    # LL04: Currently live in [STATE]? 2→TERMINATE not modeled
-    # LL05: Is this a cell phone? 1→TERMINATE not modeled
-    # =========================================================================
-    - id: b_phone_screening
-      kind: Group
-      title: "Phone and Residence Screening"
-      items:
-        # LL01: Confirm the dialled number
-        - id: q_ll01
-          kind: Question
-          title: "Is this [PHONE NUMBER]?"
-          input:
-            control: Radio
-            labels:
-              1: "Yes"
-              2: "No"
-
-        # LL02: Private residence check
-        # Routing: 1 (Yes, private) → LL04 (skip LL03)
-        #          2 (No, not private) → LL03
-        #          3 (No, business) → TERMINATE (not modeled)
-        # Precondition: LL01 = Yes
-        - id: q_ll02
-          kind: Question
-          title: "Is this a private residence?"
-          precondition:
-            - predicate: q_ll01.outcome == 1
-          input:
-            control: Radio
-            labels:
-              1: "Yes, this is a private residence"
-              2: "No, this is not a private residence"
-
-        # LL03: College housing check
-        # Only asked when LL02 = 2 (not a private residence, not a business)
-        # Routing: 1 (Yes, college housing) → LL04
-        #          2 (No) → TERMINATE (not modeled)
-        - id: q_ll03
-          kind: Question
-          title: "Do you live in college housing?"
-          precondition:
-            - predicate: q_ll02.outcome == 2
-          input:
-            control: Radio
-            labels:
-              1: "Yes"
-              2: "No"
-
-        # LL04: Currently live in [STATE]?
-        # Routing: 1 → LL05; 2 → TERMINATE (not modeled)
-        # Precondition: arrived via LL02=1 (private) OR LL03=1 (college housing)
-        - id: q_ll04
-          kind: Question
-          title: "Do you currently live in [STATE]?"
-          precondition:
-            - predicate: q_ll02.outcome == 1 or q_ll03.outcome == 1
-          input:
-            control: Radio
-            labels:
-              1: "Yes"
-              2: "No"
-
-        # LL05: Is this a cell phone?
-        # Routing: 1 (Yes, cell) → TERMINATE (not modeled); 2 → LL06
-        # Precondition: LL04 = Yes
-        - id: q_ll05
-          kind: Question
-          title: "Is this a cell phone?"
-          precondition:
-            - predicate: q_ll04.outcome == 1
-          input:
-            control: Radio
-            labels:
-              1: "Yes, it is a cell phone"
-              2: "Not a cell phone"
-
-    # =========================================================================
-    # BLOCK 2: AGE VERIFICATION AND HOUSEHOLD SELECTION (LL06–LL08)
-    # =========================================================================
-    # LL06: 18 years of age or older?
-    #        Yes + LL03=Yes (college housing) → skip LL07/LL08, go to LL09
-    #        Yes + LL03≠Yes → LL07 (count household adults)
-    #        No  + LL03=Yes (college housing) → TERMINATE (not modeled)
-    #        No  + LL03≠Yes → LL07
-    # LL07: How many adults in household? (1 → LL09; 2+ → LL08)
-    #        Note: Asked only when not in college housing
-    # LL08: Most recent birthday selection
-    #        Note: Original loops if respondent is not MRB person (ask again
-    #        after transfer). QML cannot model loops; Yes/No is recorded.
-    # =========================================================================
-    - id: b_household_selection
-      kind: Group
-      title: "Age Verification and Household Selection"
-      items:
-        # LL06: Age verification
-        # Precondition: LL05 = 2 (not a cell phone)
-        - id: q_ll06
-          kind: Question
-          title: "Are you 18 years of age or older?"
-          precondition:
-            - predicate: q_ll05.outcome == 2
-          input:
-            control: Radio
-            labels:
-              1: "Yes"
-              2: "No"
-
-        # LL07: Household adult count
-        # Asked only when: LL06 was reached AND respondent is NOT in college housing
-        # (college housing: LL03=1 → skip directly to LL09 when LL06=1)
-        # Routing: 1 → LL09; 2–6 or more → LL08
-        # Note: In the original CATI, values 2–97 route to LL08. Values 98+ are
-        # treated as DK/R system codes.
-        - id: q_ll07
-          kind: Question
-          title: "Excluding adults living away from home, such as students away at college, how many members of your household, including yourself, are 18 years of age or older?"
-          precondition:
-            - predicate: q_ll05.outcome == 2 and q_ll03.outcome != 1
-          input:
-            control: Editbox
-            min: 1
-            max: 97
-            left: "Number of adults:"
-
-        # LL08: Most recent birthday (MRB) selection
-        # Routing: 1 (Yes) → LL09; 2 (No) → correct respondent sought, re-ask LL08
-        # Note: In original CATI, answering No causes the interviewer to ask for
-        # the adult with the most recent birthday and re-ask LL08. QML cannot
-        # model loops; Yes/No is recorded here. The loop logic is noted for
-        # reference.
-        # Precondition: LL07 was asked AND LL07 ≥ 2 (multiple adults in household)
-        - id: q_ll08
-          kind: Question
-          title: "The person in your household that I need to speak with is the adult with the most recent birthday. Are you the adult with the most recent birthday?"
-          precondition:
-            - predicate: q_ll07.outcome >= 2
-          input:
-            control: Radio
-            labels:
-              1: "Yes"
-              2: "No"
-
-    # =========================================================================
-    # BLOCK 3: GENDER IDENTITY AND SEX AT BIRTH (LL09–LL10)
-    # =========================================================================
-    # LL09: Gender identity
-    #        1 (Male) or 2 (Female) → proceed to Section 1
-    #        3 (Unspecified/another) → LL10
-    # LL10: Sex at birth (asked only when LL09=3)
-    #        7 (DK) and 9 (R) are system codes → TERMINATE (not modeled)
-    # =========================================================================
-    - id: b_gender_identity
-      kind: Group
-      title: "Gender Identity and Sex at Birth"
-      items:
-        # LL09: Gender identity
-        # Reached when:
-        #   (a) LL06=1 AND LL03=1 (18+ in college housing → skip household count)
-        #   (b) LL07=1 (only one adult → go directly here)
-        #   (c) LL08=1 (this person is the MRB adult)
-        - id: q_ll09
-          kind: Question
-          title: "Are you?"
-          precondition:
-            - predicate: (q_ll06.outcome == 1 and q_ll03.outcome == 1) or q_ll07.outcome == 1 or q_ll08.outcome == 1
-          codeBlock: |
-            # CLASSIFY: reaching the landline gender item means a landline frame.
-            interview_mode = 1
-            # CONSOLIDATE: a stated Male/Female sets sex directly; "another gender
-            # identity" (3) leaves sex for the LL10 sex-at-birth fallback below.
-            if q_ll09.outcome == 1 or q_ll09.outcome == 2:
-                sex = q_ll09.outcome
-          input:
-            control: Radio
-            labels:
-              1: "Male"
-              2: "Female"
-              3: "Unspecified or another gender identity"
-
-        # LL10: Sex at birth
-        # Asked only when LL09 = 3 (Unspecified or another gender identity)
-        # DK (7) and Refused (9) are system exit codes → TERMINATE (not modeled here)
-        - id: q_ll10
-          kind: Question
-          title: "What was your sex at birth? Was it male or female?"
-          precondition:
-            - predicate: q_ll09.outcome == 3
-          codeBlock: |
-            # CONSOLIDATE: sex-at-birth fallback when landline gender was "another
-            # gender identity" (LL09 == 3) — resolves sex to Male/Female.
-            sex = q_ll10.outcome
-          input:
-            control: Radio
-            labels:
-              1: "Male"
-              2: "Female"
-
-    # ===================================================================
-    # SECTION: cell_phone_intro
-    # ===================================================================
-    # =========================================================================
-    # BLOCK 1: SAFETY AND DEVICE VERIFICATION (CP01–CP04)
-    # =========================================================================
-    # CP01: Safe to talk? 2→TERMINATE (not modeled)
-    # CP02: Confirm phone number. 2→TERMINATE (not modeled)
-    # CP03: Is this a cell phone? 2→TERMINATE (not modeled)
-    # CP04: 18 years of age or older? 2→TERMINATE (not modeled)
-    # =========================================================================
-    - id: b_safety_device
-      kind: Group
-      title: "Safety and Device Verification"
-      items:
-        # CP01: Safe to talk
-        # Routing: 1 (Yes) → CP02; 2 (No) → TERMINATE (set appointment if possible)
-        - id: q_cp01
-          kind: Question
-          title: "Is this a safe time to talk with you?"
-          input:
-            control: Radio
-            labels:
-              1: "Yes"
-              2: "No"
-
-        # CP02: Confirm the dialled number
-        # Routing: 1 → CP03; 2 → TERMINATE (not modeled)
-        # Precondition: CP01 = Yes
-        - id: q_cp02
-          kind: Question
-          title: "Is this [PHONE NUMBER]?"
-          precondition:
-            - predicate: q_cp01.outcome == 1
-          input:
-            control: Radio
-            labels:
-              1: "Yes"
-              2: "No"
-
-        # CP03: Confirm cell phone
-        # Routing: 1 → CP04; 2 → TERMINATE (not modeled)
-        # Precondition: CP02 = Yes
-        - id: q_cp03
-          kind: Question
-          title: "Is this a cell phone?"
-          precondition:
-            - predicate: q_cp02.outcome == 1
-          input:
-            control: Radio
-            labels:
-              1: "Yes"
-              2: "No"
-
-        # CP04: Age verification
-        # Routing: 1 (Yes, 18+) → CP05; 2 (No) → TERMINATE (not modeled)
-        # Precondition: CP03 = Yes (confirmed cell phone)
-        - id: q_cp04
-          kind: Question
-          title: "Are you 18 years of age or older?"
-          precondition:
-            - predicate: q_cp03.outcome == 1
-          input:
-            control: Radio
-            labels:
-              1: "Yes"
-              2: "No"
-
-    # =========================================================================
-    # BLOCK 2: GENDER IDENTITY AND SEX AT BIRTH (CP05–CP06)
-    # =========================================================================
-    # CP05: Gender identity
-    #        1 (Male) or 2 (Female) → CP07 (skip CP06)
-    #        3 (Unspecified/another) → CP06
-    # CP06: Sex at birth
-    #        1 or 2 → CP07
-    #        7 (DK) or 9 (R) → TERMINATE (not modeled)
-    # =========================================================================
-    - id: b_cell_phone_intro_gender_identity
-      kind: Group
-      title: "Gender Identity and Sex at Birth"
-      items:
-        # CP05: Gender identity
-        # Precondition: CP04 = Yes (18+)
-        - id: q_cp05
-          kind: Question
-          title: "Are you?"
-          precondition:
-            - predicate: q_cp04.outcome == 1
-          codeBlock: |
-            # CLASSIFY: reaching the cell gender item means a cell-phone frame.
-            interview_mode = 2
-            # CONSOLIDATE: a stated Male/Female sets sex directly; "another gender
-            # identity" (3) leaves sex for the CP06 sex-at-birth fallback below.
-            if q_cp05.outcome == 1 or q_cp05.outcome == 2:
-                sex = q_cp05.outcome
-          input:
-            control: Radio
-            labels:
-              1: "Male"
-              2: "Female"
-              3: "Unspecified or another gender identity"
-
-        # CP06: Sex at birth
-        # Asked only when CP05 = 3 (Unspecified or another gender identity)
-        # DK (7) and Refused (9) are system exit codes → TERMINATE (not modeled)
-        - id: q_cp06
-          kind: Question
-          title: "What was your sex at birth? Was it male or female?"
-          precondition:
-            - predicate: q_cp05.outcome == 3
-          codeBlock: |
-            # CONSOLIDATE: sex-at-birth fallback when cell gender was "another
-            # gender identity" (CP05 == 3) — resolves sex to Male/Female.
-            sex = q_cp06.outcome
-          input:
-            control: Radio
-            labels:
-              1: "Male"
-              2: "Female"
-
-    # =========================================================================
-    # BLOCK 3: RESIDENCE VERIFICATION (CP07–CP10)
-    # =========================================================================
-    # CP07: Private residence? 2 → CP08 (college housing check)
-    # CP08: College housing? (only if CP07=2); 2→TERMINATE (not modeled)
-    # CP09: Currently in [STATE]? 2 → CP10 (ask which state)
-    # CP10: What state? Valid state → CP11; 77 (outside US) / 99 (R) → TERMINATE
-    #        Note: Modeled as Editbox for US state/territory FIPS codes (1-78).
-    #        Ineligible codes (77, 99) are TERMINATE paths not modeled.
-    # =========================================================================
-    - id: b_residence
-      kind: Group
-      title: "Residence Verification"
-      items:
-        # CP07: Private residence
-        # Routing: 1 (Yes, private) → CP09 (skip CP08)
-        #          2 (No, not private) → CP08
-        # Precondition: Respondent has passed gender section
-        #   (CP05 asked AND (CP05 in {1,2} OR CP06 in {1,2}))
-        - id: q_cp07
-          kind: Question
-          title: "Do you live in a private residence?"
-          precondition:
-            - predicate: q_cp05.outcome == 1 or q_cp05.outcome == 2 or q_cp06.outcome == 1 or q_cp06.outcome == 2
-          input:
-            control: Radio
-            labels:
-              1: "Yes"
-              2: "No"
-
-        # CP08: College housing check
-        # Asked only when CP07 = 2 (not a private residence)
-        # Routing: 1 (Yes, college housing) → CP09; 2 (No) → TERMINATE (not modeled)
-        - id: q_cp08
-          kind: Question
-          title: "Do you live in college housing?"
-          precondition:
-            - predicate: q_cp07.outcome == 2
-          input:
-            control: Radio
-            labels:
-              1: "Yes"
-              2: "No"
-
-        # CP09: Currently in [STATE]?
-        # Routing: 1 → CP11 (skip CP10); 2 → CP10
-        # Precondition: arrived via CP07=1 (private) OR CP08=1 (college housing)
-        - id: q_cp09
-          kind: Question
-          title: "Do you currently live in [STATE]?"
-          precondition:
-            - predicate: q_cp07.outcome == 1 or q_cp08.outcome == 1
-          input:
-            control: Radio
-            labels:
-              1: "Yes"
-              2: "No"
-
-        # CP10: What state do you currently live in?
-        # Asked only when CP09 = 2 (not in the sampled state)
-        # Original: single-select from US states and territories (FIPS codes 1-56, 66, 72, 78)
-        # Modeled as Editbox; ineligible codes (77=outside US, 99=Refused) are
-        # TERMINATE paths not captured here.
-        - id: q_cp10
-          kind: Question
-          title: "In what state do you currently live? (Enter the state/territory FIPS code: 1=Alabama … 56=Wyoming, 66=Guam, 72=Puerto Rico, 78=Virgin Islands.)"
-          precondition:
-            - predicate: q_cp09.outcome == 2
-          input:
-            control: Editbox
-            min: 1
-            max: 78
-            left: "State FIPS code:"
-
-    # =========================================================================
-    # BLOCK 4: LANDLINE OVERLAP AND HOUSEHOLD SIZE (CP11–CP12)
-    # =========================================================================
-    # CP11: Also have a landline? (dual-frame deduplication flag)
-    #        All responses (including DK/R) → CP12
-    # CP12: How many adults in household?
-    #        Note: If CP08=Yes (college housing), adults is automatically 1.
-    #        DK (77) and Refused (99) proceed to Section 1 (system codes).
-    # =========================================================================
-    - id: b_household
-      kind: Group
-      title: "Landline Overlap and Household Size"
-      items:
-        # CP11: Landline telephone in home?
-        # Asked when: CP09=1 (in sampled state) OR CP10 was answered (valid state)
-        # All responses proceed to CP12
-        - id: q_cp11
-          kind: Question
-          title: "Do you also have a landline telephone in your home that is used to make and receive calls?"
-          precondition:
-            - predicate: q_cp09.outcome == 1 or q_cp10.outcome >= 1
-          input:
-            control: Radio
-            labels:
-              1: "Yes"
-              2: "No"
-
-        # CP12: Number of adults in household (18+)
-        # Note: the source auto-sets this to 1 when CP08=Yes (college housing);
-        # that CATI convenience is dropped here (the count is not consumed for
-        # routing). DK (77) and Refused (99) proceed to Section 1 as system codes;
-        # they are not offered as respondent choices.
-        - id: q_cp12
-          kind: Question
-          title: "How many members of your household, including yourself, are 18 years of age or older?"
-          precondition:
-            - predicate: q_cp11.outcome >= 1
-          input:
-            control: Editbox
-            min: 1
-            max: 97
-            left: "Number of adults:"
-
-    # ===================================================================
-    # SECTION: health_status
-    # ===================================================================
-    # =========================================================================
-    # BLOCK 1: CORE SECTION 1 - HEALTH STATUS (CHS.01)
-    # =========================================================================
-    - id: b_health_status
-      kind: Group
-      title: "Core Section 1: Health Status"
-      items:
-        # CHS.01: Self-rated general health
-        - id: q_chs_01
-          kind: Question
-          title: "Would you say that in general your health is—"
-          input:
-            control: Radio
-            labels:
-              1: "Excellent"
-              2: "Very good"
-              3: "Good"
-              4: "Fair"
-              5: "Poor"
-
-    # =========================================================================
-    # BLOCK 2: CORE SECTION 2 - HEALTHY DAYS (CHD.01–CHD.03)
-    # =========================================================================
-    - id: b_healthy_days
-      kind: Group
-      title: "Core Section 2: Healthy Days"
-      items:
-        # CHD.01: Days physical health not good (past 30 days)
-        # 01–30 = number of days, 88 = None
-        - id: q_chd_01
-          kind: Question
-          title: "Now thinking about your physical health, which includes physical illness and injury, for how many days during the past 30 days was your physical health not good?"
-          input:
-            control: Editbox
-            min: 0
-            max: 30
-            right: "days (0 = none)"
-
-        # CHD.02: Days mental health not good (past 30 days)
-        # 01–30 = number of days, 88 = None
-        - id: q_chd_02
-          kind: Question
-          title: "Now thinking about your mental health, which includes stress, depression, and problems with emotions, for how many days during the past 30 days was your mental health not good?"
-          input:
-            control: Editbox
-            min: 0
-            max: 30
-            right: "days (0 = none)"
-
-        # CHD.03: Days poor health limited usual activities (past 30 days)
-        # CHD.FILTER: skip when both physical and mental bad-day counts are 0 (none).
-        - id: q_chd_03
-          kind: Question
-          title: "During the past 30 days, for about how many days did poor physical or mental health keep you from doing your usual activities, such as self-care, work, or recreation?"
-          precondition:
-            - predicate: q_chd_01.outcome > 0 or q_chd_02.outcome > 0
-          # MINE (part-whole / physical-budget): activity-limited days cannot exceed
-          # the days of poor physical OR mental health. The union of the two bad-day
-          # sets is at most their sum, so this is the objective upper bound.
-          postcondition:
-            - predicate: q_chd_03.outcome <= q_chd_01.outcome + q_chd_02.outcome
-              hint: "Days that poor health kept you from your usual activities cannot exceed your total days of poor physical health plus poor mental health."
-          input:
-            control: Editbox
-            min: 0
-            max: 30
-            right: "days (0 = none)"
-
-    # =========================================================================
-    # BLOCK 3: CORE SECTION 3 - HEALTH CARE ACCESS (CHCA.01–CHCA.04)
-    # =========================================================================
-    - id: b_health_care_access
-      kind: Group
-      title: "Core Section 3: Health Care Access"
-      items:
-        # CHCA.01: Primary health insurance source
-        # 10+ options → Dropdown
-        - id: q_chca_01
-          kind: Question
-          title: "What is the current source of your primary health insurance?"
-          input:
-            control: Dropdown
-            labels:
-              1: "Employer/union plan"
-              2: "Private nongovernmental plan"
-              3: "Medicare"
-              4: "Medigap"
-              5: "Medicaid"
-              6: "CHIP"
-              7: "Military/TRICARE/VA/CHAMP-VA"
-              8: "Indian Health Service"
-              9: "State sponsored health plan"
-              10: "Other government program"
-              88: "No coverage of any type"
-
-        # CHCA.02: Personal health care provider
-        - id: q_chca_02
-          kind: Question
-          title: "Do you have one person or a group of doctors that you think of as your personal health care provider?"
-          input:
-            control: Radio
-            labels:
-              1: "Yes, only one"
-              2: "More than one"
-              3: "No"
-
-        # CHCA.03: Could not afford doctor visit in past 12 months
-        - id: q_chca_03
-          kind: Question
-          title: "Was there a time in the past 12 months when you needed to see a doctor but could not because you could not afford it?"
-          input:
-            control: Switch
-
-        # CHCA.04: Time since last routine checkup
-        - id: q_chca_04
-          kind: Question
-          title: "About how long has it been since you last visited a doctor for a routine checkup?"
-          input:
-            control: Radio
-            labels:
-              1: "Within past year"
-              2: "Within past 2 years"
-              3: "Within past 5 years"
-              4: "5 or more years ago"
-              8: "Never"
-
-    # ===================================================================
-    # SECTION: exercise
-    # ===================================================================
-    # =========================================================================
-    # BLOCK 1: CORE SECTION 4 - EXERCISE / PHYSICAL ACTIVITY (CEXP.01–CEXP.08)
-    # =========================================================================
-    - id: b_exercise
-      kind: Group
-      title: "Core Section 4: Exercise / Physical Activity"
-      items:
-        # CEXP.01: Any physical activity past month (besides regular job)
-        # 1 (Yes) → CEXP.02; 2 (No) / DK / R → CEXP.08
-        - id: q_cexp_01
-          kind: Question
-          title: "During the past month, other than your regular job, did you participate in any physical activities or exercises such as running, calisthenics, golf, gardening, or walking for exercise?"
-          input:
-            control: Switch
-
-        # CEXP.02: Type of primary physical activity (activity code from list)
-        # Precondition: CEXP.01 = Yes (on)
-        # DK / R → CEXP.08 (modeled: if DK/R are not captured, flow continues to CEXP.03)
-        # Coded as numeric activity code (1–99)
-        - id: q_cexp_02
-          kind: Question
-          title: "What type of physical activity or exercise did you spend the most time doing during the past month? (Enter the activity code from the Physical Activity Coding List)"
-          precondition:
-            - predicate: q_cexp_01.outcome == 1
-          input:
-            control: Editbox
-            min: 1
-            max: 99
-            right: "activity code"
-
-        # CEXP.03: Frequency of primary activity (times per week or per month)
-        # Precondition: CEXP.01 = Yes
-        # 1XX = per week (101–176), 2XX = per month (201–230)
-        # Modeled as 0–299
-        - id: q_cexp_03
-          kind: Question
-          title: "How many times per week or per month did you take part in this activity during the past month? (Enter 1XX for times per week, e.g. 103 = 3 times/week; or 2XX for times per month, e.g. 212 = 12 times/month)"
-          precondition:
-            - predicate: q_cexp_01.outcome == 1
-          input:
-            control: Editbox
-            min: 0
-            max: 299
-            right: "frequency code"
-
-        # CEXP.04: Duration of primary activity (minutes per session)
-        # Precondition: CEXP.01 = Yes
-        - id: q_cexp_04
-          kind: Question
-          title: "And when you took part in this activity, for how many minutes or hours did you usually keep at it? (Enter minutes)"
-          precondition:
-            - predicate: q_cexp_01.outcome == 1
-          input:
-            control: Editbox
-            min: 0
-            max: 999
-            right: "minutes"
-
-        # CEXP.05: Second most-exercised activity type (or 88 = no other activity)
-        # Precondition: CEXP.01 = Yes
-        # 88 (No other) / DK / R → CEXP.08
-        # Coded as numeric activity code (1–99) or 88
-        - id: q_cexp_05
-          kind: Question
-          title: "What other type of physical activity gave you the next most exercise during the past month? (Enter the activity code, or 88 for no other activity)"
-          precondition:
-            - predicate: q_cexp_01.outcome == 1
-          input:
-            control: Editbox
-            min: 1
-            max: 99
-            right: "activity code (or 88 = none)"
-
-        # CEXP.06: Frequency of second activity
-        # Precondition: CEXP.01 = Yes AND CEXP.05 is a valid activity (not 88)
-        - id: q_cexp_06
-          kind: Question
-          title: "How many times per week or per month did you take part in this activity during the past month? (Enter 1XX for times per week or 2XX for times per month)"
-          precondition:
-            - predicate: q_cexp_01.outcome == 1
-            - predicate: q_cexp_05.outcome != 88
-          input:
-            control: Editbox
-            min: 0
-            max: 299
-            right: "frequency code"
-
-        # CEXP.07: Duration of second activity (minutes per session)
-        # Precondition: CEXP.01 = Yes AND CEXP.05 is a valid activity (not 88)
-        - id: q_cexp_07
-          kind: Question
-          title: "And when you took part in this activity, for how many minutes or hours did you usually keep at it? (Enter minutes)"
-          precondition:
-            - predicate: q_cexp_01.outcome == 1
-            - predicate: q_cexp_05.outcome != 88
-          input:
-            control: Editbox
-            min: 0
-            max: 999
-            right: "minutes"
-
-        # CEXP.08: Muscle-strengthening activity frequency
-        # Asked of all respondents (no precondition)
-        # 1XX = per week, 2XX = per month, 888 = Never
-        - id: q_cexp_08
-          kind: Question
-          title: "During the past month, how many times per week or per month did you do physical activities or exercises to strengthen your muscles? (Enter 1XX for times per week, 2XX for times per month, or 888 for never)"
-          input:
-            control: Editbox
-            min: 0
-            max: 999
-            right: "frequency code (or 888 = never)"
-
-    # ===================================================================
-    # SECTION: cardiovascular
-    # ===================================================================
-    # =========================================================================
-    # CORE 5: HYPERTENSION AWARENESS (CHYPA)
-    # =========================================================================
-    # CHYPA.01: Always asked.
-    # CHYPA.02: Asked only if CHYPA.01 == 1 (Yes) or == 4 (Borderline/pre-hypertensive)
-    #           All other outcomes (2, 3, DK=7, R=9) skip to next section.
-    # =========================================================================
-    - id: b_hypertension
-      kind: Group
-      title: "Hypertension Awareness"
-      items:
-        # CHYPA.01: Ever told have high blood pressure
-        - id: q_chypa_01
-          kind: Question
-          title: "Have you ever been told by a doctor, nurse, or other health professional that you have high blood pressure?"
-          input:
-            control: Radio
-            labels:
-              1: "Yes"
-              2: "Yes, but only told during pregnancy"
-              3: "No"
-              4: "Told borderline high or pre-hypertensive"
-
-        # CHYPA.02: Currently taking prescription medicine for high blood pressure
-        # Precondition: CHYPA.01 = Yes (1) or Borderline (4)
-        - id: q_chypa_02
-          kind: Question
-          title: "Are you currently taking prescription medicine for your high blood pressure?"
-          precondition:
-            - predicate: q_chypa_01.outcome == 1 or q_chypa_01.outcome == 4
-          input:
-            control: Switch
-            on: "Yes"
-            off: "No"
-
-    # =========================================================================
-    # CORE 6: CHOLESTEROL AWARENESS (CCHLA)
-    # =========================================================================
-    # CCHLA.01: Always asked.
-    #   1 (Never) → skip to next section (CCHLA.02 and CCHLA.03 not shown)
-    #   2–6, 8 → ask CCHLA.02
-    #   9 (R) → ask CCHLA.02 (Refused treated same as checked)
-    #   7 (DK) → skip to next section
-    # CCHLA.02 → CCHLA.03: Always asked if precondition met (no skip within).
-    # =========================================================================
-    - id: b_cholesterol
-      kind: Group
-      title: "Cholesterol Awareness"
-      items:
-        # CCHLA.01: Time since last cholesterol check
-        - id: q_cchla_01
-          kind: Question
-          title: "Cholesterol is a fatty substance found in the blood. About how long has it been since you last had your cholesterol checked?"
-          input:
-            control: Dropdown
-            labels:
-              1: "Never"
-              2: "Within past year (less than 12 months ago)"
-              3: "Within past 2 years (1 year but less than 2 years ago)"
-              4: "Within past 3 years (2 years but less than 3 years ago)"
-              5: "Within past 4 years (3 years but less than 4 years ago)"
-              6: "Within past 5 years (4 years but less than 5 years ago)"
-              8: "5 or more years ago"
-
-        # CCHLA.02: Ever told blood cholesterol is high
-        # Precondition: CCHLA.01 != 1 (not Never)
-        # Note: Refused (9) on CCHLA.01 is also routed here per instrument routing.
-        - id: q_cchla_02
-          kind: Question
-          title: "Have you ever been told by a doctor, nurse or other health professional that your blood cholesterol is high?"
-          precondition:
-            - predicate: q_cchla_01.outcome != 1
-          input:
-            control: Switch
-            on: "Yes"
-            off: "No"
-
-        # CCHLA.03: Currently taking prescribed cholesterol medicine
-        # Precondition: CCHLA.01 != 1 (not Never) — same gate as CCHLA.02
-        - id: q_cchla_03
-          kind: Question
-          title: "Are you currently taking medicine prescribed by your doctor or other health professional for your cholesterol?"
-          precondition:
-            - predicate: q_cchla_01.outcome != 1
-          input:
-            control: Switch
-            on: "Yes"
-            off: "No"
-
-    # ===================================================================
-    # SECTION: chronic_conditions
-    # ===================================================================
-    # =========================================================================
-    # CORE 7: CHRONIC HEALTH CONDITIONS (CCHC)
-    # =========================================================================
-    # CCHC.01–03: Always asked, sequential, no skip logic.
-    # CCHC.04: Always asked.
-    #   1 (Yes) → ask CCHC.05; 2 (No) / 7 (DK) / 9 (R) → skip CCHC.05
-    # CCHC.05: Precondition: CCHC.04 == 1 (Yes).
-    # CCHC.06–11: Always asked, sequential, no skip logic.
-    # CCHC.12: Always asked.
-    #   1 (Yes) → ask CCHC.13; 2 / 3 / 4 / 7 / 9 → skip CCHC.13
-    # CCHC.13: Precondition: CCHC.12 == 1 (Yes — active diabetes).
-    # =========================================================================
-    - id: b_chronic_conditions
-      kind: Group
-      title: "Chronic Health Conditions"
-      items:
-        # CCHC.01: Heart attack / myocardial infarction
-        - id: q_cchc_01
-          kind: Question
-          title: "(Ever told) you had a heart attack also called a myocardial infarction?"
-          input:
-            control: Switch
-            on: "Yes"
-            off: "No"
-
-        # CCHC.02: Angina or coronary heart disease
-        - id: q_cchc_02
-          kind: Question
-          title: "(Ever told) (you had) angina or coronary heart disease?"
-          input:
-            control: Switch
-            on: "Yes"
-            off: "No"
-
-        # CCHC.03: Stroke
-        - id: q_cchc_03
-          kind: Question
-          title: "(Ever told) (you had) a stroke?"
-          input:
-            control: Switch
-            on: "Yes"
-            off: "No"
-
-        # CCHC.04: Asthma (ever told)
-        - id: q_cchc_04
-          kind: Question
-          title: "(Ever told) (you had) asthma?"
-          input:
-            control: Switch
-            on: "Yes"
-            off: "No"
-
-        # CCHC.05: Still have asthma
-        # Precondition: CCHC.04 = Yes (1)
-        - id: q_cchc_05
-          kind: Question
-          title: "Do you still have asthma?"
-          precondition:
-            - predicate: q_cchc_04.outcome == 1
-          input:
-            control: Switch
-            on: "Yes"
-            off: "No"
-
-        # CCHC.06: Skin cancer (non-melanoma)
-        - id: q_cchc_06
-          kind: Question
-          title: "(Ever told) (you had) skin cancer that is not melanoma?"
-          input:
-            control: Switch
-            on: "Yes"
-            off: "No"
-
-        # CCHC.07: Melanoma or other cancer
-        - id: q_cchc_07
-          kind: Question
-          title: "(Ever told) (you had) any melanoma or any other types of cancer?"
-          input:
-            control: Switch
-            on: "Yes"
-            off: "No"
-
-        # CCHC.08: COPD / emphysema / chronic bronchitis
-        - id: q_cchc_08
-          kind: Question
-          title: "(Ever told) (you had) C.O.P.D., emphysema or chronic bronchitis?"
-          input:
-            control: Switch
-            on: "Yes"
-            off: "No"
-
-        # CCHC.09: Depressive disorder
-        - id: q_cchc_09
-          kind: Question
-          title: "(Ever told) (you had) a depressive disorder (including depression, major depression, dysthymia, or minor depression)?"
-          input:
-            control: Switch
-            on: "Yes"
-            off: "No"
-
-        # CCHC.10: Kidney disease (excluding stones, bladder infection, incontinence)
-        - id: q_cchc_10
-          kind: Question
-          title: "Not including kidney stones, bladder infection or incontinence, were you ever told you had kidney disease?"
-          input:
-            control: Switch
-            on: "Yes"
-            off: "No"
-
-        # CCHC.11: Arthritis / rheumatoid arthritis / gout / lupus / fibromyalgia
-        - id: q_cchc_11
-          kind: Question
-          title: "(Ever told) (you had) some form of arthritis, rheumatoid arthritis, gout, lupus, or fibromyalgia?"
-          input:
-            control: Switch
-            on: "Yes"
-            off: "No"
-
-        # CCHC.12: Diabetes
-        - id: q_cchc_12
-          kind: Question
-          title: "(Ever told) (you had) diabetes?"
-          input:
-            control: Radio
-            labels:
-              1: "Yes"
-              2: "Yes, but only during pregnancy"
-              3: "No"
-              4: "No, pre-diabetes or borderline diabetes"
-
-        # CCHC.13: Age first told had diabetes
-        # Precondition: CCHC.12 = Yes (1) — active diabetes diagnosis only
-        - id: q_cchc_13
-          kind: Question
-          title: "How old were you when you were first told you had diabetes?"
-          precondition:
-            - predicate: q_cchc_12.outcome == 1
-          input:
-            control: Editbox
-            min: 0
-            max: 97
-
-    # ===================================================================
-    # SECTION: demographics
-    # ===================================================================
-    - id: b_demographics
-      kind: Group
-      title: "Demographics"
-      items:
-        # CDEM.01: Age in years
-        # MINE (temporal-ordering): current age must be at least the age at which
-        # diabetes was first diagnosed (CCHC.13, asked earlier in Chronic
-        # Conditions). The check lands here because CDEM.01 is the later item.
-        - id: q_cdem_01
-          kind: Question
-          title: "What is your age?"
-          postcondition:
-            - predicate: q_cdem_01.outcome >= q_cchc_13.outcome
-              hint: "Your current age cannot be less than the age at which you were first told you had diabetes."
-          input:
-            control: Editbox
-            min: 18
-            max: 99
-
-        # CDEM.02: Hispanic/Latino origin — multi-select
-        - id: q_cdem_02
-          kind: Question
-          title: "Are you Hispanic, Latino/a, or Spanish origin? (Select all that apply)"
-          input:
-            control: Checkbox
-            labels:
-              1: "Mexican, Mexican American, Chicano/a"
-              2: "Puerto Rican"
-              4: "Cuban"
-              8: "Another Hispanic, Latino/a, or Spanish origin"
-              16: "No"
-
-        # CDEM.03: Race — multi-select (simplified to main categories)
-        - id: q_cdem_03
-          kind: Question
-          title: "Which one or more of the following would you say is your race? (Select all that apply)"
-          input:
-            control: Checkbox
-            labels:
-              1: "White"
-              2: "Black or African American"
-              4: "American Indian or Alaska Native"
-              8: "Asian"
-              16: "Pacific Islander"
-              32: "Other"
-
-        # CDEM.04: Marital status — 6 options → Dropdown
-        - id: q_cdem_04
-          kind: Question
-          title: "Are you...?"
-          input:
-            control: Dropdown
-            labels:
-              1: "Married"
-              2: "Divorced"
-              3: "Widowed"
-              4: "Separated"
-              5: "Never married"
-              6: "Member of an unmarried couple"
-
-        # CDEM.05: Education level — 6 options → Dropdown
-        - id: q_cdem_05
-          kind: Question
-          title: "What is the highest grade or year of school you completed?"
-          input:
-            control: Dropdown
-            labels:
-              1: "Never attended school or only attended kindergarten"
-              2: "Grades 1 through 8 (Elementary)"
-              3: "Grades 9 through 11 (Some high school)"
-              4: "Grade 12 or GED (High school graduate)"
-              5: "College 1 year to 3 years (Some college or technical school)"
-              6: "College 4 years or more (College graduate)"
-
-        # CDEM.06: Home ownership — 3 options → Radio
-        - id: q_cdem_06
-          kind: Question
-          title: "Do you own or rent your home?"
-          input:
-            control: Radio
-            labels:
-              1: "Own"
-              2: "Rent"
-              3: "Other arrangement"
-
-        # CDEM.07: County ANSI code
-        - id: q_cdem_07
-          kind: Question
-          title: "In what county do you currently live?"
-          input:
-            control: Editbox
-            min: 1
-            max: 999
-
-        # CDEM.08: ZIP code
-        - id: q_cdem_08
-          kind: Question
-          title: "What is the ZIP Code where you currently live?"
-          input:
-            control: Editbox
-            min: 1
-            max: 99999
-
-        # CDEM.09: Multiple landline numbers — landline interviews only
-        - id: q_cdem_09
-          kind: Question
-          title: "Not including cell phones or numbers used for computers, fax machines, or security systems, do you have more than one landline telephone number in your household?"
-          precondition:
-            - predicate: "interview_mode == 1"
-          input:
-            control: Switch
-
-        # CDEM.10: Number of residential landline numbers — only if CDEM.09=Yes
-        - id: q_cdem_10
-          kind: Question
-          title: "How many of these landline telephone numbers are residential numbers?"
-          precondition:
-            - predicate: "interview_mode == 1"
-            - predicate: "q_cdem_09.outcome == 1"
-          input:
-            control: Editbox
-            min: 1
-            max: 6
-
-        # CDEM.11: Number of personal cell phones
-        - id: q_cdem_11
-          kind: Question
-          title: "How many cell phones do you have for personal use?"
-          input:
-            control: Editbox
-            min: 0
-            max: 6
-
-        # CDEM.12: Military service
-        - id: q_cdem_12
-          kind: Question
-          title: "Have you ever served on active duty in the United States Armed Forces, either in the regular military or in a National Guard or military reserve unit?"
-          input:
-            control: Switch
-
-        # CDEM.13: Employment status — 8 options → Dropdown
-        - id: q_cdem_13
-          kind: Question
-          title: "Are you currently...?"
-          input:
-            control: Dropdown
-            labels:
-              1: "Employed for wages"
-              2: "Self-employed"
-              3: "Out of work for 1 year or more"
-              4: "Out of work for less than 1 year"
-              5: "A homemaker"
-              6: "A student"
-              7: "Retired"
-              8: "Unable to work"
-
-        # CDEM.14: Children under 18 in household.
-        # Modelled as a plain count (0 = none) rather than the source's 88=None
-        # sentinel, so the "has children" gate on the child-selection/childhood-
-        # asthma modules is the clean q_cdem_14.outcome >= 1.
-        - id: q_cdem_14
-          kind: Question
-          title: "How many children less than 18 years of age live in your household?"
-          input:
-            control: Editbox
-            min: 0
-            max: 20
-            right: "children (0 = none)"
-
-        # CDEM.15: Annual household income — 11 categories → Dropdown
-        - id: q_cdem_15
-          kind: Question
-          title: "Is your annual household income from all sources—?"
-          input:
-            control: Dropdown
-            labels:
-              1: "Less than $10,000"
-              2: "$10,000 to less than $15,000"
-              3: "$15,000 to less than $20,000"
-              4: "$20,000 to less than $25,000"
-              5: "$25,000 to less than $35,000"
-              6: "$35,000 to less than $50,000"
-              7: "$50,000 to less than $75,000"
-              8: "$75,000 to less than $100,000"
-              9: "$100,000 to less than $150,000"
-              10: "$150,000 to less than $200,000"
-              11: "$200,000 or more"
-
-        # CDEM.16: Pregnancy — only for females age ≤ 49
-        - id: q_cdem_16
-          kind: Question
-          title: "To your knowledge, are you now pregnant?"
-          precondition:
-            - predicate: "sex == 2 and q_cdem_01.outcome <= 49"
-          input:
-            control: Switch
-
-        # CDEM.17: Weight in pounds
-        - id: q_cdem_17
-          kind: Question
-          title: "About how much do you weigh without shoes? (pounds)"
-          input:
-            control: Editbox
-            min: 50
-            max: 999
-
-        # CDEM.18: Height in inches
-        - id: q_cdem_18
-          kind: Question
-          title: "About how tall are you without shoes? (inches)"
-          input:
-            control: Editbox
-            min: 36
-            max: 95
-
-    # ===================================================================
-    # SECTION: disability_falls
-    # ===================================================================
-    # =========================================================================
-    # CORE 9: DISABILITY (CDIS.01–CDIS.06)
-    # =========================================================================
-    # All six disability questions are asked sequentially with no skip routing.
-    # DK (7) and Refused (9) route identically to the next item, so no
-    # preconditions are needed within this block.
-    # =========================================================================
-    - id: b_disability
-      kind: Group
-      title: "Core Section 9: Disability"
-      items:
-        # CDIS.01: Hearing difficulty
-        - id: q_cdis_01
-          kind: Question
-          title: "Are you deaf or do you have serious difficulty hearing?"
-          input:
-            control: Switch
-            on: "Yes"
-            off: "No"
-
-        # CDIS.02: Vision difficulty
-        - id: q_cdis_02
-          kind: Question
-          title: "Are you blind or do you have serious difficulty seeing, even when wearing glasses?"
-          input:
-            control: Switch
-            on: "Yes"
-            off: "No"
-
-        # CDIS.03: Cognitive difficulty
-        - id: q_cdis_03
-          kind: Question
-          title: "Because of a physical, mental, or emotional condition, do you have serious difficulty concentrating, remembering, or making decisions?"
-          input:
-            control: Switch
-            on: "Yes"
-            off: "No"
-
-        # CDIS.04: Mobility difficulty
-        - id: q_cdis_04
-          kind: Question
-          title: "Do you have serious difficulty walking or climbing stairs?"
-          input:
-            control: Switch
-            on: "Yes"
-            off: "No"
-
-        # CDIS.05: Self-care difficulty
-        - id: q_cdis_05
-          kind: Question
-          title: "Do you have difficulty dressing or bathing?"
-          input:
-            control: Switch
-            on: "Yes"
-            off: "No"
-
-        # CDIS.06: Independent living difficulty
-        - id: q_cdis_06
-          kind: Question
-          title: "Because of a physical, mental, or emotional condition, do you have difficulty doing errands alone such as visiting a doctor's office or shopping?"
-          input:
-            control: Switch
-            on: "Yes"
-            off: "No"
-
-    # =========================================================================
-    # CORE 10: FALLS (CFAL.01–CFAL.02)
-    # =========================================================================
-    # CFAL.FILTER: Skip entire section if age 18–44 (i.e., age < 45).
-    # Block precondition applies to all items in this block.
-    #
-    # CFAL.01: Number of falls in past 12 months.
-    #   0 or 88 (None) → skip CFAL.02 (coded as 0, no further injury question)
-    #   >0           → ask CFAL.02
-    #
-    # CFAL.02: Falls causing limiting injury. Precondition: CFAL.01 > 0.
-    # =========================================================================
-    - id: b_falls
-      kind: Group
-      title: "Core Section 10: Falls"
+  - id: b_s1_screen
+    title: Landline Introduction
+    items:
+    - id: LL01
+      kind: Question
+      title: Is this [PHONE NUMBER]?
+      input:
+        control: Radio
+        labels:
+          1: 'Yes'
+          2: 'No'
+    - id: LL02
+      kind: Question
+      title: 'Is this a private residence? (Read if necessary: By private residence we mean someplace like a house or apartment. Do not read: Private residence includes any home where the respondent spends at least 30 days including vacation homes, RVs or other locations in which the respondent lives for portions of the year.)'
       precondition:
-        - predicate: q_cdem_01.outcome >= 45
-      items:
-        # CFAL.01: Number of falls in past 12 months
-        # 0–76 = count (76 = 76 or more), 88 = None (no falls)
-        - id: q_cfal_01
-          kind: Question
-          title: "In the past 12 months, how many times have you fallen?"
-          input:
-            control: Editbox
-            min: 0
-            max: 76
-            right: "times (0–76, or 76 for 76+; enter 0 for none)"
-
-        # CFAL.02: Falls causing a limiting injury
-        # Precondition: at least one fall reported (CFAL.01 > 0)
-        - id: q_cfal_02
-          kind: Question
-          title: "How many of these falls caused an injury that limited your regular activities for at least a day or caused you to go to see a doctor?"
-          precondition:
-            - predicate: q_cfal_01.outcome > 0
-          # MINE (counts-vs-capacity): injurious falls are a subset of all falls.
-          postcondition:
-            - predicate: q_cfal_02.outcome <= q_cfal_01.outcome
-              hint: "The number of falls that caused an injury cannot exceed your total number of falls in the past 12 months."
-          input:
-            control: Editbox
-            min: 0
-            max: 76
-            right: "times (0–76, or 76 for 76+)"
-
-    # ===================================================================
-    # SECTION: tobacco_alcohol
-    # ===================================================================
-    # =========================================================================
-    # CORE 11: TOBACCO USE (CTOB.01–CTOB.04)
-    # =========================================================================
-    # CTOB.01: Have you smoked 100+ cigarettes in your entire life?
-    #   1 (Yes) → ask CTOB.02
-    #   2 (No)  → skip CTOB.02, go to CTOB.03
-    #
-    # CTOB.02: Current cigarette smoking frequency. Precondition: CTOB.01 == 1.
-    # CTOB.03: Smokeless tobacco use — always asked (no skip routing).
-    # CTOB.04: E-cigarette / vaping use — always asked.
-    # =========================================================================
-    - id: b_tobacco
-      kind: Group
-      title: "Core Section 11: Tobacco Use"
-      items:
-        # CTOB.01: 100+ cigarettes smoked in lifetime
-        - id: q_ctob_01
-          kind: Question
-          title: "Have you smoked at least 100 cigarettes in your entire life?"
-          input:
-            control: Switch
-            on: "Yes"
-            off: "No"
-
-        # CTOB.02: Current cigarette smoking frequency
-        # Precondition: CTOB.01 = Yes (1)
-        - id: q_ctob_02
-          kind: Question
-          title: "Do you now smoke cigarettes every day, some days, or not at all?"
-          precondition:
-            - predicate: q_ctob_01.outcome == 1
-          input:
-            control: Radio
-            labels:
-              1: "Every day"
-              2: "Some days"
-              3: "Not at all"
-
-        # CTOB.03: Smokeless tobacco use (chewing tobacco, snuff, snus)
-        # No skip routing; always asked regardless of prior answers.
-        - id: q_ctob_03
-          kind: Question
-          title: "Do you currently use chewing tobacco, snuff, or snus every day, some days, or not at all?"
-          input:
-            control: Radio
-            labels:
-              1: "Every day"
-              2: "Some days"
-              3: "Not at all"
-
-        # CTOB.04: E-cigarette / electronic vaping product use
-        - id: q_ctob_04
-          kind: Question
-          title: "Would you say you have never used e-cigarettes or other electronic vaping products in your entire life, or now use them every day, use them some days, or used them in the past but do not currently use them at all?"
-          input:
-            control: Radio
-            labels:
-              1: "Never used"
-              2: "Use every day"
-              3: "Use some days"
-              4: "Not at all right now"
-
-    # =========================================================================
-    # CORE 12: ALCOHOL CONSUMPTION (CALC.01–CALC.04)
-    # =========================================================================
-    # CALC.PROLOGUE is a read/instruction node (no response captured).
-    #
-    # CALC.01: Drinking days in past 30 days.
-    #   0 (no drinks) → skip CALC.02–CALC.04, go to next section.
-    #   >0            → ask CALC.02 onward.
-    #   Note: Original instrument codes "days per week" as 1XX and "days per
-    #   month" as 2XX. This file uses a simplified Editbox (0–30 days per month)
-    #   consistent with the 30-day reference frame used in follow-up questions.
-    #
-    # CALC.02: Average drinks per drinking day. Precondition: CALC.01 > 0.
-    # CALC.03: Binge drinking occasions. Precondition: CALC.01 > 0.
-    #   Threshold varies by sex (5+ drinks for men, 4+ for women); the label
-    #   reflects this variation as it appears in the administered instrument.
-    # CALC.04: Largest number of drinks on any single occasion. Precondition: CALC.01 > 0.
-    # =========================================================================
-    - id: b_alcohol
-      kind: Group
-      title: "Core Section 12: Alcohol Consumption"
-      items:
-        # CALC.PROLOGUE: Introductory instruction (no response captured)
-        - id: q_calc_prologue
-          kind: Comment
-          title: "The next questions concern alcohol consumption. One drink of alcohol is equivalent to a 12-ounce beer, a 5-ounce glass of wine, or a drink with one shot of liquor."
-
-        # CALC.01: Drinking days in past 30 days
-        # 0 = no drinks in past 30 days; 1–30 = number of days
-        - id: q_calc_01
-          kind: Question
-          title: "During the past 30 days, how many days per week or per month did you have at least one drink of any alcoholic beverage?"
-          input:
-            control: Editbox
-            min: 0
-            max: 30
-            right: "days in past 30 days (0 = none)"
-
-        # CALC.02: Average drinks per drinking day
-        # Precondition: reported at least one drinking day
-        - id: q_calc_02
-          kind: Question
-          title: "During the past 30 days, on the days when you drank, about how many drinks did you drink on the average?"
-          precondition:
-            - predicate: q_calc_01.outcome > 0
-          input:
-            control: Editbox
-            min: 1
-            max: 76
-            right: "drinks"
-
-        # CALC.03: Binge drinking occasions (5+ drinks for men, 4+ for women)
-        # Precondition: reported at least one drinking day
-        - id: q_calc_03
-          kind: Question
-          title: "Considering all types of alcoholic beverages, how many times during the past 30 days did you have 5 or more drinks on an occasion (4 or more for women)?"
-          precondition:
-            - predicate: q_calc_01.outcome > 0
-          input:
-            control: Editbox
-            min: 0
-            max: 76
-            right: "times (0 = none)"
-
-        # CALC.04: Largest number of drinks on any single occasion
-        # Precondition: reported at least one drinking day
-        - id: q_calc_04
-          kind: Question
-          title: "During the past 30 days, what is the largest number of drinks you had on any occasion?"
-          precondition:
-            - predicate: q_calc_01.outcome > 0
-          # MINE (max-vs-typical): the largest number of drinks on any occasion
-          # cannot be smaller than the average number of drinks per drinking day.
-          postcondition:
-            - predicate: q_calc_04.outcome >= q_calc_02.outcome
-              hint: "The largest number of drinks on any one occasion cannot be less than your average number of drinks per drinking day."
-          input:
-            control: Editbox
-            min: 1
-            max: 76
-            right: "drinks"
-
-    # ===================================================================
-    # SECTION: immunization_hiv_seatbelt
-    # ===================================================================
-    # =========================================================================
-    # CORE 13: IMMUNIZATION (CIMM.01–CIMM.04)
-    # =========================================================================
-    # CIMM.01: Flu vaccine in past 12 months.
-    #   1 (Yes) → ask CIMM.02 (flu vaccine date)
-    #   2 (No)  → skip CIMM.02, go to CIMM.03
-    #
-    # CIMM.02: Month of most recent flu vaccine. Precondition: CIMM.01 == 1.
-    #   Date collected as month (1–12) since the source instrument collects MM/YYYY;
-    #   year is not modeled here as it is always within the past 12 months.
-    #
-    # CIMM.03: Ever had pneumonia / pneumococcal vaccine — always asked.
-    #
-    # CIMM.04: Ever had shingles / zoster vaccine.
-    #   Precondition: age >= 50 (only relevant for respondents 50 or older).
-    # =========================================================================
-    - id: b_immunization
-      kind: Group
-      title: "Core Section 13: Immunization"
-      items:
-        # CIMM.01: Flu vaccine in past 12 months
-        - id: q_cimm_01
-          kind: Question
-          title: "During the past 12 months, have you had either a flu vaccine that was sprayed in your nose or a flu shot injected into your arm?"
-          input:
-            control: Switch
-            on: "Yes"
-            off: "No"
-
-        # CIMM.02: Month of most recent flu vaccine
-        # Precondition: CIMM.01 = Yes (1)
-        - id: q_cimm_02
-          kind: Question
-          title: "During what month did you receive your most recent flu vaccine?"
-          precondition:
-            - predicate: q_cimm_01.outcome == 1
-          input:
-            control: Editbox
-            min: 1
-            max: 12
-            right: "month (1 = January, 12 = December)"
-
-        # CIMM.03: Ever had pneumonia / pneumococcal vaccine
-        # No skip routing; always asked after CIMM.01 (or CIMM.02 if flu shot).
-        - id: q_cimm_03
-          kind: Question
-          title: "Have you ever had a pneumonia shot also known as a pneumococcal vaccine?"
-          input:
-            control: Switch
-            on: "Yes"
-            off: "No"
-
-        # CIMM.04: Ever had shingles / zoster vaccine
-        # Precondition: age >= 50 (instrument routes age < 50 to next section)
-        - id: q_cimm_04
-          kind: Question
-          title: "Have you ever had the shingles or zoster vaccine?"
-          precondition:
-            - predicate: q_cdem_01.outcome >= 50
-          input:
-            control: Switch
-            on: "Yes"
-            off: "No"
-
-    # =========================================================================
-    # CORE 14: H.I.V. / AIDS (CHIV.01–CHIV.02)
-    # =========================================================================
-    # CHIV.01: Ever been tested for HIV.
-    #   1 (Yes) → ask CHIV.02 (date of last test)
-    #   2 (No)  → skip CHIV.02, go to next section
-    #
-    # CHIV.02: Month of most recent HIV test. Precondition: CHIV.01 == 1.
-    # =========================================================================
-    - id: b_hiv
-      kind: Group
-      title: "Core Section 14: H.I.V./AIDS"
-      items:
-        # CHIV.01: Ever been tested for HIV (excluding blood donation tests)
-        - id: q_chiv_01
-          kind: Question
-          title: "Including fluid testing from your mouth, but not including tests you may have had for blood donation, have you ever been tested for H.I.V?"
-          input:
-            control: Switch
-            on: "Yes"
-            off: "No"
-
-        # CHIV.02: Month of most recent HIV test
-        # Precondition: CHIV.01 = Yes (1)
-        - id: q_chiv_02
-          kind: Question
-          title: "Not including blood donations, in what month was your last H.I.V. test?"
-          precondition:
-            - predicate: q_chiv_01.outcome == 1
-          input:
-            control: Editbox
-            min: 1
-            max: 12
-            right: "month (1 = January, 12 = December)"
-
-    # =========================================================================
-    # CORE 15: SEAT BELT / DRINKING AND DRIVING (CSBD.01–CSBD.02)
-    # =========================================================================
-    # CSBD.01: Seat belt use frequency.
-    #   8 (Never drive or ride in a car) → skip CSBD.02, go to next section
-    #   All other responses → CSBD.FILTER
-    #
-    # CSBD.FILTER: If no drinks in the past 30 days (CALC.01 == 0) →
-    #              skip CSBD.02, go to next section.
-    #
-    # CSBD.02: Driving after drinking too much.
-    #   Precondition: CSBD.01 != 8 (respondent drives or rides)
-    #             AND q_calc_01.outcome > 0 (drank in past 30 days)
-    # =========================================================================
-    - id: b_seatbelt
-      kind: Group
-      title: "Core Section 15: Seat Belt Use / Drinking and Driving"
-      items:
-        # CSBD.01: Seat belt use frequency
-        - id: q_csbd_01
-          kind: Question
-          title: "How often do you use seat belts when you drive or ride in a car? Would you say—"
-          input:
-            control: Dropdown
-            labels:
-              1: "Always"
-              2: "Nearly always"
-              3: "Sometimes"
-              4: "Seldom"
-              5: "Never"
-              8: "Never drive or ride in a car"
-
-        # CSBD.02: Times driven after perhaps too much to drink (past 30 days)
-        # Precondition: respondent drives/rides AND drank in past 30 days
-        - id: q_csbd_02
-          kind: Question
-          title: "During the past 30 days, how many times have you driven when you've had perhaps too much to drink?"
-          precondition:
-            - predicate: q_csbd_01.outcome != 8
-            - predicate: q_calc_01.outcome > 0
-          input:
-            control: Editbox
-            min: 0
-            max: 76
-            right: "times (0 = none)"
-
-    # =========================================================================
-    # EMERGING CORE: LONG-TERM COVID EFFECTS (COVID.01–COVID.03)
-    # =========================================================================
-    # COVID.01: Ever tested positive for COVID-19 or diagnosed by provider.
-    #   1 (Yes) → ask COVID.02
-    #   2 (No)  → skip COVID.02 and COVID.03, go to closing/modules
-    #
-    # COVID.02: Currently have long-term symptoms (3+ months).
-    #   Precondition: COVID.01 == 1
-    #   1 (Yes) → ask COVID.03
-    #   2 (No)  → skip COVID.03, go to closing/modules
-    #
-    # COVID.03: Long-term symptoms reduce day-to-day activities.
-    #   Precondition: COVID.01 == 1 AND COVID.02 == 1
-    # =========================================================================
-    - id: b_covid
-      kind: Group
-      title: "Emerging Core: Long-term COVID Effects"
-      items:
-        # COVID.01: Ever diagnosed with / tested positive for COVID-19
-        - id: q_covid_01
-          kind: Question
-          title: "Have you ever tested positive for COVID-19 or been told by a doctor or other health care provider that you have or had COVID-19?"
-          input:
-            control: Switch
-            on: "Yes"
-            off: "No"
-
-        # COVID.02: Currently experiencing long-term COVID symptoms (3+ months)
-        # Precondition: COVID.01 = Yes (1)
-        - id: q_covid_02
-          kind: Question
-          title: "Do you currently have symptoms lasting 3 months or longer that you did not have prior to having coronavirus or COVID-19?"
-          precondition:
-            - predicate: q_covid_01.outcome == 1
-          input:
-            control: Switch
-            on: "Yes"
-            off: "No"
-
-        # COVID.03: Extent to which long-term symptoms limit day-to-day activities
-        # Precondition: COVID.01 = Yes (1) AND COVID.02 = Yes (1)
-        - id: q_covid_03
-          kind: Question
-          title: "Do these long-term symptoms reduce your ability to carry out day-to-day activities compared with the time before you had COVID-19?"
-          precondition:
-            - predicate: q_covid_01.outcome == 1
-            - predicate: q_covid_02.outcome == 1
-          input:
-            control: Radio
-            labels:
-              1: "Yes, a lot"
-              2: "Yes, a little"
-              3: "Not at all"
-
-    # ===================================================================
-    # SECTION: diabetes
-    # ===================================================================
-    # =========================================================================
-    # MODULE 1: PREDIABETES (MPDIAB)
-    # =========================================================================
-    # Module filter: Skip if CCHC.12=1 (respondent already has diabetes) — the
-    # block precondition is q_cchc_12.outcome != 1, referencing the diabetes
-    # outcome directly. The source auto-codes MPDIAB.02=Yes when CCHC.12=4
-    # (borderline); this model asks MPDIAB.02 of all non-diabetic respondents,
-    # since that auto-code case would simply produce outcome 1.
-    # =========================================================================
-    - id: b_prediabetes
-      kind: Group
-      title: "Module 1: Prediabetes"
+      - predicate: not (LL01.outcome == 2)
+        hint: Asked only when question LL01. is not "No".
+      input:
+        control: Radio
+        labels:
+          1: 'Yes'
+          2: 'No'
+          3: No, this is a business
+    - id: LL03
+      kind: Question
+      title: 'Do you live in college housing? (Read if necessary: By college housing we mean dormitory, graduate student or visiting faculty housing, or other housing arrangement provided by a college or university.)'
       precondition:
-        - predicate: q_cchc_12.outcome != 1
-      items:
-        # MPDIAB.01: Last blood sugar / diabetes test
-        - id: q_mpdiab_01
-          kind: Question
-          title: "When was the last time you had a blood test for high blood sugar or diabetes by a doctor, nurse, or other health professional?"
-          input:
-            control: Dropdown
-            labels:
-              1: "Within past year"
-              2: "Within past 2 years"
-              3: "Within past 3 years"
-              4: "Within past 5 years"
-              5: "Within past 10 years"
-              6: "10 or more years ago"
-              8: "Never"
-
-        # MPDIAB.02: Ever told prediabetes or borderline diabetes
-        # Source auto-codes to Yes when CCHC.12==4 (borderline); asked here.
-        - id: q_mpdiab_02
-          kind: Question
-          title: "Has a doctor or other health professional ever told you that you had prediabetes or borderline diabetes?"
-          input:
-            control: Radio
-            labels:
-              1: "Yes"
-              2: "Yes, during pregnancy"
-              3: "No"
-
-    # =========================================================================
-    # MODULE 2: DIABETES (MDIAB)
-    # =========================================================================
-    # Module filter: Ask only if CCHC.12=1 (respondent has diabetes).
-    # =========================================================================
-    - id: b_diabetes
-      kind: Group
-      title: "Module 2: Diabetes"
+      - predicate: LL02.outcome == 2
+        hint: Asked only when question LL02. is "No".
+      - predicate: not (LL01.outcome == 2)
+        hint: Asked only when question LL01. is not "No".
+      - predicate: not (LL02.outcome == 1)
+        hint: Asked only when question LL02. is not "Yes".
+      - predicate: not (LL02.outcome == 3)
+        hint: Asked only when question LL02. is not "No, this is a business".
+      input:
+        control: Radio
+        labels:
+          1: 'Yes'
+          2: 'No'
+  - id: b_s1_main
+    title: Eligibility and Respondent Selection
+    precondition:
+    - predicate: not (LL01.outcome == 2)
+      hint: Asked only when question LL01. is not "No".
+    - predicate: not (LL02.outcome == 3)
+      hint: Asked only when question LL02. is not "No, this is a business".
+    - predicate: not (LL03.outcome == 2)
+      hint: Asked only when question LL03. is not "No".
+    items:
+    - id: LL04
+      kind: Question
+      title: Do you currently live in__(state)____?
+      input:
+        control: Radio
+        labels:
+          1: 'Yes'
+          2: 'No'
+    - id: LL05
+      kind: Question
+      title: 'Is this a cell phone? (Read if necessary: By cell phone we mean a telephone that is mobile and usable outside your neighborhood. Do not read: Telephone service over the internet counts as landline service (includes Vonage, Magic Jack and other home-based phone services).)'
       precondition:
-        - predicate: q_cchc_12.outcome == 1
-      items:
-        # MDIAB.01: Type of diabetes
-        - id: q_mdiab_01
-          kind: Question
-          title: "According to your doctor or other health professional, what type of diabetes do you have?"
-          input:
-            control: Radio
-            labels:
-              1: "Type 1"
-              2: "Type 2"
-
-        # MDIAB.02: Currently taking insulin
-        - id: q_mdiab_02
-          kind: Question
-          title: "Insulin can be taken by shot or pump. Are you now taking insulin?"
-          input:
-            control: Switch
-            on: "Yes"
-            off: "No"
-
-        # MDIAB.03: Number of A1C checks in past 12 months
-        - id: q_mdiab_03
-          kind: Question
-          title: "About how many times in the past 12 months has a doctor, nurse, or other health professional checked you for A-one-C?"
-          input:
-            control: Editbox
-            min: 0
-            max: 76
-
-        # MDIAB.04: Last dilated eye exam
-        - id: q_mdiab_04
-          kind: Question
-          title: "When was the last time you had an eye exam in which the pupils were dilated?"
-          input:
-            control: Dropdown
-            labels:
-              1: "Within past month"
-              2: "Within past year"
-              3: "Within past 2 years"
-              4: "2 or more years ago"
-              8: "Never"
-
-        # MDIAB.05: Last retinal photo
-        - id: q_mdiab_05
-          kind: Question
-          title: "When was the last time a doctor, nurse or other health professional took a photo of the back of your eye with a specialized camera?"
-          input:
-            control: Dropdown
-            labels:
-              1: "Within past month"
-              2: "Within past year"
-              3: "Within past 2 years"
-              4: "2 or more years ago"
-              8: "Never"
-
-        # MDIAB.06: Last diabetes self-management course
-        - id: q_mdiab_06
-          kind: Question
-          title: "When was the last time you took a course or class in how to manage your diabetes yourself?"
-          input:
-            control: Dropdown
-            labels:
-              1: "Within past year"
-              2: "Within past 2 years"
-              3: "Within past 3 years"
-              4: "Within past 5 years"
-              5: "Within past 10 years"
-              6: "10 or more years ago"
-              8: "Never"
-
-        # MDIAB.07: Foot sores taking more than 4 weeks to heal
-        - id: q_mdiab_07
-          kind: Question
-          title: "Have you ever had any sores or irritations on your feet that took more than four weeks to heal?"
-          input:
-            control: Switch
-            on: "Yes"
-            off: "No"
-
-    # ===================================================================
-    # SECTION: arthritis
-    # ===================================================================
-    # =========================================================================
-    # MODULE 3: ARTHRITIS (MARTH)
-    # =========================================================================
-    # Module filter: Ask only if CCHC.11=1 (respondent has arthritis).
-    # =========================================================================
-    - id: b_arthritis
-      kind: Group
-      title: "Module 3: Arthritis"
+      - predicate: not (LL04.outcome == 2)
+        hint: Asked only when question LL04. is not "No".
+      input:
+        control: Radio
+        labels:
+          1: Yes, it is a cell phone
+          2: Not a cell phone
+    - id: LL06
+      kind: Question
+      title: Are you 18 years of age or older?
       precondition:
-        - predicate: q_cchc_11.outcome == 1
-      items:
-        # MARTH.01: Physical activity suggested
-        - id: q_marth_01
-          kind: Question
-          title: "Has a doctor or other health professional ever suggested physical activity or exercise to help your arthritis or joint symptoms?"
-          input:
-            control: Switch
-            on: "Yes"
-            off: "No"
-
-        # MARTH.02: Educational course for arthritis management
-        - id: q_marth_02
-          kind: Question
-          title: "Have you ever taken an educational course or class to teach you how to manage problems related to your arthritis or joint symptoms?"
-          input:
-            control: Switch
-            on: "Yes"
-            off: "No"
-
-        # MARTH.03: Limited in usual activities due to arthritis
-        - id: q_marth_03
-          kind: Question
-          title: "Are you now limited in any way in any of your usual activities because of arthritis or joint symptoms?"
-          input:
-            control: Switch
-            on: "Yes"
-            off: "No"
-
-        # MARTH.04: Arthritis affects work
-        - id: q_marth_04
-          kind: Question
-          title: "Do arthritis or joint symptoms now affect whether you work, the type of work you do or the amount of work you do?"
-          input:
-            control: Switch
-            on: "Yes"
-            off: "No"
-
-        # MARTH.05: Joint pain scale (0–10) in past 30 days
-        - id: q_marth_05
-          kind: Question
-          title: "During the past 30 days, how bad was your joint pain on average on a scale of 0 to 10 where 0 is no pain and 10 is pain as bad as it can be?"
-          input:
-            control: Editbox
-            min: 0
-            max: 10
-
-    # ===================================================================
-    # SECTION: cancer_screening
-    # ===================================================================
-    # =========================================================================
-    # MODULE 4: LUNG CANCER SCREENING (MLCS)
-    # =========================================================================
-    # Module filter: If CTOB.01=1 (smoked 100+ cigarettes) AND
-    #   CTOB.02=1,2,or 3 (current or former smoker) → ask MLCS.01;
-    #   else → skip to MLCS.04.
-    # MLCS.04 onward asked for all respondents regardless of smoking history.
-    # =========================================================================
-    - id: b_lung_cancer_smokers
-      kind: Group
-      title: "Module 4: Lung Cancer Screening - Smoking History"
+      - predicate: not (LL04.outcome == 2)
+        hint: Asked only when question LL04. is not "No".
+      - predicate: not (LL05.outcome == 1)
+        hint: Asked only when question LL05. is not "Yes, it is a cell phone".
+      input:
+        control: Radio
+        labels:
+          1: 'Yes'
+          2: 'No'
+    - id: LL07
+      kind: Question
+      title: I need to randomly select one adult who lives in your household to be interviewed. Excluding adults living away from home, such as students away at college, how many members of your household, including yourself, are 18 years of age or older?
       precondition:
-        - predicate: q_ctob_01.outcome == 1
-      items:
-        # MLCS.01: Age when first started smoking regularly
-        # MINE (temporal-ordering): age started smoking <= current age (CDEM.01).
-        - id: q_mlcs_01
-          kind: Question
-          title: "How old were you when you first started to smoke cigarettes regularly?"
-          postcondition:
-            - predicate: q_mlcs_01.outcome <= q_cdem_01.outcome
-              hint: "The age when you first started smoking regularly cannot be greater than your current age."
-          input:
-            control: Editbox
-            min: 5
-            max: 99
-
-        # MLCS.02: Age when last smoked regularly (skip if everyday smoker)
-        # MINE (temporal-ordering): age last smoked falls between the age started
-        # smoking (MLCS.01) and current age (CDEM.01).
-        - id: q_mlcs_02
-          kind: Question
-          title: "How old were you when you last smoked cigarettes regularly?"
-          precondition:
-            - predicate: q_ctob_02.outcome != 1
-          postcondition:
-            - predicate: q_mlcs_02.outcome >= q_mlcs_01.outcome
-              hint: "The age when you last smoked regularly cannot be earlier than the age when you first started smoking regularly."
-            - predicate: q_mlcs_02.outcome <= q_cdem_01.outcome
-              hint: "The age when you last smoked regularly cannot be greater than your current age."
-          input:
-            control: Editbox
-            min: 5
-            max: 99
-
-        # MLCS.03: Average cigarettes per day
-        - id: q_mlcs_03
-          kind: Question
-          title: "On average, when you smoked regularly, about how many cigarettes did you usually smoke each day?"
-          input:
-            control: Editbox
-            min: 1
-            max: 200
-
-    - id: b_lung_cancer_all
-      kind: Group
-      title: "Module 4: Lung Cancer Screening - CT Scan"
-      items:
-        # MLCS.04: Ever had CT or CAT scan of chest
-        - id: q_mlcs_04
-          kind: Question
-          title: "Have you ever had a CT or CAT scan of your chest area?"
-          input:
-            control: Switch
-            on: "Yes"
-            off: "No"
-
-        # MLCS.05: CT scan done mainly for lung cancer screening
-        - id: q_mlcs_05
-          kind: Question
-          title: "Were any of the CT or CAT scans of your chest area done mainly to check or screen for lung cancer?"
-          precondition:
-            - predicate: q_mlcs_04.outcome == 1
-          input:
-            control: Switch
-            on: "Yes"
-            off: "No"
-
-        # MLCS.06: When was most recent lung cancer CT scan
-        - id: q_mlcs_06
-          kind: Question
-          title: "When did you have your most recent CT or CAT scan of your chest area mainly to check or screen for lung cancer?"
-          precondition:
-            - predicate: q_mlcs_04.outcome == 1 and q_mlcs_05.outcome == 1
-          input:
-            control: Dropdown
-            labels:
-              1: "Within past year"
-              2: "Within past 2 years"
-              3: "Within past 3 years"
-              4: "Within past 5 years"
-              5: "Within past 10 years"
-              6: "10 or more years ago"
-
-    # =========================================================================
-    # MODULE 5: BREAST AND CERVICAL CANCER SCREENING (MBCCS)
-    # =========================================================================
-    # Module filter: Skip entire module if male (sex == 1).
-    # =========================================================================
-    - id: b_breast_cervical
-      kind: Group
-      title: "Module 5: Breast and Cervical Cancer Screening"
+      - predicate: not (LL04.outcome == 2)
+        hint: Asked only when question LL04. is not "No".
+      - predicate: not (LL05.outcome == 1)
+        hint: Asked only when question LL05. is not "Yes, it is a cell phone".
+      - predicate: not (LL06.outcome == 1 and LL03.outcome == 1)
+        hint: Not asked for college housing residents.
+      - predicate: not (LL06.outcome == 2 and LL03.outcome == 1)
+        hint: Not asked for college housing residents.
+      input:
+        control: Editbox
+        min: 1
+        max: 99
+    - id: LL08
+      kind: Question
+      title: The person in your household that I need to speak with is the adult with the most recent birthday. Are you the adult with the most recent birthday?
       precondition:
-        - predicate: sex == 2
-      items:
-        # MBCCS.01: Ever had a mammogram
-        - id: q_mbccs_01
-          kind: Question
-          title: "Have you ever had a mammogram?"
-          input:
-            control: Switch
-            on: "Yes"
-            off: "No"
-
-        # MBCCS.02: How long since last mammogram
-        - id: q_mbccs_02
-          kind: Question
-          title: "How long has it been since you had your last mammogram?"
-          precondition:
-            - predicate: q_mbccs_01.outcome == 1
-          input:
-            control: Dropdown
-            labels:
-              1: "Within past year"
-              2: "Within past 2 years"
-              3: "Within past 3 years"
-              4: "Within past 5 years"
-              5: "5 or more years ago"
-
-        # MBCCS.03: Ever had a cervical cancer screening test
-        - id: q_mbccs_03
-          kind: Question
-          title: "Have you ever had a cervical cancer screening test?"
-          input:
-            control: Switch
-            on: "Yes"
-            off: "No"
-
-        # MBCCS.04: How long since last cervical cancer screening
-        - id: q_mbccs_04
-          kind: Question
-          title: "How long has it been since you had your last cervical cancer screening test?"
-          precondition:
-            - predicate: q_mbccs_03.outcome == 1
-          input:
-            control: Dropdown
-            labels:
-              1: "Within past year"
-              2: "Within past 2 years"
-              3: "Within past 3 years"
-              4: "Within past 5 years"
-              5: "5 or more years ago"
-
-        # MBCCS.05: Pap test at most recent cervical screening
-        - id: q_mbccs_05
-          kind: Question
-          title: "At your most recent cervical cancer screening, did you have a Pap test?"
-          precondition:
-            - predicate: q_mbccs_03.outcome == 1
-          input:
-            control: Switch
-            on: "Yes"
-            off: "No"
-
-        # MBCCS.06: HPV test at most recent cervical screening
-        - id: q_mbccs_06
-          kind: Question
-          title: "At your most recent cervical cancer screening, did you have an H.P.V. test?"
-          precondition:
-            - predicate: q_mbccs_03.outcome == 1
-          input:
-            control: Switch
-            on: "Yes"
-            off: "No"
-
-        # MBCCS.07: Ever had a hysterectomy (skip if currently pregnant)
-        # MBCCS.FILTER: If CDEM.16=1 (pregnant) → skip to next module
-        - id: q_mbccs_07
-          kind: Question
-          title: "Have you had a hysterectomy?"
-          precondition:
-            - predicate: q_cdem_16.outcome != 1
-          input:
-            control: Switch
-            on: "Yes"
-            off: "No"
-
-    # =========================================================================
-    # MODULE 6: PROSTATE CANCER SCREENING (MPCS)
-    # =========================================================================
-    # Module filter: Skip if female OR age < 39.
-    # =========================================================================
-    - id: b_prostate
-      kind: Group
-      title: "Module 6: Prostate Cancer Screening"
+      - predicate: LL07.outcome is not None and (LL07.outcome >= 2)
+        hint: Asked only when two or more adults live in the household.
+      - predicate: not (LL04.outcome == 2)
+        hint: Asked only when question LL04. is not "No".
+      - predicate: not (LL05.outcome == 1)
+        hint: Asked only when question LL05. is not "Yes, it is a cell phone".
+      - predicate: not (LL06.outcome == 1 and LL03.outcome == 1)
+        hint: Not asked for college housing residents.
+      - predicate: not (LL06.outcome == 2 and LL03.outcome == 1)
+        hint: Not asked for college housing residents.
+      - predicate: not (LL07.outcome == 1)
+        hint: Asked only when question LL07. is not 1.
+      input:
+        control: Radio
+        labels:
+          1: 'Yes'
+          2: No - Ask for correct respondent
+    - id: LL09
+      kind: Question
+      title: 'Are you? (Read: 1 Male 2 Female 3 Unspecified or another gender identity. Do not read: 7 Don''t know/Not sure, 9 Refused)'
       precondition:
-        - predicate: sex == 1 and q_cdem_01.outcome >= 39
-      items:
-        # MPCS.01: Ever had a PSA test
-        - id: q_mpcs_01
-          kind: Question
-          title: "Have you ever had a P.S.A. test?"
-          input:
-            control: Switch
-            on: "Yes"
-            off: "No"
-
-        # MPCS.02: How long since most recent PSA test
-        - id: q_mpcs_02
-          kind: Question
-          title: "About how long has it been since your most recent P.S.A. test?"
-          precondition:
-            - predicate: q_mpcs_01.outcome == 1
-          input:
-            control: Dropdown
-            labels:
-              1: "Within past year"
-              2: "Within past 2 years"
-              3: "Within past 3 years"
-              4: "Within past 5 years"
-              5: "5 or more years ago"
-
-        # MPCS.03: Main reason for PSA test
-        - id: q_mpcs_03
-          kind: Question
-          title: "What was the main reason you had this P.S.A. test — was it part of a routine exam, because of a problem, or some other reason?"
-          precondition:
-            - predicate: q_mpcs_01.outcome == 1
-          input:
-            control: Radio
-            labels:
-              1: "Part of routine exam"
-              2: "Because of a problem"
-              3: "Other reason"
-
-        # MPCS.04: Who suggested the PSA test
-        - id: q_mpcs_04
-          kind: Question
-          title: "Who first suggested this P.S.A. test: you, your doctor, or someone else?"
-          precondition:
-            - predicate: q_mpcs_01.outcome == 1
-          input:
-            control: Radio
-            labels:
-              1: "Self"
-              2: "Doctor, nurse, or other health professional"
-              3: "Someone else"
-
-        # MPCS.05: Doctor discussed PSA advantages/disadvantages (asked for all)
-        - id: q_mpcs_05
-          kind: Question
-          title: "Did a doctor, nurse, or other health professional EVER talk about the advantages, disadvantages, or both of the P.S.A. test?"
-          input:
-            control: Dropdown
-            labels:
-              1: "Advantages only"
-              2: "Disadvantages only"
-              3: "Both advantages and disadvantages"
-              4: "Neither"
-
-    # =========================================================================
-    # MODULE 7: COLORECTAL CANCER SCREENING (MCCS)
-    # =========================================================================
-    # Module filter: Skip if CDEM.01 (age) < 45.
-    #
-    # Routing summary:
-    # MCCS.01 Yes → MCCS.02; No/DK/R → MCCS.06
-    # MCCS.02: 1(colonoscopy)→MCCS.03; 2(sigmoid)→MCCS.04;
-    #          3(both)→MCCS.03; DK→MCCS.05; R→MCCS.06
-    # MCCS.03: if MCCS.02==3 → MCCS.04; else → MCCS.06
-    # MCCS.04 → MCCS.06
-    # MCCS.05 → MCCS.06
-    # MCCS.06 Yes → MCCS.07; No/DK/R → end of module
-    # MCCS.07 Yes → MCCS.08; No/DK/R → MCCS.09
-    # MCCS.08 → MCCS.09
-    # MCCS.09 Yes → MCCS.10; No/DK/R → MCCS.11
-    # MCCS.10 → MCCS.11
-    # MCCS.11 Yes → MCCS.12; No/DK/R → end
-    # MCCS.12 → MCCS.13
-    # =========================================================================
-    - id: b_colorectal
-      kind: Group
-      title: "Module 7: Colorectal Cancer Screening"
+      - predicate: not (LL04.outcome == 2)
+        hint: Asked only when question LL04. is not "No".
+      - predicate: not (LL05.outcome == 1)
+        hint: Asked only when question LL05. is not "Yes, it is a cell phone".
+      - predicate: not (LL06.outcome == 2 and LL03.outcome == 1)
+        hint: Not asked for college housing residents.
+      input:
+        control: Radio
+        labels:
+          1: Male
+          2: Female
+          3: Unspecified or another gender identity
+          7: Don't know/Not sure
+          9: Refused
+    - id: LL10
+      kind: Question
+      title: 'What was your sex at birth? Was it male or female? (Read if necessary: "What sex were you assigned at birth on your original birth certificate?")'
       precondition:
-        - predicate: q_cdem_01.outcome >= 45
-      items:
-        # MCCS.01: Ever had colonoscopy or sigmoidoscopy
-        - id: q_mccs_01
-          kind: Question
-          title: "Have you ever had a colonoscopy or sigmoidoscopy?"
-          input:
-            control: Switch
-            on: "Yes"
-            off: "No"
-
-        # MCCS.02: Which procedure(s) — colonoscopy, sigmoidoscopy, or both
-        - id: q_mccs_02
-          kind: Question
-          title: "Have you had a colonoscopy, a sigmoidoscopy, or both?"
-          precondition:
-            - predicate: q_mccs_01.outcome == 1
-          input:
-            control: Radio
-            labels:
-              1: "Colonoscopy"
-              2: "Sigmoidoscopy"
-              3: "Both"
-
-        # MCCS.03: How long since most recent colonoscopy
-        # Asked when MCCS.02=1 (colonoscopy) or MCCS.02=3 (both)
-        - id: q_mccs_03
-          kind: Question
-          title: "How long has it been since your most recent colonoscopy?"
-          precondition:
-            - predicate: q_mccs_01.outcome == 1 and (q_mccs_02.outcome == 1 or q_mccs_02.outcome == 3)
-          input:
-            control: Dropdown
-            labels:
-              1: "Within past year"
-              2: "Within past 2 years"
-              3: "Within past 5 years"
-              4: "Within past 10 years"
-              5: "10 or more years ago"
-
-        # MCCS.04: How long since most recent sigmoidoscopy
-        # Asked when MCCS.02=2 (sigmoidoscopy) or MCCS.02=3 (both, after MCCS.03)
-        - id: q_mccs_04
-          kind: Question
-          title: "How long has it been since your most recent sigmoidoscopy?"
-          precondition:
-            - predicate: q_mccs_01.outcome == 1 and (q_mccs_02.outcome == 2 or q_mccs_02.outcome == 3)
-          input:
-            control: Dropdown
-            labels:
-              1: "Within past year"
-              2: "Within past 2 years"
-              3: "Within past 5 years"
-              4: "Within past 10 years"
-              5: "10 or more years ago"
-
-        # MCCS.05: How long since most recent colonoscopy or sigmoidoscopy (DK path)
-        # In CATI source: asked when MCCS.02=DK (respondent doesn't know which type).
-        # DK/R are not modelled as labelled options, so this item is unreachable
-        # through normal Radio outcome values {1, 2, 3}. Represented as a Comment
-        # to preserve the routing documentation without creating a dead node.
-        - id: q_mccs_05
-          kind: Comment
-          title: "ROUTING NOTE: If respondent did not know which scope type (MCCS.02=DK), ask: How long has it been since your most recent colonoscopy or sigmoidoscopy? {1=Within past year, 2=Within past 2 years, 3=Within past 5 years, 4=Within past 10 years, 5=10+ years ago}"
-
-        # MCCS.06: Ever had other colorectal cancer test (all respondents reach this)
-        - id: q_mccs_06
-          kind: Question
-          title: "Have you ever had any other kind of test for colorectal cancer, such as virtual colonoscopy, CT colonography, blood stool test, FIT DNA, or Cologuard test?"
-          input:
-            control: Switch
-            on: "Yes"
-            off: "No"
-
-        # MCCS.07: Ever had virtual colonoscopy
-        - id: q_mccs_07
-          kind: Question
-          title: "Have you ever had a virtual colonoscopy?"
-          precondition:
-            - predicate: q_mccs_06.outcome == 1
-          input:
-            control: Switch
-            on: "Yes"
-            off: "No"
-
-        # MCCS.08: When was most recent CT colonography / virtual colonoscopy
-        - id: q_mccs_08
-          kind: Question
-          title: "When was your most recent CT colonography or virtual colonoscopy?"
-          precondition:
-            - predicate: q_mccs_06.outcome == 1 and q_mccs_07.outcome == 1
-          input:
-            control: Dropdown
-            labels:
-              1: "Within past year"
-              2: "Within past 2 years"
-              3: "Within past 5 years"
-              4: "Within past 10 years"
-              5: "10 or more years ago"
-
-        # MCCS.09: Ever had blood stool test or FIT test at home
-        - id: q_mccs_09
-          kind: Question
-          title: "Have you ever had a blood stool test or FIT test using a special kit at home?"
-          precondition:
-            - predicate: q_mccs_06.outcome == 1
-          input:
-            control: Switch
-            on: "Yes"
-            off: "No"
-
-        # MCCS.10: How long since blood stool / FIT test
-        - id: q_mccs_10
-          kind: Question
-          title: "How long has it been since you had this test?"
-          precondition:
-            - predicate: q_mccs_06.outcome == 1 and q_mccs_09.outcome == 1
-          input:
-            control: Dropdown
-            labels:
-              1: "Within past year"
-              2: "Within past 2 years"
-              3: "Within past 3 years"
-              4: "Within past 5 years"
-              5: "5 or more years ago"
-
-        # MCCS.11: Ever had Cologuard or FIT-DNA stool test at home
-        - id: q_mccs_11
-          kind: Question
-          title: "Have you ever had a Cologuard or FIT-DNA stool test using a special kit at home?"
-          precondition:
-            - predicate: q_mccs_06.outcome == 1
-          input:
-            control: Switch
-            on: "Yes"
-            off: "No"
-
-        # MCCS.12: Was the blood stool or FIT done as part of Cologuard
-        - id: q_mccs_12
-          kind: Question
-          title: "Was the blood stool or FIT you reported earlier conducted as part of a Cologuard test?"
-          precondition:
-            - predicate: q_mccs_06.outcome == 1 and q_mccs_11.outcome == 1
-          input:
-            control: Switch
-            on: "Yes"
-            off: "No"
-
-        # MCCS.13: How long since Cologuard / FIT-DNA test
-        - id: q_mccs_13
-          kind: Question
-          title: "How long has it been since you had this test?"
-          precondition:
-            - predicate: q_mccs_06.outcome == 1 and q_mccs_11.outcome == 1
-          input:
-            control: Dropdown
-            labels:
-              1: "Within past year"
-              2: "Within past 2 years"
-              3: "Within past 3 years"
-              4: "Within past 5 years"
-              5: "5 or more years ago"
-
-    # ===================================================================
-    # SECTION: cancer_survivorship
-    # ===================================================================
-    # =========================================================================
-    # MODULE 8: CANCER SURVIVORSHIP — TYPE OF CANCER (MTOC)
-    # =========================================================================
-    # Entry filter: respondent reported skin cancer (CCHC.06=1) OR other
-    # cancer (CCHC.07=1).  Block precondition enforces this.
-    #
-    # MTOC.01: How many cancer types (1/2/3+). DK/R → skip to next module.
-    # MTOC.02: Age at (first) cancer diagnosis. Editbox 0–97 (97=97+).
-    # MTOC.03: Type of cancer. Dropdown of 30 types.
-    # =========================================================================
-    - id: b_cancer_type
-      kind: Group
-      title: "Module 8: Cancer Survivorship — Type of Cancer"
+      - predicate: LL09.outcome in [3, 7, 9]
+        hint: Asked only when question LL09. is one of "Unspecified or another gender identity", "Don't know/Not sure", "Refused".
+      - predicate: not (LL04.outcome == 2)
+        hint: Asked only when question LL04. is not "No".
+      - predicate: not (LL05.outcome == 1)
+        hint: Asked only when question LL05. is not "Yes, it is a cell phone".
+      - predicate: not (LL06.outcome == 2 and LL03.outcome == 1)
+        hint: Not asked for college housing residents.
+      - predicate: not (LL09.outcome in [1, 2])
+        hint: Asked only when question LL09. is none of "Male", "Female".
+      input:
+        control: Radio
+        labels:
+          1: Male
+          2: Female
+          7: Don't know/Not sure
+          9: Refused
+  - id: b_s2_cp01
+    title: Cell Phone Introduction
+    precondition:
+    - predicate: not (LL01.outcome == 2)
+      hint: Asked only when question LL01. is not "No".
+    - predicate: not (LL02.outcome == 3)
+      hint: Asked only when question LL02. is not "No, this is a business".
+    - predicate: not (LL03.outcome == 2)
+      hint: Asked only when question LL03. is not "No".
+    - predicate: not (LL04.outcome == 2)
+      hint: Asked only when question LL04. is not "No".
+    - predicate: not (LL05.outcome == 1)
+      hint: Asked only when question LL05. is not "Yes, it is a cell phone".
+    - predicate: not (LL06.outcome == 2 and LL03.outcome == 1)
+      hint: Asked only when LL06 and LL03 do not route the respondent out.
+    - predicate: not (LL09.outcome in [1, 2])
+      hint: Asked only when question LL09. is none of "Male", "Female".
+    - predicate: not (LL10.outcome in [7, 9])
+      hint: Asked only when question LL10 is none of "Don't know/Not sure", "Refused".
+    - predicate: not (LL10.outcome in [1, 2])
+      hint: Asked only when question LL10 is none of "Male", "Female".
+    items:
+    - id: CP01
+      kind: Question
+      title: Is this a safe time to talk with you?
+      input:
+        control: Radio
+        labels:
+          1: 'Yes'
+          2: 'No'
+  - id: b_s2_cp02_cp04
+    title: Cell Phone Eligibility
+    precondition:
+    - predicate: not (LL01.outcome == 2)
+      hint: Asked only when question LL01. is not "No".
+    - predicate: not (LL02.outcome == 3)
+      hint: Asked only when question LL02. is not "No, this is a business".
+    - predicate: not (LL03.outcome == 2)
+      hint: Asked only when question LL03. is not "No".
+    - predicate: not (LL04.outcome == 2)
+      hint: Asked only when question LL04. is not "No".
+    - predicate: not (LL05.outcome == 1)
+      hint: Asked only when question LL05. is not "Yes, it is a cell phone".
+    - predicate: not (LL06.outcome == 2 and LL03.outcome == 1)
+      hint: Asked only when LL06 and LL03 do not route the respondent out.
+    - predicate: not (LL09.outcome in [1, 2])
+      hint: Asked only when question LL09. is none of "Male", "Female".
+    - predicate: not (LL10.outcome in [7, 9])
+      hint: Asked only when question LL10 is none of "Don't know/Not sure", "Refused".
+    - predicate: not (LL10.outcome in [1, 2])
+      hint: Asked only when question LL10 is none of "Male", "Female".
+    - predicate: not (CP01.outcome == 2)
+      hint: Asked only when question CP01. is not "No".
+    items:
+    - id: CP02
+      kind: Question
+      title: Is this [PHONE NUMBER]?
+      input:
+        control: Radio
+        labels:
+          1: 'Yes'
+          2: 'No'
+    - id: CP03
+      kind: Question
+      title: Is this a cell phone?
       precondition:
-        - predicate: q_cchc_06.outcome == 1 or q_cchc_07.outcome == 1
-      items:
-        # MTOC.01: Number of cancer types
-        - id: q_mtoc_01
-          kind: Question
-          title: "How many different types of cancer have you had?"
-          input:
-            control: Radio
-            labels:
-              1: "One"
-              2: "Two"
-              3: "Three or more"
-
-        # MTOC.02: Age at (first) cancer diagnosis
-        # All MTOC.01 responses (1–3) continue to MTOC.02.
-        # MINE (temporal-ordering): age first told of cancer <= current age (CDEM.01).
-        - id: q_mtoc_02
-          kind: Question
-          title: "At what age were you (first) told that you had cancer?"
-          postcondition:
-            - predicate: q_mtoc_02.outcome <= q_cdem_01.outcome
-              hint: "The age when you were first told you had cancer cannot be greater than your current age."
-          input:
-            control: Editbox
-            min: 0
-            max: 97
-            right: "years (enter 97 for 97 or older)"
-
-        # MTOC.03: Type of cancer (30 categories)
-        - id: q_mtoc_03
-          kind: Question
-          title: "What type of cancer was it?"
-          input:
-            control: Dropdown
-            labels:
-              1: "Bladder"
-              2: "Blood"
-              3: "Bone"
-              4: "Brain"
-              5: "Breast"
-              6: "Cervix"
-              7: "Colon"
-              8: "Esophagus"
-              9: "Gallbladder"
-              10: "Kidney"
-              11: "Larynx-trachea"
-              12: "Leukemia"
-              13: "Liver"
-              14: "Lung"
-              15: "Lymphoma"
-              16: "Melanoma"
-              17: "Mouth/tongue/lip"
-              18: "Ovary"
-              19: "Pancreas"
-              20: "Prostate"
-              21: "Rectum"
-              22: "Skin (non-melanoma)"
-              23: "Skin (unknown type)"
-              24: "Soft tissue"
-              25: "Stomach"
-              26: "Testis"
-              27: "Throat-pharynx"
-              28: "Thyroid"
-              29: "Uterus"
-              30: "Other"
-
-    # =========================================================================
-    # MODULE 9: CANCER SURVIVORSHIP — COURSE OF TREATMENT (MCOT)
-    # =========================================================================
-    # Entry filter: same as Module 8 — respondent had skin or other cancer.
-    #
-    # MCOT.01: Treatment status. Option 3 (refused treatment) → skip to next
-    #   module. All others → MCOT.02.
-    # MCOT.02: Primary doctor type. Dropdown 10 options.
-    # MCOT.03: Written treatment summary received. Switch.
-    # MCOT.04: Instructions for follow-up check-ups. Switch.
-    #   Yes (1) → MCOT.05; No/DK/R → MCOT.06.
-    # MCOT.05: Instructions were written. Switch.
-    #   Precondition: MCOT.04 == 1.
-    # MCOT.06: Health insurance covered treatment. Switch.
-    # MCOT.07: Denied insurance due to cancer. Switch.
-    # MCOT.08: Participated in clinical trial. Switch.
-    # =========================================================================
-    - id: b_cancer_treatment
-      kind: Group
-      title: "Module 9: Cancer Survivorship — Course of Treatment"
+      - predicate: not (CP02.outcome == 2)
+        hint: Asked only when question CP02. is not "No".
+      input:
+        control: Radio
+        labels:
+          1: 'Yes'
+          2: 'No'
+    - id: CP04
+      kind: Question
+      title: Are you 18 years of age or older?
       precondition:
-        - predicate: q_cchc_06.outcome == 1 or q_cchc_07.outcome == 1
-      items:
-        # MCOT.01: Current treatment status
-        # Option 3 (refused treatment) ends the module; all others continue.
-        - id: q_mcot_01
-          kind: Question
-          title: "Are you currently receiving treatment for cancer?"
-          input:
-            control: Dropdown
-            labels:
-              1: "Yes, currently receiving treatment"
-              2: "No, completed treatment"
-              3: "No, refused treatment"
-              4: "No, haven't started treatment"
-              5: "Treatment not necessary"
-
-        # MCOT.02–08: Only asked if treatment was not refused (MCOT.01 != 3)
-        # MCOT.02: Primary doctor type
-        - id: q_mcot_02
-          kind: Question
-          title: "What type of doctor provides the majority of your health care?"
-          precondition:
-            - predicate: q_mcot_01.outcome != 3
-          input:
-            control: Dropdown
-            labels:
-              1: "Cancer Surgeon"
-              2: "Family Practitioner"
-              3: "General Surgeon"
-              4: "Gynecologic Oncologist"
-              5: "Internist"
-              6: "Plastic/Reconstructive Surgeon"
-              7: "Medical Oncologist"
-              8: "Radiation Oncologist"
-              9: "Urologist"
-              10: "Other"
-
-        # MCOT.03: Written treatment summary received
-        - id: q_mcot_03
-          kind: Question
-          title: "Did any doctor, nurse, or other health professional ever give you a written summary of all the cancer treatments that you received?"
-          precondition:
-            - predicate: q_mcot_01.outcome != 3
-          input:
-            control: Switch
-            on: "Yes"
-            off: "No"
-
-        # MCOT.04: Instructions for routine follow-up check-ups
-        - id: q_mcot_04
-          kind: Question
-          title: "Have you ever received instructions about where you should return or who you should see for routine cancer check-ups after completing treatment?"
-          precondition:
-            - predicate: q_mcot_01.outcome != 3
-          input:
-            control: Switch
-            on: "Yes"
-            off: "No"
-
-        # MCOT.05: Instructions were written/printed
-        # Precondition: MCOT.04 = Yes (1)
-        - id: q_mcot_05
-          kind: Question
-          title: "Were these instructions written down or printed on paper for you?"
-          precondition:
-            - predicate: q_mcot_01.outcome != 3
-            - predicate: q_mcot_04.outcome == 1
-          input:
-            control: Switch
-            on: "Yes"
-            off: "No"
-
-        # MCOT.06: Health insurance covered cancer treatment
-        - id: q_mcot_06
-          kind: Question
-          title: "With your most recent diagnosis of cancer, did you have health insurance that paid for all or part of your cancer treatment?"
-          precondition:
-            - predicate: q_mcot_01.outcome != 3
-          input:
-            control: Switch
-            on: "Yes"
-            off: "No"
-
-        # MCOT.07: Denied insurance due to cancer
-        - id: q_mcot_07
-          kind: Question
-          title: "Were you ever denied health insurance or life insurance coverage because of your cancer?"
-          precondition:
-            - predicate: q_mcot_01.outcome != 3
-          input:
-            control: Switch
-            on: "Yes"
-            off: "No"
-
-        # MCOT.08: Participated in a clinical trial
-        - id: q_mcot_08
-          kind: Question
-          title: "Did you participate in a clinical trial as part of your cancer treatment?"
-          precondition:
-            - predicate: q_mcot_01.outcome != 3
-          input:
-            control: Switch
-            on: "Yes"
-            off: "No"
-
-    # =========================================================================
-    # MODULE 10: CANCER SURVIVORSHIP — PAIN MANAGEMENT (MCPM)
-    # =========================================================================
-    # Entry filter: same as Modules 8 & 9 — respondent had skin or other cancer.
-    #
-    # MCPM.01: Currently experiencing cancer-related pain. Switch.
-    #   Yes (1) → MCPM.02; No/DK/R → end of module.
-    # MCPM.02: Pain control status. Radio (4 options).
-    #   Precondition: MCPM.01 == 1.
-    # =========================================================================
-    - id: b_cancer_pain
-      kind: Group
-      title: "Module 10: Cancer Survivorship — Pain Management"
+      - predicate: not (CP02.outcome == 2)
+        hint: Asked only when question CP02. is not "No".
+      - predicate: not (CP03.outcome == 2)
+        hint: Asked only when question CP03. is not "No".
+      input:
+        control: Radio
+        labels:
+          1: 'Yes'
+          2: 'No'
+  - id: b_s2_cp05_cp06
+    title: Sex and Gender
+    precondition:
+    - predicate: not (LL01.outcome == 2)
+      hint: Asked only when question LL01. is not "No".
+    - predicate: not (LL02.outcome == 3)
+      hint: Asked only when question LL02. is not "No, this is a business".
+    - predicate: not (LL03.outcome == 2)
+      hint: Asked only when question LL03. is not "No".
+    - predicate: not (LL04.outcome == 2)
+      hint: Asked only when question LL04. is not "No".
+    - predicate: not (LL05.outcome == 1)
+      hint: Asked only when question LL05. is not "Yes, it is a cell phone".
+    - predicate: not (LL06.outcome == 2 and LL03.outcome == 1)
+      hint: Asked only when LL06 and LL03 do not route the respondent out.
+    - predicate: not (LL09.outcome in [1, 2])
+      hint: Asked only when question LL09. is none of "Male", "Female".
+    - predicate: not (LL10.outcome in [7, 9])
+      hint: Asked only when question LL10 is none of "Don't know/Not sure", "Refused".
+    - predicate: not (LL10.outcome in [1, 2])
+      hint: Asked only when question LL10 is none of "Male", "Female".
+    - predicate: not (CP01.outcome == 2)
+      hint: Asked only when question CP01. is not "No".
+    - predicate: not (CP02.outcome == 2)
+      hint: Asked only when question CP02. is not "No".
+    - predicate: not (CP03.outcome == 2)
+      hint: Asked only when question CP03. is not "No".
+    - predicate: not (CP04.outcome == 2)
+      hint: Asked only when question CP04. is not "No".
+    items:
+    - id: CP05
+      kind: Question
+      title: 'Are you ? (Please read: 1 Male 2 Female 3 Unspecified or another gender identity. Do not read: 7 Don''t know/Not sure, 9 Refused)'
+      input:
+        control: Radio
+        labels:
+          1: Male
+          2: Female
+          3: Unspecified or another gender identity
+          7: Don't know/Not sure
+          9: Refused
+    - id: CP06
+      kind: Question
+      title: 'What was your sex at birth? Was it male or female? (Read if necessary: "What sex were you assigned at birth on your original birth certificate?")'
       precondition:
-        - predicate: q_cchc_06.outcome == 1 or q_cchc_07.outcome == 1
-      items:
-        # MCPM.01: Currently has cancer-related pain
-        - id: q_mcpm_01
-          kind: Question
-          title: "Do you currently have physical pain caused by your cancer or cancer treatment?"
-          input:
-            control: Switch
-            on: "Yes"
-            off: "No"
-
-        # MCPM.02: Pain control status
-        # Precondition: MCPM.01 = Yes (1)
-        - id: q_mcpm_02
-          kind: Question
-          title: "Would you say your pain is currently under control?"
-          precondition:
-            - predicate: q_mcpm_01.outcome == 1
-          input:
-            control: Radio
-            labels:
-              1: "With medication"
-              2: "Without medication"
-              3: "Not under control, with medication"
-              4: "Not under control, without medication"
-
-    # ===================================================================
-    # SECTION: sun_cognitive
-    # ===================================================================
-    # =========================================================================
-    # MODULE 11: INDOOR TANNING (MNTAN)
-    # =========================================================================
-    # Single item, no entry filter, no skip logic.
-    # MNTAN.01: Number of indoor tanning sessions in past 12 months (0–365).
-    # =========================================================================
-    - id: b_indoor_tanning
-      kind: Group
-      title: "Module 11: Indoor Tanning"
-      items:
-        # MNTAN.01: Indoor tanning device use in past 12 months
-        - id: q_mntan_01
-          kind: Question
-          title: "Not including spray-on tans, during the past 12 months, how many times have you used an indoor tanning device such as a sunlamp, tanning bed, or booth?"
-          input:
-            control: Editbox
-            min: 0
-            max: 365
-            right: "times (0–365)"
-
-    # =========================================================================
-    # MODULE 12: EXCESS SUN EXPOSURE (MSUN)
-    # =========================================================================
-    # No entry filter. All four items are asked sequentially.
-    #
-    # MSUN.01: Number of sunburns in past 12 months (0–365).
-    # MSUN.02: Frequency of sun protection. Dropdown (7 options — includes
-    #   "Don't stay outside 1+ hour" and "Don't go outside at all").
-    # MSUN.03: Weekday outdoor time in summer (10am–4pm). Dropdown (7 ranges).
-    # MSUN.04: Weekend outdoor time in summer (10am–4pm). Dropdown (7 ranges).
-    # =========================================================================
-    - id: b_sun_exposure
-      kind: Group
-      title: "Module 12: Excess Sun Exposure"
-      items:
-        # MSUN.01: Number of sunburns in past 12 months
-        - id: q_msun_01
-          kind: Question
-          title: "During the past 12 months, how many times have you had a sunburn?"
-          input:
-            control: Editbox
-            min: 0
-            max: 365
-            right: "times (0–365)"
-
-        # MSUN.02: Frequency of sun protection on warm sunny days
-        - id: q_msun_02
-          kind: Question
-          title: "When you go outside on a warm sunny day for more than one hour, how often do you protect yourself from the sun?"
-          input:
-            control: Dropdown
-            labels:
-              1: "Always"
-              2: "Most of the time"
-              3: "Sometimes"
-              4: "Rarely"
-              5: "Never"
-              6: "Don't stay outside 1 hour or longer"
-              8: "Don't go outside at all on warm sunny days"
-
-        # MSUN.03: Weekday outdoor time (summer, 10am–4pm)
-        - id: q_msun_03
-          kind: Question
-          title: "On weekdays, in the summer, how long are you outside per day between 10am and 4pm?"
-          input:
-            control: Dropdown
-            labels:
-              1: "Less than 30 minutes"
-              2: "30 minutes to less than 1 hour"
-              3: "1 to less than 2 hours"
-              4: "2 to less than 3 hours"
-              5: "3 to less than 4 hours"
-              6: "4 to less than 5 hours"
-              7: "5 to less than 6 hours"
-
-        # MSUN.04: Weekend outdoor time (summer, 10am–4pm)
-        - id: q_msun_04
-          kind: Question
-          title: "On weekends in the summer, how long are you outside each day between 10am and 4pm?"
-          input:
-            control: Dropdown
-            labels:
-              1: "Less than 30 minutes"
-              2: "30 minutes to less than 1 hour"
-              3: "1 to less than 2 hours"
-              4: "2 to less than 3 hours"
-              5: "3 to less than 4 hours"
-              6: "4 to less than 5 hours"
-              7: "5 to less than 6 hours"
-
-    # =========================================================================
-    # MODULE 13: COGNITIVE DECLINE (MCOG)
-    # =========================================================================
-    # Entry filter: age >= 45 (source filter excludes respondents 18–44).
-    # Block precondition enforces this.
-    #
-    # MCOG.01: Experienced worsening thinking/memory difficulties. Switch.
-    #   Yes (1) → MCOG.02–05; No/DK/R → skip to next module.
-    # MCOG.02–05: Precondition: MCOG.01 == 1. All Switch items.
-    # =========================================================================
-    - id: b_cognitive_decline
-      kind: Group
-      title: "Module 13: Cognitive Decline"
+      - predicate: CP05.outcome in [3, 7, 9]
+        hint: Asked only when question CP05. is one of "Unspecified or another gender identity", "Don't know/Not sure", "Refused".
+      - predicate: not (CP05.outcome in [1, 2])
+        hint: Asked only when question CP05. is none of "Male", "Female".
+      input:
+        control: Radio
+        labels:
+          1: Male
+          2: Female
+          7: Don't know/Not sure
+          9: Refused
+  - id: b_s2_cp07_cp08
+    title: Residence Type
+    precondition:
+    - predicate: not (LL01.outcome == 2)
+      hint: Asked only when question LL01. is not "No".
+    - predicate: not (LL02.outcome == 3)
+      hint: Asked only when question LL02. is not "No, this is a business".
+    - predicate: not (LL03.outcome == 2)
+      hint: Asked only when question LL03. is not "No".
+    - predicate: not (LL04.outcome == 2)
+      hint: Asked only when question LL04. is not "No".
+    - predicate: not (LL05.outcome == 1)
+      hint: Asked only when question LL05. is not "Yes, it is a cell phone".
+    - predicate: not (LL06.outcome == 2 and LL03.outcome == 1)
+      hint: Asked only when LL06 and LL03 do not route the respondent out.
+    - predicate: not (LL09.outcome in [1, 2])
+      hint: Asked only when question LL09. is none of "Male", "Female".
+    - predicate: not (LL10.outcome in [7, 9])
+      hint: Asked only when question LL10 is none of "Don't know/Not sure", "Refused".
+    - predicate: not (LL10.outcome in [1, 2])
+      hint: Asked only when question LL10 is none of "Male", "Female".
+    - predicate: not (CP01.outcome == 2)
+      hint: Asked only when question CP01. is not "No".
+    - predicate: not (CP02.outcome == 2)
+      hint: Asked only when question CP02. is not "No".
+    - predicate: not (CP03.outcome == 2)
+      hint: Asked only when question CP03. is not "No".
+    - predicate: not (CP04.outcome == 2)
+      hint: Asked only when question CP04. is not "No".
+    - predicate: not (CP06.outcome in [7, 9])
+      hint: Asked only when question CP06 is none of "Don't know/Not sure", "Refused".
+    items:
+    - id: CP07
+      kind: Question
+      title: 'Do you live in a private residence? (Read if necessary: By private residence we mean someplace like a house or apartment. Do not read: Private residence includes any home where the respondent spends at least 30 days including vacation homes, RVs or other locations in which the respondent lives for portions of the year.)'
+      input:
+        control: Radio
+        labels:
+          1: 'Yes'
+          2: 'No'
+    - id: CP08
+      kind: Question
+      title: 'Do you live in college housing? (Read if necessary: By college housing we mean dormitory, graduate student or visiting faculty housing, or other housing arrangement provided by a college or university.)'
       precondition:
-        - predicate: q_cdem_01.outcome >= 45
-      items:
-        # MCOG.01: Worsening thinking or memory difficulties in past 12 months
-        - id: q_mcog_01
-          kind: Question
-          title: "During the past 12 months, have you experienced difficulties with thinking or memory that are happening more often or are getting worse?"
-          input:
-            control: Switch
-            on: "Yes"
-            off: "No"
-
-        # MCOG.02: Worried about these difficulties
-        # Precondition: MCOG.01 = Yes (1)
-        - id: q_mcog_02
-          kind: Question
-          title: "Are you worried about these difficulties with thinking or memory?"
-          precondition:
-            - predicate: q_mcog_01.outcome == 1
-          input:
-            control: Switch
-            on: "Yes"
-            off: "No"
-
-        # MCOG.03: Discussed with health care provider
-        # Precondition: MCOG.01 = Yes (1)
-        - id: q_mcog_03
-          kind: Question
-          title: "Have you or anyone else discussed your difficulties with thinking or memory with a health care provider?"
-          precondition:
-            - predicate: q_mcog_01.outcome == 1
-          input:
-            control: Switch
-            on: "Yes"
-            off: "No"
-
-        # MCOG.04: Interfered with day-to-day activities
-        # Precondition: MCOG.01 = Yes (1)
-        - id: q_mcog_04
-          kind: Question
-          title: "During the past 12 months, have your difficulties with thinking or memory interfered with day-to-day activities?"
-          precondition:
-            - predicate: q_mcog_01.outcome == 1
-          input:
-            control: Switch
-            on: "Yes"
-            off: "No"
-
-        # MCOG.05: Interfered with ability to work or volunteer
-        # Precondition: MCOG.01 = Yes (1)
-        - id: q_mcog_05
-          kind: Question
-          title: "During the past 12 months, have your difficulties with thinking or memory interfered with your ability to work or volunteer?"
-          precondition:
-            - predicate: q_mcog_01.outcome == 1
-          input:
-            control: Switch
-            on: "Yes"
-            off: "No"
-
-    # ===================================================================
-    # SECTION: caregiver
-    # ===================================================================
-    # =========================================================================
-    # MODULE 14: CAREGIVER (MCARE)
-    # =========================================================================
-    # MCARE.01: Provided care in past 30 days.
-    #   1 (Yes)  → MCARE.02–08
-    #   2 (No)   → MCARE.09
-    #   7 (DK)   → MCARE.09
-    #   8 (Died) → end of module (skip MCARE.09)
-    #   9 (R)    → MCARE.09
-    #
-    # MCARE.02–08: Precondition: MCARE.01 == 1
-    # MCARE.02: Relationship. Dropdown (15 options).
-    # MCARE.03: Duration of caregiving. Radio (5 ranges).
-    # MCARE.04: Hours per week of care. Radio (4 ranges).
-    # MCARE.05: Main health condition of care recipient. Dropdown (15 options).
-    #   05 (Alzheimer's/dementia) → SKIP MCARE.06 → MCARE.07
-    #   all others / DK / R → MCARE.06
-    # MCARE.06: Recipient also has Alzheimer's/dementia. Switch.
-    #   Precondition: MCARE.01==1 AND MCARE.05 != 5
-    # MCARE.07: Managed personal care tasks. Switch. Precondition: MCARE.01==1
-    # MCARE.08: Managed household tasks. Switch. Precondition: MCARE.01==1
-    #   After MCARE.08, skip MCARE.09 (already a caregiver).
-    #
-    # MCARE.09: Expects to provide care in next 2 years. Switch.
-    #   Precondition: MCARE.01 != 1 AND MCARE.01 != 3
-    #   (i.e., not a current caregiver and recipient did not die)
-    # =========================================================================
-    - id: b_caregiver
-      kind: Group
-      title: "Module 14: Caregiver"
-      items:
-        # MCARE.01: Provided care or assistance in past 30 days
-        - id: q_mcare_01
-          kind: Question
-          title: "During the past 30 days, did you provide regular care or assistance to a friend or family member who has a health problem or disability?"
-          input:
-            control: Radio
-            labels:
-              1: "Yes"
-              2: "No"
-              8: "Caregiving recipient died in past 30 days"
-
-        # MCARE.02: Relationship to care recipient
-        # Precondition: MCARE.01 = Yes (1)
-        - id: q_mcare_02
-          kind: Question
-          title: "What is his or her relationship to you?"
-          precondition:
-            - predicate: q_mcare_01.outcome == 1
-          input:
-            control: Dropdown
-            labels:
-              1: "Mother"
-              2: "Father"
-              3: "Mother-in-law"
-              4: "Father-in-law"
-              5: "Child"
-              6: "Husband"
-              7: "Wife"
-              8: "Live-in partner"
-              9: "Brother/brother-in-law"
-              10: "Sister/sister-in-law"
-              11: "Grandmother"
-              12: "Grandfather"
-              13: "Grandchild"
-              14: "Other relative"
-              15: "Non-relative/family friend"
-
-        # MCARE.03: Duration of caregiving
-        # Precondition: MCARE.01 = Yes (1)
-        - id: q_mcare_03
-          kind: Question
-          title: "For how long have you provided care for that person?"
-          precondition:
-            - predicate: q_mcare_01.outcome == 1
-          input:
-            control: Radio
-            labels:
-              1: "Less than 30 days"
-              2: "1 to less than 6 months"
-              3: "6 months to less than 2 years"
-              4: "2 to less than 5 years"
-              5: "5 or more years"
-
-        # MCARE.04: Average hours per week providing care
-        # Precondition: MCARE.01 = Yes (1)
-        - id: q_mcare_04
-          kind: Question
-          title: "In an average week, how many hours do you provide care or assistance?"
-          precondition:
-            - predicate: q_mcare_01.outcome == 1
-          input:
-            control: Radio
-            labels:
-              1: "Up to 8 hours per week"
-              2: "9 to 19 hours per week"
-              3: "20 to 39 hours per week"
-              4: "40 or more hours per week"
-
-        # MCARE.05: Main health problem/disability of care recipient
-        # Precondition: MCARE.01 = Yes (1)
-        # If Alzheimer's/dementia (5) → skip MCARE.06 directly to MCARE.07.
-        - id: q_mcare_05
-          kind: Question
-          title: "What is the main health problem, long-term illness, or disability that the person you care for has?"
-          precondition:
-            - predicate: q_mcare_01.outcome == 1
-          input:
-            control: Dropdown
-            labels:
-              1: "Arthritis"
-              2: "Asthma"
-              3: "Cancer"
-              4: "Chronic respiratory disease/COPD"
-              5: "Alzheimer's disease or dementia"
-              6: "Developmental disabilities"
-              7: "Diabetes"
-              8: "Heart disease/hypertension/stroke"
-              9: "HIV"
-              10: "Mental illness"
-              11: "Other organ failure"
-              12: "Substance abuse"
-              13: "Injuries"
-              14: "Old age/infirmity"
-              15: "Other"
-
-        # MCARE.06: Recipient also has Alzheimer's/dementia/cognitive impairment
-        # Precondition: MCARE.01==1 AND MCARE.05 != 5
-        # (If primary condition is already Alzheimer's, this question is skipped.)
-        - id: q_mcare_06
-          kind: Question
-          title: "Does the person you care for also have Alzheimer's disease, dementia or other cognitive impairment disorder?"
-          precondition:
-            - predicate: q_mcare_01.outcome == 1
-            - predicate: q_mcare_05.outcome != 5
-          input:
-            control: Switch
-            on: "Yes"
-            off: "No"
-
-        # MCARE.07: Managed personal care (medications, feeding, dressing, bathing)
-        # Precondition: MCARE.01 = Yes (1)
-        - id: q_mcare_07
-          kind: Question
-          title: "In the past 30 days, did you provide care by managing personal care such as giving medications, feeding, dressing, or bathing?"
-          precondition:
-            - predicate: q_mcare_01.outcome == 1
-          input:
-            control: Switch
-            on: "Yes"
-            off: "No"
-
-        # MCARE.08: Managed household tasks (cleaning, managing money, preparing meals)
-        # Precondition: MCARE.01 = Yes (1)
-        # After this item, current caregivers skip MCARE.09.
-        - id: q_mcare_08
-          kind: Question
-          title: "In the past 30 days, did you provide care by managing household tasks such as cleaning, managing money, or preparing meals?"
-          precondition:
-            - predicate: q_mcare_01.outcome == 1
-          input:
-            control: Switch
-            on: "Yes"
-            off: "No"
-
-        # MCARE.09: Expects to provide care in the next 2 years
-        # Precondition: MCARE.01 != 1 (not a current caregiver)
-        #           AND MCARE.01 != 3 (recipient did not die)
-        # Covers respondents who answered No (2), DK (7), or Refused (9).
-        - id: q_mcare_09
-          kind: Question
-          title: "In the next 2 years, do you expect to provide care or assistance to a friend or family member who has a health problem or disability?"
-          precondition:
-            - predicate: q_mcare_01.outcome != 1 and q_mcare_01.outcome != 8
-          input:
-            control: Switch
-            on: "Yes"
-            off: "No"
-
-    # ===================================================================
-    # SECTION: tobacco_cessation
-    # ===================================================================
-    # =========================================================================
-    # MODULE 15: TOBACCO CESSATION (MTC)
-    # =========================================================================
-    # Source items referenced directly by outcome:
-    #   CTOB.01 (q_ctob_01) — smoked 100+ cigarettes in lifetime (Yes=1)
-    #   CTOB.02 (q_ctob_02) — current smoking status (1=every day, 2=some days,
-    #                         3=not at all / former)
-    #
-    # MTC.01 precondition: q_ctob_01.outcome==1 AND q_ctob_02.outcome==3 (former smoker)
-    # MTC.02 precondition: q_ctob_02.outcome in {1, 2} (current smoker)
-    #
-    # MTC.01: Time since last cigarette. Dropdown (8 time ranges).
-    # MTC.02: Quit attempt in past 12 months. Switch.
-    # =========================================================================
-    - id: b_tobacco_cessation
-      kind: Group
-      title: "Module 15: Tobacco Cessation"
-      items:
-        # MTC.01: Time since last cigarette (former smokers only)
-        # Precondition: smoked 100+ cigarettes AND now a former smoker
-        - id: q_mtc_01
-          kind: Question
-          title: "How long has it been since you last smoked a cigarette, even one or two puffs?"
-          precondition:
-            - predicate: q_ctob_01.outcome == 1 and q_ctob_02.outcome == 3
-          input:
-            control: Dropdown
-            labels:
-              1: "Within the past month"
-              2: "Within the past 3 months"
-              3: "Within the past 6 months"
-              4: "Within the past year"
-              5: "Within the past 5 years"
-              6: "Within the past 10 years"
-              7: "10 or more years ago"
-              8: "Never smoked regularly"
-
-        # MTC.02: Quit attempt in past 12 months (current smokers only)
-        # Precondition: currently smoking every day or some days
-        - id: q_mtc_02
-          kind: Question
-          title: "During the past 12 months, have you stopped smoking for one day or longer because you were trying to quit smoking?"
-          precondition:
-            - predicate: q_ctob_02.outcome == 1 or q_ctob_02.outcome == 2
-          input:
-            control: Switch
-            on: "Yes"
-            off: "No"
-
-    # =========================================================================
-    # MODULE 16: OTHER TOBACCO USE (MOTU)
-    # =========================================================================
-    # Source items referenced directly by outcome:
-    #   CTOB.02 (q_ctob_02) — cigarette status (1=every day, 2=some days, 3=not at all)
-    #   CTOB.04 (q_ctob_04) — e-cigarette status (1=never used, 2=every day,
-    #                         3=some days, 4=not at all right now)
-    #
-    # MOTU.01 precondition: q_ctob_02.outcome in {1, 2} (current cigarette smoker)
-    # MOTU.02 precondition: q_ctob_04.outcome in {2, 3} (current e-cigarette user —
-    #   source filter MOTU.FILTER2: CTOB.04=2 or 3)
-    # MOTU.03: No precondition (asked of all respondents).
-    # =========================================================================
-    - id: b_other_tobacco
-      kind: Group
-      title: "Module 16: Other Tobacco Use"
-      items:
-        # MOTU.01: Currently smokes menthol cigarettes (current smokers only)
-        - id: q_motu_01
-          kind: Question
-          title: "Currently, when you smoke cigarettes, do you usually smoke menthol cigarettes?"
-          precondition:
-            - predicate: q_ctob_02.outcome == 1 or q_ctob_02.outcome == 2
-          input:
-            control: Switch
-            on: "Yes"
-            off: "No"
-
-        # MOTU.02: Currently uses menthol e-cigarettes (current e-cig users only)
-        # Precondition: q_ctob_04.outcome in {2, 3} per source filter MOTU.FILTER2
-        # (CTOB.04=2: every day; CTOB.04=3: some days)
-        - id: q_motu_02
-          kind: Question
-          title: "Currently, when you use e-cigarettes, do you usually use menthol e-cigarettes?"
-          precondition:
-            - predicate: q_ctob_04.outcome == 2 or q_ctob_04.outcome == 3
-          input:
-            control: Switch
-            on: "Yes"
-            off: "No"
-
-        # MOTU.03: Heard of heated tobacco products (asked of all respondents)
-        - id: q_motu_03
-          kind: Question
-          title: "Before today, have you heard of heated tobacco products?"
-          input:
-            control: Switch
-            on: "Yes"
-            off: "No"
-
-    # ===================================================================
-    # SECTION: firearm_industry_heart
-    # ===================================================================
-    # =========================================================================
-    # MODULE 17: FIREARM SAFETY (MFS)
-    # =========================================================================
-    # MFS.01: Always asked.
-    #   1 (Yes) → ask MFS.02
-    #   2 (No), 7 (DK), 9 (R) → skip to Module 18
-    #
-    # MFS.02: Precondition: MFS.01 == 1 (firearms in home)
-    #   1 (Yes) → ask MFS.03
-    #   2 (No), 7 (DK), 9 (R) → skip to Module 18
-    #
-    # MFS.03: Precondition: MFS.02 == 1 (loaded firearms present)
-    #   Always routes to next module after response.
-    # =========================================================================
-    - id: b_firearm
-      kind: Group
-      title: "Module 17: Firearm Safety"
-      items:
-        # MFS.01: Firearms in or around home
-        - id: q_mfs_01
-          kind: Question
-          title: "Are any firearms now kept in or around your home?"
-          input:
-            control: Switch
-            on: "Yes"
-            off: "No"
-
-        # MFS.02: Are any of the firearms loaded
-        # Precondition: MFS.01 = Yes (1)
-        - id: q_mfs_02
-          kind: Question
-          title: "Are any of these firearms now loaded?"
-          precondition:
-            - predicate: q_mfs_01.outcome == 1
-          input:
-            control: Switch
-            on: "Yes"
-            off: "No"
-
-        # MFS.03: Are any loaded firearms also unlocked
-        # Precondition: MFS.02 = Yes (1)
-        - id: q_mfs_03
-          kind: Question
-          title: "Are any of these loaded firearms also unlocked?"
-          precondition:
-            - predicate: q_mfs_02.outcome == 1
-          input:
-            control: Switch
-            on: "Yes"
-            off: "No"
-
-    # =========================================================================
-    # MODULE 18: INDUSTRY AND OCCUPATION (MIO)
-    # =========================================================================
-    # Module filter: Ask only if CDEM.13 = 1 (employed for wages), 2 (self-employed),
-    # or 4 (out of work for less than 1 year).
-    #
-    # MIO.01 and MIO.02: Both asked when module filter is met; no internal routing.
-    # =========================================================================
-    - id: b_industry
-      kind: Group
-      title: "Module 18: Industry and Occupation"
+      - predicate: CP07.outcome == 2
+        hint: Asked only when question CP07. is "No".
+      - predicate: not (CP07.outcome == 1)
+        hint: Asked only when question CP07. is not "Yes".
+      input:
+        control: Radio
+        labels:
+          1: 'Yes'
+          2: 'No'
+  - id: b_s2_cp09_cp12
+    title: State of Residence and Household
+    precondition:
+    - predicate: not (LL01.outcome == 2)
+      hint: Asked only when question LL01. is not "No".
+    - predicate: not (LL02.outcome == 3)
+      hint: Asked only when question LL02. is not "No, this is a business".
+    - predicate: not (LL03.outcome == 2)
+      hint: Asked only when question LL03. is not "No".
+    - predicate: not (LL04.outcome == 2)
+      hint: Asked only when question LL04. is not "No".
+    - predicate: not (LL05.outcome == 1)
+      hint: Asked only when question LL05. is not "Yes, it is a cell phone".
+    - predicate: not (LL06.outcome == 2 and LL03.outcome == 1)
+      hint: Asked only when LL06 and LL03 do not route the respondent out.
+    - predicate: not (LL09.outcome in [1, 2])
+      hint: Asked only when question LL09. is none of "Male", "Female".
+    - predicate: not (LL10.outcome in [7, 9])
+      hint: Asked only when question LL10 is none of "Don't know/Not sure", "Refused".
+    - predicate: not (LL10.outcome in [1, 2])
+      hint: Asked only when question LL10 is none of "Male", "Female".
+    - predicate: not (CP01.outcome == 2)
+      hint: Asked only when question CP01. is not "No".
+    - predicate: not (CP02.outcome == 2)
+      hint: Asked only when question CP02. is not "No".
+    - predicate: not (CP03.outcome == 2)
+      hint: Asked only when question CP03. is not "No".
+    - predicate: not (CP04.outcome == 2)
+      hint: Asked only when question CP04. is not "No".
+    - predicate: not (CP06.outcome in [7, 9])
+      hint: Asked only when question CP06 is none of "Don't know/Not sure", "Refused".
+    - predicate: not (CP08.outcome == 2)
+      hint: Asked only when question CP08. is not "No".
+    items:
+    - id: CP09
+      kind: Question
+      title: Do you currently live in___(state)____?
+      input:
+        control: Radio
+        labels:
+          1: 'Yes'
+          2: 'No'
+    - id: CP10
+      kind: Question
+      title: In what state do you currently live?
       precondition:
-        - predicate: q_cdem_13.outcome == 1 or q_cdem_13.outcome == 2 or q_cdem_13.outcome == 4
-      items:
-        # MIO.01: Type of work / job title
-        - id: q_mio_01
-          kind: Question
-          title: "What kind of work do you do?"
-          input:
-            control: Textarea
-            placeholder: "Describe your type of work or job title"
-
-        # MIO.02: Business or industry type
-        - id: q_mio_02
-          kind: Question
-          title: "What kind of business or industry do you work in?"
-          input:
-            control: Textarea
-            placeholder: "Describe the business or industry"
-
-    # =========================================================================
-    # MODULE 19: HEART ATTACK AND STROKE (MHAS)
-    # =========================================================================
-    # MHAS.01–06: Heart attack symptom knowledge — all Switch, no internal routing.
-    # MHAS.07–12: Stroke symptom knowledge — all Switch, no internal routing.
-    # MHAS.13: First action if witnessing heart attack or stroke — Dropdown.
-    #
-    # All 13 items are always asked (no skip logic within this module).
-    # =========================================================================
-    - id: b_heart_attack_stroke
-      kind: Group
-      title: "Module 19: Heart Attack and Stroke"
-      items:
-        # MHAS.01: Jaw/neck/back pain as heart attack symptom
-        - id: q_mhas_01
-          kind: Question
-          title: "Do you think pain or discomfort in the jaw, neck, or back are symptoms of a heart attack?"
-          input:
-            control: Switch
-            on: "Yes"
-            off: "No"
-
-        # MHAS.02: Weakness/lightheadedness/faintness as heart attack symptom
-        - id: q_mhas_02
-          kind: Question
-          title: "Do you think feeling weak, lightheaded, or faint are symptoms of a heart attack?"
-          input:
-            control: Switch
-            on: "Yes"
-            off: "No"
-
-        # MHAS.03: Chest pain or discomfort as heart attack symptom
-        - id: q_mhas_03
-          kind: Question
-          title: "Do you think chest pain or discomfort are symptoms of a heart attack?"
-          input:
-            control: Switch
-            on: "Yes"
-            off: "No"
-
-        # MHAS.04: Sudden trouble seeing as heart attack symptom
-        - id: q_mhas_04
-          kind: Question
-          title: "Do you think sudden trouble seeing in one or both eyes are symptoms of a heart attack?"
-          input:
-            control: Switch
-            on: "Yes"
-            off: "No"
-
-        # MHAS.05: Arm/shoulder pain as heart attack symptom
-        - id: q_mhas_05
-          kind: Question
-          title: "Do you think pain or discomfort in the arms or shoulder are symptoms of a heart attack?"
-          input:
-            control: Switch
-            on: "Yes"
-            off: "No"
-
-        # MHAS.06: Shortness of breath as heart attack symptom
-        - id: q_mhas_06
-          kind: Question
-          title: "Do you think shortness of breath is a symptom of a heart attack?"
-          input:
-            control: Switch
-            on: "Yes"
-            off: "No"
-
-        # MHAS.07: Sudden confusion/trouble speaking as stroke symptom
-        - id: q_mhas_07
-          kind: Question
-          title: "Do you think sudden confusion or trouble speaking are symptoms of a stroke?"
-          input:
-            control: Switch
-            on: "Yes"
-            off: "No"
-
-        # MHAS.08: Sudden numbness/weakness of face, arm, or leg as stroke symptom
-        - id: q_mhas_08
-          kind: Question
-          title: "Do you think sudden numbness or weakness of face, arm, or leg, especially on one side, are symptoms of a stroke?"
-          input:
-            control: Switch
-            on: "Yes"
-            off: "No"
-
-        # MHAS.09: Sudden trouble seeing as stroke symptom
-        - id: q_mhas_09
-          kind: Question
-          title: "Do you think sudden trouble seeing in one or both eyes is a symptom of a stroke?"
-          input:
-            control: Switch
-            on: "Yes"
-            off: "No"
-
-        # MHAS.10: Sudden chest pain as stroke symptom
-        - id: q_mhas_10
-          kind: Question
-          title: "Do you think sudden chest pain or discomfort are symptoms of a stroke?"
-          input:
-            control: Switch
-            on: "Yes"
-            off: "No"
-
-        # MHAS.11: Sudden trouble walking/dizziness/loss of balance as stroke symptom
-        - id: q_mhas_11
-          kind: Question
-          title: "Do you think sudden trouble walking, dizziness, or loss of balance is a symptom of a stroke?"
-          input:
-            control: Switch
-            on: "Yes"
-            off: "No"
-
-        # MHAS.12: Severe headache with no known cause as stroke symptom
-        - id: q_mhas_12
-          kind: Question
-          title: "Do you think a severe headache with no known cause are symptoms of a stroke?"
-          input:
-            control: Switch
-            on: "Yes"
-            off: "No"
-
-        # MHAS.13: First action if witnessing heart attack or stroke
-        - id: q_mhas_13
-          kind: Question
-          title: "If you thought someone was having a heart attack or a stroke, what is the first thing you would do?"
-          input:
-            control: Dropdown
-            labels:
-              1: "Take them to the hospital"
-              2: "Tell them to call their doctor"
-              3: "Call 911"
-              4: "Call their spouse or family member"
-              5: "Do something else"
-
-    # =========================================================================
-    # MODULE 20: ASPIRIN FOR CVD PREVENTION (MASPRN)
-    # =========================================================================
-    # MASPRN.01: Always asked (no module filter or internal routing).
-    # =========================================================================
-    - id: b_aspirin
-      kind: Group
-      title: "Module 20: Aspirin for CVD Prevention"
-      items:
-        # MASPRN.01: Frequency of aspirin use for heart disease prevention
-        - id: q_masprn_01
-          kind: Question
-          title: "How often do you take an aspirin to prevent or control heart disease, heart attacks or stroke?"
-          input:
-            control: Radio
-            labels:
-              1: "Daily"
-              2: "Some days"
-              3: "Used to take it but stopped due to side effects"
-              4: "Do not take it"
-
-    # ===================================================================
-    # SECTION: sex_sogi_marijuana
-    # ===================================================================
-    # =========================================================================
-    # MODULE 21: SEX AT BIRTH (MSAB)
-    # =========================================================================
-    # Module filter: the source auto-codes MSAB.01 and skips it when LL10 or CP06
-    # already coded sex. In this linear model the intro always resolves `sex`, so
-    # that skip would make the item statically dead; MSAB.01 is therefore asked
-    # outright (see the item note below) rather than gated on a never-true value.
-    # =========================================================================
-    - id: b_sex_at_birth
-      kind: Group
-      title: "Module 21: Sex at Birth"
-      items:
-        # MSAB.01: Sex at birth — standalone module item.
-        # Source auto-codes and skips this when LL10/CP06 already captured sex at
-        # birth. In this linear model the intro always resolves `sex` (1/2), so a
-        # `sex == 0` gate would be statically dead (unreachable_item); the CATI
-        # auto-code/skip optimization is intentionally dropped and the question is
-        # asked outright so the inventory item stays represented and reachable.
-        - id: q_msab_01
-          kind: Question
-          title: "What was your sex at birth? Was it male or female?"
-          input:
-            control: Radio
-            labels:
-              1: "Male"
-              2: "Female"
-
-    # =========================================================================
-    # MODULE 22: SEXUAL ORIENTATION AND GENDER IDENTITY (SOGI)
-    # =========================================================================
-    # MSOGI.FILTER1 routes by sex:
-    #   Male (sex == 1) → ask MSOGI.01 (male version), skip MSOGI.02
-    #   Female (sex == 2) → skip MSOGI.01, ask MSOGI.02 (female version)
-    # MSOGI.03: Always asked (transgender question), no routing condition.
-    # =========================================================================
-    - id: b_sogi
-      kind: Group
-      title: "Module 22: Sexual Orientation and Gender Identity"
-      items:
-        # MSOGI.01: Sexual orientation — male version
-        # Precondition: sex at birth is Male
-        - id: q_msogi_01
-          kind: Question
-          title: "Which of the following best represents how you think of yourself?"
-          precondition:
-            - predicate: sex == 1
-          input:
-            control: Radio
-            labels:
-              1: "Gay"
-              2: "Straight, that is, not gay"
-              3: "Bisexual"
-              4: "Something else"
-
-        # MSOGI.02: Sexual orientation — female version
-        # Precondition: sex at birth is Female
-        - id: q_msogi_02
-          kind: Question
-          title: "Which of the following best represents how you think of yourself?"
-          precondition:
-            - predicate: sex == 2
-          input:
-            control: Radio
-            labels:
-              1: "Lesbian or Gay"
-              2: "Straight, that is, not gay"
-              3: "Bisexual"
-              4: "Something else"
-
-        # MSOGI.03: Transgender identity — always asked
-        - id: q_msogi_03
-          kind: Question
-          title: "Do you consider yourself to be transgender?"
-          input:
-            control: Radio
-            labels:
-              1: "Yes, male-to-female"
-              2: "Yes, female-to-male"
-              3: "Yes, gender nonconforming"
-              4: "No"
-
-    # =========================================================================
-    # MODULE 23: MARIJUANA USE (MMU)
-    # =========================================================================
-    # MMU.01: Days of use in past 30 days (0 = none → skip rest of module).
-    #   0 → skip MMU.02–07
-    #   1–30 → ask MMU.02 onward
-    #   Note: original codes 88=None (skip) and 77=DK (ask); modelled as:
-    #   0 skips follow-up questions; >0 proceeds to method questions.
-    #
-    # MMU.02–06: Use method questions (Switch). Each increments method_count
-    #   via codeBlock when answered Yes.
-    #
-    # MMU.07: Most-used method — asked only when >1 method was used (method_count > 1).
-    # =========================================================================
-    - id: b_marijuana
-      kind: Group
-      title: "Module 23: Marijuana Use"
-      items:
-        # MMU.01: Days used marijuana in past 30 days (0 = none)
-        - id: q_mmu_01
-          kind: Question
-          title: "During the past 30 days, on how many days did you use marijuana or cannabis?"
-          input:
-            control: Editbox
-            min: 0
-            max: 30
-            right: "days (0 = none)"
-
-        # MMU.02: Method — smoked (joint, bong, pipe, blunt)
-        # Precondition: used marijuana at least once
-        - id: q_mmu_02
-          kind: Question
-          title: "During the past 30 days, did you smoke marijuana (for example, in a joint, bong, pipe, or blunt)?"
-          precondition:
-            - predicate: q_mmu_01.outcome > 0
-          input:
-            control: Switch
-            on: "Yes"
-            off: "No"
-          codeBlock: |
-            if q_mmu_02.outcome == 1:
-              method_count = method_count + 1
-
-        # MMU.03: Method — eaten or drunk (brownies, candy, tea, etc.)
-        # Precondition: used marijuana at least once
-        - id: q_mmu_03
-          kind: Question
-          title: "During the past 30 days, did you eat or drink marijuana (for example, in brownies, cakes, cookies, or candy, or in tea, cola, or alcohol)?"
-          precondition:
-            - predicate: q_mmu_01.outcome > 0
-          input:
-            control: Switch
-            on: "Yes"
-            off: "No"
-          codeBlock: |
-            if q_mmu_03.outcome == 1:
-              method_count = method_count + 1
-
-        # MMU.04: Method — vaporized (e-cigarette-like vaporizer)
-        # Precondition: used marijuana at least once
-        - id: q_mmu_04
-          kind: Question
-          title: "During the past 30 days, did you vaporize marijuana (for example, in an e-cigarette-like vaporizer or another vaporizing device)?"
-          precondition:
-            - predicate: q_mmu_01.outcome > 0
-          input:
-            control: Switch
-            on: "Yes"
-            off: "No"
-          codeBlock: |
-            if q_mmu_04.outcome == 1:
-              method_count = method_count + 1
-
-        # MMU.05: Method — dabbed (dabbing rig, knife, dab pen)
-        # Precondition: used marijuana at least once
-        - id: q_mmu_05
-          kind: Question
-          title: "During the past 30 days, did you dab marijuana (for example, using a dabbing rig, knife, or dab pen)?"
-          precondition:
-            - predicate: q_mmu_01.outcome > 0
-          input:
-            control: Switch
-            on: "Yes"
-            off: "No"
-          codeBlock: |
-            if q_mmu_05.outcome == 1:
-              method_count = method_count + 1
-
-        # MMU.06: Method — some other way
-        # Precondition: used marijuana at least once
-        - id: q_mmu_06
-          kind: Question
-          title: "During the past 30 days, did you use marijuana in some other way?"
-          precondition:
-            - predicate: q_mmu_01.outcome > 0
-          input:
-            control: Switch
-            on: "Yes"
-            off: "No"
-          codeBlock: |
-            if q_mmu_06.outcome == 1:
-              method_count = method_count + 1
-
-        # MMU.07: Most-used method — asked only when more than one method used
-        # Precondition: used marijuana at least once AND more than one method reported Yes
-        - id: q_mmu_07
-          kind: Question
-          title: "During the past 30 days, which one of the following ways did you use marijuana the most often?"
-          precondition:
-            - predicate: q_mmu_01.outcome > 0
-            - predicate: method_count > 1
-          input:
-            control: Dropdown
-            labels:
-              1: "Smoke it"
-              2: "Eat or drink it"
-              3: "Vaporize it"
-              4: "Dab it"
-              5: "Use some other way"
-
-    # ===================================================================
-    # SECTION: adverse_childhood
-    # ===================================================================
-    # =========================================================================
-    # MODULE 24: ADVERSE CHILDHOOD EXPERIENCES (MACE)
-    # =========================================================================
-    # All 13 items are always asked when this module is selected.
-    # No internal skip routing exists within the module.
-    #
-    # MACE.01–04: Household dysfunction (Switch Yes/No)
-    # MACE.05:    Parental separation (Radio — 3 options including "not married")
-    # MACE.06–11: Exposure to violence and abuse (Radio — Never/Once/More than once)
-    # MACE.12–13: Protective adult presence (Dropdown — 5-point frequency scale)
-    # =========================================================================
-    - id: b_adverse_childhood
-      kind: Group
-      title: "Module 24: Adverse Childhood Experiences"
-      items:
-        # MACE.01: Lived with someone who was depressed, mentally ill, or suicidal
-        - id: q_mace_01
-          kind: Question
-          title: "When you were growing up, did you live with anyone who was depressed, mentally ill, or suicidal?"
-          input:
-            control: Switch
-            on: "Yes"
-            off: "No"
-
-        # MACE.02: Lived with a problem drinker or alcoholic
-        - id: q_mace_02
-          kind: Question
-          title: "When you were growing up, did you live with anyone who was a problem drinker or alcoholic?"
-          input:
-            control: Switch
-            on: "Yes"
-            off: "No"
-
-        # MACE.03: Lived with someone who used illegal street drugs or abused prescription medications
-        - id: q_mace_03
-          kind: Question
-          title: "When you were growing up, did you live with anyone who used illegal street drugs or who abused prescription medications?"
-          input:
-            control: Switch
-            on: "Yes"
-            off: "No"
-
-        # MACE.04: Lived with someone who served time in prison, jail, or correctional facility
-        - id: q_mace_04
-          kind: Question
-          title: "When you were growing up, did you live with anyone who served time or was sentenced to serve time in a prison, jail, or other correctional facility?"
-          input:
-            control: Switch
-            on: "Yes"
-            off: "No"
-
-        # MACE.05: Parents separated or divorced (3 options — includes "not married")
-        - id: q_mace_05
-          kind: Question
-          title: "When you were growing up, were your parents separated or divorced?"
-          input:
-            control: Radio
-            labels:
-              1: "Yes"
-              2: "No"
-              8: "Parents not married"
-
-        # MACE.06: Witnessed domestic violence between parents/adults in home
-        - id: q_mace_06
-          kind: Question
-          title: "How often did your parents or adults in your home ever slap, hit, kick, punch, or beat each other up?"
-          input:
-            control: Radio
-            labels:
-              1: "Never"
-              2: "Once"
-              3: "More than once"
-
-        # MACE.07: Physically hurt by parent or adult in home (not spanking)
-        - id: q_mace_07
-          kind: Question
-          title: "Not including spanking, how often did a parent or adult in your home ever hit, beat, kick, or physically hurt you in any way?"
-          input:
-            control: Radio
-            labels:
-              1: "Never"
-              2: "Once"
-              3: "More than once"
-
-        # MACE.08: Verbally abused by parent or adult in home
-        - id: q_mace_08
-          kind: Question
-          title: "How often did a parent or adult in your home ever swear at you, insult you, or put you down?"
-          input:
-            control: Radio
-            labels:
-              1: "Never"
-              2: "Once"
-              3: "More than once"
-
-        # MACE.09: Touched sexually by someone 5+ years older or an adult
-        - id: q_mace_09
-          kind: Question
-          title: "How often did anyone at least 5 years older than you or an adult, ever touch you sexually?"
-          input:
-            control: Radio
-            labels:
-              1: "Never"
-              2: "Once"
-              3: "More than once"
-
-        # MACE.10: Made to touch someone sexually by someone 5+ years older or an adult
-        - id: q_mace_10
-          kind: Question
-          title: "How often did anyone at least 5 years older than you or an adult, try to make you touch them sexually?"
-          input:
-            control: Radio
-            labels:
-              1: "Never"
-              2: "Once"
-              3: "More than once"
-
-        # MACE.11: Forced to have sex by someone 5+ years older or an adult
-        - id: q_mace_11
-          kind: Question
-          title: "How often did anyone at least 5 years older than you or an adult, force you to have sex?"
-          input:
-            control: Radio
-            labels:
-              1: "Never"
-              2: "Once"
-              3: "More than once"
-
-        # MACE.12: Protective adult who made respondent feel safe (5-point scale)
-        - id: q_mace_12
-          kind: Question
-          title: "For how much of your childhood was there an adult in your household who made you feel safe and protected?"
-          input:
-            control: Dropdown
-            labels:
-              1: "Never"
-              2: "A little of the time"
-              3: "Some of the time"
-              4: "Most of the time"
-              5: "All of the time"
-
-        # MACE.13: Adult who tried hard to meet respondent's basic needs (5-point scale)
-        - id: q_mace_13
-          kind: Question
-          title: "For how much of your childhood was there an adult in your household who tried hard to make sure your basic needs were met?"
-          input:
-            control: Dropdown
-            labels:
-              1: "Never"
-              2: "A little of the time"
-              3: "Some of the time"
-              4: "Most of the time"
-              5: "All of the time"
-
-    # ===================================================================
-    # SECTION: vaccination_modules
-    # ===================================================================
-    # =========================================================================
-    # MODULE 25: PLACE OF FLU VACCINATION (MFP)
-    # =========================================================================
-    # Module filter: Ask only if CIMM.01=1 (respondent had flu vaccine in past
-    # 12 months).
-    # MFP.01: Where respondent received most recent flu shot/vaccine.
-    # =========================================================================
-    - id: b_flu_place
-      kind: Group
-      title: "Module 25: Place of Flu Vaccination"
+      - predicate: CP09.outcome == 2
+        hint: Asked only when question CP09. is "No".
+      - predicate: not (CP09.outcome == 1)
+        hint: Asked only when question CP09. is not "Yes".
+      input:
+        control: Dropdown
+        labels:
+          1: Alabama
+          2: Alaska
+          4: Arizona
+          5: Arkansas
+          6: California
+          8: Colorado
+          9: Connecticut
+          10: Delaware
+          11: District of Columbia
+          12: Florida
+          13: Georgia
+          15: Hawaii
+          16: Idaho
+          17: Illinois
+          18: Indiana
+          19: Iowa
+          20: Kansas
+          21: Kentucky
+          22: Louisiana
+          23: Maine
+          24: Maryland
+          25: Massachusetts
+          26: Michigan
+          27: Minnesota
+          28: Mississippi
+          29: Missouri
+          30: Montana
+          31: Nebraska
+          32: Nevada
+          33: New Hampshire
+          34: New Jersey
+          35: New Mexico
+          36: New York
+          37: North Carolina
+          38: North Dakota
+          39: Ohio
+          40: Oklahoma
+          41: Oregon
+          42: Pennsylvania
+          44: Rhode Island
+          45: South Carolina
+          46: South Dakota
+          47: Tennessee
+          48: Texas
+          49: Utah
+          50: Vermont
+          51: Virginia
+          53: Washington
+          54: West Virginia
+          55: Wisconsin
+          56: Wyoming
+          66: Guam
+          72: Puerto Rico
+          78: Virgin Islands
+          77: Live outside US and participating territories
+          99: Refused
+    - id: CP11
+      kind: Question
+      title: 'Do you also have a landline telephone in your home that is used to make and receive calls? (Read if necessary: By landline telephone, we mean a regular telephone in your home that is used for making or receiving calls. Please include landline phones used for both business and personal use.)'
       precondition:
-        - predicate: q_cimm_01.outcome == 1
-      items:
-        # MFP.01: Place where most recent flu vaccine was received
-        - id: q_mfp_01
-          kind: Question
-          title: "At what kind of place did you get your last flu shot or vaccine?"
-          input:
-            control: Dropdown
-            labels:
-              1: "Doctor's office or HMO"
-              2: "Health department"
-              3: "Clinic or health center"
-              4: "Senior, recreation, or community center"
-              5: "Store (supermarket or drug store)"
-              6: "Hospital"
-              7: "Emergency room"
-              8: "Workplace"
-              9: "Some other kind of place"
-              10: "Received in Canada or Mexico"
-              11: "School"
-
-    # =========================================================================
-    # MODULE 26: HPV VACCINATION (MHPV)
-    # =========================================================================
-    # Module filter: Ask only if age is 18–49 years.
-    # MHPV.01: Ever had an HPV vaccination.
-    #   1 (Yes) → ask MHPV.02 (number of HPV shots)
-    #   2 (No) or 3 (Doctor refused) → skip MHPV.02, go to next module
-    #
-    # MHPV.02: How many HPV shots received. Precondition: MHPV.01 == 1.
-    #   Editbox min 1 max 3 (source captures 1, 2, or 3/all shots).
-    # =========================================================================
-    - id: b_hpv
-      kind: Group
-      title: "Module 26: HPV Vaccination"
+      - predicate: not (CP10.outcome in [77, 99])
+        hint: Asked only when question CP10. is none of "Live outside US and participating territories", "Refused".
+      input:
+        control: Radio
+        labels:
+          1: 'Yes'
+          2: 'No'
+          7: Don't know/ Not sure
+          9: Refused
+    - id: CP12
+      kind: Question
+      title: How many members of your household, including yourself, are 18 years of age or older? (77 Don't know/ Not sure, 99 Refused)
       precondition:
-        - predicate: q_cdem_01.outcome <= 49
-      items:
-        # MHPV.01: Ever had an HPV vaccination
-        - id: q_mhpv_01
-          kind: Question
-          title: "Have you ever had an H.P.V. vaccination?"
-          input:
-            control: Radio
-            labels:
-              1: "Yes"
-              2: "No"
-              3: "Doctor refused when asked"
-
-        # MHPV.02: Number of HPV shots received
-        # Precondition: MHPV.01 = Yes (1)
-        - id: q_mhpv_02
-          kind: Question
-          title: "How many HPV shots did you receive?"
-          precondition:
-            - predicate: q_mhpv_01.outcome == 1
-          input:
-            control: Editbox
-            min: 1
-            max: 3
-            right: "doses (1, 2, or 3 for all shots)"
-
-    # =========================================================================
-    # MODULE 27: TETANUS DIPHTHERIA / TDAP (MTDAP)
-    # =========================================================================
-    # MTDAP.01: Tetanus shot in past 10 years, with type differentiation.
-    #   All responses → go to next module (no branching).
-    # =========================================================================
-    - id: b_tdap
-      kind: Group
-      title: "Module 27: Tetanus Diphtheria / Tdap Vaccination"
-      items:
-        # MTDAP.01: Tetanus shot in past 10 years
-        - id: q_mtdap_01
-          kind: Question
-          title: "Have you received a tetanus shot in the past 10 years?"
-          input:
-            control: Radio
-            labels:
-              1: "Yes, received Tdap (combined tetanus and whooping cough vaccine)"
-              2: "Yes, tetanus shot but not Tdap"
-              3: "Yes, tetanus shot but not sure what type"
-              4: "No, did not receive any tetanus shot"
-
-    # =========================================================================
-    # MODULE 28: COVID VACCINATION (MCOV)
-    # =========================================================================
-    # MCOV.01: Received at least one dose of COVID-19 vaccine.
-    #   1 (Yes) → ask MCOV.03 (number of doses); skip MCOV.02
-    #   2 (No)  → ask MCOV.02 (intent to vaccinate); skip MCOV.03
-    #
-    # MCOV.02: Intent to get COVID vaccine. Precondition: MCOV.01 == 0 (No).
-    #   All responses → go to next module.
-    #
-    # MCOV.03: Number of COVID vaccinations received. Precondition: MCOV.01 == 1 (Yes).
-    #   All responses → go to next module.
-    # =========================================================================
-    - id: b_covid_vaccination
-      kind: Group
-      title: "Module 28: COVID Vaccination"
-      items:
-        # MCOV.01: Received at least one dose of COVID-19 vaccine
-        - id: q_mcov_01
-          kind: Question
-          title: "Have you received at least one dose of a COVID-19 vaccination?"
-          input:
-            control: Switch
-            on: "Yes"
-            off: "No"
-
-        # MCOV.02: Intent to receive COVID vaccination
-        # Precondition: MCOV.01 = No (0)
-        - id: q_mcov_02
-          kind: Question
-          title: "Would you say you will definitely get a vaccine, will probably get a vaccine, will probably not get a vaccine, or will definitely not get a vaccine?"
-          precondition:
-            - predicate: q_mcov_01.outcome == 0
-          input:
-            control: Radio
-            labels:
-              1: "Will definitely get"
-              2: "Will probably get"
-              3: "Will probably not get"
-              4: "Will definitely not get"
-
-        # MCOV.03: Number of COVID vaccinations received
-        # Precondition: MCOV.01 = Yes (1)
-        - id: q_mcov_03
-          kind: Question
-          title: "How many COVID-19 vaccinations have you received?"
-          precondition:
-            - predicate: q_mcov_01.outcome == 1
-          input:
-            control: Dropdown
-            labels:
-              1: "One"
-              2: "Two"
-              3: "Three"
-              4: "Four"
-              5: "Five or more"
-
-    # ===================================================================
-    # SECTION: social_determinants_race
-    # ===================================================================
-    # =========================================================================
-    # MODULE 29: SOCIAL DETERMINANTS AND HEALTH EQUITY (MSDHE)
-    # =========================================================================
-    # All 10 items are sequential with no branching; all respondents are asked
-    # every item regardless of prior responses.
-    # =========================================================================
-    - id: b_social_determinants
-      kind: Group
-      title: "Module 29: Social Determinants and Health Equity"
-      items:
-        # MSDHE.01: Overall life satisfaction
-        - id: q_msdhe_01
-          kind: Question
-          title: "In general, how satisfied are you with your life?"
-          input:
-            control: Radio
-            labels:
-              1: "Very satisfied"
-              2: "Satisfied"
-              3: "Dissatisfied"
-              4: "Very dissatisfied"
-
-        # MSDHE.02: Frequency of receiving needed social and emotional support
-        - id: q_msdhe_02
-          kind: Question
-          title: "How often do you get the social and emotional support that you need?"
-          input:
-            control: Dropdown
-            labels:
-              1: "Always"
-              2: "Usually"
-              3: "Sometimes"
-              4: "Rarely"
-              5: "Never"
-
-        # MSDHE.03: Frequency of feeling lonely
-        - id: q_msdhe_03
-          kind: Question
-          title: "How often do you feel lonely?"
-          input:
-            control: Dropdown
-            labels:
-              1: "Always"
-              2: "Usually"
-              3: "Sometimes"
-              4: "Rarely"
-              5: "Never"
-
-        # MSDHE.04: Lost employment or had hours reduced in past 12 months
-        - id: q_msdhe_04
-          kind: Question
-          title: "In the past 12 months have you lost employment or had hours reduced?"
-          input:
-            control: Switch
-            on: "Yes"
-            off: "No"
-
-        # MSDHE.05: Received SNAP (food stamps) in past 12 months
-        - id: q_msdhe_05
-          kind: Question
-          title: "During the past 12 months, have you received food stamps, also called SNAP?"
-          input:
-            control: Switch
-            on: "Yes"
-            off: "No"
-
-        # MSDHE.06: Frequency of food running out before able to get more
-        - id: q_msdhe_06
-          kind: Question
-          title: "During the past 12 months how often did the food that you bought not last, and you didn't have money to get more?"
-          input:
-            control: Dropdown
-            labels:
-              1: "Always"
-              2: "Usually"
-              3: "Sometimes"
-              4: "Rarely"
-              5: "Never"
-
-        # MSDHE.07: Unable to pay mortgage, rent, or utility bills in past 12 months
-        - id: q_msdhe_07
-          kind: Question
-          title: "During the last 12 months, was there a time when you were not able to pay your mortgage, rent or utility bills?"
-          input:
-            control: Switch
-            on: "Yes"
-            off: "No"
-
-        # MSDHE.08: Utility shutoff threatened in past 12 months
-        - id: q_msdhe_08
-          kind: Question
-          title: "During the last 12 months was there a time when an electric, gas, oil, or water company threatened to shut off services?"
-          input:
-            control: Switch
-            on: "Yes"
-            off: "No"
-
-        # MSDHE.09: Lack of reliable transportation affected daily activities in past 12 months
-        - id: q_msdhe_09
-          kind: Question
-          title: "During the past 12 months has a lack of reliable transportation kept you from medical appointments, meetings, work, or from getting things needed for daily living?"
-          input:
-            control: Switch
-            on: "Yes"
-            off: "No"
-
-        # MSDHE.10: Frequency of stress in past 30 days
-        - id: q_msdhe_10
-          kind: Question
-          title: "Within the last 30 days, how often have you felt stress?"
-          input:
-            control: Dropdown
-            labels:
-              1: "Always"
-              2: "Usually"
-              3: "Sometimes"
-              4: "Rarely"
-              5: "Never"
-
-    # =========================================================================
-    # MODULE 30: REACTIONS TO RACE (MRTR)
-    # =========================================================================
-    # MRTR.01–MRTR.03: Asked of all respondents.
-    # MRTR.04: Asked only if employed or out of work < 1 year (CDEM.13=1,2,4).
-    # MRTR.05–MRTR.06: Asked of all respondents.
-    # =========================================================================
-    - id: b_reactions_race
-      kind: Group
-      title: "Module 30: Reactions to Race"
-      items:
-        # MRTR.01: How other people usually classify respondent by race
-        - id: q_mrtr_01
-          kind: Question
-          title: "How do other people usually classify you in this country?"
-          input:
-            control: Dropdown
-            labels:
-              1: "White"
-              2: "Black or African American"
-              3: "Hispanic or Latino"
-              4: "Asian"
-              5: "Native Hawaiian or Other Pacific Islander"
-              6: "American Indian or Alaska Native"
-              7: "Mixed Race"
-              8: "Some other group"
-
-        # MRTR.02: How often respondent thinks about their race
-        - id: q_mrtr_02
-          kind: Question
-          title: "How often do you think about your race?"
-          input:
-            control: Dropdown
-            labels:
-              1: "Never"
-              2: "Once a year"
-              3: "Once a month"
-              4: "Once a week"
-              5: "Once a day"
-              6: "Once an hour"
-              8: "Constantly"
-
-        # MRTR.03: Racial treatment in general in past 12 months
-        - id: q_mrtr_03
-          kind: Question
-          title: "Within the past 12 months, do you feel that in general you were treated worse than, the same as, or better than people of other races?"
-          input:
-            control: Dropdown
-            labels:
-              1: "Worse"
-              2: "The same"
-              3: "Better"
-              4: "Worse than some, better than others"
-              5: "Only encountered people of same race"
-
-        # MRTR.04: Racial treatment at work in past 12 months
-        # Precondition: CDEM.13 = 1 (employed for wages), 2 (self-employed),
-        #               or 4 (out of work less than 1 year)
-        - id: q_mrtr_04
-          kind: Question
-          title: "Within the past 12 months at work, do you feel you were treated worse than, the same as, or better than people of other races?"
-          precondition:
-            - predicate: q_cdem_13.outcome == 1 or q_cdem_13.outcome == 2 or q_cdem_13.outcome == 4
-          input:
-            control: Dropdown
-            labels:
-              1: "Worse"
-              2: "The same"
-              3: "Better"
-              4: "Worse than some, better than others"
-              5: "Only encountered people of same race"
-
-        # MRTR.05: Racial treatment when seeking health care in past 12 months
-        - id: q_mrtr_05
-          kind: Question
-          title: "Within the past 12 months, when seeking health care, do you feel your experiences were worse than, the same as, or better than for people of other races?"
-          input:
-            control: Dropdown
-            labels:
-              1: "Worse"
-              2: "The same"
-              3: "Better"
-              4: "Worse than some, better than others"
-              5: "Only encountered people of same race"
-
-        # MRTR.06: Physical symptoms from race-based treatment in past 30 days
-        - id: q_mrtr_06
-          kind: Question
-          title: "Within the past 30 days, have you experienced any physical symptoms as a result of how you were treated based on your race?"
-          input:
-            control: Switch
-            on: "Yes"
-            off: "No"
-
-    # ===================================================================
-    # SECTION: child_asthma
-    # ===================================================================
-    # =========================================================================
-    # MODULE 31: RANDOM CHILD SELECTION (MRCS)
-    # =========================================================================
-    # Module filter: Ask only if household has at least one child under 18
-    # (q_cdem_14.outcome >= 1; 0 = none).
-    #
-    # MRCS.01: Birth month of selected child (MM only; year not collected here).
-    # MRCS.02: Gender identity of child.
-    #   1 (Boy) → skip MRCS.03, go to MRCS.04
-    #   2 (Girl) or 3 (Nonbinary/other) → ask MRCS.03 (birth certificate sex)
-    # MRCS.03: Sex on original birth certificate. Precondition: MRCS.02 in [2, 3].
-    # MRCS.04: Hispanic origin of child (single select).
-    # MRCS.05: Race of child (multi-select, power-of-2 keys).
-    # MRCS.06: Relationship of respondent to child.
-    # =========================================================================
-    - id: b_child_selection
-      kind: Group
-      title: "Module 31: Random Child Selection"
+      - predicate: not (CP08.outcome == 1)
+        hint: Asked only when question CP08. is not "Yes".
+      - predicate: not (CP10.outcome in [77, 99])
+        hint: Asked only when question CP10. is none of "Live outside US and participating territories", "Refused".
+      input:
+        control: Editbox
+        min: 1
+        max: 99
+  - id: b_s3_health_status
+    title: 'Core Section 1: Health Status'
+    precondition:
+    - predicate: not (LL01.outcome == 2)
+      hint: Asked only when question LL01. is not "No".
+    - predicate: not (LL02.outcome == 3)
+      hint: Asked only when question LL02. is not "No, this is a business".
+    - predicate: not (LL03.outcome == 2)
+      hint: Asked only when question LL03. is not "No".
+    - predicate: not (LL04.outcome == 2)
+      hint: Asked only when question LL04. is not "No".
+    - predicate: not (LL05.outcome == 1)
+      hint: Asked only when question LL05. is not "Yes, it is a cell phone".
+    - predicate: not (LL06.outcome == 2 and LL03.outcome == 1)
+      hint: Asked only when question LL06 is not "No" together with LL03 being "Yes".
+    - predicate: not (LL10.outcome in [7, 9])
+      hint: Asked only when question LL10 is none of "Don't know/Not sure", "Refused".
+    - predicate: not (CP01.outcome == 2)
+      hint: Asked only when question CP01. is not "No".
+    - predicate: not (CP02.outcome == 2)
+      hint: Asked only when question CP02. is not "No".
+    - predicate: not (CP03.outcome == 2)
+      hint: Asked only when question CP03. is not "No".
+    - predicate: not (CP04.outcome == 2)
+      hint: Asked only when question CP04. is not "No".
+    - predicate: not (CP06.outcome in [7, 9])
+      hint: Asked only when question CP06 is none of "Don't know/Not sure", "Refused".
+    - predicate: not (CP08.outcome == 2)
+      hint: Asked only when question CP08. is not "No".
+    - predicate: not (CP10.outcome in [77, 99])
+      hint: Asked only when question CP10. is none of "Live outside US and participating territories", "Refused".
+    items:
+    - id: CHS_01
+      kind: Question
+      title: Would you say that in general your health is—
+      input:
+        control: Radio
+        labels:
+          1: Excellent
+          2: Very Good
+          3: Good
+          4: Fair
+          5: Poor
+          7: Don't know/Not sure
+          9: Refused
+  - id: b_s4_healthy_days
+    title: 'Core Section 2: Healthy Days'
+    precondition:
+    - predicate: not (LL01.outcome == 2)
+      hint: Asked only when question LL01. is not "No".
+    - predicate: not (LL02.outcome == 3)
+      hint: Asked only when question LL02. is not "No, this is a business".
+    - predicate: not (LL03.outcome == 2)
+      hint: Asked only when question LL03. is not "No".
+    - predicate: not (LL04.outcome == 2)
+      hint: Asked only when question LL04. is not "No".
+    - predicate: not (LL05.outcome == 1)
+      hint: Asked only when question LL05. is not "Yes, it is a cell phone".
+    - predicate: not (LL06.outcome == 2 and LL03.outcome == 1)
+      hint: Asked only when LL06 is not "No" together with LL03 "Yes".
+    - predicate: not (LL10.outcome in [7, 9])
+      hint: Asked only when question LL10 is none of "Don't know/Not sure", "Refused".
+    - predicate: not (CP01.outcome == 2)
+      hint: Asked only when question CP01. is not "No".
+    - predicate: not (CP02.outcome == 2)
+      hint: Asked only when question CP02. is not "No".
+    - predicate: not (CP03.outcome == 2)
+      hint: Asked only when question CP03. is not "No".
+    - predicate: not (CP04.outcome == 2)
+      hint: Asked only when question CP04. is not "No".
+    - predicate: not (CP06.outcome in [7, 9])
+      hint: Asked only when question CP06 is none of "Don't know/Not sure", "Refused".
+    - predicate: not (CP08.outcome == 2)
+      hint: Asked only when question CP08. is not "No".
+    - predicate: not (CP10.outcome in [77, 99])
+      hint: Asked only when question CP10. is none of "Live outside US and participating territories", "Refused".
+    items:
+    - id: CHD_01
+      kind: Question
+      title: Now thinking about your physical health, which includes physical illness and injury, for how many days during the past 30 days was your physical health not good? (88 may be coded if respondent says "never" or "none". It is not necessary to ask respondents to provide a number if they indicate that this never occurs.)
+      input:
+        control: Editbox
+        min: 1
+        max: 99
+        right: days (1-30; 88 = None, 77 = Don't know/not sure, 99 = Refused)
+    - id: CHD_02
+      kind: Question
+      title: Now thinking about your mental health, which includes stress, depression, and problems with emotions, for how many days during the past 30 days was your mental health not good? (88 may be coded if respondent says "never" or "none". It is not necessary to ask respondents to provide a number if they indicate that this never occurs.)
+      input:
+        control: Editbox
+        min: 1
+        max: 99
+        right: days (1-30; 88 = None, 77 = Don't know/not sure, 99 = Refused)
+    - id: CHD_03
+      kind: Question
+      title: During the past 30 days, for about how many days did poor physical or mental health keep you from doing your usual activities, such as self-care, work, or recreation? (88 may be coded if respondent says "never" or "none". It is not necessary to ask respondents to provide a number if they indicate that this never occurs.)
       precondition:
-        - predicate: q_cdem_14.outcome >= 1
-      items:
-        # MRCS.01: Birth month of randomly selected child
-        - id: q_mrcs_01
-          kind: Question
-          title: "What is the birth month of the selected child?"
-          input:
-            control: Editbox
-            min: 1
-            max: 12
-            right: "month (1 = January, 12 = December)"
-
-        # MRCS.02: Child's gender identity
-        - id: q_mrcs_02
-          kind: Question
-          title: "Is the child a boy or a girl?"
-          input:
-            control: Radio
-            labels:
-              1: "Boy"
-              2: "Girl"
-              3: "Nonbinary or other"
-
-        # MRCS.03: Child's sex on original birth certificate
-        # Precondition: MRCS.02 = Girl (2) or Nonbinary/other (3)
-        - id: q_mrcs_03
-          kind: Question
-          title: "What was the child's sex on their original birth certificate?"
-          precondition:
-            - predicate: q_mrcs_02.outcome in [2, 3]
-          input:
-            control: Radio
-            labels:
-              1: "Boy"
-              2: "Girl"
-
-        # MRCS.04: Child's Hispanic or Latino origin
-        - id: q_mrcs_04
-          kind: Question
-          title: "Is the child Hispanic, Latino/a, or Spanish origin?"
-          input:
-            control: Dropdown
-            labels:
-              1: "Mexican, Mexican American, or Chicano/a"
-              2: "Puerto Rican"
-              3: "Cuban"
-              4: "Another Hispanic, Latino/a, or Spanish origin"
-              5: "No, not of Hispanic, Latino/a, or Spanish origin"
-
-        # MRCS.05: Child's race (multi-select)
-        # Power-of-2 keys enable bitwise combination of multiple selections.
-        - id: q_mrcs_05
-          kind: Question
-          title: "Which one or more of the following would you say is the race of the child?"
-          input:
-            control: Checkbox
-            labels:
-              1: "White"
-              2: "Black or African American"
-              4: "American Indian or Alaska Native"
-              8: "Asian"
-              16: "Native Hawaiian or Other Pacific Islander"
-              32: "Some other race"
-
-        # MRCS.06: Respondent's relationship to selected child
-        - id: q_mrcs_06
-          kind: Question
-          title: "How are you related to the child?"
-          input:
-            control: Dropdown
-            labels:
-              1: "Parent"
-              2: "Grandparent"
-              3: "Foster parent or guardian"
-              4: "Sibling"
-              5: "Other relative"
-              6: "Not related"
-
-    # =========================================================================
-    # MODULE 32: CHILDHOOD ASTHMA PREVALENCE (MCAP)
-    # =========================================================================
-    # Module filter: Ask only if household has at least one child under 18.
-    # MCAP.01: Child ever diagnosed with asthma by health professional.
-    #   1 (Yes) → ask MCAP.02 (child still has asthma)
-    #   2 (No) → go to next module / Asthma Call-Back section
-    #
-    # MCAP.02: Child still has asthma. Precondition: MCAP.01 == 1.
-    # =========================================================================
-    - id: b_childhood_asthma
-      kind: Group
-      title: "Module 32: Childhood Asthma Prevalence"
+      - predicate: not (CHD_01.outcome == 88 and CHD_02.outcome == 88)
+        hint: Asked unless both physical and mental health days (CHD_01, CHD_02) were None.
+      input:
+        control: Editbox
+        min: 1
+        max: 99
+        right: days (1-30; 88 = None, 77 = Don't know/not sure, 99 = Refused)
+  - id: b_s5_health_care_access
+    title: 'Core Section 3: Health Care Access'
+    precondition:
+    - predicate: not (LL01.outcome == 2)
+      hint: Asked only when question LL01. is not "No".
+    - predicate: not (LL02.outcome == 3)
+      hint: Asked only when question LL02. is not "No, this is a business".
+    - predicate: not (LL03.outcome == 2)
+      hint: Asked only when question LL03. is not "No".
+    - predicate: not (LL04.outcome == 2)
+      hint: Asked only when question LL04. is not "No".
+    - predicate: not (LL05.outcome == 1)
+      hint: Asked only when question LL05. is not "Yes, it is a cell phone".
+    - predicate: not (LL06.outcome == 2 and LL03.outcome == 1)
+      hint: Not asked when LL06. is 2 and LL03. is "Yes".
+    - predicate: not (LL10.outcome in [7, 9])
+      hint: Asked only when question LL10 is none of "Don't know/Not sure", "Refused".
+    - predicate: not (CP01.outcome == 2)
+      hint: Asked only when question CP01. is not "No".
+    - predicate: not (CP02.outcome == 2)
+      hint: Asked only when question CP02. is not "No".
+    - predicate: not (CP03.outcome == 2)
+      hint: Asked only when question CP03. is not "No".
+    - predicate: not (CP04.outcome == 2)
+      hint: Asked only when question CP04. is not "No".
+    - predicate: not (CP06.outcome in [7, 9])
+      hint: Asked only when question CP06 is none of "Don't know/Not sure", "Refused".
+    - predicate: not (CP08.outcome == 2)
+      hint: Asked only when question CP08. is not "No".
+    - predicate: not (CP10.outcome in [77, 99])
+      hint: Asked only when question CP10. is none of "Live outside US and participating territories", "Refused".
+    items:
+    - id: CHCA_01
+      kind: Question
+      title: What is the current source of your primary health insurance? (If respondent has multiple sources of insurance, ask for the one used most often. If respondents give the name of a health plan rather than the type of coverage ask whether this is insurance purchased independently, through their employer, or whether it is through Medicaid or CHIP.)
+      input:
+        control: Dropdown
+        labels:
+          1: A plan purchased through an employer or union (including plans purchased through another person's employer)
+          2: A private nongovernmental plan that you or another family member buys on your own
+          3: Medicare
+          4: Medigap
+          5: Medicaid
+          6: Children's Health Insurance Program (CHIP)
+          7: 'Military related health care: TRICARE (CHAMPUS) / VA health care / CHAMP-VA'
+          8: Indian Health Service
+          9: State sponsored health plan
+          10: Other government program
+          88: No coverage of any type
+          77: Don't Know/Not Sure
+          99: Refused
+    - id: CHCA_02
+      kind: Question
+      title: 'Do you have one person or a group of doctors that you think of as your personal health care provider? (If no, read: Is there more than one, or is there no person who you think of as your personal doctor or health care provider? NOTE: if the respondent had multiple doctor groups then it would be more than one—but if they had more than one doctor in the same group it would be one.)'
+      input:
+        control: Radio
+        labels:
+          1: Yes, only one
+          2: More than one
+          3: 'No'
+          7: Don’t know / Not sure
+          9: Refused
+    - id: CHCA_03
+      kind: Question
+      title: Was there a time in the past 12 months when you needed to see a doctor but could not because you could not afford it?
+      input:
+        control: Radio
+        labels:
+          1: 'Yes'
+          2: 'No'
+          7: Don’t know / Not sure
+          9: Refused
+    - id: CHCA_04
+      kind: Question
+      title: 'About how long has it been since you last visited a doctor for a routine checkup? (Read if necessary: A routine checkup is a general physical exam, not an exam for a specific injury, illness, or condition.)'
+      input:
+        control: Radio
+        labels:
+          1: Within the past year (anytime less than 12 months ago)
+          2: Within the past 2 years (1 year but less than 2 years ago)
+          3: Within the past 5 years (2 years but less than 5 years ago)
+          4: 5 or more years ago
+          7: Don’t know / Not sure
+          8: Never
+          9: Refused
+  - id: b_s6_exercise
+    title: Exercise
+    precondition:
+    - predicate: not (LL01.outcome == 2)
+      hint: Asked only when question LL01. is not "No".
+    - predicate: not (LL02.outcome == 3)
+      hint: Asked only when question LL02. is not "No, this is a business".
+    - predicate: not (LL03.outcome == 2)
+      hint: Asked only when question LL03. is not "No".
+    - predicate: not (LL04.outcome == 2)
+      hint: Asked only when question LL04. is not "No".
+    - predicate: not (LL05.outcome == 1)
+      hint: Asked only when question LL05. is not "Yes, it is a cell phone".
+    - predicate: not (LL06.outcome == 2 and LL03.outcome == 1)
+      hint: Asked only when LL06 is not "No" for a respondent who answered "Yes" to LL03.
+    - predicate: not (LL10.outcome in [7, 9])
+      hint: Asked only when question LL10 is none of "Don't know/Not sure", "Refused".
+    - predicate: not (CP01.outcome == 2)
+      hint: Asked only when question CP01. is not "No".
+    - predicate: not (CP02.outcome == 2)
+      hint: Asked only when question CP02. is not "No".
+    - predicate: not (CP03.outcome == 2)
+      hint: Asked only when question CP03. is not "No".
+    - predicate: not (CP04.outcome == 2)
+      hint: Asked only when question CP04. is not "No".
+    - predicate: not (CP06.outcome in [7, 9])
+      hint: Asked only when question CP06 is none of "Don't know/Not sure", "Refused".
+    - predicate: not (CP08.outcome == 2)
+      hint: Asked only when question CP08. is not "No".
+    - predicate: not (CP10.outcome in [77, 99])
+      hint: Asked only when question CP10. is none of "Live outside US and participating territories", "Refused".
+    items:
+    - id: CEXP_01
+      kind: Question
+      title: During the past month, other than your regular job, did you participate in any physical activities or exercises such as running, calisthenics, golf, gardening, or walking for exercise? (If respondent does not have a regular job or is retired, they may count the physical activity or exercise they spend the most time doing in a regular month. Physical activity done at a work gym during the workday would count)
+      input:
+        control: Radio
+        labels:
+          1: 'Yes'
+          2: 'No'
+          7: Don't know/Not Sure
+          9: Refused
+  - id: b_s6_activity_main
+    title: Main Activity
+    precondition:
+    - predicate: not (LL01.outcome == 2)
+      hint: Asked only when question LL01. is not "No".
+    - predicate: not (LL02.outcome == 3)
+      hint: Asked only when question LL02. is not "No, this is a business".
+    - predicate: not (LL03.outcome == 2)
+      hint: Asked only when question LL03. is not "No".
+    - predicate: not (LL04.outcome == 2)
+      hint: Asked only when question LL04. is not "No".
+    - predicate: not (LL05.outcome == 1)
+      hint: Asked only when question LL05. is not "Yes, it is a cell phone".
+    - predicate: not (LL06.outcome == 2 and LL03.outcome == 1)
+      hint: Asked only when LL06 is not "No" for a respondent who answered "Yes" to LL03.
+    - predicate: not (LL10.outcome in [7, 9])
+      hint: Asked only when question LL10 is none of "Don't know/Not sure", "Refused".
+    - predicate: not (CP01.outcome == 2)
+      hint: Asked only when question CP01. is not "No".
+    - predicate: not (CP02.outcome == 2)
+      hint: Asked only when question CP02. is not "No".
+    - predicate: not (CP03.outcome == 2)
+      hint: Asked only when question CP03. is not "No".
+    - predicate: not (CP04.outcome == 2)
+      hint: Asked only when question CP04. is not "No".
+    - predicate: not (CP06.outcome in [7, 9])
+      hint: Asked only when question CP06 is none of "Don't know/Not sure", "Refused".
+    - predicate: not (CP08.outcome == 2)
+      hint: Asked only when question CP08. is not "No".
+    - predicate: not (CP10.outcome in [77, 99])
+      hint: Asked only when question CP10. is none of "Live outside US and participating territories", "Refused".
+    - predicate: not (CEXP_01.outcome in [2, 7, 9])
+      hint: Asked only when question CEXP.01 is none of "No", "Don't know/Not Sure", "Refused".
+    items:
+    - id: CEXP_02
+      kind: Question
+      title: What type of physical activity or exercise did you spend the most time doing during the past month? (See Physical Activity Coding List. If the respondent's activity is not included in the physical activity coding list, choose the option listed as "other".)
+      input:
+        control: Editbox
+        min: 1
+        max: 99
+        right: Activity code (77 = Don't know/Not Sure, 99 = Refused)
+  - id: b_s6_activity_detail
+    title: Main Activity Frequency and Duration
+    precondition:
+    - predicate: not (LL01.outcome == 2)
+      hint: Asked only when question LL01. is not "No".
+    - predicate: not (LL02.outcome == 3)
+      hint: Asked only when question LL02. is not "No, this is a business".
+    - predicate: not (LL03.outcome == 2)
+      hint: Asked only when question LL03. is not "No".
+    - predicate: not (LL04.outcome == 2)
+      hint: Asked only when question LL04. is not "No".
+    - predicate: not (LL05.outcome == 1)
+      hint: Asked only when question LL05. is not "Yes, it is a cell phone".
+    - predicate: not (LL06.outcome == 2 and LL03.outcome == 1)
+      hint: Asked only when LL06 is not "No" for a respondent who answered "Yes" to LL03.
+    - predicate: not (LL10.outcome in [7, 9])
+      hint: Asked only when question LL10 is none of "Don't know/Not sure", "Refused".
+    - predicate: not (CP01.outcome == 2)
+      hint: Asked only when question CP01. is not "No".
+    - predicate: not (CP02.outcome == 2)
+      hint: Asked only when question CP02. is not "No".
+    - predicate: not (CP03.outcome == 2)
+      hint: Asked only when question CP03. is not "No".
+    - predicate: not (CP04.outcome == 2)
+      hint: Asked only when question CP04. is not "No".
+    - predicate: not (CP06.outcome in [7, 9])
+      hint: Asked only when question CP06 is none of "Don't know/Not sure", "Refused".
+    - predicate: not (CP08.outcome == 2)
+      hint: Asked only when question CP08. is not "No".
+    - predicate: not (CP10.outcome in [77, 99])
+      hint: Asked only when question CP10. is none of "Live outside US and participating territories", "Refused".
+    - predicate: not (CEXP_01.outcome in [2, 7, 9])
+      hint: Asked only when question CEXP.01 is none of "No", "Don't know/Not Sure", "Refused".
+    - predicate: not (CEXP_02.outcome in [77, 99])
+      hint: Asked only when question CEXP.02 is none of "Don't know/ Not Sure", "Refused".
+    items:
+    - id: CEXP_03
+      kind: Question
+      title: How many times per week or per month did you take part in this activity during the past month? (If respondent confused, probe by explaining 'this is not asking for days per week or per month, but times per week or per month.')
+      input:
+        control: Radio
+        labels:
+          1: 1_ _ Times per week
+          2: 2_ _ Times per month
+          777: Don't know / Not sure
+          999: Refused
+    - id: CEXP_04
+      kind: Question
+      title: And when you took part in this activity, for how many minutes or hours did you usually keep at it? (Hours and minutes)
+      input:
+        control: Editbox
+        min: 1
+        max: 999
+        right: Hours and minutes (777 = Don't know / Not sure, 999 = Refused)
+    - id: CEXP_05
+      kind: Question
+      title: What other type of physical activity gave you the next most exercise during the past month? (See Physical Activity Coding List. If the respondent’s activity is not included in the physical activity coding list, choose the option listed as “other”.)
+      input:
+        control: Editbox
+        min: 1
+        max: 99
+        right: Activity code (88 = No other activity, 77 = Don’t know/ Not Sure, 99 = Refused)
+  - id: b_s6_activity_second
+    title: Second Activity Frequency and Duration
+    precondition:
+    - predicate: not (LL01.outcome == 2)
+      hint: Asked only when question LL01. is not "No".
+    - predicate: not (LL02.outcome == 3)
+      hint: Asked only when question LL02. is not "No, this is a business".
+    - predicate: not (LL03.outcome == 2)
+      hint: Asked only when question LL03. is not "No".
+    - predicate: not (LL04.outcome == 2)
+      hint: Asked only when question LL04. is not "No".
+    - predicate: not (LL05.outcome == 1)
+      hint: Asked only when question LL05. is not "Yes, it is a cell phone".
+    - predicate: not (LL06.outcome == 2 and LL03.outcome == 1)
+      hint: Asked only when LL06 is not "No" for a respondent who answered "Yes" to LL03.
+    - predicate: not (LL10.outcome in [7, 9])
+      hint: Asked only when question LL10 is none of "Don't know/Not sure", "Refused".
+    - predicate: not (CP01.outcome == 2)
+      hint: Asked only when question CP01. is not "No".
+    - predicate: not (CP02.outcome == 2)
+      hint: Asked only when question CP02. is not "No".
+    - predicate: not (CP03.outcome == 2)
+      hint: Asked only when question CP03. is not "No".
+    - predicate: not (CP04.outcome == 2)
+      hint: Asked only when question CP04. is not "No".
+    - predicate: not (CP06.outcome in [7, 9])
+      hint: Asked only when question CP06 is none of "Don't know/Not sure", "Refused".
+    - predicate: not (CP08.outcome == 2)
+      hint: Asked only when question CP08. is not "No".
+    - predicate: not (CP10.outcome in [77, 99])
+      hint: Asked only when question CP10. is none of "Live outside US and participating territories", "Refused".
+    - predicate: not (CEXP_01.outcome in [2, 7, 9])
+      hint: Asked only when question CEXP.01 is none of "No", "Don't know/Not Sure", "Refused".
+    - predicate: not (CEXP_02.outcome in [77, 99])
+      hint: Asked only when question CEXP.02 is none of "Don't know/ Not Sure", "Refused".
+    - predicate: not (CEXP_05.outcome in [88, 77, 99])
+      hint: Asked only when question CEXP.05 is none of "No other activity", "Don’t know/ Not Sure", "Refused".
+    items:
+    - id: CEXP_06
+      kind: Question
+      title: How many times per week or per month did you take part in this activity during the past month?
+      input:
+        control: Radio
+        labels:
+          1: 1_ _ Times per week
+          2: 2_ _ Times per month
+          777: Don’t know / Not sure
+          999: Refused
+    - id: CEXP_07
+      kind: Question
+      title: And when you took part in this activity, for how many minutes or hours did you usually keep at it? (Hours and minutes)
+      input:
+        control: Editbox
+        min: 1
+        max: 999
+        right: Hours and minutes (777 = Don’t know / Not sure, 999 = Refused)
+  - id: b_s6_strength
+    title: Muscle Strengthening
+    precondition:
+    - predicate: not (LL01.outcome == 2)
+      hint: Asked only when question LL01. is not "No".
+    - predicate: not (LL02.outcome == 3)
+      hint: Asked only when question LL02. is not "No, this is a business".
+    - predicate: not (LL03.outcome == 2)
+      hint: Asked only when question LL03. is not "No".
+    - predicate: not (LL04.outcome == 2)
+      hint: Asked only when question LL04. is not "No".
+    - predicate: not (LL05.outcome == 1)
+      hint: Asked only when question LL05. is not "Yes, it is a cell phone".
+    - predicate: not (LL06.outcome == 2 and LL03.outcome == 1)
+      hint: Asked only when LL06 is not "No" for a respondent who answered "Yes" to LL03.
+    - predicate: not (LL10.outcome in [7, 9])
+      hint: Asked only when question LL10 is none of "Don't know/Not sure", "Refused".
+    - predicate: not (CP01.outcome == 2)
+      hint: Asked only when question CP01. is not "No".
+    - predicate: not (CP02.outcome == 2)
+      hint: Asked only when question CP02. is not "No".
+    - predicate: not (CP03.outcome == 2)
+      hint: Asked only when question CP03. is not "No".
+    - predicate: not (CP04.outcome == 2)
+      hint: Asked only when question CP04. is not "No".
+    - predicate: not (CP06.outcome in [7, 9])
+      hint: Asked only when question CP06 is none of "Don't know/Not sure", "Refused".
+    - predicate: not (CP08.outcome == 2)
+      hint: Asked only when question CP08. is not "No".
+    - predicate: not (CP10.outcome in [77, 99])
+      hint: Asked only when question CP10. is none of "Live outside US and participating territories", "Refused".
+    items:
+    - id: CEXP_08
+      kind: Question
+      title: During the past month, how many times per week or per month did you do physical activities or exercises to strengthen your muscles? (Do not count aerobic activities like walking, running, or bicycling. Count activities using your own body weight like yoga, sit-ups or push-ups and those using weight machines, free weights, or elastic bands.)
+      input:
+        control: Radio
+        labels:
+          1: 1_ _ Times per week
+          2: 2_ _ Times per month
+          888: Never
+          777: Don’t know / Not sure
+          999: Refused
+  - id: b_s7_hypertension
+    title: 'Core Section 5: Hypertension Awareness'
+    precondition:
+    - predicate: not (LL01.outcome == 2)
+      hint: Asked only when question LL01. is not "No".
+    - predicate: not (LL02.outcome == 3)
+      hint: Asked only when question LL02. is not "No, this is a business".
+    - predicate: not (LL03.outcome == 2)
+      hint: Asked only when question LL03. is not "No".
+    - predicate: not (LL04.outcome == 2)
+      hint: Asked only when question LL04. is not "No".
+    - predicate: not (LL05.outcome == 1)
+      hint: Asked only when question LL05. is not "Yes, it is a cell phone".
+    - predicate: not (LL06.outcome == 2 and LL03.outcome == 1)
+      hint: Asked only when question LL06 is not "No" while LL03 is "Yes".
+    - predicate: not (LL10.outcome in [7, 9])
+      hint: Asked only when question LL10 is none of "Don't know/Not sure", "Refused".
+    - predicate: not (CP01.outcome == 2)
+      hint: Asked only when question CP01. is not "No".
+    - predicate: not (CP02.outcome == 2)
+      hint: Asked only when question CP02. is not "No".
+    - predicate: not (CP03.outcome == 2)
+      hint: Asked only when question CP03. is not "No".
+    - predicate: not (CP04.outcome == 2)
+      hint: Asked only when question CP04. is not "No".
+    - predicate: not (CP06.outcome in [7, 9])
+      hint: Asked only when question CP06 is none of "Don't know/Not sure", "Refused".
+    - predicate: not (CP08.outcome == 2)
+      hint: Asked only when question CP08. is not "No".
+    - predicate: not (CP10.outcome in [77, 99])
+      hint: Asked only when question CP10. is none of "Live outside US and participating territories", "Refused".
+    items:
+    - id: CHYPA_01
+      kind: Question
+      title: 'Have you ever been told by a doctor, nurse, or other health professional that you have high blood pressure? (If "Yes" and respondent is female, ask: "Was this only when you were pregnant?" By other health professional we mean nurse practitioner, a physician assistant, or some other licensed health professional.)'
+      input:
+        control: Radio
+        labels:
+          1: 'Yes'
+          2: Yes, but female told only during pregnancy
+          3: 'No'
+          4: Told borderline high or pre-hypertensive or elevated blood pressure
+          7: Don't know / Not sure
+          9: Refused
+    - id: CHYPA_02
+      kind: Question
+      title: Are you currently taking prescription medicine for your high blood pressure?
       precondition:
-        - predicate: q_cdem_14.outcome >= 1
-      items:
-        # MCAP.01: Child ever told by health professional they have asthma
-        - id: q_mcap_01
-          kind: Question
-          title: "Has a doctor, nurse or other health professional EVER said that the child has asthma?"
-          input:
-            control: Switch
-            on: "Yes"
-            off: "No"
-
-        # MCAP.02: Child still has asthma
-        # Precondition: MCAP.01 = Yes (1)
-        - id: q_mcap_02
-          kind: Question
-          title: "Does the child still have asthma?"
-          precondition:
-            - predicate: q_mcap_01.outcome == 1
-          input:
-            control: Switch
-            on: "Yes"
-            off: "No"
-
-    # =========================================================================
-    # ASTHMA CALL-BACK PERMISSION SCRIPT (CB01)
-    # =========================================================================
-    # CB01.01: Consent to call back for additional asthma questions.
-    #   1 (Yes) → ask CB01.02 and CB01.03 (focus of call-back and contact name)
-    #   2 (No) → end
-    #
-    # CB01.02: Which household person is the focus of the call-back.
-    #   Precondition: CB01.01 == 1
-    #
-    # CB01.03: First name or initials for the call-back contact.
-    #   Precondition: CB01.01 == 1
-    # =========================================================================
-    - id: b_asthma_callback
-      kind: Group
-      title: "Asthma Call-Back Permission Script"
-      items:
-        # CB01.01: Consent for asthma call-back interview
-        - id: q_cb01_01
-          kind: Question
-          title: "Would it be okay if we called you back to ask additional asthma-related questions at a later time?"
-          input:
-            control: Switch
-            on: "Yes"
-            off: "No"
-
-        # CB01.02: Which household person is the focus of the asthma call-back
-        # Precondition: CB01.01 = Yes (1)
-        - id: q_cb01_02
-          kind: Question
-          title: "Which person in the household was selected as the focus of the asthma call-back?"
-          precondition:
-            - predicate: q_cb01_01.outcome == 1
-          input:
-            control: Radio
-            labels:
-              1: "Adult"
-              2: "Child"
-
-        # CB01.03: First name or initials for call-back contact
-        # Precondition: CB01.01 = Yes (1)
-        - id: q_cb01_03
-          kind: Question
-          title: "Can I please have either your or your child's first name or initials, so we will know who to ask for when we call back?"
-          precondition:
-            - predicate: q_cb01_01.outcome == 1
-          input:
-            control: Textarea
+      - predicate: not (CHYPA_01.outcome in [2, 3, 4, 7, 9])
+        hint: Asked only when question CHYPA.01 is none of "Yes, but female told only during pregnancy", "No", "Told borderline high or pre-hypertensive or elevated blood pressure", "Don't know / Not sure", "Refused".
+      input:
+        control: Radio
+        labels:
+          1: 'Yes'
+          2: 'No'
+          7: Don't know / Not sure
+          9: Refused
+  - id: b_s8_cholesterol_check
+    title: 'Core Section 6: Cholesterol Awareness'
+    precondition:
+    - predicate: not (LL01.outcome == 2)
+      hint: Asked only when question LL01. is not "No".
+    - predicate: not (LL02.outcome == 3)
+      hint: Asked only when question LL02. is not "No, this is a business".
+    - predicate: not (LL03.outcome == 2)
+      hint: Asked only when question LL03. is not "No".
+    - predicate: not (LL04.outcome == 2)
+      hint: Asked only when question LL04. is not "No".
+    - predicate: not (LL05.outcome == 1)
+      hint: Asked only when question LL05. is not "Yes, it is a cell phone".
+    - predicate: not (LL06.outcome == 2 and LL03.outcome == 1)
+      hint: Asked only when LL06 and LL03 do not both indicate this exclusion.
+    - predicate: not (LL10.outcome in [7, 9])
+      hint: Asked only when question LL10 is none of "Don't know/Not sure", "Refused".
+    - predicate: not (CP01.outcome == 2)
+      hint: Asked only when question CP01. is not "No".
+    - predicate: not (CP02.outcome == 2)
+      hint: Asked only when question CP02. is not "No".
+    - predicate: not (CP03.outcome == 2)
+      hint: Asked only when question CP03. is not "No".
+    - predicate: not (CP04.outcome == 2)
+      hint: Asked only when question CP04. is not "No".
+    - predicate: not (CP06.outcome in [7, 9])
+      hint: Asked only when question CP06 is none of "Don't know/Not sure", "Refused".
+    - predicate: not (CP08.outcome == 2)
+      hint: Asked only when question CP08. is not "No".
+    - predicate: not (CP10.outcome in [77, 99])
+      hint: Asked only when question CP10. is none of "Live outside US and participating territories", "Refused".
+    items:
+    - id: CCHLA_01
+      kind: Question
+      title: Cholesterol is a fatty substance found in the blood. About how long has it been since you last had your cholesterol checked?
+      input:
+        control: Radio
+        labels:
+          1: Never
+          2: Within the past year (anytime less than one year ago)
+          3: Within the past 2 years (1 year but less than 2 years ago)
+          4: Within the past 3 years (2 years but less than 3 years ago)
+          5: Within the past 4 years (3 years but less than 4 years ago)
+          6: Within the past 5 years (4 years but less than 5 years ago)
+          8: 5 or more years ago
+          7: Don't know/ Not sure
+          9: Refused
+  - id: b_s8_cholesterol_followup
+    title: Cholesterol diagnosis and medication
+    precondition:
+    - predicate: not (LL01.outcome == 2)
+      hint: Asked only when question LL01. is not "No".
+    - predicate: not (LL02.outcome == 3)
+      hint: Asked only when question LL02. is not "No, this is a business".
+    - predicate: not (LL03.outcome == 2)
+      hint: Asked only when question LL03. is not "No".
+    - predicate: not (LL04.outcome == 2)
+      hint: Asked only when question LL04. is not "No".
+    - predicate: not (LL05.outcome == 1)
+      hint: Asked only when question LL05. is not "Yes, it is a cell phone".
+    - predicate: not (LL06.outcome == 2 and LL03.outcome == 1)
+      hint: Asked only when LL06 and LL03 do not both indicate this exclusion.
+    - predicate: not (LL10.outcome in [7, 9])
+      hint: Asked only when question LL10 is none of "Don't know/Not sure", "Refused".
+    - predicate: not (CP01.outcome == 2)
+      hint: Asked only when question CP01. is not "No".
+    - predicate: not (CP02.outcome == 2)
+      hint: Asked only when question CP02. is not "No".
+    - predicate: not (CP03.outcome == 2)
+      hint: Asked only when question CP03. is not "No".
+    - predicate: not (CP04.outcome == 2)
+      hint: Asked only when question CP04. is not "No".
+    - predicate: not (CP06.outcome in [7, 9])
+      hint: Asked only when question CP06 is none of "Don't know/Not sure", "Refused".
+    - predicate: not (CP08.outcome == 2)
+      hint: Asked only when question CP08. is not "No".
+    - predicate: not (CP10.outcome in [77, 99])
+      hint: Asked only when question CP10. is none of "Live outside US and participating territories", "Refused".
+    - predicate: not (CCHLA_01.outcome in [1, 7, 9])
+      hint: Asked only when question CCHLA.01 is none of "Never", "Don't know/ Not sure", "Refused".
+    items:
+    - id: CCHLA_02
+      kind: Question
+      title: Have you ever been told by a doctor, nurse or other health professional that your cholesterol is high? (By other health professional we mean nurse practitioner, a physician assistant, or some other licensed health professional.)
+      input:
+        control: Radio
+        labels:
+          1: 'Yes'
+          2: 'No'
+          7: Don’t know / Not sure
+          9: Refused
+    - id: CCHLA_03
+      kind: Question
+      title: 'Are you currently taking medicine prescribed by your doctor or other health professional for your cholesterol? (If respondent questions why they might take drugs without having high cholesterol read: Doctors might prescribe statin for those without high cholesterol but with high atherosclerotic cardiovascular disease risk)'
+      input:
+        control: Radio
+        labels:
+          1: 'Yes'
+          2: 'No'
+          7: Don’t know / Not sure
+          9: Refused
+  - id: b_s9_chronic_conditions
+    title: 'Core Section 7: Chronic Health Conditions'
+    precondition:
+    - predicate: not (LL01.outcome == 2)
+      hint: Asked only when question LL01. is not "No".
+    - predicate: not (LL02.outcome == 3)
+      hint: Asked only when question LL02. is not "No, this is a business".
+    - predicate: not (LL03.outcome == 2)
+      hint: Asked only when question LL03. is not "No".
+    - predicate: not (LL04.outcome == 2)
+      hint: Asked only when question LL04. is not "No".
+    - predicate: not (LL05.outcome == 1)
+      hint: Asked only when question LL05. is not "Yes, it is a cell phone".
+    - predicate: not (LL06.outcome == 2 and LL03.outcome == 1)
+      hint: Asked only when the LL06 and LL03 answers allow it.
+    - predicate: not (LL10.outcome in [7, 9])
+      hint: Asked only when question LL10 is none of "Don't know/Not sure", "Refused".
+    - predicate: not (CP01.outcome == 2)
+      hint: Asked only when question CP01. is not "No".
+    - predicate: not (CP02.outcome == 2)
+      hint: Asked only when question CP02. is not "No".
+    - predicate: not (CP03.outcome == 2)
+      hint: Asked only when question CP03. is not "No".
+    - predicate: not (CP04.outcome == 2)
+      hint: Asked only when question CP04. is not "No".
+    - predicate: not (CP06.outcome in [7, 9])
+      hint: Asked only when question CP06 is none of "Don't know/Not sure", "Refused".
+    - predicate: not (CP08.outcome == 2)
+      hint: Asked only when question CP08. is not "No".
+    - predicate: not (CP10.outcome in [77, 99])
+      hint: Asked only when question CP10. is none of "Live outside US and participating territories", "Refused".
+    items:
+    - id: CCHC_01
+      kind: Question
+      title: Ever told you that you had a heart attack also called a myocardial infarction?
+      input:
+        control: Radio
+        labels:
+          1: 'Yes'
+          2: 'No'
+          7: Don't know / Not sure
+          9: Refused
+    - id: CCHC_02
+      kind: Question
+      title: (Ever told) (you had) angina or coronary heart disease?
+      input:
+        control: Radio
+        labels:
+          1: 'Yes'
+          2: 'No'
+          7: Don't know / Not sure
+          9: Refused
+    - id: CCHC_03
+      kind: Question
+      title: (Ever told) (you had) a stroke?
+      input:
+        control: Radio
+        labels:
+          1: 'Yes'
+          2: 'No'
+          7: Don't know / Not sure
+          9: Refused
+    - id: CCHC_04
+      kind: Question
+      title: (Ever told) (you had) asthma?
+      input:
+        control: Radio
+        labels:
+          1: 'Yes'
+          2: 'No'
+          7: Don't know / Not sure
+          9: Refused
+    - id: CCHC_05
+      kind: Question
+      title: Do you still have asthma?
+      precondition:
+      - predicate: not (CCHC_04.outcome in [2, 7, 9])
+        hint: Asked only when question CCHC.04 is none of "No", "Don't know / Not sure", "Refused".
+      input:
+        control: Radio
+        labels:
+          1: 'Yes'
+          2: 'No'
+          7: Don't know / Not sure
+          9: Refused
+    - id: CCHC_06
+      kind: Question
+      title: (Ever told) (you had) skin cancer that is not melanoma?
+      input:
+        control: Radio
+        labels:
+          1: 'Yes'
+          2: 'No'
+          7: Don’t know / Not sure
+          9: Refused
+    - id: CCHC_07
+      kind: Question
+      title: (Ever told) (you had) melanoma or any other types of cancer?
+      input:
+        control: Radio
+        labels:
+          1: 'Yes'
+          2: 'No'
+          7: Don’t know / Not sure
+          9: Refused
+    - id: CCHC_08
+      kind: Question
+      title: (Ever told) (you had) C.O.P.D. (chronic obstructive pulmonary disease), emphysema or chronic bronchitis?
+      input:
+        control: Radio
+        labels:
+          1: 'Yes'
+          2: 'No'
+          7: Don’t know / Not sure
+          9: Refused
+    - id: CCHC_09
+      kind: Question
+      title: (Ever told) (you had) a depressive disorder (including depression, major depression, dysthymia, or minor depression)?
+      input:
+        control: Radio
+        labels:
+          1: 'Yes'
+          2: 'No'
+          7: Don’t know / Not sure
+          9: Refused
+    - id: CCHC_10
+      kind: Question
+      title: 'Not including kidney stones, bladder infection or incontinence, were you ever told you had kidney disease? (Read if necessary: Incontinence is not being able to control urine flow.)'
+      input:
+        control: Radio
+        labels:
+          1: 'Yes'
+          2: 'No'
+          7: Don’t know / Not sure
+          9: Refused
+    - id: CCHC_11
+      kind: Question
+      title: '(Ever told) (you had) some form of arthritis, rheumatoid arthritis, gout, lupus, or fibromyalgia? (Do not read: Arthritis diagnoses include: rheumatism, polymyalgia rheumatic, osteoarthritis (not osteoporosis), tendonitis, bursitis, bunion, tennis elbow, carpal tunnel syndrome, tarsal tunnel syndrome, joint infection, Reiter’s syndrome, ankylosing spondylitis; spondylosis, rotator cuff syndrome, connective tissue disease, scleroderma, polymyositis, Raynaud’s syndrome, vasculitis, giant cell arteritis, Henoch-Schonlein purpura, Wegener’s granulomatosis, polyarteritis nodosa)'
+      input:
+        control: Radio
+        labels:
+          1: 'Yes'
+          2: 'No'
+          7: Don’t know / Not sure
+          9: Refused
+    - id: CCHC_12
+      kind: Question
+      title: '(Ever told) (you had) diabetes? (If yes and respondent is female, ask: was this only when you were pregnant? If respondent says pre-diabetes or borderline diabetes, use response code 4.)'
+      input:
+        control: Radio
+        labels:
+          1: 'Yes'
+          2: Yes, but female told only during pregnancy
+          3: 'No'
+          4: No, pre-diabetes or borderline diabetes
+          7: Don’t know / Not sure
+          9: Refused
+    - id: CCHC_13
+      kind: Question
+      title: How old were you when you were first told you had diabetes? (Code age in years [97 = 97 and older])
+      precondition:
+      - predicate: not (CCHC_12.outcome in [2, 3, 4, 7, 9])
+        hint: Asked only when question CCHC.12 is none of "Yes, but female told only during pregnancy", "No", "No, pre-diabetes or borderline diabetes", "Don’t know / Not sure", "Refused".
+      input:
+        control: Editbox
+        min: 1
+        max: 99
+        right: years (97 = 97 and older; 98 = Don‘t know / Not sure; 99 = Refused)
+  - id: b_s10_demographics
+    title: 'Core Section 8: Demographics'
+    precondition:
+    - predicate: not (LL01.outcome == 2)
+      hint: Asked only when question LL01. is not "No".
+    - predicate: not (LL02.outcome == 3)
+      hint: Asked only when question LL02. is not "No, this is a business".
+    - predicate: not (LL03.outcome == 2)
+      hint: Asked only when question LL03. is not "No".
+    - predicate: not (LL04.outcome == 2)
+      hint: Asked only when question LL04. is not "No".
+    - predicate: not (LL05.outcome == 1)
+      hint: Asked only when question LL05. is not "Yes, it is a cell phone".
+    - predicate: not (LL06.outcome == 2 and LL03.outcome == 1)
+      hint: Asked only when LL06 is not "No" while LL03 is "Yes".
+    - predicate: not (LL10.outcome in [7, 9])
+      hint: Asked only when question LL10 is none of "Don't know/Not sure", "Refused".
+    - predicate: not (CP01.outcome == 2)
+      hint: Asked only when question CP01. is not "No".
+    - predicate: not (CP02.outcome == 2)
+      hint: Asked only when question CP02. is not "No".
+    - predicate: not (CP03.outcome == 2)
+      hint: Asked only when question CP03. is not "No".
+    - predicate: not (CP04.outcome == 2)
+      hint: Asked only when question CP04. is not "No".
+    - predicate: not (CP06.outcome in [7, 9])
+      hint: Asked only when question CP06 is none of "Don't know/Not sure", "Refused".
+    - predicate: not (CP08.outcome == 2)
+      hint: Asked only when question CP08. is not "No".
+    - predicate: not (CP10.outcome in [77, 99])
+      hint: Asked only when question CP10. is none of "Live outside US and participating territories", "Refused".
+    items:
+    - id: CDEM_01
+      kind: Question
+      title: What is your age? (Code age in years)
+      input:
+        control: Editbox
+        min: 0
+        max: 99
+        right: years (7 = Don't know / Not sure, 9 = Refused)
+      postcondition:
+      - predicate: CDEM_01.outcome in [7, 9] or CCHC_13.outcome in [98, 99] or CCHC_13.outcome <= CDEM_01.outcome
+        hint: Age when first told you had diabetes (CCHC.13) cannot be greater than your current age (CDEM.01).
+        invented: true
+    - id: CDEM_02
+      kind: Question
+      title: 'Are you Hispanic, Latino/a, or Spanish origin? (If yes, read: Are you… One or more categories may be selected.)'
+      input:
+        control: Checkbox
+        labels:
+          1: 1 — Mexican, Mexican American, Chicano/a
+          2: 2 — Puerto Rican
+          4: 3 — Cuban
+          8: 4 — Another Hispanic, Latino/a, or Spanish origin
+          16: 5 — No (do not read)
+          32: 7 — Don't know / Not sure (do not read)
+          64: 9 — Refused (do not read)
+    - id: CDEM_03
+      kind: Question
+      title: Which one or more of the following would you say is your race? (If 40 (Asian) or 50 (Pacific Islander) is selected read and code subcategories underneath major heading. One or more categories may be selected. If respondent indicates that they are Hispanic for race, please read the race choices.)
+      input:
+        control: Checkbox
+        labels:
+          1: 10 — White
+          2: 20 — Black or African American
+          4: 30 — American Indian or Alaska Native
+          8: 40 — Asian
+          16: 41 — Asian Indian
+          32: 42 — Chinese
+          64: 43 — Filipino
+          128: 44 — Japanese
+          256: 45 — Korean
+          512: 46 — Vietnamese
+          1024: 47 — Other Asian
+          2048: 50 — Pacific Islander
+          4096: 51 — Native Hawaiian
+          8192: 52 — Guamanian or Chamorro
+          16384: 53 — Samoan
+          32768: 54 — Other Pacific Islander
+          65536: 60 — Other (do not read)
+          131072: 88 — No additional choices (do not read)
+          262144: 77 — Don't know / Not sure (do not read)
+          524288: 99 — Refused (do not read)
+    - id: CDEM_04
+      kind: Question
+      title: Are you…
+      input:
+        control: Radio
+        labels:
+          1: Married
+          2: Divorced
+          3: Widowed
+          4: Separated
+          5: Never married
+          6: A member of an unmarried couple
+          9: Refused
+    - id: CDEM_05
+      kind: Question
+      title: What is the highest grade or year of school you completed?
+      input:
+        control: Radio
+        labels:
+          1: Never attended school or only attended kindergarten
+          2: Grades 1 through 8 (Elementary)
+          3: Grades 9 through 11 (Some high school)
+          4: Grade 12 or GED (High school graduate)
+          5: College 1 year to 3 years (Some college or technical school)
+          6: College 4 years or more (College graduate)
+          9: Refused
+    - id: CDEM_06
+      kind: Question
+      title: 'Do you own or rent your home? (Other arrangement may include group home, staying with friends or family without paying rent. Home is defined as the place where you live most of the time/the majority of the year. Read if necessary: We ask this question in order to compare health indicators among people with different housing situations.)'
+      input:
+        control: Radio
+        labels:
+          1: Own
+          2: Rent
+          3: Other arrangement
+          7: Don't know / Not sure
+          9: Refused
+    - id: CDEM_07
+      kind: Question
+      title: In what county do you currently live? (ANSI County Code)
+      input:
+        control: Editbox
+        min: 1
+        max: 999
+        right: (777 = Don’t know / Not sure, 888 = County from another state (cell phone data only), 999 = Refused)
+    - id: CDEM_08
+      kind: Question
+      title: What is the ZIP Code where you currently live?
+      input:
+        control: Editbox
+        min: 0
+        max: 99999
+        right: (77777 = Do not know, 99999 = Refused)
+  - id: b_s10_landline
+    title: Landline telephones
+    precondition:
+    - predicate: not (LL01.outcome == 2)
+      hint: Asked only when question LL01. is not "No".
+    - predicate: not (LL02.outcome == 3)
+      hint: Asked only when question LL02. is not "No, this is a business".
+    - predicate: not (LL03.outcome == 2)
+      hint: Asked only when question LL03. is not "No".
+    - predicate: not (LL04.outcome == 2)
+      hint: Asked only when question LL04. is not "No".
+    - predicate: not (LL05.outcome == 1)
+      hint: Asked only when question LL05. is not "Yes, it is a cell phone".
+    - predicate: not (LL06.outcome == 2 and LL03.outcome == 1)
+      hint: Asked only when LL06 is not "No" while LL03 is "Yes".
+    - predicate: not (LL10.outcome in [7, 9])
+      hint: Asked only when question LL10 is none of "Don't know/Not sure", "Refused".
+    - predicate: not (CP01.outcome == 2)
+      hint: Asked only when question CP01. is not "No".
+    - predicate: not (CP02.outcome == 2)
+      hint: Asked only when question CP02. is not "No".
+    - predicate: not (CP03.outcome == 2)
+      hint: Asked only when question CP03. is not "No".
+    - predicate: not (CP04.outcome == 2)
+      hint: Asked only when question CP04. is not "No".
+    - predicate: not (CP06.outcome in [7, 9])
+      hint: Asked only when question CP06 is none of "Don't know/Not sure", "Refused".
+    - predicate: not (CP08.outcome == 2)
+      hint: Asked only when question CP08. is not "No".
+    - predicate: not (CP10.outcome in [77, 99])
+      hint: Asked only when question CP10. is none of "Live outside US and participating territories", "Refused".
+    - predicate: not (CELL_INTERVIEW.outcome == 1)
+      hint: Asked only when question CELL_INTERVIEW is not "Cell phone interview".
+    items:
+    - id: CDEM_09
+      kind: Question
+      title: Not including cell phones or numbers used for computers, fax machines or security systems, do you have more than one landline telephone number in your household?
+      input:
+        control: Radio
+        labels:
+          1: 'Yes'
+          2: 'No'
+          7: Don’t know / Not sure
+          9: Refused
+    - id: CDEM_10
+      kind: Question
+      title: How many of these landline telephone numbers are residential numbers?
+      precondition:
+      - predicate: not (CDEM_09.outcome in [2, 7, 9])
+        hint: Asked only when question CDEM.09 is none of "No", "Don’t know / Not sure", "Refused".
+      input:
+        control: Editbox
+        min: 1
+        max: 9
+        right: (1-5; 6 = Six or more, 7 = Don’t know / Not sure, 8 = None, 9 = Refused)
+  - id: b_s10_household
+    title: Cell phones, service, work and income
+    precondition:
+    - predicate: not (LL01.outcome == 2)
+      hint: Asked only when question LL01. is not "No".
+    - predicate: not (LL02.outcome == 3)
+      hint: Asked only when question LL02. is not "No, this is a business".
+    - predicate: not (LL03.outcome == 2)
+      hint: Asked only when question LL03. is not "No".
+    - predicate: not (LL04.outcome == 2)
+      hint: Asked only when question LL04. is not "No".
+    - predicate: not (LL05.outcome == 1)
+      hint: Asked only when question LL05. is not "Yes, it is a cell phone".
+    - predicate: not (LL06.outcome == 2 and LL03.outcome == 1)
+      hint: Asked only when LL06 is not "No" while LL03 is "Yes".
+    - predicate: not (LL10.outcome in [7, 9])
+      hint: Asked only when question LL10 is none of "Don't know/Not sure", "Refused".
+    - predicate: not (CP01.outcome == 2)
+      hint: Asked only when question CP01. is not "No".
+    - predicate: not (CP02.outcome == 2)
+      hint: Asked only when question CP02. is not "No".
+    - predicate: not (CP03.outcome == 2)
+      hint: Asked only when question CP03. is not "No".
+    - predicate: not (CP04.outcome == 2)
+      hint: Asked only when question CP04. is not "No".
+    - predicate: not (CP06.outcome in [7, 9])
+      hint: Asked only when question CP06 is none of "Don't know/Not sure", "Refused".
+    - predicate: not (CP08.outcome == 2)
+      hint: Asked only when question CP08. is not "No".
+    - predicate: not (CP10.outcome in [77, 99])
+      hint: Asked only when question CP10. is none of "Live outside US and participating territories", "Refused".
+    items:
+    - id: CDEM_11
+      kind: Question
+      title: 'How many cell phones do you have for personal use? (Read if necessary: Include cell phones used for both business and personal use.) (Last question needed for partial complete.)'
+      input:
+        control: Editbox
+        min: 1
+        max: 9
+        right: (1-5; 6 = Six or more, 7 = Don’t know / Not sure, 8 = None, 9 = Refused)
+    - id: CDEM_12
+      kind: Question
+      title: 'Have you ever served on active duty in the United States Armed Forces, either in the regular military or in a National Guard or military reserve unit? (Read if necessary: Active duty does not include training for the Reserves or National Guard, but DOES include activation, for example, for the Persian Gulf War.)'
+      input:
+        control: Radio
+        labels:
+          1: 'Yes'
+          2: 'No'
+          7: Don't know / Not sure
+          9: Refused
+    - id: CDEM_13
+      kind: Question
+      title: Are you currently…? (If more than one, say "select the category which best describes you".)
+      input:
+        control: Radio
+        labels:
+          1: Employed for wages
+          2: Self-employed
+          3: Out of work for 1 year or more
+          4: Out of work for less than 1 year
+          5: A Homemaker
+          6: A Student
+          7: Retired
+          8: Unable to work
+          9: Refused
+    - id: CDEM_14
+      kind: Question
+      title: How many children less than 18 years of age live in your household?
+      input:
+        control: Editbox
+        min: 1
+        max: 99
+        right: (88 = None, 99 = Refused)
+    - id: CDEM_15
+      kind: Question
+      title: Is your annual household income from all sources— (If respondent refuses at ANY income level, code '99' (Refused). SEE CATI information of order of coding; Start with category 05 and move up or down categories.)
+      input:
+        control: Dropdown
+        labels:
+          1: Less than $10,000?
+          2: Less than $15,000? ($10,000 to less than $15,000)
+          3: Less than $20,000? ($15,000 to less than $20,000)
+          4: Less than $25,000 ($20,000 to less than $25,000)
+          5: Less than $35,000 ($25,000 to less than $35,000)
+          6: Less than $50,000 ($35,000 to less than $50,000)
+          7: Less than $75,000? ($50,000 to less than $75,000)
+          8: Less than $100,000? ($75,000 to less than $100,000)
+          9: Less than $150,000? ($100,000 to less than $150,000)?
+          10: Less than $200,000? ($150,000 to less than $200,000)
+          11: $200,000 or more
+          77: Don’t know / Not sure
+          99: Refused
+  - id: b_s10_body
+    title: Pregnancy, weight and height
+    precondition:
+    - predicate: not (LL01.outcome == 2)
+      hint: Asked only when question LL01. is not "No".
+    - predicate: not (LL02.outcome == 3)
+      hint: Asked only when question LL02. is not "No, this is a business".
+    - predicate: not (LL03.outcome == 2)
+      hint: Asked only when question LL03. is not "No".
+    - predicate: not (LL04.outcome == 2)
+      hint: Asked only when question LL04. is not "No".
+    - predicate: not (LL05.outcome == 1)
+      hint: Asked only when question LL05. is not "Yes, it is a cell phone".
+    - predicate: not (LL06.outcome == 2 and LL03.outcome == 1)
+      hint: Asked only when LL06 is not "No" while LL03 is "Yes".
+    - predicate: not (LL10.outcome in [7, 9])
+      hint: Asked only when question LL10 is none of "Don't know/Not sure", "Refused".
+    - predicate: not (CP01.outcome == 2)
+      hint: Asked only when question CP01. is not "No".
+    - predicate: not (CP02.outcome == 2)
+      hint: Asked only when question CP02. is not "No".
+    - predicate: not (CP03.outcome == 2)
+      hint: Asked only when question CP03. is not "No".
+    - predicate: not (CP04.outcome == 2)
+      hint: Asked only when question CP04. is not "No".
+    - predicate: not (CP06.outcome in [7, 9])
+      hint: Asked only when question CP06 is none of "Don't know/Not sure", "Refused".
+    - predicate: not (CP08.outcome == 2)
+      hint: Asked only when question CP08. is not "No".
+    - predicate: not (CP10.outcome in [77, 99])
+      hint: Asked only when question CP10. is none of "Live outside US and participating territories", "Refused".
+    items:
+    - id: CDEM_16
+      kind: Question
+      title: To your knowledge, are you now pregnant?
+      precondition:
+      - predicate: not (MSAB_01.outcome == 1 or CP05_2.outcome == 1 or LL09_2.outcome == 1 or CDEM_01.outcome > 49)
+        hint: Asked only when MSAB.01, CP05.2 and LL09.2 are not "Yes" and age (CDEM.01) is 49 or under.
+      input:
+        control: Radio
+        labels:
+          1: 'Yes'
+          2: 'No'
+          7: Don’t know / Not sure
+          9: Refused
+    - id: CDEM_17
+      kind: Question
+      title: About how much do you weigh without shoes? (Weight in pounds/kilograms. If respondent answers in metrics, put 9 in first column. Round fractions up)
+      input:
+        control: Editbox
+        min: 1
+        max: 9999
+        right: (7777 = Don’t know / Not sure, 9999 = Refused)
+    - id: CDEM_18
+      kind: Question
+      title: About how tall are you without shoes? (Height ft / inches/meters/centimeters. If respondent answers in metrics, put 9 in first column. Round fractions down)
+      input:
+        control: Textarea
+        placeholder: Height (77/ 77 = Don’t know / Not sure, 99/ 99 = Refused)
+        maxLength: 20
+  - id: b_s11_disability
+    title: 'Core Section 9: Disability'
+    precondition:
+    - predicate: not (LL01.outcome == 2)
+      hint: Asked only when question LL01. is not "No".
+    - predicate: not (LL02.outcome == 3)
+      hint: Asked only when question LL02. is not "No, this is a business".
+    - predicate: not (LL03.outcome == 2)
+      hint: Asked only when question LL03. is not "No".
+    - predicate: not (LL04.outcome == 2)
+      hint: Asked only when question LL04. is not "No".
+    - predicate: not (LL05.outcome == 1)
+      hint: Asked only when question LL05. is not "Yes, it is a cell phone".
+    - predicate: not (LL06.outcome == 2 and LL03.outcome == 1)
+      hint: Asked only when LL06 is not "No" together with LL03 being "Yes".
+    - predicate: not (LL10.outcome in [7, 9])
+      hint: Asked only when question LL10 is none of "Don't know/Not sure", "Refused".
+    - predicate: not (CP01.outcome == 2)
+      hint: Asked only when question CP01. is not "No".
+    - predicate: not (CP02.outcome == 2)
+      hint: Asked only when question CP02. is not "No".
+    - predicate: not (CP03.outcome == 2)
+      hint: Asked only when question CP03. is not "No".
+    - predicate: not (CP04.outcome == 2)
+      hint: Asked only when question CP04. is not "No".
+    - predicate: not (CP06.outcome in [7, 9])
+      hint: Asked only when question CP06 is none of "Don't know/Not sure", "Refused".
+    - predicate: not (CP08.outcome == 2)
+      hint: Asked only when question CP08. is not "No".
+    - predicate: not (CP10.outcome in [77, 99])
+      hint: Asked only when question CP10. is none of "Live outside US and participating territories", "Refused".
+    items:
+    - id: CDIS_01
+      kind: Question
+      title: Some people who are deaf or have serious difficulty hearing use assistive devices to communicate by phone. Are you deaf or do you have serious difficulty hearing?
+      input:
+        control: Radio
+        labels:
+          1: 'Yes'
+          2: 'No'
+          7: Don't know / Not sure
+          9: Refused
+    - id: CDIS_02
+      kind: Question
+      title: Are you blind or do you have serious difficulty seeing, even when wearing glasses?
+      input:
+        control: Radio
+        labels:
+          1: 'Yes'
+          2: 'No'
+          7: Don't know / Not sure
+          9: Refused
+    - id: CDIS_03
+      kind: Question
+      title: Because of a physical, mental, or emotional condition, do you have serious difficulty concentrating, remembering, or making decisions?
+      input:
+        control: Radio
+        labels:
+          1: 'Yes'
+          2: 'No'
+          7: Don't know / Not sure
+          9: Refused
+    - id: CDIS_04
+      kind: Question
+      title: Do you have serious difficulty walking or climbing stairs?
+      input:
+        control: Radio
+        labels:
+          1: 'Yes'
+          2: 'No'
+          7: Don't know / Not sure
+          9: Refused
+    - id: CDIS_05
+      kind: Question
+      title: Do you have difficulty dressing or bathing?
+      input:
+        control: Radio
+        labels:
+          1: 'Yes'
+          2: 'No'
+          7: Don't know / Not sure
+          9: Refused
+    - id: CDIS_06
+      kind: Question
+      title: Because of a physical, mental, or emotional condition, do you have difficulty doing errands alone such as visiting a doctor’s office or shopping?
+      input:
+        control: Radio
+        labels:
+          1: 'Yes'
+          2: 'No'
+          7: Don’t know / Not sure
+          9: Refused
+  - id: b_s12_falls
+    title: 'Core Section 10: Falls'
+    precondition:
+    - predicate: not (LL01.outcome == 2)
+      hint: Asked only when question LL01. is not "No".
+    - predicate: not (LL02.outcome == 3)
+      hint: Asked only when question LL02. is not "No, this is a business".
+    - predicate: not (LL03.outcome == 2)
+      hint: Asked only when question LL03. is not "No".
+    - predicate: not (LL04.outcome == 2)
+      hint: Asked only when question LL04. is not "No".
+    - predicate: not (LL05.outcome == 1)
+      hint: Asked only when question LL05. is not "Yes, it is a cell phone".
+    - predicate: not (LL06.outcome == 2 and LL03.outcome == 1)
+      hint: Asked only when LL06 is not "No" together with LL03 being "Yes".
+    - predicate: not (LL10.outcome in [7, 9])
+      hint: Asked only when question LL10 is none of "Don't know/Not sure", "Refused".
+    - predicate: not (CP01.outcome == 2)
+      hint: Asked only when question CP01. is not "No".
+    - predicate: not (CP02.outcome == 2)
+      hint: Asked only when question CP02. is not "No".
+    - predicate: not (CP03.outcome == 2)
+      hint: Asked only when question CP03. is not "No".
+    - predicate: not (CP04.outcome == 2)
+      hint: Asked only when question CP04. is not "No".
+    - predicate: not (CP06.outcome in [7, 9])
+      hint: Asked only when question CP06 is none of "Don't know/Not sure", "Refused".
+    - predicate: not (CP08.outcome == 2)
+      hint: Asked only when question CP08. is not "No".
+    - predicate: not (CP10.outcome in [77, 99])
+      hint: Asked only when question CP10. is none of "Live outside US and participating territories", "Refused".
+    - predicate: not (CDEM_01.outcome >= 18 and CDEM_01.outcome <= 44)
+      hint: Asked only of respondents aged 45 or older.
+    items:
+    - id: CFAL_01
+      kind: Question
+      title: 'In the past 12 months, how many times have you fallen? (Read if necessary: By a fall, we mean when a person unintentionally comes to rest on the ground or another lower level.) [76 = 76 or more]'
+      input:
+        control: Editbox
+        min: 1
+        max: 99
+        right: times (88 = None, 77 = Don't know / Not sure, 99 = Refused)
+    - id: CFAL_02
+      kind: Question
+      title: 'How many of these falls caused an injury that limited your regular activities for at least a day or caused you to go to see a doctor? (Read if necessary: By an injury, we mean the fall caused you to limit your regular activities for at least a day or to go see a doctor.) [76 = 76 or more]'
+      precondition:
+      - predicate: not (CFAL_01.outcome in [88, 77, 99])
+        hint: Asked only when question CFAL.01 is none of "None", "Don't know / Not sure", "Refused".
+      postcondition:
+      - predicate: CFAL_02.outcome in [77, 88, 99] or CFAL_01.outcome in [77, 88, 99] or CFAL_02.outcome <= CFAL_01.outcome
+        hint: The number of falls that caused an injury (CFAL.02) cannot be greater than the total number of falls (CFAL.01).
+        invented: true
+      input:
+        control: Editbox
+        min: 1
+        max: 99
+        right: falls (88 = None, 77 = Don't know / Not sure, 99 = Refused)
+  - id: b_s13_tobacco
+    title: 'Core Section 11: Tobacco Use'
+    precondition:
+    - predicate: not (LL01.outcome == 2)
+      hint: Asked only when question LL01. is not "No".
+    - predicate: not (LL02.outcome == 3)
+      hint: Asked only when question LL02. is not "No, this is a business".
+    - predicate: not (LL03.outcome == 2)
+      hint: Asked only when question LL03. is not "No".
+    - predicate: not (LL04.outcome == 2)
+      hint: Asked only when question LL04. is not "No".
+    - predicate: not (LL05.outcome == 1)
+      hint: Asked only when question LL05. is not "Yes, it is a cell phone".
+    - predicate: not (LL06.outcome == 2 and LL03.outcome == 1)
+      hint: Asked only when LL06 and LL03 do not both exclude this respondent.
+    - predicate: not (LL10.outcome in [7, 9])
+      hint: Asked only when question LL10 is none of "Don't know/Not sure", "Refused".
+    - predicate: not (CP01.outcome == 2)
+      hint: Asked only when question CP01. is not "No".
+    - predicate: not (CP02.outcome == 2)
+      hint: Asked only when question CP02. is not "No".
+    - predicate: not (CP03.outcome == 2)
+      hint: Asked only when question CP03. is not "No".
+    - predicate: not (CP04.outcome == 2)
+      hint: Asked only when question CP04. is not "No".
+    - predicate: not (CP06.outcome in [7, 9])
+      hint: Asked only when question CP06 is none of "Don't know/Not sure", "Refused".
+    - predicate: not (CP08.outcome == 2)
+      hint: Asked only when question CP08. is not "No".
+    - predicate: not (CP10.outcome in [77, 99])
+      hint: Asked only when question CP10. is none of "Live outside US and participating territories", "Refused".
+    items:
+    - id: CTOB_01
+      kind: Question
+      title: 'Have you smoked at least 100 cigarettes in your entire life? (Do not include: electronic cigarettes (e-cigarettes, njoy, bluetip, JUUL), herbal cigarettes, cigars, cigarillos, little cigars, pipes, bidis, kreteks, water'
+      input:
+        control: Radio
+        labels:
+          1: 'Yes'
+  - id: b_s14_external
+    title: External inputs
+    precondition:
+    - predicate: not (LL01.outcome == 2)
+      hint: Asked only when question LL01. is not "No".
+    - predicate: not (LL02.outcome == 3)
+      hint: Asked only when question LL02. is not "No, this is a business".
+    - predicate: not (LL03.outcome == 2)
+      hint: Asked only when question LL03. is not "No".
+    - predicate: not (LL04.outcome == 2)
+      hint: Asked only when question LL04. is not "No".
+    - predicate: not (LL05.outcome == 1)
+      hint: Asked only when question LL05. is not "Yes, it is a cell phone".
+    - predicate: not (LL06.outcome == 2 and LL03.outcome == 1)
+      hint: Asked only when LL06. is not "No" while LL03. is "Yes".
+    - predicate: not (LL10.outcome in [7, 9])
+      hint: Asked only when question LL10 is none of "Don't know/Not sure", "Refused".
+    - predicate: not (CP01.outcome == 2)
+      hint: Asked only when question CP01. is not "No".
+    - predicate: not (CP02.outcome == 2)
+      hint: Asked only when question CP02. is not "No".
+    - predicate: not (CP03.outcome == 2)
+      hint: Asked only when question CP03. is not "No".
+    - predicate: not (CP04.outcome == 2)
+      hint: Asked only when question CP04. is not "No".
+    - predicate: not (CP06.outcome in [7, 9])
+      hint: Asked only when question CP06 is none of "Don't know/Not sure", "Refused".
+    - predicate: not (CP08.outcome == 2)
+      hint: Asked only when question CP08. is not "No".
+    - predicate: not (CP10.outcome in [77, 99])
+      hint: Asked only when question CP10. is none of "Live outside US and participating territories", "Refused".
+    - predicate: not (CTOB_01.outcome in [2, 7, 9])
+      hint: Asked only when question CTOB.01 is none of 2, 7, 9.
+    items:
+    - id: MSAB_01
+      kind: Question
+      title: 'External input: sex variable from another module, referenced in the CDEM.15 skip (Male coded 1)'
+      external: true
+      input:
+        control: Radio
+        labels:
+          1: Male
+    - id: CP05_2
+      kind: Question
+      title: 'External input: variable from another module referenced in the CDEM.15 skip (coded 1)'
+      external: true
+      input:
+        control: Radio
+        labels:
+          1: '1'
+    - id: LL09_2
+      kind: Question
+      title: 'External input: variable from another module referenced in the CDEM.15 skip (coded 1)'
+      external: true
+      input:
+        control: Radio
+        labels:
+          1: '1'
+    - id: CELL_INTERVIEW
+      kind: Question
+      title: 'External input: whether the interview is conducted on a cell phone (sample/call type), referenced as ''If cell interview go to CDEM11'''
+      external: true
+      input:
+        control: Radio
+        labels:
+          1: Cell phone interview
+          2: Landline interview
+  - id: b_s15_tobacco
+    title: Tobacco Use
+    precondition:
+    - predicate: not (LL01.outcome == 2)
+      hint: Asked only when question LL01. is not "No".
+    - predicate: not (LL02.outcome == 3)
+      hint: Asked only when question LL02. is not "No, this is a business".
+    - predicate: not (LL03.outcome == 2)
+      hint: Asked only when question LL03. is not "No".
+    - predicate: not (LL04.outcome == 2)
+      hint: Asked only when question LL04. is not "No".
+    - predicate: not (LL05.outcome == 1)
+      hint: Asked only when question LL05. is not "Yes, it is a cell phone".
+    - predicate: not (LL06.outcome == 2 and LL03.outcome == 1)
+      hint: Asked only when LL06 and LL03 do not both indicate a skip.
+    - predicate: not (LL10.outcome in [7, 9])
+      hint: Asked only when question LL10 is none of "Don't know/Not sure", "Refused".
+    - predicate: not (CP01.outcome == 2)
+      hint: Asked only when question CP01. is not "No".
+    - predicate: not (CP02.outcome == 2)
+      hint: Asked only when question CP02. is not "No".
+    - predicate: not (CP03.outcome == 2)
+      hint: Asked only when question CP03. is not "No".
+    - predicate: not (CP04.outcome == 2)
+      hint: Asked only when question CP04. is not "No".
+    - predicate: not (CP06.outcome in [7, 9])
+      hint: Asked only when question CP06 is none of "Don't know/Not sure", "Refused".
+    - predicate: not (CP08.outcome == 2)
+      hint: Asked only when question CP08. is not "No".
+    - predicate: not (CP10.outcome in [77, 99])
+      hint: Asked only when question CP10. is none of "Live outside US and participating territories", "Refused".
+    items:
+    - id: CTOB_02
+      kind: Question
+      title: Do you now smoke cigarettes every day, some days, or not at all?
+      precondition:
+      - predicate: not (CTOB_01.outcome in [2, 7, 9])
+        hint: Asked only when question CTOB.01 is none of 2, 7, 9.
+      input:
+        control: Radio
+        labels:
+          1: Every day
+          2: Some days
+          3: Not at all
+          7: Don’t know / Not sure
+          9: Refused
+    - id: CTOB_03
+      kind: Question
+      title: 'Do you currently use chewing tobacco, snuff, or snus every day, some days, or not at all? Read if necessary: Snus (Swedish for snuff) is a moist smokeless tobacco, usually sold in small pouches that are placed under the lip against the gum.'
+      input:
+        control: Radio
+        labels:
+          1: Every day
+          2: Some days
+          3: Not at all
+          7: Don’t know / Not sure
+          9: Refused
+    - id: CTOB_04
+      kind: Question
+      title: 'Would you say you have never used e-cigarettes or other electronic vaping products in your entire life or now use them every day, use them some days, or used them in the past but do not currently use them at all? Interviewer note: These questions concern electronic vaping products for nicotine use. The use of electronic vaping products for marijuana use is not included in these questions. If respondent says “Not at all” ask that they do not mean “Never used e-cigs in your entire life”'
+      input:
+        control: Radio
+        labels:
+          1: Never used e-cigarettes in your entire life
+          2: Use them every day
+          3: Use them some days
+          4: Not at all (right now)
+          7: Don’t know / Not sure
+          9: Refused
+  - id: b_s16_frequency
+    title: 'Core Section 12: Alcohol Consumption'
+    precondition:
+    - predicate: not (LL01.outcome == 2)
+      hint: Asked only when question LL01. is not "No".
+    - predicate: not (LL02.outcome == 3)
+      hint: Asked only when question LL02. is not "No, this is a business".
+    - predicate: not (LL03.outcome == 2)
+      hint: Asked only when question LL03. is not "No".
+    - predicate: not (LL04.outcome == 2)
+      hint: Asked only when question LL04. is not "No".
+    - predicate: not (LL05.outcome == 1)
+      hint: Asked only when question LL05. is not "Yes, it is a cell phone".
+    - predicate: not (LL06.outcome == 2 and LL03.outcome == 1)
+      hint: Asked only when question LL06. is not "No" while LL03. is "Yes".
+    - predicate: not (LL10.outcome in [7, 9])
+      hint: Asked only when question LL10 is none of "Don't know/Not sure", "Refused".
+    - predicate: not (CP01.outcome == 2)
+      hint: Asked only when question CP01. is not "No".
+    - predicate: not (CP02.outcome == 2)
+      hint: Asked only when question CP02. is not "No".
+    - predicate: not (CP03.outcome == 2)
+      hint: Asked only when question CP03. is not "No".
+    - predicate: not (CP04.outcome == 2)
+      hint: Asked only when question CP04. is not "No".
+    - predicate: not (CP06.outcome in [7, 9])
+      hint: Asked only when question CP06 is none of "Don't know/Not sure", "Refused".
+    - predicate: not (CP08.outcome == 2)
+      hint: Asked only when question CP08. is not "No".
+    - predicate: not (CP10.outcome in [77, 99])
+      hint: Asked only when question CP10. is none of "Live outside US and participating territories", "Refused".
+    items:
+    - id: CALC_01
+      kind: Question
+      title: 'During the past 30 days, how many days per week or per month did you have at least one drink of any alcoholic beverage? (1 _ _ Days per week; 2 _ _ Days in past 30 days) Read if necessary: A 40-ounce beer would count as 3 drinks, or a cocktail drink with 2 shots would count as 2 drinks.'
+      input:
+        control: Radio
+        labels:
+          1: Days per week
+          2: Days in past 30 days
+          888: No drinks in past 30 days
+          777: Don’t know / Not sure
+          999: Refused
+    - id: CALC_01n
+      kind: Question
+      title: 'Number of days entered in the two-digit slot (_ _) of CALC.01, in the unit chosen there (days per week or days in past 30 days). Id and entry added by the inventory: the source prints the count slot inside CALC.01.'
+      precondition:
+      - predicate: CALC_01.outcome in [1, 2]
+        hint: Asked only when question CALC.01 is one of "Days per week", "Days in past 30 days".
+      - predicate: not (CALC_01.outcome in [888, 777, 999])
+        hint: Asked only when question CALC.01 is none of "No drinks in past 30 days", "Don’t know / Not sure", "Refused".
+      postcondition:
+      - predicate: (CALC_01.outcome != 1 or CALC_01n.outcome <= 7) and (CALC_01.outcome != 2 or CALC_01n.outcome <= 30)
+        hint: The number of days in CALC.01 cannot exceed 7 when reported per week or 30 when reported for the past 30 days; please correct the count.
+        invented: true
+      input:
+        control: Editbox
+        min: 0
+        max: 30
+  - id: b_s16_drinkers
+    title: 'Alcohol Consumption: Drinking Days'
+    precondition:
+    - predicate: not (LL01.outcome == 2)
+      hint: Asked only when question LL01. is not "No".
+    - predicate: not (LL02.outcome == 3)
+      hint: Asked only when question LL02. is not "No, this is a business".
+    - predicate: not (LL03.outcome == 2)
+      hint: Asked only when question LL03. is not "No".
+    - predicate: not (LL04.outcome == 2)
+      hint: Asked only when question LL04. is not "No".
+    - predicate: not (LL05.outcome == 1)
+      hint: Asked only when question LL05. is not "Yes, it is a cell phone".
+    - predicate: not (LL06.outcome == 2 and LL03.outcome == 1)
+      hint: Asked only when question LL06. is not "No" while LL03. is "Yes".
+    - predicate: not (LL10.outcome in [7, 9])
+      hint: Asked only when question LL10 is none of "Don't know/Not sure", "Refused".
+    - predicate: not (CP01.outcome == 2)
+      hint: Asked only when question CP01. is not "No".
+    - predicate: not (CP02.outcome == 2)
+      hint: Asked only when question CP02. is not "No".
+    - predicate: not (CP03.outcome == 2)
+      hint: Asked only when question CP03. is not "No".
+    - predicate: not (CP04.outcome == 2)
+      hint: Asked only when question CP04. is not "No".
+    - predicate: not (CP06.outcome in [7, 9])
+      hint: Asked only when question CP06 is none of "Don't know/Not sure", "Refused".
+    - predicate: not (CP08.outcome == 2)
+      hint: Asked only when question CP08. is not "No".
+    - predicate: not (CP10.outcome in [77, 99])
+      hint: Asked only when question CP10. is none of "Live outside US and participating territories", "Refused".
+    - predicate: not (CALC_01.outcome in [888, 777, 999])
+      hint: Asked only when question CALC.01 is none of "No drinks in past 30 days", "Don’t know / Not sure", "Refused".
+    items:
+    - id: CALC_02
+      kind: Question
+      title: 'During the past 30 days, on the days when you drank, about how many drinks did you drink on the average? (_ _ Number of drinks) Read if necessary: A 40-ounce beer would count as 3 drinks, or a cocktail drink with 2 shots would count as 2 drinks. (88 = None, 77 = Don’t know / Not sure, 99 = Refused)'
+      input:
+        control: Editbox
+        min: 0
+        max: 99
+    - id: CALC_03
+      kind: Question
+      title: Considering all types of alcoholic beverages, how many times during the past 30 days did you have X [CATI X = 5 for men, X = 4 for women] or more drinks on an occasion? (_ _ Number of times) (states may use sex at birth to determine sex if module is adopted) (88 = no days, 77 = Don’t know / Not sure, 99 = Refused)
+      input:
+        control: Editbox
+        min: 0
+        max: 99
+    - id: CALC_04
+      kind: Question
+      title: During the past 30 days, what is the largest number of drinks you had on any occasion? (_ _ Number of drinks) (77 = Don’t know / Not sure, 99 = Refused)
+      postcondition:
+      - predicate: CALC_02.outcome >= 77 or CALC_04.outcome >= 77 or CALC_04.outcome >= CALC_02.outcome
+        hint: The largest number of drinks on any occasion (CALC.04) cannot be less than the average number of drinks on drinking days (CALC.02).
+        invented: true
+      input:
+        control: Editbox
+        min: 0
+        max: 99
+  - id: b_s17_immunization
+    title: 'Core Section 13: Immunization'
+    precondition:
+    - predicate: not (LL01.outcome == 2)
+      hint: Asked only when question LL01. is not "No".
+    - predicate: not (LL02.outcome == 3)
+      hint: Asked only when question LL02. is not "No, this is a business".
+    - predicate: not (LL03.outcome == 2)
+      hint: Asked only when question LL03. is not "No".
+    - predicate: not (LL04.outcome == 2)
+      hint: Asked only when question LL04. is not "No".
+    - predicate: not (LL05.outcome == 1)
+      hint: Asked only when question LL05. is not "Yes, it is a cell phone".
+    - predicate: not (LL06.outcome == 2 and LL03.outcome == 1)
+      hint: Asked only when the landline and private residence screening answers allow it.
+    - predicate: not (LL10.outcome in [7, 9])
+      hint: Asked only when question LL10 is none of "Don't know/Not sure", "Refused".
+    - predicate: not (CP01.outcome == 2)
+      hint: Asked only when question CP01. is not "No".
+    - predicate: not (CP02.outcome == 2)
+      hint: Asked only when question CP02. is not "No".
+    - predicate: not (CP03.outcome == 2)
+      hint: Asked only when question CP03. is not "No".
+    - predicate: not (CP04.outcome == 2)
+      hint: Asked only when question CP04. is not "No".
+    - predicate: not (CP06.outcome in [7, 9])
+      hint: Asked only when question CP06 is none of "Don't know/Not sure", "Refused".
+    - predicate: not (CP08.outcome == 2)
+      hint: Asked only when question CP08. is not "No".
+    - predicate: not (CP10.outcome in [77, 99])
+      hint: Asked only when question CP10. is none of "Live outside US and participating territories", "Refused".
+    items:
+    - id: CIMM_01
+      kind: Question
+      title: 'During the past 12 months, have you had either a flu vaccine that was sprayed in your nose or a flu shot injected into your arm? Read if necessary: A new flu shot came out in 2011 that injects vaccine into the skin with a very small needle. It is called Fluzone Intradermal vaccine. This is also considered a flu shot.'
+      input:
+        control: Radio
+        labels:
+          1: 'Yes'
+          2: 'No'
+          7: Don't know / Not sure
+          9: Refused
+    - id: CIMM_02
+      kind: Question
+      title: During what month and year did you receive your most recent flu vaccine that was sprayed in your nose or flu shot injected into your arm? (__ / _ _ _ _ Month / Year)
+      precondition:
+      - predicate: not (CIMM_01.outcome in [2, 7, 9])
+        hint: Asked only when question CIMM.01 is none of "No", "Don't know / Not sure", "Refused".
+      input:
+        control: Textarea
+        placeholder: MM / YYYY (77 / 7777 Don't know / Not sure; 09 / 9999 Refused)
+    - id: CIMM_03
+      kind: Question
+      title: 'Have you ever had a pneumonia shot also known as a pneumococcal vaccine? Read if necessary: There are two types of pneumonia shots: polysaccharide, also known as Pneumovax, and conjugate, also known as Prevnar.'
+      input:
+        control: Radio
+        labels:
+          1: 'Yes'
+          2: 'No'
+          7: Don't know / Not sure
+          9: Refused
+    - id: CIMM_04
+      kind: Question
+      title: 'Have you ever had the shingles or zoster vaccine? Shingles is an illness that results in a rash or blisters on the skin, and is usually painful. There are two vaccines now available for shingles: Zostavax, which requires 1 shot and Shingrix which requires 2 shots.'
+      precondition:
+      - predicate: not (CDEM_01.outcome < 50)
+        hint: Asked only of respondents aged 50 or older.
+      input:
+        control: Radio
+        labels:
+          1: 'Yes'
+          2: 'No'
+          7: Don't know / Not sure
+          9: Refused
+  - id: b_s18_hiv
+    title: 'Core Section 14: H.I.V./AIDS'
+    precondition:
+    - predicate: not (LL01.outcome == 2)
+      hint: Asked only when question LL01. is not "No".
+    - predicate: not (LL02.outcome == 3)
+      hint: Asked only when question LL02. is not "No, this is a business".
+    - predicate: not (LL03.outcome == 2)
+      hint: Asked only when question LL03. is not "No".
+    - predicate: not (LL04.outcome == 2)
+      hint: Asked only when question LL04. is not "No".
+    - predicate: not (LL05.outcome == 1)
+      hint: Asked only when question LL05. is not "Yes, it is a cell phone".
+    - predicate: not (LL06.outcome == 2 and LL03.outcome == 1)
+      hint: Not asked when LL06. is 2 and LL03. is 1.
+    - predicate: not (LL10.outcome in [7, 9])
+      hint: Asked only when question LL10 is none of "Don't know/Not sure", "Refused".
+    - predicate: not (CP01.outcome == 2)
+      hint: Asked only when question CP01. is not "No".
+    - predicate: not (CP02.outcome == 2)
+      hint: Asked only when question CP02. is not "No".
+    - predicate: not (CP03.outcome == 2)
+      hint: Asked only when question CP03. is not "No".
+    - predicate: not (CP04.outcome == 2)
+      hint: Asked only when question CP04. is not "No".
+    - predicate: not (CP06.outcome in [7, 9])
+      hint: Asked only when question CP06 is none of "Don't know/Not sure", "Refused".
+    - predicate: not (CP08.outcome == 2)
+      hint: Asked only when question CP08. is not "No".
+    - predicate: not (CP10.outcome in [77, 99])
+      hint: Asked only when question CP10. is none of "Live outside US and participating territories", "Refused".
+    items:
+    - id: CHIV_01
+      kind: Question
+      title: Including fluid testing from your mouth, but not including tests you may have had for blood donation, have you ever been tested for H.I.V? Please remember that your answers are strictly confidential and that you don't have to answer every question if you do not want to. Although we will ask you about testing, we will not ask you about the results of any test you may have had.
+      input:
+        control: Radio
+        labels:
+          1: 'Yes'
+          2: 'No'
+          7: Don't know/ not sure
+          9: Refused
+    - id: CHIV_02
+      kind: Question
+      title: 'Not including blood donations, in what month and year was your last H.I.V. test? (__ /_ _ _ _ Code month and year) If response is before January 1985, code "777777". INTERVIEWER NOTE: If the respondent remembers the year but cannot remember the month, code the first two digits 77 and the last four digits for the year. (777777 = 77/ 7777 Don''t know / Not sure; 999999 = 99/ 9999 Refused)'
+      precondition:
+      - predicate: not (CHIV_01.outcome in [2, 7, 9])
+        hint: Asked only when question CHIV.01 is none of "No", "Don't know/ not sure", "Refused".
+      input:
+        control: Textarea
+  - id: b_s19_seatbelt_drinking
+    title: 'Core Section 15: Seat Belt Use / Drinking and Driving'
+    precondition:
+    - predicate: not (LL01.outcome == 2)
+      hint: Asked only when question LL01. is not "No".
+    - predicate: not (LL02.outcome == 3)
+      hint: Asked only when question LL02. is not "No, this is a business".
+    - predicate: not (LL03.outcome == 2)
+      hint: Asked only when question LL03. is not "No".
+    - predicate: not (LL04.outcome == 2)
+      hint: Asked only when question LL04. is not "No".
+    - predicate: not (LL05.outcome == 1)
+      hint: Asked only when question LL05. is not "Yes, it is a cell phone".
+    - predicate: not (LL06.outcome == 2 and LL03.outcome == 1)
+      hint: Asked only when LL06 is not "2" while LL03 is "1".
+    - predicate: not (LL10.outcome in [7, 9])
+      hint: Asked only when question LL10 is none of "Don't know/Not sure", "Refused".
+    - predicate: not (CP01.outcome == 2)
+      hint: Asked only when question CP01. is not "No".
+    - predicate: not (CP02.outcome == 2)
+      hint: Asked only when question CP02. is not "No".
+    - predicate: not (CP03.outcome == 2)
+      hint: Asked only when question CP03. is not "No".
+    - predicate: not (CP04.outcome == 2)
+      hint: Asked only when question CP04. is not "No".
+    - predicate: not (CP06.outcome in [7, 9])
+      hint: Asked only when question CP06 is none of "Don't know/Not sure", "Refused".
+    - predicate: not (CP08.outcome == 2)
+      hint: Asked only when question CP08. is not "No".
+    - predicate: not (CP10.outcome in [77, 99])
+      hint: Asked only when question CP10. is none of "Live outside US and participating territories", "Refused".
+    items:
+    - id: CSBD_01
+      kind: Question
+      title: How often do you use seat belts when you drive or ride in a car? Would you say—
+      input:
+        control: Radio
+        labels:
+          1: Always
+          2: Nearly always
+          3: Sometimes
+          4: Seldom
+          5: Never
+          7: Don't know / Not sure
+          8: Never drive or ride in a car
+          9: Refused
+    - id: CSBD_02_note
+      kind: Comment
+      title: Enter the number of times. Code 88 for None, 77 for Don't know / Not sure, 99 for Refused.
+      precondition:
+      - predicate: not (CSBD_01.outcome == 8) and not (CALC_01.outcome == 888)
+        hint: Shown only when the respondent drives and had drinks in the past 30 days.
+    - id: CSBD_02
+      kind: Question
+      title: During the past 30 days, how many times have you driven when you've had perhaps too much to drink? (_ _ Number of times)
+      precondition:
+      - predicate: not (CSBD_01.outcome == 8)
+        hint: Asked only when question CSBD.01 is not "Never drive or ride in a car".
+      - predicate: not (CALC_01.outcome == 888)
+        hint: Asked only when question CALC.01 is not "No drinks in past 30 days".
+      input:
+        control: Editbox
+        min: 0
+        max: 99
+        right: times
+  - id: b_s20_covid_history
+    title: 'Emerging Core: Long-term COVID Effects'
+    precondition:
+    - predicate: not (LL01.outcome == 2)
+      hint: Asked only when question LL01. is not "No".
+    - predicate: not (LL02.outcome == 3)
+      hint: Asked only when question LL02. is not "No, this is a business".
+    - predicate: not (LL03.outcome == 2)
+      hint: Asked only when question LL03. is not "No".
+    - predicate: not (LL04.outcome == 2)
+      hint: Asked only when question LL04. is not "No".
+    - predicate: not (LL05.outcome == 1)
+      hint: Asked only when question LL05. is not "Yes, it is a cell phone".
+    - predicate: not (LL06.outcome == 2 and LL03.outcome == 1)
+      hint: Asked only when LL06 is not "No" while LL03 is "Yes".
+    - predicate: not (LL10.outcome in [7, 9])
+      hint: Asked only when question LL10 is none of "Don't know/Not sure", "Refused".
+    - predicate: not (CP01.outcome == 2)
+      hint: Asked only when question CP01. is not "No".
+    - predicate: not (CP02.outcome == 2)
+      hint: Asked only when question CP02. is not "No".
+    - predicate: not (CP03.outcome == 2)
+      hint: Asked only when question CP03. is not "No".
+    - predicate: not (CP04.outcome == 2)
+      hint: Asked only when question CP04. is not "No".
+    - predicate: not (CP06.outcome in [7, 9])
+      hint: Asked only when question CP06 is none of "Don't know/Not sure", "Refused".
+    - predicate: not (CP08.outcome == 2)
+      hint: Asked only when question CP08. is not "No".
+    - predicate: not (CP10.outcome in [77, 99])
+      hint: Asked only when question CP10. is none of "Live outside US and participating territories", "Refused".
+    items:
+    - id: COVID_01
+      kind: Question
+      title: Have you ever tested positive for COVID-19 (using a rapid point-of-care test, self-test, or laboratory test) or been told by a doctor or other health care provider that you have or had COVID-19? Positive tests include antibody or blood testing as well as other forms of testing for COVID, such a nasal swabbing or throat swabbing including home tests.
+      input:
+        control: Radio
+        labels:
+          1: 'Yes'
+          2: 'No'
+          7: Don't know / Not sure
+          9: Refused
+  - id: b_s20_long_covid
+    title: Long-term COVID Symptoms
+    precondition:
+    - predicate: not (LL01.outcome == 2)
+      hint: Asked only when question LL01. is not "No".
+    - predicate: not (LL02.outcome == 3)
+      hint: Asked only when question LL02. is not "No, this is a business".
+    - predicate: not (LL03.outcome == 2)
+      hint: Asked only when question LL03. is not "No".
+    - predicate: not (LL04.outcome == 2)
+      hint: Asked only when question LL04. is not "No".
+    - predicate: not (LL05.outcome == 1)
+      hint: Asked only when question LL05. is not "Yes, it is a cell phone".
+    - predicate: not (LL06.outcome == 2 and LL03.outcome == 1)
+      hint: Asked only when LL06 is not "No" while LL03 is "Yes".
+    - predicate: not (LL10.outcome in [7, 9])
+      hint: Asked only when question LL10 is none of "Don't know/Not sure", "Refused".
+    - predicate: not (CP01.outcome == 2)
+      hint: Asked only when question CP01. is not "No".
+    - predicate: not (CP02.outcome == 2)
+      hint: Asked only when question CP02. is not "No".
+    - predicate: not (CP03.outcome == 2)
+      hint: Asked only when question CP03. is not "No".
+    - predicate: not (CP04.outcome == 2)
+      hint: Asked only when question CP04. is not "No".
+    - predicate: not (CP06.outcome in [7, 9])
+      hint: Asked only when question CP06 is none of "Don't know/Not sure", "Refused".
+    - predicate: not (CP08.outcome == 2)
+      hint: Asked only when question CP08. is not "No".
+    - predicate: not (CP10.outcome in [77, 99])
+      hint: Asked only when question CP10. is none of "Live outside US and participating territories", "Refused".
+    - predicate: not (COVID_01.outcome in [2, 7, 9])
+      hint: Asked only when question COVID.01 is none of "No", "Don't know / Not sure", "Refused".
+    items:
+    - id: COVID_02
+      kind: Question
+      title: 'Do you currently have symptoms lasting 3 months or longer that you did not have prior to having coronavirus or COVID-19? Long term conditions may be an indirect effect of COVID 19. Read if necessary: - Tiredness or fatigue - Difficulty thinking or concentrating or forgetfulness/ memory problems (sometimes referred to as "brain fog") - Difficulty breathing or shortness of breath - Joint or muscle pain - Fast-beating or pounding heart (also known as heart palpitations) or chest pain - Dizziness on standing -menstrual changes - Symptoms that get worse after physical or mental activities -Loss of taste or smell'
+      input:
+        control: Radio
+        labels:
+          1: 'Yes'
+          2: 'No'
+          7: Don't know / Not sure
+          9: Refused
+    - id: COVID_03
+      kind: Question
+      title: Do these long-term symptoms reduce your ability to carry out day-to-day activities compared with the time before you COVID-19? (Please read)
+      precondition:
+      - predicate: not (COVID_02.outcome in [2, 7, 9])
+        hint: Asked only when question COVID.02 is none of "No", "Don't know / Not sure", "Refused".
+      input:
+        control: Radio
+        labels:
+          1: Yes, a lot
+          2: Yes, a little
+          3: Not at all
+          7: Don’t know / Not sure
+          9: Refused
+  - id: b_s21_prediabetes
+    title: 'Module 1: Prediabetes'
+    precondition:
+    - predicate: not (LL01.outcome == 2)
+      hint: Asked only when question LL01. is not "No".
+    - predicate: not (LL02.outcome == 3)
+      hint: Asked only when question LL02. is not "No, this is a business".
+    - predicate: not (LL03.outcome == 2)
+      hint: Asked only when question LL03. is not "No".
+    - predicate: not (LL04.outcome == 2)
+      hint: Asked only when question LL04. is not "No".
+    - predicate: not (LL05.outcome == 1)
+      hint: Asked only when question LL05. is not "Yes, it is a cell phone".
+    - predicate: not (LL06.outcome == 2 and LL03.outcome == 1)
+      hint: Not asked when LL06 is 2 and LL03 is Yes.
+    - predicate: not (LL10.outcome in [7, 9])
+      hint: Asked only when question LL10 is none of "Don't know/Not sure", "Refused".
+    - predicate: not (CP01.outcome == 2)
+      hint: Asked only when question CP01. is not "No".
+    - predicate: not (CP02.outcome == 2)
+      hint: Asked only when question CP02. is not "No".
+    - predicate: not (CP03.outcome == 2)
+      hint: Asked only when question CP03. is not "No".
+    - predicate: not (CP04.outcome == 2)
+      hint: Asked only when question CP04. is not "No".
+    - predicate: not (CP06.outcome in [7, 9])
+      hint: Asked only when question CP06 is none of "Don't know/Not sure", "Refused".
+    - predicate: not (CP08.outcome == 2)
+      hint: Asked only when question CP08. is not "No".
+    - predicate: not (CP10.outcome in [77, 99])
+      hint: Asked only when question CP10. is none of "Live outside US and participating territories", "Refused".
+    - predicate: not (COVID_01.outcome in [2, 7, 9])
+      hint: Asked only when question COVID.01 is none of "No", "Don't know / Not sure", "Refused".
+    - predicate: not (COVID_02.outcome in [2, 7, 9])
+      hint: Asked only when question COVID.02 is none of "No", "Don't know / Not sure", "Refused".
+    items:
+    - id: MPDIAB_01
+      kind: Question
+      title: When was the last time you had a blood test for high blood sugar or diabetes by a doctor, nurse, or other health professional?
+      precondition:
+      - predicate: CCHC_12.outcome != 1
+        hint: Asked only when question CCHC.12 is not "Yes".
+      input:
+        control: Radio
+        labels:
+          1: Within the past year (anytime less than 12 months ago)
+          2: Within the last 2 years (1 year but less than 2 years ago)
+          3: Within the last 3 years (2 years but less than 3 years ago)
+          4: Within the last 5 years (3 to 4 years but less than 5 years ago)
+          5: Within the last 10 years (5 to 9 years but less than 10 years ago)
+          6: 10 years ago or more
+          7: Don’t know / Not sure
+          8: Never
+          9: Refused
+    - id: MPDIAB_02
+      kind: Question
+      title: 'Has a doctor or other health professional ever told you that you had prediabetes or borderline diabetes? If Yes and respondent is female, ask: Was this only when you were pregnant? (If CCHC.12 is coded 4, automatically code MPDIAB.02 equal to 1 (yes))'
+      precondition:
+      - predicate: CCHC_12.outcome != 1 and CCHC_12.outcome != 4
+        hint: Asked only when question CCHC.12 is neither "Yes" nor coded 4.
+      input:
+        control: Radio
+        labels:
+          1: 'Yes'
+          2: Yes, during pregnancy
+          3: 'No'
+          7: Don’t know / Not sure
+          9: Refused
+  - id: b_s22_diabetes
+    title: 'Module 2: Diabetes'
+    precondition:
+    - predicate: not (LL01.outcome == 2)
+      hint: Asked only when question LL01. is not "No".
+    - predicate: not (LL02.outcome == 3)
+      hint: Asked only when question LL02. is not "No, this is a business".
+    - predicate: not (LL03.outcome == 2)
+      hint: Asked only when question LL03. is not "No".
+    - predicate: not (LL04.outcome == 2)
+      hint: Asked only when question LL04. is not "No".
+    - predicate: not (LL05.outcome == 1)
+      hint: Asked only when question LL05. is not "Yes, it is a cell phone".
+    - predicate: not (LL06.outcome == 2 and LL03.outcome == 1)
+      hint: Not asked when LL06. is "No" and LL03. is "Yes".
+    - predicate: not (LL10.outcome in [7, 9])
+      hint: Asked only when question LL10 is none of "Don't know/Not sure", "Refused".
+    - predicate: not (CP01.outcome == 2)
+      hint: Asked only when question CP01. is not "No".
+    - predicate: not (CP02.outcome == 2)
+      hint: Asked only when question CP02. is not "No".
+    - predicate: not (CP03.outcome == 2)
+      hint: Asked only when question CP03. is not "No".
+    - predicate: not (CP04.outcome == 2)
+      hint: Asked only when question CP04. is not "No".
+    - predicate: not (CP06.outcome in [7, 9])
+      hint: Asked only when question CP06 is none of "Don't know/Not sure", "Refused".
+    - predicate: not (CP08.outcome == 2)
+      hint: Asked only when question CP08. is not "No".
+    - predicate: not (CP10.outcome in [77, 99])
+      hint: Asked only when question CP10. is none of "Live outside US and participating territories", "Refused".
+    - predicate: not (COVID_01.outcome in [2, 7, 9])
+      hint: Asked only when question COVID.01 is none of "No", "Don't know / Not sure", "Refused".
+    - predicate: not (COVID_02.outcome in [2, 7, 9])
+      hint: Asked only when question COVID.02 is none of "No", "Don't know / Not sure", "Refused".
+    - predicate: CCHC_12.outcome == 1
+      hint: Asked only when question CCHC.12 is "Yes".
+    items:
+    - id: MDIAB_01
+      kind: Question
+      title: According to your doctor or other health professional, what type of diabetes do you have?
+      input:
+        control: Radio
+        labels:
+          1: Type 1
+          2: Type 2
+          7: Don't know/ Not sure
+          9: Refused
+    - id: MDIAB_02
+      kind: Question
+      title: Insulin can be taken by shot or pump. Are you now taking insulin?
+      input:
+        control: Radio
+        labels:
+          1: 'Yes'
+          2: 'No'
+          7: Don't know/ not sure
+          9: Refused
+    - id: MDIAB_03
+      kind: Question
+      title: 'About how many times in the past 12 months has a doctor, nurse, or other health professional checked you for A-one-C? (_ _ Number of times [76 = 76 or more]) Read if necessary: A test for A-one-C measures the average level of blood sugar over the past three months. (88 = None, 98 = Never heard of A-one-C test, 77 = Don''t know / Not sure, 99 = Refused)'
+      input:
+        control: Editbox
+        min: 0
+        max: 99
+    - id: MDIAB_04
+      kind: Question
+      title: When was the last time you had an eye exam in which the pupils were dilated, making you temporarily sensitive to bright light?
+      input:
+        control: Radio
+        labels:
+          1: Within the past month (anytime less than 1 month ago)
+          2: Within the past year (1 month but less than 12 months ago)
+          3: Within the past 2 years (1 year but less than 2 years ago)
+          4: 2 or more years ago
+          7: Don't know / Not sure
+          8: Never
+          9: Refused
+    - id: MDIAB_05
+      kind: Question
+      title: When was the last time a doctor, nurse or other health professional took a photo of the back of your eye with a specialized camera?
+      input:
+        control: Radio
+        labels:
+          1: Within the past month (anytime less than 1 month ago)
+          2: Within the past year (1 month but less than 12 months ago)
+          3: Within the past 2 years (1 year but less than 2 years ago)
+          4: 2 or more years ago
+          7: Don't know / Not sure
+          8: Never
+          9: Refused
+    - id: MDIAB_06
+      kind: Question
+      title: When was the last time you took a course or class in how to manage your diabetes yourself?
+      input:
+        control: Dropdown
+        labels:
+          1: Within the past year (anytime less than 12 months ago)
+          2: Within the last 2 years (1 year but less than 2 years ago)
+          3: Within the last 3 years (2 years but less than 3 years ago)
+          4: Within the last 5 years (3 to 4 years but less than 5 years ago)
+          5: Within the last 10 years (5 to 9 years but less than 10 years ago)
+          6: 10 years ago or more
+          7: Don’t know / Not sure
+          8: Never
+          9: Refused
+    - id: MDIAB_07
+      kind: Question
+      title: Have you ever had any sores or irritations on your feet that took more than four weeks to heal?
+      input:
+        control: Radio
+        labels:
+          1: 'Yes'
+          2: 'No'
+          7: Don’t know / Not sure
+          9: Refused
+  - id: b_s23_arthritis
+    title: 'Module 3 : Arthritis'
+    precondition:
+    - predicate: not (LL01.outcome == 2)
+      hint: Asked only when question LL01. is not "No".
+    - predicate: not (LL02.outcome == 3)
+      hint: Asked only when question LL02. is not "No, this is a business".
+    - predicate: not (LL03.outcome == 2)
+      hint: Asked only when question LL03. is not "No".
+    - predicate: not (LL04.outcome == 2)
+      hint: Asked only when question LL04. is not "No".
+    - predicate: not (LL05.outcome == 1)
+      hint: Asked only when question LL05. is not "Yes, it is a cell phone".
+    - predicate: not (LL06.outcome == 2 and LL03.outcome == 1)
+      hint: Asked only when LL06. is not "No" while LL03. is "Yes".
+    - predicate: not (LL10.outcome in [7, 9])
+      hint: Asked only when question LL10 is none of "Don't know/Not sure", "Refused".
+    - predicate: not (CP01.outcome == 2)
+      hint: Asked only when question CP01. is not "No".
+    - predicate: not (CP02.outcome == 2)
+      hint: Asked only when question CP02. is not "No".
+    - predicate: not (CP03.outcome == 2)
+      hint: Asked only when question CP03. is not "No".
+    - predicate: not (CP04.outcome == 2)
+      hint: Asked only when question CP04. is not "No".
+    - predicate: not (CP06.outcome in [7, 9])
+      hint: Asked only when question CP06 is none of "Don't know/Not sure", "Refused".
+    - predicate: not (CP08.outcome == 2)
+      hint: Asked only when question CP08. is not "No".
+    - predicate: not (CP10.outcome in [77, 99])
+      hint: Asked only when question CP10. is none of "Live outside US and participating territories", "Refused".
+    - predicate: not (COVID_01.outcome in [2, 7, 9])
+      hint: Asked only when question COVID.01 is none of "No", "Don't know / Not sure", "Refused".
+    - predicate: not (COVID_02.outcome in [2, 7, 9])
+      hint: Asked only when question COVID.02 is none of "No", "Don't know / Not sure", "Refused".
+    - predicate: CCHC_11.outcome == 1
+      hint: Asked only when question CCHC.11 is "Yes".
+    items:
+    - id: MARTH_01
+      kind: Question
+      title: Has a doctor or other health professional ever suggested physical activity or exercise to help your arthritis or joint symptoms? If the respondent is unclear about whether this means increase or decrease in physical activity, this means increase.
+      input:
+        control: Radio
+        labels:
+          1: 'Yes'
+          2: 'No'
+          7: Don't know / Not sure
+          9: Refused
+    - id: MARTH_02
+      kind: Question
+      title: Have you ever taken an educational course or class to teach you how to manage problems related to your arthritis or joint symptoms?
+      input:
+        control: Radio
+        labels:
+          1: 'Yes'
+          2: 'No'
+          7: Don't know / Not sure
+          9: Refused
+    - id: MARTH_03
+      kind: Question
+      title: 'Are you now limited in any way in any of your usual activities because of arthritis or joint symptoms? If a respondent question arises about medication, then the interviewer should reply: "Please answer the question based on your current experience, regardless of whether you are taking any medication or treatment"'
+      input:
+        control: Radio
+        labels:
+          1: 'Yes'
+          2: 'No'
+          7: Don't know / Not sure
+          9: Refused
+    - id: MARTH_04
+      kind: Question
+      title: 'In the next question, we are referring to work for pay. Do arthritis or joint symptoms now affect whether you work, the type of work you do or the amount of work you do? If respondent gives an answer to each issue (whether works, type of work, or amount of work), then if any issue is "yes" mark the overall response as "yes." If a question arises about medications or treatment, then the interviewer should say: "Please answer the question based on your current experience, regardless of whether you are taking any medication or treatment."'
+      input:
+        control: Radio
+        labels:
+          1: 'Yes'
+          2: 'No'
+          7: Don’t know / Not sure
+          9: Refused
+    - id: MARTH_05
+      kind: Question
+      title: Please think about the past 30 days, keeping in mind all of your joint pain or aching and whether or not you have taken medication. During the past 30 days, how bad was your joint pain on average on a scale of 0 to 10 where 0 is no pain and 10 is pain or aching as bad as it can be? (__ __ Enter number [00-10]) Enter 77 for Don’t know/ Not sure, 99 for Refused.
+      input:
+        control: Editbox
+        min: 0
+        max: 99
+  - id: b_s24_smoking_history
+    title: 'Module 4: Lung Cancer Screening - Smoking History'
+    precondition:
+    - predicate: not (LL01.outcome == 2)
+      hint: Asked only when question LL01. is not "No".
+    - predicate: not (LL02.outcome == 3)
+      hint: Asked only when question LL02. is not "No, this is a business".
+    - predicate: not (LL03.outcome == 2)
+      hint: Asked only when question LL03. is not "No".
+    - predicate: not (LL04.outcome == 2)
+      hint: Asked only when question LL04. is not "No".
+    - predicate: not (LL05.outcome == 1)
+      hint: Asked only when question LL05. is not "Yes, it is a cell phone".
+    - predicate: not (LL06.outcome == 2 and LL03.outcome == 1)
+      hint: Asked only when the LL06 and LL03 answers do not exclude this section.
+    - predicate: not (LL10.outcome in [7, 9])
+      hint: Asked only when question LL10 is none of "Don't know/Not sure", "Refused".
+    - predicate: not (CP01.outcome == 2)
+      hint: Asked only when question CP01. is not "No".
+    - predicate: not (CP02.outcome == 2)
+      hint: Asked only when question CP02. is not "No".
+    - predicate: not (CP03.outcome == 2)
+      hint: Asked only when question CP03. is not "No".
+    - predicate: not (CP04.outcome == 2)
+      hint: Asked only when question CP04. is not "No".
+    - predicate: not (CP06.outcome in [7, 9])
+      hint: Asked only when question CP06 is none of "Don't know/Not sure", "Refused".
+    - predicate: not (CP08.outcome == 2)
+      hint: Asked only when question CP08. is not "No".
+    - predicate: not (CP10.outcome in [77, 99])
+      hint: Asked only when question CP10. is none of "Live outside US and participating territories", "Refused".
+    - predicate: not (COVID_01.outcome in [2, 7, 9])
+      hint: Asked only when question COVID.01 is none of "No", "Don't know / Not sure", "Refused".
+    - predicate: not (COVID_02.outcome in [2, 7, 9])
+      hint: Asked only when question COVID.02 is none of "No", "Don't know / Not sure", "Refused".
+    - predicate: not (not (CTOB_01.outcome == 1 and CTOB_02.outcome in [1, 2, 3]))
+      hint: Asked only of respondents who have smoked in the past or currently smoke.
+    items:
+    - id: MLCS_01
+      kind: Question
+      title: You've told us that you have smoked in the past or are currently smoking. The next questions are about screening for lung cancer. How old were you when you first started to smoke cigarettes regularly? (_ _ _ Age in Years (001 – 100)) Regularly is at least one cigarette or more on days that a respondent smokes (either every day or some days) or smoked (not at all). If respondent indicates age inconsistent with previously entered age, verify that this is the correct answer and change the age of the respondent regularly smoking or make a note to correct the age of the respondent.
+      input:
+        control: Editbox
+        min: 1
+        max: 999
+        right: Age in years (001 - 100); 777 = Don't know/Not sure, 888 = Never smoked cigarettes regularly, 999 = Refused
+    - id: MLCS_02
+      kind: Question
+      title: How old were you when you last smoked cigarettes regularly? (_ _ _ Age in Years (001 – 100))
+      precondition:
+      - predicate: not (MLCS_01.outcome == 888)
+        hint: Asked only when question MLCS.01 is not "Never smoked cigarettes regularly".
+      - predicate: not (CTOB_01.outcome == 1 and CTOB_02.outcome == 1 and MLCS_01.outcome != 888)
+        hint: Not asked of current every-day smokers who started smoking regularly.
+      postcondition:
+      - predicate: MLCS_01.outcome >= 777 or MLCS_02.outcome >= 777 or MLCS_02.outcome >= MLCS_01.outcome
+        hint: The age at which you last smoked regularly (MLCS.02) cannot be lower than the age at which you first started smoking regularly (MLCS.01).
+        invented: true
+      input:
+        control: Editbox
+        min: 1
+        max: 999
+        right: Age in years (001 - 100); 777 = Don't know/Not sure, 999 = Refused
+    - id: MLCS_03
+      kind: Question
+      title: 'On average, when you [smoke/ smoked] regularly, about how many cigarettes {do/did} you usually smoke each day? (_ _ _ Number of cigarettes) Regularly is at least one cigarette or more on days that a respondent smokes (either every day or some days) or smoked (not at all). Respondents may answer in packs instead of number of cigarettes. Below is a conversion table: 0.5 pack = 10 cigarettes/ 1.75 pack = 35 cigarettes/ 0.75 pack = 15 cigarettes/ 2 packs = 40 cigarettes/ 1 pack = 20 cigarettes/ 2.5 packs= 50 cigarettes/ 1.25 pack = 25 cigarettes/ 3 packs= 60 cigarettes/ 1.5 pack = 30 cigarettes'
+      precondition:
+      - predicate: not (MLCS_01.outcome == 888)
+        hint: Asked only when question MLCS.01 is not "Never smoked cigarettes regularly".
+      input:
+        control: Editbox
+        min: 0
+        max: 999
+        right: Number of cigarettes; 777 = Don't know/Not sure, 999 = Refused
+  - id: b_s24_ct_scan
+    title: 'Module 4: Lung Cancer Screening - Chest CT Scan'
+    precondition:
+    - predicate: not (LL01.outcome == 2)
+      hint: Asked only when question LL01. is not "No".
+    - predicate: not (LL02.outcome == 3)
+      hint: Asked only when question LL02. is not "No, this is a business".
+    - predicate: not (LL03.outcome == 2)
+      hint: Asked only when question LL03. is not "No".
+    - predicate: not (LL04.outcome == 2)
+      hint: Asked only when question LL04. is not "No".
+    - predicate: not (LL05.outcome == 1)
+      hint: Asked only when question LL05. is not "Yes, it is a cell phone".
+    - predicate: not (LL06.outcome == 2 and LL03.outcome == 1)
+      hint: Asked only when the LL06 and LL03 answers do not exclude this section.
+    - predicate: not (LL10.outcome in [7, 9])
+      hint: Asked only when question LL10 is none of "Don't know/Not sure", "Refused".
+    - predicate: not (CP01.outcome == 2)
+      hint: Asked only when question CP01. is not "No".
+    - predicate: not (CP02.outcome == 2)
+      hint: Asked only when question CP02. is not "No".
+    - predicate: not (CP03.outcome == 2)
+      hint: Asked only when question CP03. is not "No".
+    - predicate: not (CP04.outcome == 2)
+      hint: Asked only when question CP04. is not "No".
+    - predicate: not (CP06.outcome in [7, 9])
+      hint: Asked only when question CP06 is none of "Don't know/Not sure", "Refused".
+    - predicate: not (CP08.outcome == 2)
+      hint: Asked only when question CP08. is not "No".
+    - predicate: not (CP10.outcome in [77, 99])
+      hint: Asked only when question CP10. is none of "Live outside US and participating territories", "Refused".
+    - predicate: not (COVID_01.outcome in [2, 7, 9])
+      hint: Asked only when question COVID.01 is none of "No", "Don't know / Not sure", "Refused".
+    - predicate: not (COVID_02.outcome in [2, 7, 9])
+      hint: Asked only when question COVID.02 is none of "No", "Don't know / Not sure", "Refused".
+    items:
+    - id: MLCS_04
+      kind: Question
+      title: The next question is about CT or CAT scans. During this test, you lie flat on your back on a table. While you hold your breath, the table moves through a donut shaped x-ray machine while the scan is done. Have you ever had a CT or CAT scan of your chest area?
+      input:
+        control: Radio
+        labels:
+          1: 'Yes'
+          2: No (Go to next module)
+          7: Don't know/not sure (Go to next module)
+          9: Refused (Go to next module)
+  - id: b_s24_ct_followup
+    title: 'Module 4: Lung Cancer Screening - Screening Scan Details'
+    precondition:
+    - predicate: not (LL01.outcome == 2)
+      hint: Asked only when question LL01. is not "No".
+    - predicate: not (LL02.outcome == 3)
+      hint: Asked only when question LL02. is not "No, this is a business".
+    - predicate: not (LL03.outcome == 2)
+      hint: Asked only when question LL03. is not "No".
+    - predicate: not (LL04.outcome == 2)
+      hint: Asked only when question LL04. is not "No".
+    - predicate: not (LL05.outcome == 1)
+      hint: Asked only when question LL05. is not "Yes, it is a cell phone".
+    - predicate: not (LL06.outcome == 2 and LL03.outcome == 1)
+      hint: Asked only when the LL06 and LL03 answers do not exclude this section.
+    - predicate: not (LL10.outcome in [7, 9])
+      hint: Asked only when question LL10 is none of "Don't know/Not sure", "Refused".
+    - predicate: not (CP01.outcome == 2)
+      hint: Asked only when question CP01. is not "No".
+    - predicate: not (CP02.outcome == 2)
+      hint: Asked only when question CP02. is not "No".
+    - predicate: not (CP03.outcome == 2)
+      hint: Asked only when question CP03. is not "No".
+    - predicate: not (CP04.outcome == 2)
+      hint: Asked only when question CP04. is not "No".
+    - predicate: not (CP06.outcome in [7, 9])
+      hint: Asked only when question CP06 is none of "Don't know/Not sure", "Refused".
+    - predicate: not (CP08.outcome == 2)
+      hint: Asked only when question CP08. is not "No".
+    - predicate: not (CP10.outcome in [77, 99])
+      hint: Asked only when question CP10. is none of "Live outside US and participating territories", "Refused".
+    - predicate: not (COVID_01.outcome in [2, 7, 9])
+      hint: Asked only when question COVID.01 is none of "No", "Don't know / Not sure", "Refused".
+    - predicate: not (COVID_02.outcome in [2, 7, 9])
+      hint: Asked only when question COVID.02 is none of "No", "Don't know / Not sure", "Refused".
+    - predicate: not (MLCS_04.outcome in [2, 7, 9])
+      hint: Asked only when question MLCS.04 is none of "No (Go to next module)", "Don't know/not sure (Go to next module)", "Refused (Go to next module)".
+    items:
+    - id: MLCS_05
+      kind: Question
+      title: Were any of the CT or CAT scans of your chest area done mainly to check or screen for lung cancer?
+      input:
+        control: Radio
+        labels:
+          1: 'Yes'
+          2: No (Go to Next module)
+          7: Don't know/not sure (Go to Next module)
+          9: Refused (Go to Next module)
+    - id: MLCS_06
+      kind: Question
+      title: When did you have your most recent CT or CAT scan of your chest area mainly to check or screen for lung cancer?
+      precondition:
+      - predicate: not (MLCS_05.outcome in [2, 7, 9])
+        hint: Asked only when question MLCS.05 is none of "No (Go to Next module)", "Don't know/not sure (Go to Next module)", "Refused (Go to Next module)".
+      input:
+        control: Radio
+        labels:
+          1: Within the past year (anytime less than 12 months ago)
+          2: Within the past 2 years (1 year but less than 2 years)
+          3: Within the past 3 years (2 years but less than 3 years)
+          4: Within the past 5 years (3 years but less than 5 years)
+          5: Within the past 10 years (5 years but less than 10 years ago)
+          6: 10 or more years ago
+          7: Don’t know / Not sure
+          9: Refused
+  - id: b_s25_mammogram_cervical
+    title: 'Module 5: Breast and Cervical Cancer Screening'
+    precondition:
+    - predicate: not (LL01.outcome == 2)
+      hint: Asked only when question LL01. is not "No".
+    - predicate: not (LL02.outcome == 3)
+      hint: Asked only when question LL02. is not "No, this is a business".
+    - predicate: not (LL03.outcome == 2)
+      hint: Asked only when question LL03. is not "No".
+    - predicate: not (LL04.outcome == 2)
+      hint: Asked only when question LL04. is not "No".
+    - predicate: not (LL05.outcome == 1)
+      hint: Asked only when question LL05. is not "Yes, it is a cell phone".
+    - predicate: not (LL06.outcome == 2 and LL03.outcome == 1)
+      hint: Asked only when LL06 and LL03 do not both rule out this interview.
+    - predicate: not (LL10.outcome in [7, 9])
+      hint: Asked only when question LL10 is none of "Don't know/Not sure", "Refused".
+    - predicate: not (CP01.outcome == 2)
+      hint: Asked only when question CP01. is not "No".
+    - predicate: not (CP02.outcome == 2)
+      hint: Asked only when question CP02. is not "No".
+    - predicate: not (CP03.outcome == 2)
+      hint: Asked only when question CP03. is not "No".
+    - predicate: not (CP04.outcome == 2)
+      hint: Asked only when question CP04. is not "No".
+    - predicate: not (CP06.outcome in [7, 9])
+      hint: Asked only when question CP06 is none of "Don't know/Not sure", "Refused".
+    - predicate: not (CP08.outcome == 2)
+      hint: Asked only when question CP08. is not "No".
+    - predicate: not (CP10.outcome in [77, 99])
+      hint: Asked only when question CP10. is none of "Live outside US and participating territories", "Refused".
+    - predicate: not (COVID_01.outcome in [2, 7, 9])
+      hint: Asked only when question COVID.01 is none of "No", "Don't know / Not sure", "Refused".
+    - predicate: not (COVID_02.outcome in [2, 7, 9])
+      hint: Asked only when question COVID.02 is none of "No", "Don't know / Not sure", "Refused".
+    items:
+    - id: MBCCS_01
+      kind: Question
+      title: (The next questions are about breast and cervical cancer.) Have you ever had a mammogram? A mammogram is an x-ray of each breast to look for breast cancer.
+      input:
+        control: Radio
+        labels:
+          1: 'Yes'
+          2: 'No'
+          7: Don't know/ not sure
+          9: Refused
+    - id: MBCCS_02
+      kind: Question
+      title: How long has it been since you had your last mammogram?
+      precondition:
+      - predicate: not (SEX.outcome == 1)
+        hint: Asked only when question SEX is not "Male".
+      - predicate: not (MBCCS_01.outcome in [2, 7, 9])
+        hint: Asked only when question MBCCS.01 is none of "No", "Don't know/ not sure", "Refused".
+      input:
+        control: Radio
+        labels:
+          1: Within the past year (anytime less than 12 months ago)
+          2: Within the past 2 years (1 year but less than 2 years ago)
+          3: Within the past 3 years (2 years but less than 3 years ago)
+          4: Within the past 5 years (3 years but less than 5 years ago)
+          5: 5 or more years ago
+          7: Don't know / Not sure
+          9: Refused
+    - id: MBCCS_03
+      kind: Question
+      title: Have you ever had a cervical cancer screening test?
+      precondition:
+      - predicate: not (SEX.outcome == 1)
+        hint: Asked only when question SEX is not "Male".
+      input:
+        control: Radio
+        labels:
+          1: 'Yes'
+          2: 'No'
+          7: Don't know/ not sure
+          9: Refused
+  - id: b_s25_cervical_detail
+    title: Cervical cancer screening details
+    precondition:
+    - predicate: not (LL01.outcome == 2)
+      hint: Asked only when question LL01. is not "No".
+    - predicate: not (LL02.outcome == 3)
+      hint: Asked only when question LL02. is not "No, this is a business".
+    - predicate: not (LL03.outcome == 2)
+      hint: Asked only when question LL03. is not "No".
+    - predicate: not (LL04.outcome == 2)
+      hint: Asked only when question LL04. is not "No".
+    - predicate: not (LL05.outcome == 1)
+      hint: Asked only when question LL05. is not "Yes, it is a cell phone".
+    - predicate: not (LL06.outcome == 2 and LL03.outcome == 1)
+      hint: Asked only when LL06 and LL03 do not both rule out this interview.
+    - predicate: not (LL10.outcome in [7, 9])
+      hint: Asked only when question LL10 is none of "Don't know/Not sure", "Refused".
+    - predicate: not (CP01.outcome == 2)
+      hint: Asked only when question CP01. is not "No".
+    - predicate: not (CP02.outcome == 2)
+      hint: Asked only when question CP02. is not "No".
+    - predicate: not (CP03.outcome == 2)
+      hint: Asked only when question CP03. is not "No".
+    - predicate: not (CP04.outcome == 2)
+      hint: Asked only when question CP04. is not "No".
+    - predicate: not (CP06.outcome in [7, 9])
+      hint: Asked only when question CP06 is none of "Don't know/Not sure", "Refused".
+    - predicate: not (CP08.outcome == 2)
+      hint: Asked only when question CP08. is not "No".
+    - predicate: not (CP10.outcome in [77, 99])
+      hint: Asked only when question CP10. is none of "Live outside US and participating territories", "Refused".
+    - predicate: not (COVID_01.outcome in [2, 7, 9])
+      hint: Asked only when question COVID.01 is none of "No", "Don't know / Not sure", "Refused".
+    - predicate: not (COVID_02.outcome in [2, 7, 9])
+      hint: Asked only when question COVID.02 is none of "No", "Don't know / Not sure", "Refused".
+    - predicate: not (SEX.outcome == 1)
+      hint: Asked only when question SEX is not "Male".
+    - predicate: not (MBCCS_03.outcome in [2, 7, 9] and CDEM_16.outcome != 1)
+      hint: Asked only when a cervical screening test was reported or applicable.
+    - predicate: not (MBCCS_03.outcome in [2, 7, 9] and CDEM_16.outcome == 1)
+      hint: Asked only when a cervical screening test was reported or applicable.
+    items:
+    - id: MBCCS_04
+      kind: Question
+      title: How long has it been since you had your last cervical cancer screening test?
+      input:
+        control: Radio
+        labels:
+          1: Within the past year (anytime less than 12 months ago)
+          2: Within the past 2 years (1 year but less than 2 years ago)
+          3: Within the past 3 years (2 years but less than 3 years ago)
+          4: Within the past 5 years (3 years but less than 5 years ago)
+          5: 5 or more years ago
+          7: Don't know / Not sure
+          9: Refused
+    - id: MBCCS_05
+      kind: Question
+      title: At your most recent cervical cancer screening, did you have a Pap test?
+      input:
+        control: Radio
+        labels:
+          1: 'Yes'
+          2: 'No'
+          7: Don't know / Not sure
+          9: Refused
+    - id: MBCCS_06
+      kind: Question
+      title: At your most recent cervical cancer screening, did you have an H.P.V. test? H.P.V. stands for Human papillomarvirus (pap-uh-loh-muh virus)
+      input:
+        control: Radio
+        labels:
+          1: 'Yes'
+          2: 'No'
+          7: Don't know / Not sure
+          9: Refused
+  - id: b_s25_hysterectomy
+    title: Hysterectomy
+    precondition:
+    - predicate: not (LL01.outcome == 2)
+      hint: Asked only when question LL01. is not "No".
+    - predicate: not (LL02.outcome == 3)
+      hint: Asked only when question LL02. is not "No, this is a business".
+    - predicate: not (LL03.outcome == 2)
+      hint: Asked only when question LL03. is not "No".
+    - predicate: not (LL04.outcome == 2)
+      hint: Asked only when question LL04. is not "No".
+    - predicate: not (LL05.outcome == 1)
+      hint: Asked only when question LL05. is not "Yes, it is a cell phone".
+    - predicate: not (LL06.outcome == 2 and LL03.outcome == 1)
+      hint: Asked only when LL06 and LL03 do not both rule out this interview.
+    - predicate: not (LL10.outcome in [7, 9])
+      hint: Asked only when question LL10 is none of "Don't know/Not sure", "Refused".
+    - predicate: not (CP01.outcome == 2)
+      hint: Asked only when question CP01. is not "No".
+    - predicate: not (CP02.outcome == 2)
+      hint: Asked only when question CP02. is not "No".
+    - predicate: not (CP03.outcome == 2)
+      hint: Asked only when question CP03. is not "No".
+    - predicate: not (CP04.outcome == 2)
+      hint: Asked only when question CP04. is not "No".
+    - predicate: not (CP06.outcome in [7, 9])
+      hint: Asked only when question CP06 is none of "Don't know/Not sure", "Refused".
+    - predicate: not (CP08.outcome == 2)
+      hint: Asked only when question CP08. is not "No".
+    - predicate: not (CP10.outcome in [77, 99])
+      hint: Asked only when question CP10. is none of "Live outside US and participating territories", "Refused".
+    - predicate: not (COVID_01.outcome in [2, 7, 9])
+      hint: Asked only when question COVID.01 is none of "No", "Don't know / Not sure", "Refused".
+    - predicate: not (COVID_02.outcome in [2, 7, 9])
+      hint: Asked only when question COVID.02 is none of "No", "Don't know / Not sure", "Refused".
+    items:
+    - id: MBCCS_07
+      kind: Question
+      title: 'Have you had a hysterectomy? Read if necessary: A hysterectomy is an operation to remove the uterus (womb).'
+      precondition:
+      - predicate: not (SEX.outcome == 1)
+        hint: Asked only when question SEX is not "Male".
+      - predicate: not (MBCCS_03.outcome in [2, 7, 9] and CDEM_16.outcome == 1)
+        hint: Asked only when the cervical screening answer and CDEM.16 do not rule it out.
+      - predicate: not (CDEM_16.outcome == 1)
+        hint: Asked only when question CDEM.16 is not "Yes".
+      input:
+        control: Radio
+        labels:
+          1: 'Yes'
+          2: 'No'
+          7: Don’t know / Not sure
+          9: Refused
+  - id: b_s26_psa_history
+    title: 'Module 6: Prostate Cancer Screening'
+    precondition:
+    - predicate: not (LL01.outcome == 2)
+      hint: Asked only when question LL01. is not "No".
+    - predicate: not (LL02.outcome == 3)
+      hint: Asked only when question LL02. is not "No, this is a business".
+    - predicate: not (LL03.outcome == 2)
+      hint: Asked only when question LL03. is not "No".
+    - predicate: not (LL04.outcome == 2)
+      hint: Asked only when question LL04. is not "No".
+    - predicate: not (LL05.outcome == 1)
+      hint: Asked only when question LL05. is not "Yes, it is a cell phone".
+    - predicate: not (LL06.outcome == 2 and LL03.outcome == 1)
+      hint: Asked only when LL06 is not "No" together with LL03 being "Yes".
+    - predicate: not (LL10.outcome in [7, 9])
+      hint: Asked only when question LL10 is none of "Don't know/Not sure", "Refused".
+    - predicate: not (CP01.outcome == 2)
+      hint: Asked only when question CP01. is not "No".
+    - predicate: not (CP02.outcome == 2)
+      hint: Asked only when question CP02. is not "No".
+    - predicate: not (CP03.outcome == 2)
+      hint: Asked only when question CP03. is not "No".
+    - predicate: not (CP04.outcome == 2)
+      hint: Asked only when question CP04. is not "No".
+    - predicate: not (CP06.outcome in [7, 9])
+      hint: Asked only when question CP06 is none of "Don't know/Not sure", "Refused".
+    - predicate: not (CP08.outcome == 2)
+      hint: Asked only when question CP08. is not "No".
+    - predicate: not (CP10.outcome in [77, 99])
+      hint: Asked only when question CP10. is none of "Live outside US and participating territories", "Refused".
+    - predicate: not (COVID_01.outcome in [2, 7, 9])
+      hint: Asked only when question COVID.01 is none of "No", "Don't know / Not sure", "Refused".
+    - predicate: not (COVID_02.outcome in [2, 7, 9])
+      hint: Asked only when question COVID.02 is none of "No", "Don't know / Not sure", "Refused".
+    items:
+    - id: MPCS_01
+      kind: Question
+      title: Have you ever had a P.S.A. test? A P.S.A. test is a blood test to detect prostate cancer. It is also called a prostate-specific antigen test.
+      input:
+        control: Radio
+        labels:
+          1: 'Yes'
+          2: 'No'
+          7: Don't know / Not sure
+          9: Refused
+  - id: b_s26_psa_details
+    title: P.S.A. test details
+    precondition:
+    - predicate: not (LL01.outcome == 2)
+      hint: Asked only when question LL01. is not "No".
+    - predicate: not (LL02.outcome == 3)
+      hint: Asked only when question LL02. is not "No, this is a business".
+    - predicate: not (LL03.outcome == 2)
+      hint: Asked only when question LL03. is not "No".
+    - predicate: not (LL04.outcome == 2)
+      hint: Asked only when question LL04. is not "No".
+    - predicate: not (LL05.outcome == 1)
+      hint: Asked only when question LL05. is not "Yes, it is a cell phone".
+    - predicate: not (LL06.outcome == 2 and LL03.outcome == 1)
+      hint: Asked only when LL06 is not "No" together with LL03 being "Yes".
+    - predicate: not (LL10.outcome in [7, 9])
+      hint: Asked only when question LL10 is none of "Don't know/Not sure", "Refused".
+    - predicate: not (CP01.outcome == 2)
+      hint: Asked only when question CP01. is not "No".
+    - predicate: not (CP02.outcome == 2)
+      hint: Asked only when question CP02. is not "No".
+    - predicate: not (CP03.outcome == 2)
+      hint: Asked only when question CP03. is not "No".
+    - predicate: not (CP04.outcome == 2)
+      hint: Asked only when question CP04. is not "No".
+    - predicate: not (CP06.outcome in [7, 9])
+      hint: Asked only when question CP06 is none of "Don't know/Not sure", "Refused".
+    - predicate: not (CP08.outcome == 2)
+      hint: Asked only when question CP08. is not "No".
+    - predicate: not (CP10.outcome in [77, 99])
+      hint: Asked only when question CP10. is none of "Live outside US and participating territories", "Refused".
+    - predicate: not (COVID_01.outcome in [2, 7, 9])
+      hint: Asked only when question COVID.01 is none of "No", "Don't know / Not sure", "Refused".
+    - predicate: not (COVID_02.outcome in [2, 7, 9])
+      hint: Asked only when question COVID.02 is none of "No", "Don't know / Not sure", "Refused".
+    - predicate: not (MPCS_01.outcome in [2, 7, 9])
+      hint: Asked only when question MPCS.01 is none of "No", "Don't know / Not sure", "Refused".
+    - predicate: not (CDEM_01.outcome < 39 or SEX.outcome == 2)
+      hint: Asked only of men aged 39 or older.
+    items:
+    - id: MPCS_02
+      kind: Question
+      title: About how long has it been since your most recent P.S.A. test? A P.S.A. test is a blood test to detect prostate cancer. It is also called a prostate-specific antigen test.
+      input:
+        control: Radio
+        labels:
+          1: Within the past year (anytime less than 12 months ago)
+          2: Within the past 2 years (1 year but less than 2 years ago)
+          3: Within the past 3 years (2 years but less than 3 years ago)
+          4: Within the past 5 years (3 years but less than 5 years ago)
+          5: 5 or more years ago
+          7: Don’t know / Not sure
+          9: Refused
+    - id: MPCS_03
+      kind: Question
+      title: What was the main reason you had this P.S.A. test – was it …? A P.S.A. test is a blood test to detect prostate cancer. It is also called a prostate-specific antigen test.
+      input:
+        control: Radio
+        labels:
+          1: Part of a routine exam
+          2: Because of a problem
+          3: Other reason
+          7: Don’t know / Not sure
+          9: Refused
+    - id: MPCS_04
+      kind: Question
+      title: 'Who first suggested this P.S.A. test: you, your doctor, or someone else?'
+      input:
+        control: Radio
+        labels:
+          1: Self
+          2: Doctor, nurse, health care professional
+          3: Someone else
+          7: Don’t Know / Not sure
+          9: Refused
+  - id: b_s27_external
+    title: External inputs
+    precondition:
+    - predicate: not (LL01.outcome == 2)
+      hint: Asked only when question LL01. is not "No".
+    - predicate: not (LL02.outcome == 3)
+      hint: Asked only when question LL02. is not "No, this is a business".
+    - predicate: not (LL03.outcome == 2)
+      hint: Asked only when question LL03. is not "No".
+    - predicate: not (LL04.outcome == 2)
+      hint: Asked only when question LL04. is not "No".
+    - predicate: not (LL05.outcome == 1)
+      hint: Asked only when question LL05. is not "Yes, it is a cell phone".
+    - predicate: not (LL06.outcome == 2 and LL03.outcome == 1)
+      hint: Asked only when LL06 is not "No" while LL03 is "Yes".
+    - predicate: not (LL10.outcome in [7, 9])
+      hint: Asked only when question LL10 is none of "Don't know/Not sure", "Refused".
+    - predicate: not (CP01.outcome == 2)
+      hint: Asked only when question CP01. is not "No".
+    - predicate: not (CP02.outcome == 2)
+      hint: Asked only when question CP02. is not "No".
+    - predicate: not (CP03.outcome == 2)
+      hint: Asked only when question CP03. is not "No".
+    - predicate: not (CP04.outcome == 2)
+      hint: Asked only when question CP04. is not "No".
+    - predicate: not (CP06.outcome in [7, 9])
+      hint: Asked only when question CP06 is none of "Don't know/Not sure", "Refused".
+    - predicate: not (CP08.outcome == 2)
+      hint: Asked only when question CP08. is not "No".
+    - predicate: not (CP10.outcome in [77, 99])
+      hint: Asked only when question CP10. is none of "Live outside US and participating territories", "Refused".
+    - predicate: not (COVID_01.outcome in [2, 7, 9])
+      hint: Asked only when question COVID.01 is none of "No", "Don't know / Not sure", "Refused".
+    - predicate: not (COVID_02.outcome in [2, 7, 9])
+      hint: Asked only when question COVID.02 is none of "No", "Don't know / Not sure", "Refused".
+    - predicate: not (MPCS_01.outcome in [2, 7, 9])
+      hint: Asked only when question MPCS.01 is none of "No", "Don't know / Not sure", "Refused".
+    - predicate: not (CDEM_01.outcome < 39 or SEX.outcome == 2)
+      hint: Asked only when the respondent is aged 39 or over and is not female.
+    items:
+    - id: SEX
+      kind: Question
+      title: Respondent's sex (from the Core demographics section, collected in another part, or sex at birth if the state adopts it); the source routing says 'if male' / 'or is female' without naming the question.
+      external: true
+      input:
+        control: Radio
+        labels:
+          1: Male
+          2: Female
+  - id: b_s28_psa_discussion
+    title: Prostate Cancer Screening (continuation from previous part)
+    precondition:
+    - predicate: not (LL01.outcome == 2)
+      hint: Asked only when question LL01. is not "No".
+    - predicate: not (LL02.outcome == 3)
+      hint: Asked only when question LL02. is not "No, this is a business".
+    - predicate: not (LL03.outcome == 2)
+      hint: Asked only when question LL03. is not "No".
+    - predicate: not (LL04.outcome == 2)
+      hint: Asked only when question LL04. is not "No".
+    - predicate: not (LL05.outcome == 1)
+      hint: Asked only when question LL05. is not "Yes, it is a cell phone".
+    - predicate: not (LL06.outcome == 2 and LL03.outcome == 1)
+      hint: Not asked when LL06 is 2 and LL03 is 1.
+    - predicate: not (LL10.outcome in [7, 9])
+      hint: Asked only when question LL10 is none of "Don't know/Not sure", "Refused".
+    - predicate: not (CP01.outcome == 2)
+      hint: Asked only when question CP01. is not "No".
+    - predicate: not (CP02.outcome == 2)
+      hint: Asked only when question CP02. is not "No".
+    - predicate: not (CP03.outcome == 2)
+      hint: Asked only when question CP03. is not "No".
+    - predicate: not (CP04.outcome == 2)
+      hint: Asked only when question CP04. is not "No".
+    - predicate: not (CP06.outcome in [7, 9])
+      hint: Asked only when question CP06 is none of "Don't know/Not sure", "Refused".
+    - predicate: not (CP08.outcome == 2)
+      hint: Asked only when question CP08. is not "No".
+    - predicate: not (CP10.outcome in [77, 99])
+      hint: Asked only when question CP10. is none of "Live outside US and participating territories", "Refused".
+    - predicate: not (COVID_01.outcome in [2, 7, 9])
+      hint: Asked only when question COVID.01 is none of "No", "Don't know / Not sure", "Refused".
+    - predicate: not (COVID_02.outcome in [2, 7, 9])
+      hint: Asked only when question COVID.02 is none of "No", "Don't know / Not sure", "Refused".
+    - predicate: not (CDEM_01.outcome < 39 or SEX.outcome == 2)
+      hint: Not asked when CDEM.01 is under 39 or the respondent's sex is 2.
+    items:
+    - id: MPCS_05
+      kind: Question
+      title: 'When you met with a doctor, nurse, or other health professional, did they EVER talk about the advantages, the disadvantages, or both advantages and disadvantages of the prostate-specific antigen or P.S.A. test? (Interviewer note: A P.S.A. test is a blood test to detect prostate cancer. It is also called a prostate-specific antigen test.)'
+      input:
+        control: Radio
+        labels:
+          1: Advantages
+          2: Disadvantages
+          3: Both Advantages and disadvantages
+          4: Neither (DO NOT READ)
+          7: Don't know/ not sure
+          9: Refused
+  - id: b_s29_screen
+    title: 'Module 7: Colorectal Cancer Screening'
+    precondition:
+    - predicate: not (LL01.outcome == 2)
+      hint: Asked only when question LL01. is not "No".
+    - predicate: not (LL02.outcome == 3)
+      hint: Asked only when question LL02. is not "No, this is a business".
+    - predicate: not (LL03.outcome == 2)
+      hint: Asked only when question LL03. is not "No".
+    - predicate: not (LL04.outcome == 2)
+      hint: Asked only when question LL04. is not "No".
+    - predicate: not (LL05.outcome == 1)
+      hint: Asked only when question LL05. is not "Yes, it is a cell phone".
+    - predicate: not (LL06.outcome == 2 and LL03.outcome == 1)
+      hint: Asked only when the landline and cell phone routing allows it.
+    - predicate: not (LL10.outcome in [7, 9])
+      hint: Asked only when question LL10 is none of "Don't know/Not sure", "Refused".
+    - predicate: not (CP01.outcome == 2)
+      hint: Asked only when question CP01. is not "No".
+    - predicate: not (CP02.outcome == 2)
+      hint: Asked only when question CP02. is not "No".
+    - predicate: not (CP03.outcome == 2)
+      hint: Asked only when question CP03. is not "No".
+    - predicate: not (CP04.outcome == 2)
+      hint: Asked only when question CP04. is not "No".
+    - predicate: not (CP06.outcome in [7, 9])
+      hint: Asked only when question CP06 is none of "Don't know/Not sure", "Refused".
+    - predicate: not (CP08.outcome == 2)
+      hint: Asked only when question CP08. is not "No".
+    - predicate: not (CP10.outcome in [77, 99])
+      hint: Asked only when question CP10. is none of "Live outside US and participating territories", "Refused".
+    - predicate: not (COVID_01.outcome in [2, 7, 9])
+      hint: Asked only when question COVID.01 is none of "No", "Don't know / Not sure", "Refused".
+    - predicate: not (COVID_02.outcome in [2, 7, 9])
+      hint: Asked only when question COVID.02 is none of "No", "Don't know / Not sure", "Refused".
+    - predicate: not (CDEM_01.outcome < 39 or SEX.outcome == 2)
+      hint: Asked only of respondents who are not under 39 and not female.
+    items:
+    - id: MCCS_01
+      kind: Question
+      title: Colonoscopy and sigmoidoscopy are exams to check for colon cancer. Have you ever had either of these exams? (A sigmoidoscopy checks part of the colon and you are fully awake. A colonoscopy checks the entire colon. You are usually given medication through a needle in your arm to make you sleepy and told to have someone else drive you home after the test.)
+      input:
+        control: Radio
+        labels:
+          1: 'Yes'
+          2: 'No'
+          7: Don't know/ not sure
+          9: Refused
+  - id: b_s29_age45
+    title: Colorectal Cancer Screening Tests
+    precondition:
+    - predicate: not (LL01.outcome == 2)
+      hint: Asked only when question LL01. is not "No".
+    - predicate: not (LL02.outcome == 3)
+      hint: Asked only when question LL02. is not "No, this is a business".
+    - predicate: not (LL03.outcome == 2)
+      hint: Asked only when question LL03. is not "No".
+    - predicate: not (LL04.outcome == 2)
+      hint: Asked only when question LL04. is not "No".
+    - predicate: not (LL05.outcome == 1)
+      hint: Asked only when question LL05. is not "Yes, it is a cell phone".
+    - predicate: not (LL06.outcome == 2 and LL03.outcome == 1)
+      hint: Asked only when the landline and cell phone routing allows it.
+    - predicate: not (LL10.outcome in [7, 9])
+      hint: Asked only when question LL10 is none of "Don't know/Not sure", "Refused".
+    - predicate: not (CP01.outcome == 2)
+      hint: Asked only when question CP01. is not "No".
+    - predicate: not (CP02.outcome == 2)
+      hint: Asked only when question CP02. is not "No".
+    - predicate: not (CP03.outcome == 2)
+      hint: Asked only when question CP03. is not "No".
+    - predicate: not (CP04.outcome == 2)
+      hint: Asked only when question CP04. is not "No".
+    - predicate: not (CP06.outcome in [7, 9])
+      hint: Asked only when question CP06 is none of "Don't know/Not sure", "Refused".
+    - predicate: not (CP08.outcome == 2)
+      hint: Asked only when question CP08. is not "No".
+    - predicate: not (CP10.outcome in [77, 99])
+      hint: Asked only when question CP10. is none of "Live outside US and participating territories", "Refused".
+    - predicate: not (COVID_01.outcome in [2, 7, 9])
+      hint: Asked only when question COVID.01 is none of "No", "Don't know / Not sure", "Refused".
+    - predicate: not (COVID_02.outcome in [2, 7, 9])
+      hint: Asked only when question COVID.02 is none of "No", "Don't know / Not sure", "Refused".
+    - predicate: not (CDEM_01.outcome < 39 or SEX.outcome == 2)
+      hint: Asked only of respondents who are not under 39 and not female.
+    - predicate: not (CDEM_01.outcome < 45)
+      hint: Asked only of respondents aged 45 or older.
+    items:
+    - id: MCCS_02
+      kind: Question
+      title: Have you had a colonoscopy, a sigmoidoscopy, or both?
+      precondition:
+      - predicate: not (MCCS_01.outcome in [2, 7, 9])
+        hint: Asked only when question MCCS.01 is none of "No", "Don't know/ not sure", "Refused".
+      input:
+        control: Radio
+        labels:
+          1: Colonoscopy
+          2: Sigmoidoscopy
+          3: Both
+          7: Don't know/Not sure
+          9: Refused
+    - id: MCCS_03
+      kind: Question
+      title: How long has it been since your most recent colonoscopy? (Read if necessary)
+      precondition:
+      - predicate: not (MCCS_01.outcome in [2, 7, 9])
+        hint: Asked only when question MCCS.01 is none of "No", "Don't know/ not sure", "Refused".
+      - predicate: not (MCCS_02.outcome == 2)
+        hint: Asked only when question MCCS.02 is not "Sigmoidoscopy".
+      - predicate: not (MCCS_02.outcome == 7)
+        hint: Asked only when question MCCS.02 is not "Don't know/Not sure".
+      - predicate: not (MCCS_02.outcome == 9)
+        hint: Asked only when question MCCS.02 is not "Refused".
+      input:
+        control: Radio
+        labels:
+          1: Within the past year (anytime less than 12 months ago)
+          2: Within the past 2 years (1 year but less than 2 years ago)
+          3: Within the past 5 years (2 years but less than 5 years ago)
+          4: Within the past 10 years (5 years but less than 10 years ago)
+          5: 10 or more years ago
+          7: Don't know / Not sure (Do not read)
+          9: Refused (Do not read)
+    - id: MCCS_04
+      kind: Question
+      title: How long has it been since your most recent sigmoidoscopy? (Read if necessary)
+      precondition:
+      - predicate: not (MCCS_01.outcome in [2, 7, 9])
+        hint: Asked only when question MCCS.01 is none of "No", "Don't know/ not sure", "Refused".
+      - predicate: not (MCCS_02.outcome == 7)
+        hint: Asked only when question MCCS.02 is not "Don't know/Not sure".
+      - predicate: not (MCCS_02.outcome == 9)
+        hint: Asked only when question MCCS.02 is not "Refused".
+      - predicate: not (MCCS_02.outcome != 3)
+        hint: Asked only when question MCCS.02 is "Both".
+      input:
+        control: Radio
+        labels:
+          1: Within the past year (anytime less than 12 months ago)
+          2: Within the past 2 years (1 year but less than 2 years ago)
+          3: Within the past 5 years (2 years but less than 5 years ago)
+          4: Within the past 10 years (5 years but less than 10 years ago)
+          5: 10 or more years ago
+          7: Don't know / Not sure (Do not read)
+          9: Refused (Do not read)
+    - id: MCCS_05
+      kind: Question
+      title: How long has it been since your most recent colonoscopy or sigmoidoscopy? (Read if necessary)
+      precondition:
+      - predicate: not (MCCS_01.outcome in [2, 7, 9])
+        hint: Asked only when question MCCS.01 is none of "No", "Don't know/ not sure", "Refused".
+      - predicate: not (MCCS_02.outcome == 9)
+        hint: Asked only when question MCCS.02 is not "Refused".
+      - predicate: not (MCCS_02.outcome != 3)
+        hint: Asked only when question MCCS.02 is "Both".
+      - predicate: not (MCCS_04.outcome in [1, 2, 3, 4, 5, 7, 9])
+        hint: Asked only when question MCCS.04 has not been answered.
+      input:
+        control: Radio
+        labels:
+          1: Within the past year (anytime less than 12 months ago)
+          2: Within the past 2 years (1 year but less than 2 years ago)
+          3: Within the past 5 years (2 years but less than 5 years ago)
+          4: Within the past 10 years (5 years but less than 10 years ago)
+          5: 10 or more years ago
+          7: Don't know / Not sure (Do not read)
+          9: Refused (Do not read)
+    - id: MCCS_06
+      kind: Question
+      title: Have you ever had any other kind of test for colorectal cancer, such as virtual colonoscopy, CT colonography, blood stool test, FIT DNA, or Cologuard test?
+      input:
+        control: Radio
+        labels:
+          1: 'Yes'
+          2: 'No'
+          7: Don't Know/Not sure
+          9: Refused
+    - id: MCCS_07
+      kind: Question
+      title: 'A virtual colonoscopy uses a series of X-rays to take pictures of inside the colon. Have you ever had a virtual colonoscopy? (Interviewer note: CT colonography, sometimes called virtual colonoscopy, is a new type of test that looks for cancer in the colon. Unlike regular colonoscopies, you do not need medication to make you sleepy during the test. In this new test, your colon is filled with air and you are moved through a donut-shaped X-ray machine as you lie on your back and then your stomach.)'
+      precondition:
+      - predicate: not (MCCS_06.outcome in [2, 7, 9])
+        hint: Asked only when question MCCS.06 is none of "No", "Don't Know/Not sure", "Refused".
+      input:
+        control: Radio
+        labels:
+          1: 'Yes'
+          2: 'No'
+          7: Don't Know/Not sure
+          9: Refused
+    - id: MCCS_08
+      kind: Question
+      title: When was your most recent CT colonography or virtual colonoscopy? (Read if necessary)
+      precondition:
+      - predicate: not (MCCS_06.outcome in [2, 7, 9])
+        hint: Asked only when question MCCS.06 is none of "No", "Don't Know/Not sure", "Refused".
+      - predicate: not (MCCS_07.outcome in [2, 7, 9])
+        hint: Asked only when question MCCS.07 is none of "No", "Don't Know/Not sure", "Refused".
+      input:
+        control: Radio
+        labels:
+          1: Within the past year (anytime less than 12 months ago)
+          2: Within the past 2 years (1 year but less than 2 years ago)
+          3: Within the past 5 years (2 years but less than 5 years ago)
+          4: Within the past 10 years (5 years but less than 10 years ago)
+          5: 10 or more years ago
+          7: Don't know / Not sure (Do not read)
+          9: Refused (Do not read)
+    - id: MCCS_09
+      kind: Question
+      title: 'One stool test uses a special kit to obtain a small amount of stool at home and returns the kit to the doctor or the lab. Have you ever had this test? (Interviewer note: The blood stool or occult blood test, fecal immunochemical or FIT test determine whether you have blood in your stool or bowel movement and can be done at home using a kit. You use a stick or brush to obtain a small amount of stool at home and send it back to the doctor or lab.)'
+      precondition:
+      - predicate: not (MCCS_06.outcome in [2, 7, 9])
+        hint: Asked only when question MCCS.06 is none of "No", "Don't Know/Not sure", "Refused".
+      input:
+        control: Radio
+        labels:
+          1: 'Yes'
+          2: 'No'
+          7: Don't know/ not sure
+          9: Refused
+    - id: MCCS_10
+      kind: Question
+      title: How long has it been since you had this test? (Read if necessary)
+      precondition:
+      - predicate: not (MCCS_06.outcome in [2, 7, 9])
+        hint: Asked only when question MCCS.06 is none of "No", "Don't Know/Not sure", "Refused".
+      - predicate: not (MCCS_09.outcome in [2, 7, 9])
+        hint: Asked only when question MCCS.09 is none of "No", "Don't know/ not sure", "Refused".
+      input:
+        control: Radio
+        labels:
+          1: Within the past year (anytime less than 12 months ago)
+          2: Within the past 2 years (1 year but less than 2 years ago)
+          3: Within the past 3 years (2 years but less than 3 years ago)
+          4: Within the past 5 years (3 years but less than 5 years ago)
+          5: 5 or more years ago
+          7: Don't know / Not sure (Do not read)
+          9: Refused (Do not read)
+    - id: MCCS_11
+      kind: Question
+      title: 'Another stool test uses a special kit to obtain an entire bowel movement at home and returns the kit to a lab. Have you ever had this test? (Interviewer note: Cologuard is a new type of stool test for colon cancer. Unlike other stool tests, Cologuard looks for changes in DNA in addition to checking for blood in your stool. The Cologuard test is shipped to your home in a box that includes a container for your stool sample.)'
+      precondition:
+      - predicate: not (MCCS_06.outcome in [2, 7, 9])
+        hint: Asked only when question MCCS.06 is none of "No", "Don't Know/Not sure", "Refused".
+      input:
+        control: Radio
+        labels:
+          1: 'Yes'
+          2: 'No'
+          7: Don't Know/Not sure
+          9: Refused
+    - id: MCCS_12
+      kind: Question
+      title: Was the blood stool or FIT (you reported earlier) conducted as part of a Cologuard test?
+      precondition:
+      - predicate: not (MCCS_06.outcome in [2, 7, 9])
+        hint: Asked only when question MCCS.06 is none of "No", "Don't Know/Not sure", "Refused".
+      - predicate: not (MCCS_11.outcome in [2, 7, 9])
+        hint: Asked only when question MCCS.11 is none of "No", "Don't Know/Not sure", "Refused".
+      input:
+        control: Radio
+        labels:
+          1: 'Yes'
+          2: 'No'
+          7: Don't Know/Not sure
+          9: Refused
+    - id: MCCS_13
+      kind: Question
+      title: How long has it been since you had this test? (Read if necessary)
+      precondition:
+      - predicate: not (MCCS_06.outcome in [2, 7, 9])
+        hint: Asked only when question MCCS.06 is none of "No", "Don't Know/Not sure", "Refused".
+      - predicate: not (MCCS_11.outcome in [2, 7, 9])
+        hint: Asked only when question MCCS.11 is none of "No", "Don't Know/Not sure", "Refused".
+      input:
+        control: Radio
+        labels:
+          1: Within the past year (anytime less than 12 months ago)
+          2: Within the past 2 years (1 year but less than 2 years ago)
+          3: Within the past 3 years (2 years but less than 3 years ago)
+          4: Within the past 5 years (3 years but less than 5 years ago)
+          5: 5 or more years ago
+          7: Don't know / Not sure (Do not read)
+          9: Refused (Do not read)
+  - id: b_s30_count
+    title: 'Module 8: Cancer Survivorship: Number of Cancers'
+    precondition:
+    - predicate: not (LL01.outcome == 2)
+      hint: Asked only when question LL01. is not "No".
+    - predicate: not (LL02.outcome == 3)
+      hint: Asked only when question LL02. is not "No, this is a business".
+    - predicate: not (LL03.outcome == 2)
+      hint: Asked only when question LL03. is not "No".
+    - predicate: not (LL04.outcome == 2)
+      hint: Asked only when question LL04. is not "No".
+    - predicate: not (LL05.outcome == 1)
+      hint: Asked only when question LL05. is not "Yes, it is a cell phone".
+    - predicate: not (LL06.outcome == 2 and LL03.outcome == 1)
+      hint: Asked only when LL06 and LL03 do not both exclude this respondent.
+    - predicate: not (LL10.outcome in [7, 9])
+      hint: Asked only when question LL10 is none of "Don't know/Not sure", "Refused".
+    - predicate: not (CP01.outcome == 2)
+      hint: Asked only when question CP01. is not "No".
+    - predicate: not (CP02.outcome == 2)
+      hint: Asked only when question CP02. is not "No".
+    - predicate: not (CP03.outcome == 2)
+      hint: Asked only when question CP03. is not "No".
+    - predicate: not (CP04.outcome == 2)
+      hint: Asked only when question CP04. is not "No".
+    - predicate: not (CP06.outcome in [7, 9])
+      hint: Asked only when question CP06 is none of "Don't know/Not sure", "Refused".
+    - predicate: not (CP08.outcome == 2)
+      hint: Asked only when question CP08. is not "No".
+    - predicate: not (CP10.outcome in [77, 99])
+      hint: Asked only when question CP10. is none of "Live outside US and participating territories", "Refused".
+    - predicate: not (COVID_01.outcome in [2, 7, 9])
+      hint: Asked only when question COVID.01 is none of "No", "Don't know / Not sure", "Refused".
+    - predicate: not (COVID_02.outcome in [2, 7, 9])
+      hint: Asked only when question COVID.02 is none of "No", "Don't know / Not sure", "Refused".
+    - predicate: not (CDEM_01.outcome < 39 or SEX.outcome == 2)
+      hint: Asked only when the respondent is not under 39 or female.
+    items:
+    - id: MTOC_01
+      kind: Question
+      title: You've told us that you have had cancer. I would like to ask you a few more questions about your cancer. How many different types of cancer have you had?
+      precondition:
+      - predicate: CCHC_06.outcome == 1 or CCHC_07.outcome == 1
+        hint: Asked only of respondents who reported having had cancer.
+      input:
+        control: Radio
+        labels:
+          1: Only one
+          2: Two
+          3: Three or more
+          7: Don't know / Not sure
+          9: Refused
+  - id: b_s30_details
+    title: 'Module 8: Cancer Survivorship: Age at Diagnosis and Type of Cancer'
+    precondition:
+    - predicate: not (LL01.outcome == 2)
+      hint: Asked only when question LL01. is not "No".
+    - predicate: not (LL02.outcome == 3)
+      hint: Asked only when question LL02. is not "No, this is a business".
+    - predicate: not (LL03.outcome == 2)
+      hint: Asked only when question LL03. is not "No".
+    - predicate: not (LL04.outcome == 2)
+      hint: Asked only when question LL04. is not "No".
+    - predicate: not (LL05.outcome == 1)
+      hint: Asked only when question LL05. is not "Yes, it is a cell phone".
+    - predicate: not (LL06.outcome == 2 and LL03.outcome == 1)
+      hint: Asked only when LL06 and LL03 do not both exclude this respondent.
+    - predicate: not (LL10.outcome in [7, 9])
+      hint: Asked only when question LL10 is none of "Don't know/Not sure", "Refused".
+    - predicate: not (CP01.outcome == 2)
+      hint: Asked only when question CP01. is not "No".
+    - predicate: not (CP02.outcome == 2)
+      hint: Asked only when question CP02. is not "No".
+    - predicate: not (CP03.outcome == 2)
+      hint: Asked only when question CP03. is not "No".
+    - predicate: not (CP04.outcome == 2)
+      hint: Asked only when question CP04. is not "No".
+    - predicate: not (CP06.outcome in [7, 9])
+      hint: Asked only when question CP06 is none of "Don't know/Not sure", "Refused".
+    - predicate: not (CP08.outcome == 2)
+      hint: Asked only when question CP08. is not "No".
+    - predicate: not (CP10.outcome in [77, 99])
+      hint: Asked only when question CP10. is none of "Live outside US and participating territories", "Refused".
+    - predicate: not (COVID_01.outcome in [2, 7, 9])
+      hint: Asked only when question COVID.01 is none of "No", "Don't know / Not sure", "Refused".
+    - predicate: not (COVID_02.outcome in [2, 7, 9])
+      hint: Asked only when question COVID.02 is none of "No", "Don't know / Not sure", "Refused".
+    - predicate: not (CDEM_01.outcome < 39 or SEX.outcome == 2)
+      hint: Asked only when the respondent is not under 39 or female.
+    - predicate: not (not (CCHC_06.outcome == 1 or CCHC_07.outcome == 1))
+      hint: Asked only of respondents who reported having had cancer.
+    - predicate: not (MTOC_01.outcome in [7, 9])
+      hint: Asked only when question MTOC.01 is none of "Don't know / Not sure", "Refused".
+    items:
+    - id: MTOC_02
+      kind: Question
+      title: 'At what age were you told that you had cancer? (Age in Years, 97 = 97 and older) (Interviewer note: If MTOC.01= 2 (Two) or 3 (Three or more), ask: At what age were you first diagnosed with cancer? Read if necessary: This question refers to the first time they were told about their first cancer.)'
+      postcondition:
+      - predicate: MTOC_02.outcome >= 98 or MTOC_02.outcome <= CDEM_01.outcome
+        hint: La edad al diagnóstico de cáncer (MTOC.02) no puede ser mayor que su edad actual (CDEM.01). / Age told you had cancer (MTOC.02) cannot exceed your current age (CDEM.01).
+        invented: true
+      input:
+        control: Editbox
+        min: 0
+        max: 99
+        right: years (98 = Don't know/Not sure, 99 = Refused)
+    - id: MTOC_03
+      kind: Question
+      title: 'What type of cancer was it? (Read if respondent needs prompting for cancer type) (Interviewer note: If MTOC.01 = 2 (Two) or 3 (Three or more), ask: With your most recent diagnoses of cancer, what type of cancer was it?)'
+      input:
+        control: Dropdown
+        labels:
+          1: 01 Bladder
+          2: 02 Blood
+          3: 03 Bone
+          4: 04 Brain
+          5: 05 Breast
+          6: 06 Cervix/Cervical
+          7: 07 Colon
+          8: 08 Esophagus/Esophageal
+          9: 09 Gallbladder
+          10: 10 Kidney
+          11: 11 Larynx-trachea
+          12: 12 Leukemia
+          13: 13 Liver
+          14: 14 Lung
+          15: 15 Lymphoma
+          16: 16 Melanoma
+          17: 17 Mouth/tongue/lip
+          18: 18 Ovary/Ovarian
+          19: 19 Pancreas/Pancreatic
+          20: 20 Prostate
+          21: 21 Rectum/Rectal
+          22: 22 Skin (non-melanoma)
+          23: 23 Skin (don't know what kind)
+          24: 24 Soft tissue (muscle or fat)
+          25: 25 Stomach
+          26: 26 Testis/Testicular
+          27: 27 Throat - pharynx
+          28: 28 Thyroid
+          29: 29 Uterus/Uterine
+          30: 30 Other
+          77: Don't know / Not sure (Do not read)
+          99: Refused (Do not read)
+  - id: b_s31_status
+    title: 'Module 9: Cancer Survivorship: Course of Treatment'
+    precondition:
+    - predicate: not (LL01.outcome == 2)
+      hint: Asked only when question LL01. is not "No".
+    - predicate: not (LL02.outcome == 3)
+      hint: Asked only when question LL02. is not "No, this is a business".
+    - predicate: not (LL03.outcome == 2)
+      hint: Asked only when question LL03. is not "No".
+    - predicate: not (LL04.outcome == 2)
+      hint: Asked only when question LL04. is not "No".
+    - predicate: not (LL05.outcome == 1)
+      hint: Asked only when question LL05. is not "Yes, it is a cell phone".
+    - predicate: not (LL06.outcome == 2 and LL03.outcome == 1)
+      hint: Asked only when question LL06 is not "No" together with LL03 "Yes".
+    - predicate: not (LL10.outcome in [7, 9])
+      hint: Asked only when question LL10 is none of "Don't know/Not sure", "Refused".
+    - predicate: not (CP01.outcome == 2)
+      hint: Asked only when question CP01. is not "No".
+    - predicate: not (CP02.outcome == 2)
+      hint: Asked only when question CP02. is not "No".
+    - predicate: not (CP03.outcome == 2)
+      hint: Asked only when question CP03. is not "No".
+    - predicate: not (CP04.outcome == 2)
+      hint: Asked only when question CP04. is not "No".
+    - predicate: not (CP06.outcome in [7, 9])
+      hint: Asked only when question CP06 is none of "Don't know/Not sure", "Refused".
+    - predicate: not (CP08.outcome == 2)
+      hint: Asked only when question CP08. is not "No".
+    - predicate: not (CP10.outcome in [77, 99])
+      hint: Asked only when question CP10. is none of "Live outside US and participating territories", "Refused".
+    - predicate: not (COVID_01.outcome in [2, 7, 9])
+      hint: Asked only when question COVID.01 is none of "No", "Don't know / Not sure", "Refused".
+    - predicate: not (COVID_02.outcome in [2, 7, 9])
+      hint: Asked only when question COVID.02 is none of "No", "Don't know / Not sure", "Refused".
+    - predicate: not (CDEM_01.outcome < 39 or SEX.outcome == 2)
+      hint: Asked only when the respondent is aged 39 or older and not female.
+    items:
+    - id: MCOT_01
+      kind: Question
+      title: 'Are you currently receiving treatment for cancer? (Read if necessary: By treatment, we mean surgery, radiation therapy, chemotherapy, or chemotherapy pills.)'
+      precondition:
+      - predicate: CCHC_06.outcome == 1 or CCHC_07.outcome == 1
+        hint: Asked only when CCHC.06 or CCHC.07 is Yes.
+      input:
+        control: Radio
+        labels:
+          1: 'Yes'
+          2: No, I've completed treatment
+          3: No, I've refused treatment
+          4: No, I haven't started treatment
+          5: Treatment was not necessary
+          7: Don't know / Not sure
+          9: Refused
+  - id: b_s31_followup
+    title: 'Cancer Treatment: Care and Follow-up'
+    precondition:
+    - predicate: not (LL01.outcome == 2)
+      hint: Asked only when question LL01. is not "No".
+    - predicate: not (LL02.outcome == 3)
+      hint: Asked only when question LL02. is not "No, this is a business".
+    - predicate: not (LL03.outcome == 2)
+      hint: Asked only when question LL03. is not "No".
+    - predicate: not (LL04.outcome == 2)
+      hint: Asked only when question LL04. is not "No".
+    - predicate: not (LL05.outcome == 1)
+      hint: Asked only when question LL05. is not "Yes, it is a cell phone".
+    - predicate: not (LL06.outcome == 2 and LL03.outcome == 1)
+      hint: Asked only when question LL06 is not "No" together with LL03 "Yes".
+    - predicate: not (LL10.outcome in [7, 9])
+      hint: Asked only when question LL10 is none of "Don't know/Not sure", "Refused".
+    - predicate: not (CP01.outcome == 2)
+      hint: Asked only when question CP01. is not "No".
+    - predicate: not (CP02.outcome == 2)
+      hint: Asked only when question CP02. is not "No".
+    - predicate: not (CP03.outcome == 2)
+      hint: Asked only when question CP03. is not "No".
+    - predicate: not (CP04.outcome == 2)
+      hint: Asked only when question CP04. is not "No".
+    - predicate: not (CP06.outcome in [7, 9])
+      hint: Asked only when question CP06 is none of "Don't know/Not sure", "Refused".
+    - predicate: not (CP08.outcome == 2)
+      hint: Asked only when question CP08. is not "No".
+    - predicate: not (CP10.outcome in [77, 99])
+      hint: Asked only when question CP10. is none of "Live outside US and participating territories", "Refused".
+    - predicate: not (COVID_01.outcome in [2, 7, 9])
+      hint: Asked only when question COVID.01 is none of "No", "Don't know / Not sure", "Refused".
+    - predicate: not (COVID_02.outcome in [2, 7, 9])
+      hint: Asked only when question COVID.02 is none of "No", "Don't know / Not sure", "Refused".
+    - predicate: not (CDEM_01.outcome < 39 or SEX.outcome == 2)
+      hint: Asked only when the respondent is aged 39 or older and not female.
+    - predicate: not (not (CCHC_06.outcome == 1 or CCHC_07.outcome == 1))
+      hint: Asked only when CCHC.06 or CCHC.07 is Yes.
+    - predicate: not (MCOT_01.outcome in [1, 3, 4, 5, 7, 9])
+      hint: Asked only when question MCOT.01 is none of "Yes", "No, I've refused treatment", "No, I haven't started treatment", "Treatment was not necessary", "Don't know / Not sure", "Refused".
+    items:
+    - id: MCOT_02
+      kind: Question
+      title: 'What type of doctor provides the majority of your health care? Is it a…. (Read) (If the respondent requests clarification of this question, say: We want to know which type of doctor you see most often for illness or regular health care (Examples: annual exams and/or physicals, treatment of colds, etc.). Read if necessary: An oncologist is a medical doctor who manages a person''s care and treatment after a cancer diagnosis.)'
+      input:
+        control: Dropdown
+        labels:
+          1: 01 Cancer Surgeon
+          2: 02 Family Practitioner
+          3: 03 General Surgeon
+          4: 04 Gynecologic Oncologist
+          5: 05 General Practitioner, Internist
+          6: 06 Plastic Surgeon, Reconstructive Surgeon
+          7: 07 Medical Oncologist
+          8: 08 Radiation Oncologist
+          9: 09 Urologist
+          10: 10 Other
+          77: Don't know / Not sure (Do not read)
+          99: Refused (Do not read)
+    - id: MCOT_03
+      kind: Question
+      title: 'Did any doctor, nurse, or other health professional ever give you a written summary of all the cancer treatments that you received? (Read if necessary: By ''other healthcare professional'', we mean a nurse practitioner, a physician''s assistant, social worker, or some other licensed professional.)'
+      input:
+        control: Radio
+        labels:
+          1: 'Yes'
+          2: 'No'
+          7: Don't know/ not sure
+          9: Refused
+    - id: MCOT_04
+      kind: Question
+      title: Have you ever received instructions from a doctor, nurse, or other health professional about where you should return or who you should see for routine cancer check-ups after completing your treatment for cancer?
+      input:
+        control: Radio
+        labels:
+          1: 'Yes'
+          2: 'No'
+          7: Don't know/ not sure
+          9: Refused
+    - id: MCOT_05
+      kind: Question
+      title: Were these instructions written down or printed on paper for you?
+      precondition:
+      - predicate: not (MCOT_04.outcome in [2, 7, 9])
+        hint: Asked only when question MCOT.04 is none of "No", "Don't know/ not sure", "Refused".
+      input:
+        control: Radio
+        labels:
+          1: 'Yes'
+          2: 'No'
+          7: Don't know/ not sure
+          9: Refused
+    - id: MCOT_06
+      kind: Question
+      title: 'With your most recent diagnosis of cancer, did you have health insurance that paid for all or part of your cancer treatment? (Read if necessary: Health insurance also includes Medicare, Medicaid, or other types of state health programs.)'
+      input:
+        control: Radio
+        labels:
+          1: 'Yes'
+          2: 'No'
+          7: Don't know/ not sure
+          9: Refused
+    - id: MCOT_07
+      kind: Question
+      title: Were you ever denied health insurance or life insurance coverage because of your cancer?
+      input:
+        control: Radio
+        labels:
+          1: 'Yes'
+          2: 'No'
+          7: Don't know/ not sure
+          9: Refused
+    - id: MCOT_08
+      kind: Question
+      title: Did you participate in a clinical trial as part of your cancer treatment?
+      input:
+        control: Radio
+        labels:
+          1: 'Yes'
+          2: 'No'
+          7: Don't know/ not sure
+          9: Refused
+  - id: b_s32_pain_management
+    title: 'Module 10: Cancer Survivorship: Pain Management'
+    precondition:
+    - predicate: not (LL01.outcome == 2)
+      hint: Asked only when question LL01. is not "No".
+    - predicate: not (LL02.outcome == 3)
+      hint: Asked only when question LL02. is not "No, this is a business".
+    - predicate: not (LL03.outcome == 2)
+      hint: Asked only when question LL03. is not "No".
+    - predicate: not (LL04.outcome == 2)
+      hint: Asked only when question LL04. is not "No".
+    - predicate: not (LL05.outcome == 1)
+      hint: Asked only when question LL05. is not "Yes, it is a cell phone".
+    - predicate: not (LL06.outcome == 2 and LL03.outcome == 1)
+      hint: Asked only when LL06 is not "No" together with LL03 "Yes".
+    - predicate: not (LL10.outcome in [7, 9])
+      hint: Asked only when question LL10 is none of "Don't know/Not sure", "Refused".
+    - predicate: not (CP01.outcome == 2)
+      hint: Asked only when question CP01. is not "No".
+    - predicate: not (CP02.outcome == 2)
+      hint: Asked only when question CP02. is not "No".
+    - predicate: not (CP03.outcome == 2)
+      hint: Asked only when question CP03. is not "No".
+    - predicate: not (CP04.outcome == 2)
+      hint: Asked only when question CP04. is not "No".
+    - predicate: not (CP06.outcome in [7, 9])
+      hint: Asked only when question CP06 is none of "Don't know/Not sure", "Refused".
+    - predicate: not (CP08.outcome == 2)
+      hint: Asked only when question CP08. is not "No".
+    - predicate: not (CP10.outcome in [77, 99])
+      hint: Asked only when question CP10. is none of "Live outside US and participating territories", "Refused".
+    - predicate: not (COVID_01.outcome in [2, 7, 9])
+      hint: Asked only when question COVID.01 is none of "No", "Don't know / Not sure", "Refused".
+    - predicate: not (COVID_02.outcome in [2, 7, 9])
+      hint: Asked only when question COVID.02 is none of "No", "Don't know / Not sure", "Refused".
+    - predicate: not (CDEM_01.outcome < 39 or SEX.outcome == 2)
+      hint: Asked only when CDEM.01 is 39 or older and the respondent is not female.
+    items:
+    - id: MCPM_01
+      kind: Question
+      title: Do you currently have physical pain caused by your cancer or cancer treatment?
+      precondition:
+      - predicate: CCHC_06.outcome == 1 or CCHC_07.outcome == 1
+        hint: Asked only when CCHC.06 or CCHC.07 is "Yes".
+      input:
+        control: Radio
+        labels:
+          1: 'Yes'
+          2: 'No'
+          7: Don't know/ not sure
+          9: Refused
+    - id: MCPM_02
+      kind: Question
+      title: Would you say your pain is currently under control…? (Read)
+      precondition:
+      - predicate: not (not (CCHC_06.outcome == 1 or CCHC_07.outcome == 1))
+        hint: Asked only when CCHC.06 or CCHC.07 is "Yes".
+      - predicate: not (MCPM_01.outcome in [2, 7, 9])
+        hint: Asked only when question MCPM.01 is none of "No", "Don't know/ not sure", "Refused".
+      input:
+        control: Radio
+        labels:
+          1: With medication (or treatment)
+          2: Without medication (or treatment)
+          3: Not under control, with medication (or treatment)
+          4: Not under control, without medication (or treatment)
+          7: Don't know / Not sure (Do not read)
+          9: Refused (Do not read)
+  - id: b_s33_indoor_tanning
+    title: 'Module 11: Indoor Tanning'
+    precondition:
+    - predicate: not (LL01.outcome == 2)
+      hint: Asked only when question LL01. is not "No".
+    - predicate: not (LL02.outcome == 3)
+      hint: Asked only when question LL02. is not "No, this is a business".
+    - predicate: not (LL03.outcome == 2)
+      hint: Asked only when question LL03. is not "No".
+    - predicate: not (LL04.outcome == 2)
+      hint: Asked only when question LL04. is not "No".
+    - predicate: not (LL05.outcome == 1)
+      hint: Asked only when question LL05. is not "Yes, it is a cell phone".
+    - predicate: not (LL06.outcome == 2 and LL03.outcome == 1)
+      hint: Not asked when LL06. is 2 and LL03. is 1.
+    - predicate: not (LL10.outcome in [7, 9])
+      hint: Asked only when question LL10 is none of "Don't know/Not sure", "Refused".
+    - predicate: not (CP01.outcome == 2)
+      hint: Asked only when question CP01. is not "No".
+    - predicate: not (CP02.outcome == 2)
+      hint: Asked only when question CP02. is not "No".
+    - predicate: not (CP03.outcome == 2)
+      hint: Asked only when question CP03. is not "No".
+    - predicate: not (CP04.outcome == 2)
+      hint: Asked only when question CP04. is not "No".
+    - predicate: not (CP06.outcome in [7, 9])
+      hint: Asked only when question CP06 is none of "Don't know/Not sure", "Refused".
+    - predicate: not (CP08.outcome == 2)
+      hint: Asked only when question CP08. is not "No".
+    - predicate: not (CP10.outcome in [77, 99])
+      hint: Asked only when question CP10. is none of "Live outside US and participating territories", "Refused".
+    - predicate: not (COVID_01.outcome in [2, 7, 9])
+      hint: Asked only when question COVID.01 is none of "No", "Don't know / Not sure", "Refused".
+    - predicate: not (COVID_02.outcome in [2, 7, 9])
+      hint: Asked only when question COVID.02 is none of "No", "Don't know / Not sure", "Refused".
+    - predicate: not (CDEM_01.outcome < 39 or SEX.outcome == 2)
+      hint: Not asked when CDEM.01 is under 39 or SEX is 2.
+    items:
+    - id: MNTAN_01
+      kind: Question
+      title: Not including spray-on tans, during the past 12 months, how many times have you used an indoor tanning device such as a sunlamp, tanning bed, or booth? (Number 0-365)
+      input:
+        control: Editbox
+        min: 0
+        max: 999
+  - id: b_s34_excess_sun
+    title: 'Module 12: Excess Sun Exposure'
+    precondition:
+    - predicate: not (LL01.outcome == 2)
+      hint: Asked only when question LL01. is not "No".
+    - predicate: not (LL02.outcome == 3)
+      hint: Asked only when question LL02. is not "No, this is a business".
+    - predicate: not (LL03.outcome == 2)
+      hint: Asked only when question LL03. is not "No".
+    - predicate: not (LL04.outcome == 2)
+      hint: Asked only when question LL04. is not "No".
+    - predicate: not (LL05.outcome == 1)
+      hint: Asked only when question LL05. is not "Yes, it is a cell phone".
+    - predicate: not (LL06.outcome == 2 and LL03.outcome == 1)
+      hint: Asked only when LL06 is not "No" while LL03 is "Yes".
+    - predicate: not (LL10.outcome in [7, 9])
+      hint: Asked only when question LL10 is none of "Don't know/Not sure", "Refused".
+    - predicate: not (CP01.outcome == 2)
+      hint: Asked only when question CP01. is not "No".
+    - predicate: not (CP02.outcome == 2)
+      hint: Asked only when question CP02. is not "No".
+    - predicate: not (CP03.outcome == 2)
+      hint: Asked only when question CP03. is not "No".
+    - predicate: not (CP04.outcome == 2)
+      hint: Asked only when question CP04. is not "No".
+    - predicate: not (CP06.outcome in [7, 9])
+      hint: Asked only when question CP06 is none of "Don't know/Not sure", "Refused".
+    - predicate: not (CP08.outcome == 2)
+      hint: Asked only when question CP08. is not "No".
+    - predicate: not (CP10.outcome in [77, 99])
+      hint: Asked only when question CP10. is none of "Live outside US and participating territories", "Refused".
+    - predicate: not (COVID_01.outcome in [2, 7, 9])
+      hint: Asked only when question COVID.01 is none of "No", "Don't know / Not sure", "Refused".
+    - predicate: not (COVID_02.outcome in [2, 7, 9])
+      hint: Asked only when question COVID.02 is none of "No", "Don't know / Not sure", "Refused".
+    - predicate: not (CDEM_01.outcome < 39 or SEX.outcome == 2)
+      hint: Asked only when CDEM.01 is 39 or more and the respondent is not female.
+    items:
+    - id: MSUN_01
+      kind: Question
+      title: During the past 12 months, how many times have you had a sunburn? (Number 0-365) (777 = Don't know/ Not sure, 999 = Refused)
+      input:
+        control: Editbox
+        min: 0
+        max: 999
+    - id: MSUN_02
+      kind: Question
+      title: When you go outside on a warm sunny day for more than one hour, how often do you protect yourself from the sun? Is that…. (Read) (Protection from the sun may include using sunscreen, wearing a wide-brimmed hat, or wearing a long-sleeved shirt.)
+      input:
+        control: Radio
+        labels:
+          1: Always
+          2: Most of the time
+          3: Sometimes
+          4: Rarely
+          5: Never
+          6: Don't stay outside for more than one hour on warm sunny days (Do not read)
+          8: Don't go outside at all on warm sunny days (Do not read)
+          7: Don't know/ Not sure (Do not read)
+          9: Refused (Do not read)
+    - id: MSUN_03
+      kind: Question
+      title: On weekdays, in the summer, how long are you outside per day between 10am and 4pm? (Friday is a weekday. If respondent says never, code 01.)
+      input:
+        control: Dropdown
+        labels:
+          1: 01 Less than half an hour
+          2: 02 (More than half an hour) up to 1 hour
+          3: 03 (More than 1 hour) up to 2 hours
+          4: 04 (More than 2 hours) up to 3 hours
+          5: 05 (More than 3 hours) up to 4 hours
+          6: 06 (More than 4 hours) up to 5 hours
+          7: 07 (More than 5) up to 6 hours
+          77: Don't know/ Not sure
+          99: Refused
+    - id: MSUN_04
+      kind: Question
+      title: On weekends in the summer, how long are you outside each day between 10am and 4pm? (Friday is a weekday. If respondent says never, code 01.)
+      input:
+        control: Dropdown
+        labels:
+          1: 01 Less than half an hour
+          2: 02 (More than half an hour) up to 1 hour
+          3: 03 (More than 1 hour) up to 2 hours
+          4: 04 (More than 2 hours) up to 3 hours
+          5: 05 (More than 3 hours) up to 4 hours
+          6: 06 (More than 4 hours) up to 5 hours
+          7: 07 (More than 5) up to 6 hours
+          77: Don't know/ Not sure
+          99: Refused
+  - id: b_s35_mcog_screen
+    title: 'Module 13: Cognitive Decline'
+    precondition:
+    - predicate: not (LL01.outcome == 2)
+      hint: Asked only when question LL01. is not "No".
+    - predicate: not (LL02.outcome == 3)
+      hint: Asked only when question LL02. is not "No, this is a business".
+    - predicate: not (LL03.outcome == 2)
+      hint: Asked only when question LL03. is not "No".
+    - predicate: not (LL04.outcome == 2)
+      hint: Asked only when question LL04. is not "No".
+    - predicate: not (LL05.outcome == 1)
+      hint: Asked only when question LL05. is not "Yes, it is a cell phone".
+    - predicate: not (LL06.outcome == 2 and LL03.outcome == 1)
+    - predicate: not (LL10.outcome in [7, 9])
+      hint: Asked only when question LL10 is none of "Don't know/Not sure", "Refused".
+    - predicate: not (CP01.outcome == 2)
+      hint: Asked only when question CP01. is not "No".
+    - predicate: not (CP02.outcome == 2)
+      hint: Asked only when question CP02. is not "No".
+    - predicate: not (CP03.outcome == 2)
+      hint: Asked only when question CP03. is not "No".
+    - predicate: not (CP04.outcome == 2)
+      hint: Asked only when question CP04. is not "No".
+    - predicate: not (CP06.outcome in [7, 9])
+      hint: Asked only when question CP06 is none of "Don't know/Not sure", "Refused".
+    - predicate: not (CP08.outcome == 2)
+      hint: Asked only when question CP08. is not "No".
+    - predicate: not (CP10.outcome in [77, 99])
+      hint: Asked only when question CP10. is none of "Live outside US and participating territories", "Refused".
+    - predicate: not (COVID_01.outcome in [2, 7, 9])
+      hint: Asked only when question COVID.01 is none of "No", "Don't know / Not sure", "Refused".
+    - predicate: not (COVID_02.outcome in [2, 7, 9])
+      hint: Asked only when question COVID.02 is none of "No", "Don't know / Not sure", "Refused".
+    - predicate: not (CDEM_01.outcome < 39 or SEX.outcome == 2)
+    items:
+    - id: MCOG_01
+      kind: Question
+      title: The next few questions ask about difficulties in thinking or memory that can make a big difference in everyday activities. We want to know how these difficulties may have impacted you. During the past 12 months, have you experienced difficulties with thinking or memory that are happening more often or are getting worse?
+      precondition:
+      - predicate: CDEM_01.outcome >= 45
+      input:
+        control: Radio
+        labels:
+          1: 'Yes'
+          2: 'No'
+          7: Don't know/ not sure
+          9: Refused
+  - id: b_s35_mcog_followup
+    title: 'Cognitive Decline: Follow-up'
+    precondition:
+    - predicate: not (LL01.outcome == 2)
+      hint: Asked only when question LL01. is not "No".
+    - predicate: not (LL02.outcome == 3)
+      hint: Asked only when question LL02. is not "No, this is a business".
+    - predicate: not (LL03.outcome == 2)
+      hint: Asked only when question LL03. is not "No".
+    - predicate: not (LL04.outcome == 2)
+      hint: Asked only when question LL04. is not "No".
+    - predicate: not (LL05.outcome == 1)
+      hint: Asked only when question LL05. is not "Yes, it is a cell phone".
+    - predicate: not (LL06.outcome == 2 and LL03.outcome == 1)
+    - predicate: not (LL10.outcome in [7, 9])
+      hint: Asked only when question LL10 is none of "Don't know/Not sure", "Refused".
+    - predicate: not (CP01.outcome == 2)
+      hint: Asked only when question CP01. is not "No".
+    - predicate: not (CP02.outcome == 2)
+      hint: Asked only when question CP02. is not "No".
+    - predicate: not (CP03.outcome == 2)
+      hint: Asked only when question CP03. is not "No".
+    - predicate: not (CP04.outcome == 2)
+      hint: Asked only when question CP04. is not "No".
+    - predicate: not (CP06.outcome in [7, 9])
+      hint: Asked only when question CP06 is none of "Don't know/Not sure", "Refused".
+    - predicate: not (CP08.outcome == 2)
+      hint: Asked only when question CP08. is not "No".
+    - predicate: not (CP10.outcome in [77, 99])
+      hint: Asked only when question CP10. is none of "Live outside US and participating territories", "Refused".
+    - predicate: not (COVID_01.outcome in [2, 7, 9])
+      hint: Asked only when question COVID.01 is none of "No", "Don't know / Not sure", "Refused".
+    - predicate: not (COVID_02.outcome in [2, 7, 9])
+      hint: Asked only when question COVID.02 is none of "No", "Don't know / Not sure", "Refused".
+    - predicate: not (CDEM_01.outcome < 39 or SEX.outcome == 2)
+    - predicate: not (CDEM_01.outcome < 45)
+    - predicate: not (MCOG_01.outcome in [2, 7, 9])
+      hint: Asked only when question MCOG.01 is none of "No", "Don't know/ not sure", "Refused".
+    items:
+    - id: MCOG_02
+      kind: Question
+      title: Are you worried about these difficulties with thinking or memory?
+      input:
+        control: Radio
+        labels:
+          1: 'Yes'
+          2: 'No'
+          7: Don't know/ not sure
+          9: Refused
+    - id: MCOG_03
+      kind: Question
+      title: Have you or anyone else discussed your difficulties with thinking or memory with a health care provider?
+      input:
+        control: Radio
+        labels:
+          1: 'Yes'
+          2: 'No'
+          7: Don't know/ not sure
+          9: Refused
+    - id: MCOG_04
+      kind: Question
+      title: During the past 12 months, have your difficulties with thinking or memory interfered with day-to-day activities, such as managing medications, paying bills, or keeping track of appointments?
+      input:
+        control: Radio
+        labels:
+          1: 'Yes'
+          2: 'No'
+          7: Don't know/ not sure
+          9: Refused
+    - id: MCOG_05
+      kind: Question
+      title: During the past 12 months, have your difficulties with thinking or memory interfered with your ability to work or volunteer?
+      input:
+        control: Radio
+        labels:
+          1: 'Yes'
+          2: 'No'
+          7: Don't know/ not sure
+          9: Refused
+  - id: b_s36_screen
+    title: 'Module 14: Caregiver'
+    precondition:
+    - predicate: not (LL01.outcome == 2)
+      hint: Asked only when question LL01. is not "No".
+    - predicate: not (LL02.outcome == 3)
+      hint: Asked only when question LL02. is not "No, this is a business".
+    - predicate: not (LL03.outcome == 2)
+      hint: Asked only when question LL03. is not "No".
+    - predicate: not (LL04.outcome == 2)
+      hint: Asked only when question LL04. is not "No".
+    - predicate: not (LL05.outcome == 1)
+      hint: Asked only when question LL05. is not "Yes, it is a cell phone".
+    - predicate: not (LL06.outcome == 2 and LL03.outcome == 1)
+      hint: Asked only when LL06 is not "No" while LL03 is "Yes".
+    - predicate: not (LL10.outcome in [7, 9])
+      hint: Asked only when question LL10 is none of "Don't know/Not sure", "Refused".
+    - predicate: not (CP01.outcome == 2)
+      hint: Asked only when question CP01. is not "No".
+    - predicate: not (CP02.outcome == 2)
+      hint: Asked only when question CP02. is not "No".
+    - predicate: not (CP03.outcome == 2)
+      hint: Asked only when question CP03. is not "No".
+    - predicate: not (CP04.outcome == 2)
+      hint: Asked only when question CP04. is not "No".
+    - predicate: not (CP06.outcome in [7, 9])
+      hint: Asked only when question CP06 is none of "Don't know/Not sure", "Refused".
+    - predicate: not (CP08.outcome == 2)
+      hint: Asked only when question CP08. is not "No".
+    - predicate: not (CP10.outcome in [77, 99])
+      hint: Asked only when question CP10. is none of "Live outside US and participating territories", "Refused".
+    - predicate: not (COVID_01.outcome in [2, 7, 9])
+      hint: Asked only when question COVID.01 is none of "No", "Don't know / Not sure", "Refused".
+    - predicate: not (COVID_02.outcome in [2, 7, 9])
+      hint: Asked only when question COVID.02 is none of "No", "Don't know / Not sure", "Refused".
+    - predicate: not (CDEM_01.outcome < 39 or SEX.outcome == 2)
+      hint: Asked only when the respondent is aged 39 or older and not coded as SEX 2.
+    items:
+    - id: MCARE_01
+      kind: Question
+      title: 'During the past 30 days, did you provide regular care or assistance to a friend or family member who has a health problem or disability? (If caregiving recipient has died in the past 30 days, code 8 and say: I''m so sorry to hear of your loss)'
+      input:
+        control: Radio
+        labels:
+          1: 'Yes'
+          2: 'No'
+          7: Don't know/Not sure
+          8: Caregiving recipient died in past 30 days
+          9: Refused
+  - id: b_s36_caregiving
+    title: Caregiving details
+    precondition:
+    - predicate: not (LL01.outcome == 2)
+      hint: Asked only when question LL01. is not "No".
+    - predicate: not (LL02.outcome == 3)
+      hint: Asked only when question LL02. is not "No, this is a business".
+    - predicate: not (LL03.outcome == 2)
+      hint: Asked only when question LL03. is not "No".
+    - predicate: not (LL04.outcome == 2)
+      hint: Asked only when question LL04. is not "No".
+    - predicate: not (LL05.outcome == 1)
+      hint: Asked only when question LL05. is not "Yes, it is a cell phone".
+    - predicate: not (LL06.outcome == 2 and LL03.outcome == 1)
+      hint: Asked only when LL06 is not "No" while LL03 is "Yes".
+    - predicate: not (LL10.outcome in [7, 9])
+      hint: Asked only when question LL10 is none of "Don't know/Not sure", "Refused".
+    - predicate: not (CP01.outcome == 2)
+      hint: Asked only when question CP01. is not "No".
+    - predicate: not (CP02.outcome == 2)
+      hint: Asked only when question CP02. is not "No".
+    - predicate: not (CP03.outcome == 2)
+      hint: Asked only when question CP03. is not "No".
+    - predicate: not (CP04.outcome == 2)
+      hint: Asked only when question CP04. is not "No".
+    - predicate: not (CP06.outcome in [7, 9])
+      hint: Asked only when question CP06 is none of "Don't know/Not sure", "Refused".
+    - predicate: not (CP08.outcome == 2)
+      hint: Asked only when question CP08. is not "No".
+    - predicate: not (CP10.outcome in [77, 99])
+      hint: Asked only when question CP10. is none of "Live outside US and participating territories", "Refused".
+    - predicate: not (COVID_01.outcome in [2, 7, 9])
+      hint: Asked only when question COVID.01 is none of "No", "Don't know / Not sure", "Refused".
+    - predicate: not (COVID_02.outcome in [2, 7, 9])
+      hint: Asked only when question COVID.02 is none of "No", "Don't know / Not sure", "Refused".
+    - predicate: not (CDEM_01.outcome < 39 or SEX.outcome == 2)
+      hint: Asked only when the respondent is aged 39 or older and not coded as SEX 2.
+    - predicate: not (MCARE_01.outcome in [2, 7, 9])
+      hint: Asked only when question MCARE.01 is none of "No", "Don't know/Not sure", "Refused".
+    - predicate: not (MCARE_01.outcome == 8)
+      hint: Asked only when question MCARE.01 is not "Caregiving recipient died in past 30 days".
+    items:
+    - id: MCARE_02
+      kind: Question
+      title: 'What is his or her relationship to you? (If more than one person, say: Please refer to the person to whom you are giving the most care.)'
+      input:
+        control: Dropdown
+        labels:
+          1: 01 Mother
+          2: 02 Father
+          3: 03 Mother-in-law
+          4: 04 Father-in-law
+          5: 05 Child
+          6: 06 Husband
+          7: 07 Wife
+          8: 08 Live-in partner
+          9: 09 Brother or brother-in-law
+          10: 10 Sister or sister-in-law
+          11: 11 Grandmother
+          12: 12 Grandfather
+          13: 13 Grandchild
+          14: 14 Other relative
+          15: 15 Non-relative/ Family friend
+          77: Don't know/Not sure
+          99: Refused
+    - id: MCARE_03
+      kind: Question
+      title: For how long have you provided care for that person? (Read if necessary)
+      input:
+        control: Radio
+        labels:
+          1: Less than 30 days
+          2: 1 month to less than 6 months
+          3: 6 months to less than 2 years
+          4: 2 years to less than 5 years
+          5: More than 5 years
+          7: Don't Know/ Not Sure (Do not read)
+          9: Refused (Do not read)
+    - id: MCARE_04
+      kind: Question
+      title: In an average week, how many hours do you provide care or assistance? (Read if necessary)
+      input:
+        control: Radio
+        labels:
+          1: Up to 8 hours per week
+          2: 9 to 19 hours per week
+          3: 20 to 39 hours per week
+          4: 40 hours or more
+          7: Don't know/Not sure (Do not read)
+          9: Refused (Do not read)
+    - id: MCARE_05
+      kind: Question
+      title: What is the main health problem, long-term illness, or disability that the person you care for has?
+      input:
+        control: Dropdown
+        labels:
+          1: 01 Arthritis/ rheumatism
+          2: 02 Asthma
+          3: 03 Cancer
+          4: 04 Chronic respiratory conditions such as emphysema or COPD
+          5: 05 Alzheimer's disease, dementia or other cognitive impairment disorder
+          6: 06 Developmental disabilities such as autism, Down's Syndrome, and spina bifida
+          7: 07 Diabetes
+          8: 08 Heart disease, hypertension, stroke
+          9: 09 Human Immunodeficiency Virus Infection (H.I.V.)
+          10: 10 Mental illnesses, such as anxiety, depression, or schizophrenia
+          11: 11 Other organ failure or diseases such as kidney or liver problems
+          12: 12 Substance abuse or addiction disorders
+          13: 13 Injuries, including broken bones
+          14: 14 Old age/ infirmity/frailty
+          15: 15 Other
+          77: Don't know/Not sure
+          99: Refused
+    - id: MCARE_06
+      kind: Question
+      title: Does the person you care for also have Alzheimer's disease, dementia or other cognitive impairment disorder?
+      precondition:
+      - predicate: not (MCARE_05.outcome == 5)
+        hint: Asked only when question MCARE.05 is not "05 Alzheimer's disease, dementia or other cognitive impairment disorder".
+      input:
+        control: Radio
+        labels:
+          1: 'Yes'
+          2: 'No'
+          7: Don't know/ Not sure
+          9: Refused
+    - id: MCARE_07
+      kind: Question
+      title: In the past 30 days, did you provide care for this person by managing personal care such as giving medications, feeding, dressing, or bathing?
+      input:
+        control: Radio
+        labels:
+          1: 'Yes'
+          2: 'No'
+          7: Don't know/ not sure
+          9: Refused
+    - id: MCARE_08
+      kind: Question
+      title: In the past 30 days, did you provide care for this person by managing household tasks such as cleaning, managing money, or preparing meals?
+      input:
+        control: Radio
+        labels:
+          1: 'Yes'
+          2: 'No'
+          7: Don't know/ not sure
+          9: Refused
+  - id: b_s36_future
+    title: Expected caregiving
+    precondition:
+    - predicate: not (LL01.outcome == 2)
+      hint: Asked only when question LL01. is not "No".
+    - predicate: not (LL02.outcome == 3)
+      hint: Asked only when question LL02. is not "No, this is a business".
+    - predicate: not (LL03.outcome == 2)
+      hint: Asked only when question LL03. is not "No".
+    - predicate: not (LL04.outcome == 2)
+      hint: Asked only when question LL04. is not "No".
+    - predicate: not (LL05.outcome == 1)
+      hint: Asked only when question LL05. is not "Yes, it is a cell phone".
+    - predicate: not (LL06.outcome == 2 and LL03.outcome == 1)
+      hint: Asked only when LL06 is not "No" while LL03 is "Yes".
+    - predicate: not (LL10.outcome in [7, 9])
+      hint: Asked only when question LL10 is none of "Don't know/Not sure", "Refused".
+    - predicate: not (CP01.outcome == 2)
+      hint: Asked only when question CP01. is not "No".
+    - predicate: not (CP02.outcome == 2)
+      hint: Asked only when question CP02. is not "No".
+    - predicate: not (CP03.outcome == 2)
+      hint: Asked only when question CP03. is not "No".
+    - predicate: not (CP04.outcome == 2)
+      hint: Asked only when question CP04. is not "No".
+    - predicate: not (CP06.outcome in [7, 9])
+      hint: Asked only when question CP06 is none of "Don't know/Not sure", "Refused".
+    - predicate: not (CP08.outcome == 2)
+      hint: Asked only when question CP08. is not "No".
+    - predicate: not (CP10.outcome in [77, 99])
+      hint: Asked only when question CP10. is none of "Live outside US and participating territories", "Refused".
+    - predicate: not (COVID_01.outcome in [2, 7, 9])
+      hint: Asked only when question COVID.01 is none of "No", "Don't know / Not sure", "Refused".
+    - predicate: not (COVID_02.outcome in [2, 7, 9])
+      hint: Asked only when question COVID.02 is none of "No", "Don't know / Not sure", "Refused".
+    - predicate: not (CDEM_01.outcome < 39 or SEX.outcome == 2)
+      hint: Asked only when the respondent is aged 39 or older and not coded as SEX 2.
+    items:
+    - id: MCARE_09
+      kind: Question
+      title: In the next 2 years, do you expect to provide care or assistance to a friend or family member who has a health problem or disability?
+      precondition:
+      - predicate: not (MCARE_01.outcome == 8)
+        hint: Asked only when question MCARE.01 is not "Caregiving recipient died in past 30 days".
+      - predicate: not (MCARE_01.outcome in [1, 8])
+        hint: Asked only when question MCARE.01 is none of "Yes", "Caregiving recipient died in past 30 days".
+      input:
+        control: Radio
+        labels:
+          1: 'Yes'
+          2: 'No'
+          7: Don't know/ not sure
+          9: Refused
+  - id: b_s37_tobacco_cessation
+    title: 'Module 15: Tobacco Cessation'
+    precondition:
+    - predicate: not (LL01.outcome == 2)
+      hint: Asked only when question LL01. is not "No".
+    - predicate: not (LL02.outcome == 3)
+      hint: Asked only when question LL02. is not "No, this is a business".
+    - predicate: not (LL03.outcome == 2)
+      hint: Asked only when question LL03. is not "No".
+    - predicate: not (LL04.outcome == 2)
+      hint: Asked only when question LL04. is not "No".
+    - predicate: not (LL05.outcome == 1)
+      hint: Asked only when question LL05. is not "Yes, it is a cell phone".
+    - predicate: not (LL06.outcome == 2 and LL03.outcome == 1)
+      hint: Asked only when LL06 is not "No" together with LL03 "Yes".
+    - predicate: not (LL10.outcome in [7, 9])
+      hint: Asked only when question LL10 is none of "Don't know/Not sure", "Refused".
+    - predicate: not (CP01.outcome == 2)
+      hint: Asked only when question CP01. is not "No".
+    - predicate: not (CP02.outcome == 2)
+      hint: Asked only when question CP02. is not "No".
+    - predicate: not (CP03.outcome == 2)
+      hint: Asked only when question CP03. is not "No".
+    - predicate: not (CP04.outcome == 2)
+      hint: Asked only when question CP04. is not "No".
+    - predicate: not (CP06.outcome in [7, 9])
+      hint: Asked only when question CP06 is none of "Don't know/Not sure", "Refused".
+    - predicate: not (CP08.outcome == 2)
+      hint: Asked only when question CP08. is not "No".
+    - predicate: not (CP10.outcome in [77, 99])
+      hint: Asked only when question CP10. is none of "Live outside US and participating territories", "Refused".
+    - predicate: not (COVID_01.outcome in [2, 7, 9])
+      hint: Asked only when question COVID.01 is none of "No", "Don't know / Not sure", "Refused".
+    - predicate: not (COVID_02.outcome in [2, 7, 9])
+      hint: Asked only when question COVID.02 is none of "No", "Don't know / Not sure", "Refused".
+    - predicate: not (CDEM_01.outcome < 39 or SEX.outcome == 2)
+      hint: Asked only when the respondent is aged 39 or older and not female.
+    items:
+    - id: MTC_01
+      kind: Question
+      title: How long has it been since you last smoked a cigarette, even one or two puffs? (Read if necessary)
+      precondition:
+      - predicate: CTOB_01.outcome == 1 and CTOB_02.outcome == 3
+        hint: Asked only of respondents who have smoked and who do not smoke at all now.
+      input:
+        control: Dropdown
+        labels:
+          1: 01 Within the past month (less than 1 month ago)
+          2: 02 Within the past 3 months (1 month but less than 3 months ago)
+          3: 03 Within the past 6 months (3 months but less than 6 months ago)
+          4: 04 Within the past year (6 months but less than 1 year ago)
+          5: 05 Within the past 5 years (1 year but less than 5 years ago)
+          6: 06 Within the past 10 years (5 years but less than 10 years ago)
+          7: 07 10 years or more
+          8: 08 Never smoked regularly
+          77: Don't know / Not sure
+          99: Refused
+    - id: MTC_02
+      kind: Question
+      title: During the past 12 months, have you stopped smoking for one day or longer because you were trying to quit smoking?
+      precondition:
+      - predicate: CTOB_02.outcome in [1, 2]
+        hint: Asked only when question CTOB.02 is one of "Every day", "Some days".
+      - predicate: not (MTC_01.outcome in [1, 2, 3, 4, 5, 6, 7, 8, 77, 99])
+        hint: Asked only when question MTC.01 was not answered.
+      input:
+        control: Radio
+        labels:
+          1: 'Yes'
+          2: 'No'
+          7: Don't know / Not sure
+          9: Refused
+  - id: b_s38_other_tobacco
+    title: 'Module 16: Other Tobacco Use'
+    precondition:
+    - predicate: not (LL01.outcome == 2)
+      hint: Asked only when question LL01. is not "No".
+    - predicate: not (LL02.outcome == 3)
+      hint: Asked only when question LL02. is not "No, this is a business".
+    - predicate: not (LL03.outcome == 2)
+      hint: Asked only when question LL03. is not "No".
+    - predicate: not (LL04.outcome == 2)
+      hint: Asked only when question LL04. is not "No".
+    - predicate: not (LL05.outcome == 1)
+      hint: Asked only when question LL05. is not "Yes, it is a cell phone".
+    - predicate: not (LL06.outcome == 2 and LL03.outcome == 1)
+      hint: Asked only when the landline and household screening answers allow it.
+    - predicate: not (LL10.outcome in [7, 9])
+      hint: Asked only when question LL10 is none of "Don't know/Not sure", "Refused".
+    - predicate: not (CP01.outcome == 2)
+      hint: Asked only when question CP01. is not "No".
+    - predicate: not (CP02.outcome == 2)
+      hint: Asked only when question CP02. is not "No".
+    - predicate: not (CP03.outcome == 2)
+      hint: Asked only when question CP03. is not "No".
+    - predicate: not (CP04.outcome == 2)
+      hint: Asked only when question CP04. is not "No".
+    - predicate: not (CP06.outcome in [7, 9])
+      hint: Asked only when question CP06 is none of "Don't know/Not sure", "Refused".
+    - predicate: not (CP08.outcome == 2)
+      hint: Asked only when question CP08. is not "No".
+    - predicate: not (CP10.outcome in [77, 99])
+      hint: Asked only when question CP10. is none of "Live outside US and participating territories", "Refused".
+    - predicate: not (COVID_01.outcome in [2, 7, 9])
+      hint: Asked only when question COVID.01 is none of "No", "Don't know / Not sure", "Refused".
+    - predicate: not (COVID_02.outcome in [2, 7, 9])
+      hint: Asked only when question COVID.02 is none of "No", "Don't know / Not sure", "Refused".
+    - predicate: not (CDEM_01.outcome < 39 or SEX.outcome == 2)
+      hint: Asked only when the respondent's age and sex answers allow it.
+    items:
+    - id: MOTU_01
+      kind: Question
+      title: Currently, when you smoke cigarettes, do you usually smoke menthol cigarettes?
+      precondition:
+      - predicate: CTOB_02.outcome in [1, 2]
+        hint: Asked only when question CTOB.02 is one of "Every day", "Some days".
+      input:
+        control: Radio
+        labels:
+          1: 'Yes'
+          2: 'No'
+          7: Don't know / Not sure
+          9: Refused
+    - id: MOTU_02
+      kind: Question
+      title: Currently, when you use e-cigarettes, do you usually use menthol e-cigarettes?
+      precondition:
+      - predicate: CTOB_04.outcome in [2, 3]
+        hint: Asked only when question CTOB.04 is one of "Use them every day", "Use them some days".
+      input:
+        control: Radio
+        labels:
+          1: 'Yes'
+          2: 'No'
+          7: Don't know / Not sure
+          9: Refused
+    - id: MOTU_03
+      kind: Question
+      title: Before today, have you heard of heated tobacco products?
+      input:
+        control: Radio
+        labels:
+          1: 'Yes'
+          2: 'No'
+          7: Don't know / Not sure
+          9: Refused
+  - id: b_s39_firearms
+    title: Firearms (Prologue and MFS)
+    precondition:
+    - predicate: not (LL01.outcome == 2)
+      hint: Asked only when question LL01. is not "No".
+    - predicate: not (LL02.outcome == 3)
+      hint: Asked only when question LL02. is not "No, this is a business".
+    - predicate: not (LL03.outcome == 2)
+      hint: Asked only when question LL03. is not "No".
+    - predicate: not (LL04.outcome == 2)
+      hint: Asked only when question LL04. is not "No".
+    - predicate: not (LL05.outcome == 1)
+      hint: Asked only when question LL05. is not "Yes, it is a cell phone".
+    - predicate: not (LL06.outcome == 2 and LL03.outcome == 1)
+      hint: Asked only when LL06 and LL03 do not both route out of this section.
+    - predicate: not (LL10.outcome in [7, 9])
+      hint: Asked only when question LL10 is none of "Don't know/Not sure", "Refused".
+    - predicate: not (CP01.outcome == 2)
+      hint: Asked only when question CP01. is not "No".
+    - predicate: not (CP02.outcome == 2)
+      hint: Asked only when question CP02. is not "No".
+    - predicate: not (CP03.outcome == 2)
+      hint: Asked only when question CP03. is not "No".
+    - predicate: not (CP04.outcome == 2)
+      hint: Asked only when question CP04. is not "No".
+    - predicate: not (CP06.outcome in [7, 9])
+      hint: Asked only when question CP06 is none of "Don't know/Not sure", "Refused".
+    - predicate: not (CP08.outcome == 2)
+      hint: Asked only when question CP08. is not "No".
+    - predicate: not (CP10.outcome in [77, 99])
+      hint: Asked only when question CP10. is none of "Live outside US and participating territories", "Refused".
+    - predicate: not (COVID_01.outcome in [2, 7, 9])
+      hint: Asked only when question COVID.01 is none of "No", "Don't know / Not sure", "Refused".
+    - predicate: not (COVID_02.outcome in [2, 7, 9])
+      hint: Asked only when question COVID.02 is none of "No", "Don't know / Not sure", "Refused".
+    - predicate: not (CDEM_01.outcome < 39 or SEX.outcome == 2)
+      hint: Asked only when the respondent is not under 39 and not female.
+    items:
+    - id: MFS_01
+      kind: Question
+      title: Are any firearms now kept in or around your home? (Do not include guns that cannot fire; include those kept in cars, or outdoor storage.)
+      input:
+        control: Radio
+        labels:
+          1: 'Yes'
+          2: 'No'
+          7: Don't know/ not sure
+          9: Refused
+  - id: b_s39_loaded
+    title: 'Firearms: loaded and unlocked'
+    precondition:
+    - predicate: not (LL01.outcome == 2)
+      hint: Asked only when question LL01. is not "No".
+    - predicate: not (LL02.outcome == 3)
+      hint: Asked only when question LL02. is not "No, this is a business".
+    - predicate: not (LL03.outcome == 2)
+      hint: Asked only when question LL03. is not "No".
+    - predicate: not (LL04.outcome == 2)
+      hint: Asked only when question LL04. is not "No".
+    - predicate: not (LL05.outcome == 1)
+      hint: Asked only when question LL05. is not "Yes, it is a cell phone".
+    - predicate: not (LL06.outcome == 2 and LL03.outcome == 1)
+      hint: Asked only when LL06 and LL03 do not both route out of this section.
+    - predicate: not (LL10.outcome in [7, 9])
+      hint: Asked only when question LL10 is none of "Don't know/Not sure", "Refused".
+    - predicate: not (CP01.outcome == 2)
+      hint: Asked only when question CP01. is not "No".
+    - predicate: not (CP02.outcome == 2)
+      hint: Asked only when question CP02. is not "No".
+    - predicate: not (CP03.outcome == 2)
+      hint: Asked only when question CP03. is not "No".
+    - predicate: not (CP04.outcome == 2)
+      hint: Asked only when question CP04. is not "No".
+    - predicate: not (CP06.outcome in [7, 9])
+      hint: Asked only when question CP06 is none of "Don't know/Not sure", "Refused".
+    - predicate: not (CP08.outcome == 2)
+      hint: Asked only when question CP08. is not "No".
+    - predicate: not (CP10.outcome in [77, 99])
+      hint: Asked only when question CP10. is none of "Live outside US and participating territories", "Refused".
+    - predicate: not (COVID_01.outcome in [2, 7, 9])
+      hint: Asked only when question COVID.01 is none of "No", "Don't know / Not sure", "Refused".
+    - predicate: not (COVID_02.outcome in [2, 7, 9])
+      hint: Asked only when question COVID.02 is none of "No", "Don't know / Not sure", "Refused".
+    - predicate: not (CDEM_01.outcome < 39 or SEX.outcome == 2)
+      hint: Asked only when the respondent is not under 39 and not female.
+    - predicate: not (MFS_01.outcome in [2, 7, 9])
+      hint: Asked only when question MFS.01 is none of "No", "Don't know/ not sure", "Refused".
+    items:
+    - id: MFS_02
+      kind: Question
+      title: Are any of these firearms now loaded?
+      input:
+        control: Radio
+        labels:
+          1: 'Yes'
+          2: 'No'
+          7: Don't know/ not sure
+          9: Refused
+    - id: MFS_03
+      kind: Question
+      title: Are any of these loaded firearms also unlocked? (By unlocked, we mean you do not need a key or a combination or a hand/fingerprint to get the gun or to fire it. Don't count the safety as a lock.)
+      precondition:
+      - predicate: not (MFS_02.outcome in [2, 7, 9])
+        hint: Asked only when question MFS.02 is none of "No", "Don't know/ not sure", "Refused".
+      input:
+        control: Radio
+        labels:
+          1: 'Yes'
+          2: 'No'
+          7: Don't know/ not sure
+          9: Refused
+  - id: b_s40_industry_occupation
+    title: 'Module 18: Industry and Occupation'
+    precondition:
+    - predicate: not (LL01.outcome == 2)
+      hint: Asked only when question LL01. is not "No".
+    - predicate: not (LL02.outcome == 3)
+      hint: Asked only when question LL02. is not "No, this is a business".
+    - predicate: not (LL03.outcome == 2)
+      hint: Asked only when question LL03. is not "No".
+    - predicate: not (LL04.outcome == 2)
+      hint: Asked only when question LL04. is not "No".
+    - predicate: not (LL05.outcome == 1)
+      hint: Asked only when question LL05. is not "Yes, it is a cell phone".
+    - predicate: not (LL06.outcome == 2 and LL03.outcome == 1)
+      hint: Asked only when LL06 and LL03 do not both route out of this module.
+    - predicate: not (LL10.outcome in [7, 9])
+      hint: Asked only when question LL10 is none of "Don't know/Not sure", "Refused".
+    - predicate: not (CP01.outcome == 2)
+      hint: Asked only when question CP01. is not "No".
+    - predicate: not (CP02.outcome == 2)
+      hint: Asked only when question CP02. is not "No".
+    - predicate: not (CP03.outcome == 2)
+      hint: Asked only when question CP03. is not "No".
+    - predicate: not (CP04.outcome == 2)
+      hint: Asked only when question CP04. is not "No".
+    - predicate: not (CP06.outcome in [7, 9])
+      hint: Asked only when question CP06 is none of "Don't know/Not sure", "Refused".
+    - predicate: not (CP08.outcome == 2)
+      hint: Asked only when question CP08. is not "No".
+    - predicate: not (CP10.outcome in [77, 99])
+      hint: Asked only when question CP10. is none of "Live outside US and participating territories", "Refused".
+    - predicate: not (COVID_01.outcome in [2, 7, 9])
+      hint: Asked only when question COVID.01 is none of "No", "Don't know / Not sure", "Refused".
+    - predicate: not (COVID_02.outcome in [2, 7, 9])
+      hint: Asked only when question COVID.02 is none of "No", "Don't know / Not sure", "Refused".
+    - predicate: not (CDEM_01.outcome < 39 or SEX.outcome == 2)
+      hint: Asked only when the respondent's age and sex do not route out of this module.
+    - predicate: CDEM_13.outcome in [1, 2, 4]
+      hint: Asked only when question CDEM.13 is one of "Employed for wages", "Self-employed", "Out of work for less than 1 year".
+    items:
+    - id: MIO_01
+      kind: Question
+      title: 'What kind of work do you do? For example, registered nurse, janitor, cashier, auto mechanic. (If CDEM.13 = 4 ask: "What kind of work did you do?") If respondent is unclear, ask: What is your job title? If respondent has more than one job ask: What is your main job?'
+      input:
+        control: Textarea
+    - id: MIO_02
+      kind: Question
+      title: 'What kind of business or industry do you work in? For example, hospital, elementary school, clothing manufacturing, restaurant (If Core CDEM.13 = 4 ask: "What kind of business or industry did you work in?")'
+      precondition:
+      - predicate: not (not (CDEM_13.outcome in [1, 2, 4]))
+        hint: Asked only when question CDEM.13 is one of "Employed for wages", "Self-employed", "Out of work for less than 1 year".
+      input:
+        control: Textarea
+  - id: b_s41_heart_attack_stroke
+    title: 'Module 19: Heart Attack and Stroke'
+    precondition:
+    - predicate: not (LL01.outcome == 2)
+      hint: Asked only when question LL01. is not "No".
+    - predicate: not (LL02.outcome == 3)
+      hint: Asked only when question LL02. is not "No, this is a business".
+    - predicate: not (LL03.outcome == 2)
+      hint: Asked only when question LL03. is not "No".
+    - predicate: not (LL04.outcome == 2)
+      hint: Asked only when question LL04. is not "No".
+    - predicate: not (LL05.outcome == 1)
+      hint: Asked only when question LL05. is not "Yes, it is a cell phone".
+    - predicate: not (LL06.outcome == 2 and LL03.outcome == 1)
+      hint: Asked only when LL06 is not "No" while LL03 is "Yes".
+    - predicate: not (LL10.outcome in [7, 9])
+      hint: Asked only when question LL10 is none of "Don't know/Not sure", "Refused".
+    - predicate: not (CP01.outcome == 2)
+      hint: Asked only when question CP01. is not "No".
+    - predicate: not (CP02.outcome == 2)
+      hint: Asked only when question CP02. is not "No".
+    - predicate: not (CP03.outcome == 2)
+      hint: Asked only when question CP03. is not "No".
+    - predicate: not (CP04.outcome == 2)
+      hint: Asked only when question CP04. is not "No".
+    - predicate: not (CP06.outcome in [7, 9])
+      hint: Asked only when question CP06 is none of "Don't know/Not sure", "Refused".
+    - predicate: not (CP08.outcome == 2)
+      hint: Asked only when question CP08. is not "No".
+    - predicate: not (CP10.outcome in [77, 99])
+      hint: Asked only when question CP10. is none of "Live outside US and participating territories", "Refused".
+    - predicate: not (COVID_01.outcome in [2, 7, 9])
+      hint: Asked only when question COVID.01 is none of "No", "Don't know / Not sure", "Refused".
+    - predicate: not (COVID_02.outcome in [2, 7, 9])
+      hint: Asked only when question COVID.02 is none of "No", "Don't know / Not sure", "Refused".
+    - predicate: not (CDEM_01.outcome < 39 or SEX.outcome == 2)
+      hint: Asked only when CDEM.01 is 39 or more and the respondent's sex is not 2.
+    items:
+    - id: MHAS_01
+      kind: Question
+      title: Which of the following do you think is a symptom of a heart attack? For each, tell me 'Yes', "No" or you're "Not sure". (Do you think) pain or discomfort in the jaw, neck, or back (are symptoms of a heart attack?)
+      input:
+        control: Radio
+        labels:
+          1: 'Yes'
+          2: 'No'
+          7: Don’t know / Not sure
+          9: Refused
+    - id: MHAS_02
+      kind: Question
+      title: (Do you think) feeling weak, lightheaded, or faint (are symptoms of a heart attack?)
+      input:
+        control: Radio
+        labels:
+          1: 'Yes'
+          2: 'No'
+          7: Don’t know / Not sure
+          9: Refused
+    - id: MHAS_03
+      kind: Question
+      title: (Do you think) chest pain or discomfort (are symptoms of a heart attack?)
+      input:
+        control: Radio
+        labels:
+          1: 'Yes'
+          2: 'No'
+          7: Don’t know / Not sure
+          9: Refused
+    - id: MHAS_04
+      kind: Question
+      title: (Do you think) sudden trouble seeing in one or both eyes (are symptoms of a heart attack?)
+      input:
+        control: Radio
+        labels:
+          1: 'Yes'
+          2: 'No'
+          7: Don’t know / Not sure
+          9: Refused
+    - id: MHAS_05
+      kind: Question
+      title: (Do you think) pain or discomfort in the arms or shoulder (are symptoms of a heart attack?)
+      input:
+        control: Radio
+        labels:
+          1: 'Yes'
+          2: 'No'
+          7: Don’t know / Not sure
+          9: Refused
+    - id: MHAS_06
+      kind: Question
+      title: (Do you think) shortness of breath (are symptoms of a heart attack?)
+      input:
+        control: Radio
+        labels:
+          1: 'Yes'
+          2: 'No'
+          7: Don’t know / Not sure
+          9: Refused
+    - id: MHAS_07
+      kind: Question
+      title: Which of the following do you think is a symptom of a stroke? For each, tell me 'Yes', "No" or you're "Not sure". (Do you think) sudden confusion or trouble speaking (are symptoms of a stroke?)
+      input:
+        control: Radio
+        labels:
+          1: 'Yes'
+          2: 'No'
+          7: Don’t know / Not sure
+          9: Refused
+    - id: MHAS_08
+      kind: Question
+      title: (Do you think) sudden numbness or weakness of face, arm, or leg, especially on one side, (are symptoms of a stroke?)
+      input:
+        control: Radio
+        labels:
+          1: 'Yes'
+          2: 'No'
+          7: Don’t know / Not sure
+          9: Refused
+    - id: MHAS_09
+      kind: Question
+      title: (Do you think) sudden trouble seeing in one or both eyes (is a symptom of a stroke?)
+      input:
+        control: Radio
+        labels:
+          1: 'Yes'
+          2: 'No'
+          7: Don’t know / Not sure
+          9: Refused
+    - id: MHAS_10
+      kind: Question
+      title: (Do you think) sudden chest pain or discomfort (are symptoms of a stroke?)
+      input:
+        control: Radio
+        labels:
+          1: 'Yes'
+          2: 'No'
+          7: Don’t know / Not sure
+          9: Refused
+    - id: MHAS_11
+      kind: Question
+      title: (Do you think) sudden trouble walking, dizziness, or loss of balance (is a symptom of a stroke?)
+      input:
+        control: Radio
+        labels:
+          1: 'Yes'
+          2: 'No'
+          7: Don’t know / Not sure
+          9: Refused
+    - id: MHAS_12
+      kind: Question
+      title: (Do you think) severe headache with no known cause (are symptoms of a stroke?)
+      input:
+        control: Radio
+        labels:
+          1: 'Yes'
+          2: 'No'
+          7: Don’t know / Not sure
+          9: Refused
+    - id: MHAS_13
+      kind: Question
+      title: 'If you thought someone was having a heart attack or a stroke, what is the first thing you would do? Please read: 1 Take them to the hospital, 2 Tell them to call their doctor, 3 Call 911, 4 Call their spouse or a family member, Or 5 Do something else. Do not read: 7, 9'
+      input:
+        control: Radio
+        labels:
+          1: Take them to the hospital
+          2: Tell them to call their doctor
+          3: Call 911
+          4: Call their spouse or a family member
+          5: Do something else
+          7: Don’t know / Not sure
+          9: Refused
+  - id: b_s42_aspirin
+    title: 'Module 20: Aspirin for CVD Prevention'
+    precondition:
+    - predicate: not (LL01.outcome == 2)
+      hint: Asked only when question LL01. is not "No".
+    - predicate: not (LL02.outcome == 3)
+      hint: Asked only when question LL02. is not "No, this is a business".
+    - predicate: not (LL03.outcome == 2)
+      hint: Asked only when question LL03. is not "No".
+    - predicate: not (LL04.outcome == 2)
+      hint: Asked only when question LL04. is not "No".
+    - predicate: not (LL05.outcome == 1)
+      hint: Asked only when question LL05. is not "Yes, it is a cell phone".
+    - predicate: not (LL06.outcome == 2 and LL03.outcome == 1)
+      hint: Asked only when LL06 is not 2 with LL03 equal to 1.
+    - predicate: not (LL10.outcome in [7, 9])
+      hint: Asked only when question LL10 is none of "Don't know/Not sure", "Refused".
+    - predicate: not (CP01.outcome == 2)
+      hint: Asked only when question CP01. is not "No".
+    - predicate: not (CP02.outcome == 2)
+      hint: Asked only when question CP02. is not "No".
+    - predicate: not (CP03.outcome == 2)
+      hint: Asked only when question CP03. is not "No".
+    - predicate: not (CP04.outcome == 2)
+      hint: Asked only when question CP04. is not "No".
+    - predicate: not (CP06.outcome in [7, 9])
+      hint: Asked only when question CP06 is none of "Don't know/Not sure", "Refused".
+    - predicate: not (CP08.outcome == 2)
+      hint: Asked only when question CP08. is not "No".
+    - predicate: not (CP10.outcome in [77, 99])
+      hint: Asked only when question CP10. is none of "Live outside US and participating territories", "Refused".
+    - predicate: not (COVID_01.outcome in [2, 7, 9])
+      hint: Asked only when question COVID.01 is none of "No", "Don't know / Not sure", "Refused".
+    - predicate: not (COVID_02.outcome in [2, 7, 9])
+      hint: Asked only when question COVID.02 is none of "No", "Don't know / Not sure", "Refused".
+    - predicate: not (CDEM_01.outcome < 39 or SEX.outcome == 2)
+      hint: Asked only of respondents aged 39 or older who are not female.
+    items:
+    - id: MASPRN_01
+      kind: Question
+      title: How often do you take an aspirin to prevent or control heart disease, heart attacks or stroke? Would you say….
+      input:
+        control: Radio
+        labels:
+          1: Daily
+          2: Some days
+          3: Used to take it but had to stop due to side effects, or
+          4: Do not take it
+          7: Don’t know / Not sure
+          9: Refused
+  - id: b_s43_msab
+    title: 'Module 21: Sex at Birth'
+    precondition:
+    - predicate: not (LL01.outcome == 2)
+      hint: Asked only when question LL01. is not "No".
+    - predicate: not (LL02.outcome == 3)
+      hint: Asked only when question LL02. is not "No, this is a business".
+    - predicate: not (LL03.outcome == 2)
+      hint: Asked only when question LL03. is not "No".
+    - predicate: not (LL04.outcome == 2)
+      hint: Asked only when question LL04. is not "No".
+    - predicate: not (LL05.outcome == 1)
+      hint: Asked only when question LL05. is not "Yes, it is a cell phone".
+    - predicate: not (LL06.outcome == 2 and LL03.outcome == 1)
+      hint: Asked only when question LL06 is not "No" together with LL03 being "Yes".
+    - predicate: not (LL10.outcome in [7, 9])
+      hint: Asked only when question LL10 is none of "Don't know/Not sure", "Refused".
+    - predicate: not (CP01.outcome == 2)
+      hint: Asked only when question CP01. is not "No".
+    - predicate: not (CP02.outcome == 2)
+      hint: Asked only when question CP02. is not "No".
+    - predicate: not (CP03.outcome == 2)
+      hint: Asked only when question CP03. is not "No".
+    - predicate: not (CP04.outcome == 2)
+      hint: Asked only when question CP04. is not "No".
+    - predicate: not (CP06.outcome in [7, 9])
+      hint: Asked only when question CP06 is none of "Don't know/Not sure", "Refused".
+    - predicate: not (CP08.outcome == 2)
+      hint: Asked only when question CP08. is not "No".
+    - predicate: not (CP10.outcome in [77, 99])
+      hint: Asked only when question CP10. is none of "Live outside US and participating territories", "Refused".
+    - predicate: not (COVID_01.outcome in [2, 7, 9])
+      hint: Asked only when question COVID.01 is none of "No", "Don't know / Not sure", "Refused".
+    - predicate: not (COVID_02.outcome in [2, 7, 9])
+      hint: Asked only when question COVID.02 is none of "No", "Don't know / Not sure", "Refused".
+    - predicate: not (CDEM_01.outcome < 39 or SEX.outcome == 2)
+      hint: Asked only when the respondent is not under 39 and SEX is not 2.
+    items:
+    - id: MSAB_01_2
+      kind: Question
+      title: What was your sex at birth? Was it male or female? (This question refers to the original birth certificate of the respondent. It does not refer to amended birth certificates.)
+      precondition:
+      - predicate: not (LL10.outcome in [1, 2] or CP06.outcome in [1, 2])
+        hint: Asked only when sex at birth is not already known from LL10 or CP06.
+      input:
+        control: Radio
+        labels:
+          1: Male
+          2: Female
+          7: Don't know/Not sure
+          9: Refused
+  - id: b_s44_sogi
+    title: 'Module 22: Sexual Orientation and Gender Identity (SOGI)'
+    precondition:
+    - predicate: not (LL01.outcome == 2)
+      hint: Asked only when question LL01. is not "No".
+    - predicate: not (LL02.outcome == 3)
+      hint: Asked only when question LL02. is not "No, this is a business".
+    - predicate: not (LL03.outcome == 2)
+      hint: Asked only when question LL03. is not "No".
+    - predicate: not (LL04.outcome == 2)
+      hint: Asked only when question LL04. is not "No".
+    - predicate: not (LL05.outcome == 1)
+      hint: Asked only when question LL05. is not "Yes, it is a cell phone".
+    - predicate: not (LL06.outcome == 2 and LL03.outcome == 1)
+      hint: Asked only when LL06 is not "No" together with LL03 "Yes".
+    - predicate: not (LL10.outcome in [7, 9])
+      hint: Asked only when question LL10 is none of "Don't know/Not sure", "Refused".
+    - predicate: not (CP01.outcome == 2)
+      hint: Asked only when question CP01. is not "No".
+    - predicate: not (CP02.outcome == 2)
+      hint: Asked only when question CP02. is not "No".
+    - predicate: not (CP03.outcome == 2)
+      hint: Asked only when question CP03. is not "No".
+    - predicate: not (CP04.outcome == 2)
+      hint: Asked only when question CP04. is not "No".
+    - predicate: not (CP06.outcome in [7, 9])
+      hint: Asked only when question CP06 is none of "Don't know/Not sure", "Refused".
+    - predicate: not (CP08.outcome == 2)
+      hint: Asked only when question CP08. is not "No".
+    - predicate: not (CP10.outcome in [77, 99])
+      hint: Asked only when question CP10. is none of "Live outside US and participating territories", "Refused".
+    - predicate: not (COVID_01.outcome in [2, 7, 9])
+      hint: Asked only when question COVID.01 is none of "No", "Don't know / Not sure", "Refused".
+    - predicate: not (COVID_02.outcome in [2, 7, 9])
+      hint: Asked only when question COVID.02 is none of "No", "Don't know / Not sure", "Refused".
+    - predicate: not (CDEM_01.outcome < 39 or SEX.outcome == 2)
+      hint: Asked only when the respondent is aged 39 or older (CDEM.01) or SEX is not 2.
+    items:
+    - id: MSOGI_01
+      kind: Question
+      title: 'Which of the following best represents how you think of yourself? (male version) Read if necessary: We ask this question in order to better understand the health and health care needs of people with different sexual orientations. Please say the number before the text response. Respondent can answer with either the number or the text/word.'
+      precondition:
+      - predicate: LL10.outcome == 1 or CP06.outcome == 1
+        hint: Asked when the respondent is male (LL10 or CP06 is 1).
+      input:
+        control: Radio
+        labels:
+          1: Gay
+          2: Straight, that is, not gay
+          3: Bisexual
+          4: Something else
+          7: I don't know the answer
+          9: Refused
+    - id: MSOGI_02
+      kind: Question
+      title: 'Which of the following best represents how you think of yourself? (female version) Read if necessary: We ask this question in order to better understand the health and health care needs of people with different sexual orientations. Please say the number before the text response. Respondent can answer with either the number or the text/word.'
+      precondition:
+      - predicate: LL10.outcome == 2 or CP06.outcome == 2
+        hint: Asked when the respondent is female (LL10 or CP06 is 2).
+      - predicate: not (LL10.outcome == 1 or CP06.outcome == 1)
+        hint: Not asked when the male version applies.
+      input:
+        control: Radio
+        labels:
+          1: Lesbian or Gay
+          2: Straight, that is, not gay
+          3: Bisexual
+          4: Something else
+          7: I don't know the answer
+          9: Refused
+    - id: MSOGI_03
+      kind: Question
+      title: 'Do you consider yourself to be transgender? (Read if necessary: Some people describe themselves as transgender when they experience a different gender identity from their sex at birth... If yes, ask Do you consider yourself to be 1. male-to-female, 2. female-to-male, or 3. gender non-conforming? Please say the number before the text response.)'
+      input:
+        control: Radio
+        labels:
+          1: Yes, Transgender, male-to-female
+          2: Yes, Transgender, female to male
+          3: Yes, Transgender, gender nonconforming
+          4: 'No'
+          7: Don't know/not sure
+          9: Refused
+  - id: b_s45_days
+    title: 'Module 23: Marijuana Use'
+    precondition:
+    - predicate: not (LL01.outcome == 2)
+      hint: Asked only when question LL01. is not "No".
+    - predicate: not (LL02.outcome == 3)
+      hint: Asked only when question LL02. is not "No, this is a business".
+    - predicate: not (LL03.outcome == 2)
+      hint: Asked only when question LL03. is not "No".
+    - predicate: not (LL04.outcome == 2)
+      hint: Asked only when question LL04. is not "No".
+    - predicate: not (LL05.outcome == 1)
+      hint: Asked only when question LL05. is not "Yes, it is a cell phone".
+    - predicate: not (LL06.outcome == 2 and LL03.outcome == 1)
+      hint: Asked only when the LL06 and LL03 routing allows it.
+    - predicate: not (LL10.outcome in [7, 9])
+      hint: Asked only when question LL10 is none of "Don't know/Not sure", "Refused".
+    - predicate: not (CP01.outcome == 2)
+      hint: Asked only when question CP01. is not "No".
+    - predicate: not (CP02.outcome == 2)
+      hint: Asked only when question CP02. is not "No".
+    - predicate: not (CP03.outcome == 2)
+      hint: Asked only when question CP03. is not "No".
+    - predicate: not (CP04.outcome == 2)
+      hint: Asked only when question CP04. is not "No".
+    - predicate: not (CP06.outcome in [7, 9])
+      hint: Asked only when question CP06 is none of "Don't know/Not sure", "Refused".
+    - predicate: not (CP08.outcome == 2)
+      hint: Asked only when question CP08. is not "No".
+    - predicate: not (CP10.outcome in [77, 99])
+      hint: Asked only when question CP10. is none of "Live outside US and participating territories", "Refused".
+    - predicate: not (COVID_01.outcome in [2, 7, 9])
+      hint: Asked only when question COVID.01 is none of "No", "Don't know / Not sure", "Refused".
+    - predicate: not (COVID_02.outcome in [2, 7, 9])
+      hint: Asked only when question COVID.02 is none of "No", "Don't know / Not sure", "Refused".
+    - predicate: not (CDEM_01.outcome < 39 or SEX.outcome == 2)
+      hint: Asked only when the CDEM.01 and SEX routing allows it.
+    items:
+    - id: MMU_01
+      kind: Question
+      title: During the past 30 days, on how many days did you use marijuana or cannabis? (Do not include hemp-based CBD-only products.) Enter 1-30 days; 88 = None, 77 = Don't know/not sure, 99 = Refused.
+      input:
+        control: Editbox
+        min: 1
+        max: 99
+  - id: b_s45_methods
+    title: Methods of marijuana use
+    precondition:
+    - predicate: not (LL01.outcome == 2)
+      hint: Asked only when question LL01. is not "No".
+    - predicate: not (LL02.outcome == 3)
+      hint: Asked only when question LL02. is not "No, this is a business".
+    - predicate: not (LL03.outcome == 2)
+      hint: Asked only when question LL03. is not "No".
+    - predicate: not (LL04.outcome == 2)
+      hint: Asked only when question LL04. is not "No".
+    - predicate: not (LL05.outcome == 1)
+      hint: Asked only when question LL05. is not "Yes, it is a cell phone".
+    - predicate: not (LL06.outcome == 2 and LL03.outcome == 1)
+      hint: Asked only when the LL06 and LL03 routing allows it.
+    - predicate: not (LL10.outcome in [7, 9])
+      hint: Asked only when question LL10 is none of "Don't know/Not sure", "Refused".
+    - predicate: not (CP01.outcome == 2)
+      hint: Asked only when question CP01. is not "No".
+    - predicate: not (CP02.outcome == 2)
+      hint: Asked only when question CP02. is not "No".
+    - predicate: not (CP03.outcome == 2)
+      hint: Asked only when question CP03. is not "No".
+    - predicate: not (CP04.outcome == 2)
+      hint: Asked only when question CP04. is not "No".
+    - predicate: not (CP06.outcome in [7, 9])
+      hint: Asked only when question CP06 is none of "Don't know/Not sure", "Refused".
+    - predicate: not (CP08.outcome == 2)
+      hint: Asked only when question CP08. is not "No".
+    - predicate: not (CP10.outcome in [77, 99])
+      hint: Asked only when question CP10. is none of "Live outside US and participating territories", "Refused".
+    - predicate: not (COVID_01.outcome in [2, 7, 9])
+      hint: Asked only when question COVID.01 is none of "No", "Don't know / Not sure", "Refused".
+    - predicate: not (COVID_02.outcome in [2, 7, 9])
+      hint: Asked only when question COVID.02 is none of "No", "Don't know / Not sure", "Refused".
+    - predicate: not (CDEM_01.outcome < 39 or SEX.outcome == 2)
+      hint: Asked only when the CDEM.01 and SEX routing allows it.
+    - predicate: not (MMU_01.outcome == 88)
+      hint: Asked only when question MMU.01 is not "None".
+    items:
+    - id: MMU_02
+      kind: Question
+      title: During the past 30 days, did you smoke it (for example, in a joint, bong, pipe, or blunt)?
+      input:
+        control: Radio
+        labels:
+          1: 'Yes'
+          2: 'No'
+          7: Don't Know/Not Sure
+          9: Refused
+    - id: MMU_03
+      kind: Question
+      title: …eat it or drink it (for example, in brownies, cakes, cookies, or candy, or in tea, cola, or alcohol)?
+      input:
+        control: Radio
+        labels:
+          1: 'Yes'
+          2: 'No'
+          7: Don't Know/Not Sure
+          9: Refused
+    - id: MMU_04
+      kind: Question
+      title: …vaporize it (for example, in an e-cigarette-like vaporizer or another vaporizing device)
+      input:
+        control: Radio
+        labels:
+          1: 'Yes'
+          2: 'No'
+          7: Don't Know/Not Sure
+          9: Refused
+    - id: MMU_05
+      kind: Question
+      title: '***NEW*** …dab it (for example, using a dabbing rig, knife, or dab pen)?'
+      input:
+        control: Radio
+        labels:
+          1: 'Yes'
+          2: 'No'
+          7: Don’t Know/Not Sure
+          9: Refused
+    - id: MMU_06
+      kind: Question
+      title: '***NEW*** …use it in some other way?'
+      input:
+        control: Radio
+        labels:
+          1: 'Yes'
+          2: 'No'
+          7: Don’t Know/Not Sure
+          9: Refused
+  - id: b_s45_main_method
+    title: Most frequent method of marijuana use
+    precondition:
+    - predicate: not (LL01.outcome == 2)
+      hint: Asked only when question LL01. is not "No".
+    - predicate: not (LL02.outcome == 3)
+      hint: Asked only when question LL02. is not "No, this is a business".
+    - predicate: not (LL03.outcome == 2)
+      hint: Asked only when question LL03. is not "No".
+    - predicate: not (LL04.outcome == 2)
+      hint: Asked only when question LL04. is not "No".
+    - predicate: not (LL05.outcome == 1)
+      hint: Asked only when question LL05. is not "Yes, it is a cell phone".
+    - predicate: not (LL06.outcome == 2 and LL03.outcome == 1)
+      hint: Asked only when the LL06 and LL03 routing allows it.
+    - predicate: not (LL10.outcome in [7, 9])
+      hint: Asked only when question LL10 is none of "Don't know/Not sure", "Refused".
+    - predicate: not (CP01.outcome == 2)
+      hint: Asked only when question CP01. is not "No".
+    - predicate: not (CP02.outcome == 2)
+      hint: Asked only when question CP02. is not "No".
+    - predicate: not (CP03.outcome == 2)
+      hint: Asked only when question CP03. is not "No".
+    - predicate: not (CP04.outcome == 2)
+      hint: Asked only when question CP04. is not "No".
+    - predicate: not (CP06.outcome in [7, 9])
+      hint: Asked only when question CP06 is none of "Don't know/Not sure", "Refused".
+    - predicate: not (CP08.outcome == 2)
+      hint: Asked only when question CP08. is not "No".
+    - predicate: not (CP10.outcome in [77, 99])
+      hint: Asked only when question CP10. is none of "Live outside US and participating territories", "Refused".
+    - predicate: not (COVID_01.outcome in [2, 7, 9])
+      hint: Asked only when question COVID.01 is none of "No", "Don't know / Not sure", "Refused".
+    - predicate: not (COVID_02.outcome in [2, 7, 9])
+      hint: Asked only when question COVID.02 is none of "No", "Don't know / Not sure", "Refused".
+    - predicate: not (CDEM_01.outcome < 39 or SEX.outcome == 2)
+      hint: Asked only when the CDEM.01 and SEX routing allows it.
+    items:
+    - id: MMU_07
+      kind: Question
+      title: 'During the past 30 days, which one of the following ways did you use marijuana the most often? Did you usually… (Select one. If respondent provides more than one say: Which way did you use it most often? Create CATI to only show the options of use that the respondent chose in MMU.02-MMU.06.)'
+      precondition:
+      - predicate: (MMU_02.outcome == 1) + (MMU_03.outcome == 1) + (MMU_04.outcome == 1) + (MMU_05.outcome == 1) + (MMU_06.outcome == 1) >= 2
+        hint: Asked only when two or more ways of use were answered Yes in MMU.02 to MMU.06.
+      - predicate: not (MMU_01.outcome == 88)
+        hint: Asked only when question MMU.01 is not "None".
+      - predicate: not ((MMU_02.outcome == 1) + (MMU_03.outcome == 1) + (MMU_04.outcome == 1) + (MMU_05.outcome == 1) + (MMU_06.outcome == 1) <= 1)
+        hint: Asked only when more than one way of use was answered Yes in MMU.02 to MMU.06.
+      postcondition:
+      - predicate: (MMU_07.outcome != 1 or MMU_02.outcome == 1) and (MMU_07.outcome != 2 or MMU_03.outcome == 1) and (MMU_07.outcome != 3 or MMU_04.outcome == 1) and (MMU_07.outcome != 4 or MMU_05.outcome == 1) and (MMU_07.outcome != 5 or MMU_06.outcome == 1)
+        hint: The way of use most often in MMU.07 must be one you answered Yes to in MMU.02 to MMU.06.
+        invented: true
+      input:
+        control: Radio
+        labels:
+          1: Smoke it (for example, in a joint, bong, pipe, or blunt).
+          2: Eat it or drink it (for example, in brownies, cakes, cookies, or candy or in tea, cola or alcohol)
+          3: Vaporize it (for example, in an e-cigarette-like vaporizer or another vaporizing device)
+          4: Dab it (for example, using a dabbing rig, knife, or dab pen), or
+          5: Use it some other way.
+          7: Don’t know/not sure
+          9: Refused
+  - id: b_s46_mace
+    title: 'Module 24: Adverse Childhood Experiences'
+    precondition:
+    - predicate: not (LL01.outcome == 2)
+      hint: Asked only when question LL01. is not "No".
+    - predicate: not (LL02.outcome == 3)
+      hint: Asked only when question LL02. is not "No, this is a business".
+    - predicate: not (LL03.outcome == 2)
+      hint: Asked only when question LL03. is not "No".
+    - predicate: not (LL04.outcome == 2)
+      hint: Asked only when question LL04. is not "No".
+    - predicate: not (LL05.outcome == 1)
+      hint: Asked only when question LL05. is not "Yes, it is a cell phone".
+    - predicate: not (LL06.outcome == 2 and LL03.outcome == 1)
+      hint: Asked only when LL06 is not "No" while LL03 is "Yes".
+    - predicate: not (LL10.outcome in [7, 9])
+      hint: Asked only when question LL10 is none of "Don't know/Not sure", "Refused".
+    - predicate: not (CP01.outcome == 2)
+      hint: Asked only when question CP01. is not "No".
+    - predicate: not (CP02.outcome == 2)
+      hint: Asked only when question CP02. is not "No".
+    - predicate: not (CP03.outcome == 2)
+      hint: Asked only when question CP03. is not "No".
+    - predicate: not (CP04.outcome == 2)
+      hint: Asked only when question CP04. is not "No".
+    - predicate: not (CP06.outcome in [7, 9])
+      hint: Asked only when question CP06 is none of "Don't know/Not sure", "Refused".
+    - predicate: not (CP08.outcome == 2)
+      hint: Asked only when question CP08. is not "No".
+    - predicate: not (CP10.outcome in [77, 99])
+      hint: Asked only when question CP10. is none of "Live outside US and participating territories", "Refused".
+    - predicate: not (COVID_01.outcome in [2, 7, 9])
+      hint: Asked only when question COVID.01 is none of "No", "Don't know / Not sure", "Refused".
+    - predicate: not (COVID_02.outcome in [2, 7, 9])
+      hint: Asked only when question COVID.02 is none of "No", "Don't know / Not sure", "Refused".
+    - predicate: not (CDEM_01.outcome < 39 or SEX.outcome == 2)
+      hint: Asked only when the respondent is not under 39 (CDEM.01) and not female (SEX).
+    items:
+    - id: MACE_01
+      kind: Question
+      title: Now, looking back before you were 18 years of age---. 1) Did you live with anyone who was depressed, mentally ill, or suicidal?
+      input:
+        control: Radio
+        labels:
+          1: 'Yes'
+          2: 'No'
+          7: Don't Know/Not Sure
+          9: Refused
+    - id: MACE_02
+      kind: Question
+      title: Did you live with anyone who was a problem drinker or alcoholic?
+      input:
+        control: Radio
+        labels:
+          1: 'Yes'
+          2: 'No'
+          7: Don't Know/Not Sure
+          9: Refused
+    - id: MACE_03
+      kind: Question
+      title: Did you live with anyone who used illegal street drugs or who abused prescription medications?
+      input:
+        control: Radio
+        labels:
+          1: 'Yes'
+          2: 'No'
+          7: Don't Know/Not Sure
+          9: Refused
+    - id: MACE_04
+      kind: Question
+      title: Did you live with anyone who served time or was sentenced to serve time in a prison, jail, or other correctional facility?
+      input:
+        control: Radio
+        labels:
+          1: 'Yes'
+          2: 'No'
+          7: Don’t Know/Not Sure
+          9: Refused
+    - id: MACE_05
+      kind: Question
+      title: Were your parents separated or divorced?
+      input:
+        control: Radio
+        labels:
+          1: 'Yes'
+          2: 'No'
+          8: Parents not married
+          7: Don’t Know/Not Sure
+          9: Refused
+    - id: MACE_06
+      kind: Question
+      title: How often did your parents or adults in your home ever slap, hit, kick, punch or beat each other up? Was it…
+      input:
+        control: Radio
+        labels:
+          1: Never
+          2: Once
+          3: More than once
+          7: Don’t know/Not Sure
+          9: Refused
+    - id: MACE_07
+      kind: Question
+      title: Not including spanking, (before age 18), how often did a parent or adult in your home ever hit, beat, kick, or physically hurt you in any way? Was it—
+      input:
+        control: Radio
+        labels:
+          1: Never
+          2: Once
+          3: More than once
+          7: Don’t know/Not Sure
+          9: Refused
+    - id: MACE_08
+      kind: Question
+      title: How often did a parent or adult in your home ever swear at you, insult you, or put you down? Was it…
+      input:
+        control: Radio
+        labels:
+          1: Never
+          2: Once
+          3: More than once
+          7: Don’t know/Not Sure
+          9: Refused
+    - id: MACE_09
+      kind: Question
+      title: How often did anyone at least 5 years older than you or an adult, ever touch you sexually? Was it…
+      input:
+        control: Radio
+        labels:
+          1: Never
+          2: Once
+          3: More than once
+          7: Don’t know/Not Sure
+          9: Refused
+    - id: MACE_10
+      kind: Question
+      title: How often did anyone at least 5 years older than you or an adult, try to make you touch them sexually? Was it…
+      input:
+        control: Radio
+        labels:
+          1: Never
+          2: Once
+          3: More than once
+          7: Don’t know/Not Sure
+          9: Refused
+    - id: MACE_11
+      kind: Question
+      title: How often did anyone at least 5 years older than you or an adult, force you to have sex? Was it…
+      input:
+        control: Radio
+        labels:
+          1: Never
+          2: Once
+          3: More than once
+          7: Don’t know/Not Sure
+          9: Refused
+    - id: MACE_12
+      kind: Question
+      title: For how much of your childhood was there an adult in your household who made you feel safe and protected? Would you say never, a little of the time, some of the time, most of the time, or all of the time?
+      input:
+        control: Radio
+        labels:
+          1: Never
+          2: A little of the time
+          3: Some of the time
+          4: Most of the time
+          5: All of the time
+          7: Don’t Know/Not sure
+          9: Refused
+    - id: MACE_13
+      kind: Question
+      title: For how much of your childhood was there an adult in your household who tried hard to make sure your basic needs were met? Would you say never, a little of the time, some of the time, most of the time, or all of the time?
+      input:
+        control: Radio
+        labels:
+          1: Never
+          2: A little of the time
+          3: Some of the time
+          4: Most of the time
+          5: All of the time
+          7: Don’t Know/Not sure
+          9: Refused
+  - id: b_s47_flu_vaccination_place
+    title: 'Module 25: Place of Flu Vaccination'
+    precondition:
+    - predicate: not (LL01.outcome == 2)
+      hint: Asked only when question LL01. is not "No".
+    - predicate: not (LL02.outcome == 3)
+      hint: Asked only when question LL02. is not "No, this is a business".
+    - predicate: not (LL03.outcome == 2)
+      hint: Asked only when question LL03. is not "No".
+    - predicate: not (LL04.outcome == 2)
+      hint: Asked only when question LL04. is not "No".
+    - predicate: not (LL05.outcome == 1)
+      hint: Asked only when question LL05. is not "Yes, it is a cell phone".
+    - predicate: not (LL06.outcome == 2 and LL03.outcome == 1)
+      hint: Asked only when the landline and cell phone screening answers allow it.
+    - predicate: not (LL10.outcome in [7, 9])
+      hint: Asked only when question LL10 is none of "Don't know/Not sure", "Refused".
+    - predicate: not (CP01.outcome == 2)
+      hint: Asked only when question CP01. is not "No".
+    - predicate: not (CP02.outcome == 2)
+      hint: Asked only when question CP02. is not "No".
+    - predicate: not (CP03.outcome == 2)
+      hint: Asked only when question CP03. is not "No".
+    - predicate: not (CP04.outcome == 2)
+      hint: Asked only when question CP04. is not "No".
+    - predicate: not (CP06.outcome in [7, 9])
+      hint: Asked only when question CP06 is none of "Don't know/Not sure", "Refused".
+    - predicate: not (CP08.outcome == 2)
+      hint: Asked only when question CP08. is not "No".
+    - predicate: not (CP10.outcome in [77, 99])
+      hint: Asked only when question CP10. is none of "Live outside US and participating territories", "Refused".
+    - predicate: not (COVID_01.outcome in [2, 7, 9])
+      hint: Asked only when question COVID.01 is none of "No", "Don't know / Not sure", "Refused".
+    - predicate: not (COVID_02.outcome in [2, 7, 9])
+      hint: Asked only when question COVID.02 is none of "No", "Don't know / Not sure", "Refused".
+    - predicate: not (CDEM_01.outcome < 39 or SEX.outcome == 2)
+      hint: Asked only when the age and sex screening answers allow it.
+    items:
+    - id: MFP_01
+      kind: Question
+      title: 'At what kind of place did you get your last flu shot or vaccine? (Read if necessary: How would you describe the place where you went to get your most recent flu vaccine?)'
+      precondition:
+      - predicate: CIMM.outcome == 1
+        hint: Asked only when question CIMM is "Yes".
+      input:
+        control: Dropdown
+        labels:
+          1: 01 A doctor's office or health maintenance organization (HMO)
+          2: 02 A health department
+          3: 03 Another type of clinic or health center (a community health center)
+          4: 04 A senior, recreation, or community center
+          5: 05 A store (supermarket, drug store)
+          6: 06 A hospital (inpatient or outpatient)
+          7: 07 An emergency room
+          8: 08 Workplace
+          9: 09 Some other kind of place
+          10: 10 Received vaccination in Canada/Mexico
+          11: 11 A school
+          77: Don’t know / Not sure
+          99: Refused
+  - id: b_s48_hpv_vaccination
+    title: 'Module 26: HPV - Vaccination'
+    precondition:
+    - predicate: not (LL01.outcome == 2)
+      hint: Asked only when question LL01. is not "No".
+    - predicate: not (LL02.outcome == 3)
+      hint: Asked only when question LL02. is not "No, this is a business".
+    - predicate: not (LL03.outcome == 2)
+      hint: Asked only when question LL03. is not "No".
+    - predicate: not (LL04.outcome == 2)
+      hint: Asked only when question LL04. is not "No".
+    - predicate: not (LL05.outcome == 1)
+      hint: Asked only when question LL05. is not "Yes, it is a cell phone".
+    - predicate: not (LL06.outcome == 2 and LL03.outcome == 1)
+      hint: Asked only when the landline and household screening answers allow it.
+    - predicate: not (LL10.outcome in [7, 9])
+      hint: Asked only when question LL10 is none of "Don't know/Not sure", "Refused".
+    - predicate: not (CP01.outcome == 2)
+      hint: Asked only when question CP01. is not "No".
+    - predicate: not (CP02.outcome == 2)
+      hint: Asked only when question CP02. is not "No".
+    - predicate: not (CP03.outcome == 2)
+      hint: Asked only when question CP03. is not "No".
+    - predicate: not (CP04.outcome == 2)
+      hint: Asked only when question CP04. is not "No".
+    - predicate: not (CP06.outcome in [7, 9])
+      hint: Asked only when question CP06 is none of "Don't know/Not sure", "Refused".
+    - predicate: not (CP08.outcome == 2)
+      hint: Asked only when question CP08. is not "No".
+    - predicate: not (CP10.outcome in [77, 99])
+      hint: Asked only when question CP10. is none of "Live outside US and participating territories", "Refused".
+    - predicate: not (COVID_01.outcome in [2, 7, 9])
+      hint: Asked only when question COVID.01 is none of "No", "Don't know / Not sure", "Refused".
+    - predicate: not (COVID_02.outcome in [2, 7, 9])
+      hint: Asked only when question COVID.02 is none of "No", "Don't know / Not sure", "Refused".
+    - predicate: not (CDEM_01.outcome < 39 or SEX.outcome == 2)
+      hint: Asked only when the respondent's age and sex allow this module.
+    items:
+    - id: MHPV_01
+      kind: Question
+      title: 'Have you ever had an H.P.V. vaccination? (Read if necessary: A vaccine to prevent the human papillomavirus or H.P.V. infection is available and is called the cervical cancer or genital warts vaccine, H.P.V. shot, [Fill: if female GARDASIL or CERVARIX; if male: GARDASIL].)'
+      precondition:
+      - predicate: MRCS_01.outcome >= 18 and MRCS_01.outcome <= 49
+        hint: Asked only of adults aged 18 to 49.
+      input:
+        control: Radio
+        labels:
+          1: 'Yes'
+          2: 'No'
+          3: Doctor refused when asked
+          7: Don't know / Not sure
+          9: Refused
+    - id: MHPV_02
+      kind: Question
+      title: How many HPV shots did you receive?
+      precondition:
+      - predicate: MRCS_01.outcome >= 18 and MRCS_01.outcome <= 49 and MHPV_01.outcome == 1
+        hint: Asked only of adults aged 18 to 49 who have had an HPV vaccination.
+      - predicate: not (MRCS_01.outcome < 18 or MRCS_01.outcome > 49)
+        hint: Asked only of adults aged 18 to 49.
+      - predicate: not (MHPV_01.outcome in [2, 3, 7, 9])
+        hint: Asked only when question MHPV.01 is none of "No", "Doctor refused when asked", "Don't know / Not sure", "Refused".
+      input:
+        control: Editbox
+        min: 1
+        max: 99
+        right: shots (3 = All shots, 77 = Don't know / Not sure, 99 = Refused)
+  - id: b_s49_tdap
+    title: 'Module 27: Tetanus Diphtheria (Tdap) (Adults)'
+    precondition:
+    - predicate: not (LL01.outcome == 2)
+      hint: Asked only when question LL01. is not "No".
+    - predicate: not (LL02.outcome == 3)
+      hint: Asked only when question LL02. is not "No, this is a business".
+    - predicate: not (LL03.outcome == 2)
+      hint: Asked only when question LL03. is not "No".
+    - predicate: not (LL04.outcome == 2)
+      hint: Asked only when question LL04. is not "No".
+    - predicate: not (LL05.outcome == 1)
+      hint: Asked only when question LL05. is not "Yes, it is a cell phone".
+    - predicate: not (LL06.outcome == 2 and LL03.outcome == 1)
+      hint: Asked only when LL06 and LL03 do not both indicate a screen-out.
+    - predicate: not (LL10.outcome in [7, 9])
+      hint: Asked only when question LL10 is none of "Don't know/Not sure", "Refused".
+    - predicate: not (CP01.outcome == 2)
+      hint: Asked only when question CP01. is not "No".
+    - predicate: not (CP02.outcome == 2)
+      hint: Asked only when question CP02. is not "No".
+    - predicate: not (CP03.outcome == 2)
+      hint: Asked only when question CP03. is not "No".
+    - predicate: not (CP04.outcome == 2)
+      hint: Asked only when question CP04. is not "No".
+    - predicate: not (CP06.outcome in [7, 9])
+      hint: Asked only when question CP06 is none of "Don't know/Not sure", "Refused".
+    - predicate: not (CP08.outcome == 2)
+      hint: Asked only when question CP08. is not "No".
+    - predicate: not (CP10.outcome in [77, 99])
+      hint: Asked only when question CP10. is none of "Live outside US and participating territories", "Refused".
+    - predicate: not (COVID_01.outcome in [2, 7, 9])
+      hint: Asked only when question COVID.01 is none of "No", "Don't know / Not sure", "Refused".
+    - predicate: not (COVID_02.outcome in [2, 7, 9])
+      hint: Asked only when question COVID.02 is none of "No", "Don't know / Not sure", "Refused".
+    - predicate: not (CDEM_01.outcome < 39 or SEX.outcome == 2)
+      hint: Asked only when the respondent is aged 39 or older and not female.
+    items:
+    - id: MTDAP_01
+      kind: Question
+      title: 'Have you received a tetanus shot in the past 10 years? (If yes, ask: Was this Tdap, the tetanus shot that also has pertussis or whooping cough vaccine?)'
+      input:
+        control: Radio
+        labels:
+          1: Yes, received Tdap
+          2: Yes, received tetanus shot, but not Tdap
+          3: Yes, received tetanus shot but not sure what type
+          4: No, did not receive any tetanus shot in the past 10 years
+          7: Don't know/Not sure
+          9: Refused
+  - id: b_s50_covid_vaccination
+    title: 'Module 28: COVID Vaccination'
+    precondition:
+    - predicate: not (LL01.outcome == 2)
+      hint: Asked only when question LL01. is not "No".
+    - predicate: not (LL02.outcome == 3)
+      hint: Asked only when question LL02. is not "No, this is a business".
+    - predicate: not (LL03.outcome == 2)
+      hint: Asked only when question LL03. is not "No".
+    - predicate: not (LL04.outcome == 2)
+      hint: Asked only when question LL04. is not "No".
+    - predicate: not (LL05.outcome == 1)
+      hint: Asked only when question LL05. is not "Yes, it is a cell phone".
+    - predicate: not (LL06.outcome == 2 and LL03.outcome == 1)
+      hint: Asked only when LL06 is not "No" while LL03 is "Yes".
+    - predicate: not (LL10.outcome in [7, 9])
+      hint: Asked only when question LL10 is none of "Don't know/Not sure", "Refused".
+    - predicate: not (CP01.outcome == 2)
+      hint: Asked only when question CP01. is not "No".
+    - predicate: not (CP02.outcome == 2)
+      hint: Asked only when question CP02. is not "No".
+    - predicate: not (CP03.outcome == 2)
+      hint: Asked only when question CP03. is not "No".
+    - predicate: not (CP04.outcome == 2)
+      hint: Asked only when question CP04. is not "No".
+    - predicate: not (CP06.outcome in [7, 9])
+      hint: Asked only when question CP06 is none of "Don't know/Not sure", "Refused".
+    - predicate: not (CP08.outcome == 2)
+      hint: Asked only when question CP08. is not "No".
+    - predicate: not (CP10.outcome in [77, 99])
+      hint: Asked only when question CP10. is none of "Live outside US and participating territories", "Refused".
+    - predicate: not (COVID_01.outcome in [2, 7, 9])
+      hint: Asked only when question COVID.01 is none of "No", "Don't know / Not sure", "Refused".
+    - predicate: not (COVID_02.outcome in [2, 7, 9])
+      hint: Asked only when question COVID.02 is none of "No", "Don't know / Not sure", "Refused".
+    - predicate: not (CDEM_01.outcome < 39 or SEX.outcome == 2)
+      hint: Asked only when CDEM.01 is 39 or more and the respondent is not female.
+    items:
+    - id: MCOV_01
+      kind: Question
+      title: Have you received at least one dose of a COVID-19 vaccination?
+      input:
+        control: Radio
+        labels:
+          1: 'Yes'
+          2: 'No'
+          7: Don’t know / Not sure
+          9: Refused
+    - id: MCOV_02
+      kind: Question
+      title: Would you say you will definitely get a vaccine, will probably get a vaccine, will probably not get a vaccine, will definitely not get a vaccine, or are you not sure?
+      precondition:
+      - predicate: not (MCOV_01.outcome == 1)
+        hint: Asked only when question MCOV.01 is not "Yes".
+      - predicate: not (MCOV_01.outcome in [7, 9])
+        hint: Asked only when question MCOV.01 is none of "Don’t know / Not sure", "Refused".
+      input:
+        control: Radio
+        labels:
+          1: Will definitely get a vaccine
+          2: Will probably get a vaccine
+          3: Will probably not get a vaccine
+          4: Will definitely not get a vaccine
+          7: Don’t know/Not sure
+          9: Refused
+    - id: MCOV_03
+      kind: Question
+      title: How many COVID-19 vaccinations have you received?
+      precondition:
+      - predicate: not (MCOV_01.outcome in [7, 9])
+        hint: Asked only when question MCOV.01 is none of "Don’t know / Not sure", "Refused".
+      - predicate: not (MCOV_02.outcome in [1, 2, 3, 4, 7, 9])
+        hint: Asked only when question MCOV.02 is none of "Will definitely get a vaccine", "Will probably get a vaccine", "Will probably not get a vaccine", "Will definitely not get a vaccine", "Don’t know/Not sure", "Refused".
+      input:
+        control: Dropdown
+        labels:
+          1: One
+          2: Two
+          3: Three
+          4: Four
+          5: Five or more
+          7: Don’t know / Not sure
+          9: Refused
+  - id: b_s51_social_determinants
+    title: 'Module 29: Social Determinants and Health Equity'
+    precondition:
+    - predicate: not (LL01.outcome == 2)
+      hint: Asked only when question LL01. is not "No".
+    - predicate: not (LL02.outcome == 3)
+      hint: Asked only when question LL02. is not "No, this is a business".
+    - predicate: not (LL03.outcome == 2)
+      hint: Asked only when question LL03. is not "No".
+    - predicate: not (LL04.outcome == 2)
+      hint: Asked only when question LL04. is not "No".
+    - predicate: not (LL05.outcome == 1)
+      hint: Asked only when question LL05. is not "Yes, it is a cell phone".
+    - predicate: not (LL06.outcome == 2 and LL03.outcome == 1)
+      hint: Asked only when LL06 is not "No" while LL03 is "Yes".
+    - predicate: not (LL10.outcome in [7, 9])
+      hint: Asked only when question LL10 is none of "Don't know/Not sure", "Refused".
+    - predicate: not (CP01.outcome == 2)
+      hint: Asked only when question CP01. is not "No".
+    - predicate: not (CP02.outcome == 2)
+      hint: Asked only when question CP02. is not "No".
+    - predicate: not (CP03.outcome == 2)
+      hint: Asked only when question CP03. is not "No".
+    - predicate: not (CP04.outcome == 2)
+      hint: Asked only when question CP04. is not "No".
+    - predicate: not (CP06.outcome in [7, 9])
+      hint: Asked only when question CP06 is none of "Don't know/Not sure", "Refused".
+    - predicate: not (CP08.outcome == 2)
+      hint: Asked only when question CP08. is not "No".
+    - predicate: not (CP10.outcome in [77, 99])
+      hint: Asked only when question CP10. is none of "Live outside US and participating territories", "Refused".
+    - predicate: not (COVID_01.outcome in [2, 7, 9])
+      hint: Asked only when question COVID.01 is none of "No", "Don't know / Not sure", "Refused".
+    - predicate: not (COVID_02.outcome in [2, 7, 9])
+      hint: Asked only when question COVID.02 is none of "No", "Don't know / Not sure", "Refused".
+    - predicate: not (CDEM_01.outcome < 39 or SEX.outcome == 2)
+      hint: Asked only when CDEM.01 is 39 or older and the respondent's sex is not 2.
+    items:
+    - id: MSDHE_01
+      kind: Question
+      title: In general, how satisfied are you with your life? Are you..
+      input:
+        control: Radio
+        labels:
+          1: Very satisfied
+          2: Satisfied
+          3: Dissatisfied
+          4: Very dissatisfied
+          7: Don't know/not sure
+          9: Refused
+    - id: MSDHE_02
+      kind: Question
+      title: How often do you get the social and emotional support that you need? Is that…
+      input:
+        control: Radio
+        labels:
+          1: Always
+          2: Usually
+          3: Sometimes
+          4: Rarely
+          5: Never
+          7: Don't know/not sure
+          9: Refused
+    - id: MSDHE_03
+      kind: Question
+      title: How often do you feel lonely? Is it…
+      input:
+        control: Radio
+        labels:
+          1: Always
+          2: Usually
+          3: Sometimes
+          4: Rarely
+          5: Never
+          7: Don't know/not sure
+          9: Refused
+    - id: MSDHE_04
+      kind: Question
+      title: In the past 12 months have you lost employment or had hours reduced?
+      input:
+        control: Radio
+        labels:
+          1: 'Yes'
+          2: 'No'
+          7: Don't Know/ Not sure
+          9: Refused
+    - id: MSDHE_05
+      kind: Question
+      title: During the past 12 months, have you received food stamps, also called SNAP, the Supplemental Nutrition Assistance Program on an EBT card?
+      input:
+        control: Radio
+        labels:
+          1: 'Yes'
+          2: 'No'
+          7: Don’t Know/ Not sure
+          9: Refused
+    - id: MSDHE_06
+      kind: Question
+      title: During the past 12 months how often did the food that you bought not last, and you didn’t have money to get more? Was that…
+      input:
+        control: Radio
+        labels:
+          1: Always
+          2: Usually
+          3: Sometimes
+          4: Rarely
+          5: Never
+          7: Don’t know/not sure
+          9: Refused
+    - id: MSDHE_07
+      kind: Question
+      title: During the last 12 months, was there a time when you were not able to pay your mortgage, rent or utility bills?
+      input:
+        control: Radio
+        labels:
+          1: 'Yes'
+          2: 'No'
+          7: Don’t Know/ Not sure
+          9: Refused
+    - id: MSDHE_08
+      kind: Question
+      title: During the last 12 months was there a time when an electric, gas, oil, or water company threatened to shut off services?
+      input:
+        control: Radio
+        labels:
+          1: 'Yes'
+          2: 'No'
+          7: Don’t Know/ Not sure
+          9: Refused
+    - id: MSDHE_09
+      kind: Question
+      title: During the past 12 months has a lack of reliable transportation kept you from medical appointments, meetings, work, or from getting things needed for daily living?
+      input:
+        control: Radio
+        labels:
+          1: 'Yes'
+          2: 'No'
+          7: Don’t Know/ Not sure
+          9: Refused
+    - id: MSDHE_10
+      kind: Question
+      title: Stress means a situation in which a person feels tense, restless, nervous or anxious or is unable to sleep at night because their mind is troubled all the time. Within the last 30 days, how often have you felt this kind of stress? Was it…
+      input:
+        control: Radio
+        labels:
+          1: Always
+          2: Usually
+          3: Sometimes
+          4: Rarely
+          5: Never
+          7: Don’t know/not sure
+          9: Refused
+  - id: b_s52_external
+    title: External inputs
+    precondition:
+    - predicate: not (LL01.outcome == 2)
+      hint: Asked only when question LL01. is not "No".
+    - predicate: not (LL02.outcome == 3)
+      hint: Asked only when question LL02. is not "No, this is a business".
+    - predicate: not (LL03.outcome == 2)
+      hint: Asked only when question LL03. is not "No".
+    - predicate: not (LL04.outcome == 2)
+      hint: Asked only when question LL04. is not "No".
+    - predicate: not (LL05.outcome == 1)
+      hint: Asked only when question LL05. is not "Yes, it is a cell phone".
+    - predicate: not (LL06.outcome == 2 and LL03.outcome == 1)
+      hint: Asked only when LL06 is not "No" together with LL03 "Yes".
+    - predicate: not (LL10.outcome in [7, 9])
+      hint: Asked only when question LL10 is none of "Don't know/Not sure", "Refused".
+    - predicate: not (CP01.outcome == 2)
+      hint: Asked only when question CP01. is not "No".
+    - predicate: not (CP02.outcome == 2)
+      hint: Asked only when question CP02. is not "No".
+    - predicate: not (CP03.outcome == 2)
+      hint: Asked only when question CP03. is not "No".
+    - predicate: not (CP04.outcome == 2)
+      hint: Asked only when question CP04. is not "No".
+    - predicate: not (CP06.outcome in [7, 9])
+      hint: Asked only when question CP06 is none of "Don't know/Not sure", "Refused".
+    - predicate: not (CP08.outcome == 2)
+      hint: Asked only when question CP08. is not "No".
+    - predicate: not (CP10.outcome in [77, 99])
+      hint: Asked only when question CP10. is none of "Live outside US and participating territories", "Refused".
+    - predicate: not (COVID_01.outcome in [2, 7, 9])
+      hint: Asked only when question COVID.01 is none of "No", "Don't know / Not sure", "Refused".
+    - predicate: not (COVID_02.outcome in [2, 7, 9])
+      hint: Asked only when question COVID.02 is none of "No", "Don't know / Not sure", "Refused".
+    - predicate: not (CDEM_01.outcome < 39 or SEX.outcome == 2)
+      hint: Asked only when CDEM.01 is 39 or older and sex is not Female.
+    items:
+    - id: CDEM_13_2
+      kind: Question
+      title: 'Employment status, from the core questionnaire (referenced by MIO.01/MIO.02): 1 Employed for wages, 2 Self-employed, 4 Out of work for less than 1 year'
+      external: true
+      input:
+        control: Radio
+        labels:
+          1: Employed for wages
+          2: Self-employed
+          4: Out of work for less than 1 year
+    - id: LL10_2
+      kind: Question
+      title: 'Sex of respondent from the landline core (referenced by MSAB.01 and MSOGI): coded 1 or 2'
+      external: true
+      input:
+        control: Radio
+        labels:
+          1: Male
+          2: Female
+    - id: CP06_2
+      kind: Question
+      title: 'Sex of respondent from the cell phone core (referenced by MSAB.01 and MSOGI): coded 1 or 2'
+      external: true
+      input:
+        control: Radio
+        labels:
+          1: Male
+          2: Female
+    - id: CP05_3
+      kind: Question
+      title: Cell phone core variable used with LL10, CP06 and LL09 to determine sex (referenced by MSOGI.01/MSOGI.02); coding not given in this part
+      external: true
+      input:
+        control: Radio
+        labels:
+          1: Value as coded in core
+    - id: LL09_3
+      kind: Question
+      title: Landline core variable used with LL10, CP06 and CP05 to determine sex (referenced by MSOGI.01/MSOGI.02); coding not given in this part
+      external: true
+      input:
+        control: Radio
+        labels:
+          1: Value as coded in core
+    - id: CIMM
+      kind: Question
+      title: 'Core immunization variable (flu shot received), referenced by MFP.01: 1 = yes'
+      external: true
+      input:
+        control: Radio
+        labels:
+          1: 'Yes'
+    - id: MRCS_01
+      kind: Question
+      title: Age of respondent, from the core (MRCS.01), used to restrict MHPV.01 to ages 18-49
+      external: true
+      input:
+        control: Editbox
+        min: 0
+        max: 120
+  - id: b_s53_reactions_to_race
+    title: 'Module 30: Reactions to Race'
+    precondition:
+    - predicate: not (LL01.outcome == 2)
+      hint: Asked only when question LL01. is not "No".
+    - predicate: not (LL02.outcome == 3)
+      hint: Asked only when question LL02. is not "No, this is a business".
+    - predicate: not (LL03.outcome == 2)
+      hint: Asked only when question LL03. is not "No".
+    - predicate: not (LL04.outcome == 2)
+      hint: Asked only when question LL04. is not "No".
+    - predicate: not (LL05.outcome == 1)
+      hint: Asked only when question LL05. is not "Yes, it is a cell phone".
+    - predicate: not (LL06.outcome == 2 and LL03.outcome == 1)
+      hint: Asked only when LL06 and LL03 are not both at their screening-out answers.
+    - predicate: not (LL10.outcome in [7, 9])
+      hint: Asked only when question LL10 is none of "Don't know/Not sure", "Refused".
+    - predicate: not (CP01.outcome == 2)
+      hint: Asked only when question CP01. is not "No".
+    - predicate: not (CP02.outcome == 2)
+      hint: Asked only when question CP02. is not "No".
+    - predicate: not (CP03.outcome == 2)
+      hint: Asked only when question CP03. is not "No".
+    - predicate: not (CP04.outcome == 2)
+      hint: Asked only when question CP04. is not "No".
+    - predicate: not (CP06.outcome in [7, 9])
+      hint: Asked only when question CP06 is none of "Don't know/Not sure", "Refused".
+    - predicate: not (CP08.outcome == 2)
+      hint: Asked only when question CP08. is not "No".
+    - predicate: not (CP10.outcome in [77, 99])
+      hint: Asked only when question CP10. is none of "Live outside US and participating territories", "Refused".
+    - predicate: not (COVID_01.outcome in [2, 7, 9])
+      hint: Asked only when question COVID.01 is none of "No", "Don't know / Not sure", "Refused".
+    - predicate: not (COVID_02.outcome in [2, 7, 9])
+      hint: Asked only when question COVID.02 is none of "No", "Don't know / Not sure", "Refused".
+    - predicate: not (CDEM_01.outcome < 39 or SEX.outcome == 2)
+      hint: Asked only when the respondent is aged 39 or older and SEX is not 2.
+    items:
+    - id: MRTR_01
+      kind: Question
+      title: 'Earlier I asked you to self-identify your race. Now I will ask you how other people identify you and treat you. How do other people usually classify you in this country? Would you say: White, Black or African American, Hispanic or Latino, Asian, Native Hawaiian or Other Pacific Islander, American Indian or Alaska Native, or some other group? [Interviewer note: If the respondent requests clarification of this question, say: “We want to know how OTHER people usually classify you in this country, which might be different from how you classify yourself.” Interviewer note: do not offer “mixed race” as a category but use as a code if respondent offers it.]'
+      input:
+        control: Dropdown
+        labels:
+          1: White
+          2: Black or African American
+          3: Hispanic or Latino
+          4: Asian
+          5: Native Hawaiian or Other Pacific Islander
+          6: American Indian or Alaska Native
+          7: Mixed Race
+          8: Some other group
+          77: Don't know / Not sure
+          99: Refused
+    - id: MRTR_02
+      kind: Question
+      title: 'How often do you think about your race? Would you say never, once a year, once a month, once a week, once a day, once an hour, or constantly? [Interviewer note: The responses can be interpreted as meaning "at least" the indicated time frequency. If a respondent cannot decide between two categories, check the response for the lower frequency. For example, if a respondent says that they think about their race between once a week and once a month, check "once a month" as the response.]'
+      input:
+        control: Radio
+        labels:
+          1: Never
+          2: Once a year
+          3: Once a month
+          4: Once a week
+          5: Once a day
+          6: Once an hour
+          8: Constantly
+          7: Don't know / Not sure
+          9: Refused
+    - id: MRTR_03
+      kind: Question
+      title: 'Within the past 12 months, do you feel that in general you were treated worse than, the same as, or better than people of other races? (Read if necessary: responses)'
+      input:
+        control: Radio
+        labels:
+          1: Worse than other races
+          2: The same as other races
+          3: Better than other races
+          4: Worse than some races, better than others
+          5: Only encountered people of the same race
+          7: Don't know / Not sure
+          9: Refused
+    - id: MRTR_04
+      kind: Question
+      title: Within the past 12 months at work, do you feel you were treated worse than, the same as, or better than people of other races?
+      precondition:
+      - predicate: CDEM_13_2.outcome in [1, 2, 4]
+        hint: Asked only when question CDEM.13 is one of "Employed for wages", "Self-employed", "Out of work for less than 1 year".
+      input:
+        control: Radio
+        labels:
+          1: Worse than other races
+          2: The same as other races
+          3: Better than other races
+          4: Worse than some races, better than others
+          5: Only encountered people of the same race
+          7: Don’t know / Not sure
+          9: Refused
+    - id: MRTR_05
+      kind: Question
+      title: 'Within the past 12 months, when seeking health care, do you feel your experiences were worse than, the same as, or better than for people of other races? [Interviewer note: If the respondent indicates that they do not know about other people’s experiences when seeking health care, say: “This question is asking about your perceptions when seeking health care. It does not require specific knowledge about other people’s experiences”]'
+      input:
+        control: Radio
+        labels:
+          1: Worse than other races
+          2: The same as other races
+          3: Better than other races
+          4: Worse than some races, better than others
+          5: Only encountered people of the same race
+          7: Don’t know / Not sure
+          9: Refused
+    - id: MRTR_06
+      kind: Question
+      title: Within the past 30 days, have you experienced any physical symptoms, for example, a headache, an upset stomach, tensing of your muscles, or a pounding heart, as a result of how you were treated based on your race?
+      input:
+        control: Radio
+        labels:
+          1: 'Yes'
+          2: 'No'
+          7: Don’t know / Not sure
+          9: Refused
+  - id: b_s54_random_child
+    title: 'Module 31: Random Child Selection'
+    precondition:
+    - predicate: not (LL01.outcome == 2)
+      hint: Asked only when question LL01. is not "No".
+    - predicate: not (LL02.outcome == 3)
+      hint: Asked only when question LL02. is not "No, this is a business".
+    - predicate: not (LL03.outcome == 2)
+      hint: Asked only when question LL03. is not "No".
+    - predicate: not (LL04.outcome == 2)
+      hint: Asked only when question LL04. is not "No".
+    - predicate: not (LL05.outcome == 1)
+      hint: Asked only when question LL05. is not "Yes, it is a cell phone".
+    - predicate: not (LL06.outcome == 2 and LL03.outcome == 1)
+      hint: Asked only when LL06 is not "No" while LL03 is "Yes".
+    - predicate: not (LL10.outcome in [7, 9])
+      hint: Asked only when question LL10 is none of "Don't know/Not sure", "Refused".
+    - predicate: not (CP01.outcome == 2)
+      hint: Asked only when question CP01. is not "No".
+    - predicate: not (CP02.outcome == 2)
+      hint: Asked only when question CP02. is not "No".
+    - predicate: not (CP03.outcome == 2)
+      hint: Asked only when question CP03. is not "No".
+    - predicate: not (CP04.outcome == 2)
+      hint: Asked only when question CP04. is not "No".
+    - predicate: not (CP06.outcome in [7, 9])
+      hint: Asked only when question CP06 is none of "Don't know/Not sure", "Refused".
+    - predicate: not (CP08.outcome == 2)
+      hint: Asked only when question CP08. is not "No".
+    - predicate: not (CP10.outcome in [77, 99])
+      hint: Asked only when question CP10. is none of "Live outside US and participating territories", "Refused".
+    - predicate: not (COVID_01.outcome in [2, 7, 9])
+      hint: Asked only when question COVID.01 is none of "No", "Don't know / Not sure", "Refused".
+    - predicate: not (COVID_02.outcome in [2, 7, 9])
+      hint: Asked only when question COVID.02 is none of "No", "Don't know / Not sure", "Refused".
+    - predicate: not (CDEM_01.outcome < 39 or SEX.outcome == 2)
+      hint: Asked only when CDEM.01 is 39 or older and the respondent's sex is not 2.
+    - predicate: not (CDEM_14.outcome in [88, 99])
+      hint: Asked only when question CDEM.14 is none of "None", "Refused".
+    items:
+    - id: MRCS_01_2
+      kind: Question
+      title: What is the birth month and year of the [Xth] child? (__/____ Code month and year)
+      input:
+        control: Textarea
+        placeholder: MM/YYYY (77/7777 Don't know / Not sure; 99/9999 Refused)
+    - id: MRCS_02
+      kind: Question
+      title: Is the child a boy or a girl?
+      input:
+        control: Radio
+        labels:
+          1: Boy
+          2: Girl
+          3: Nonbinary/other
+          9: Refused
+    - id: MRCS_03
+      kind: Question
+      title: What was the child’s sex on their original birth certificate?
+      precondition:
+      - predicate: not (MRCS_02.outcome in [1, 2])
+        hint: Asked only when question MRCS.02 is none of "Boy", "Girl".
+      input:
+        control: Radio
+        labels:
+          1: Boy
+          2: Girl
+          9: Refused
+    - id: MRCS_04
+      kind: Question
+      title: 'Is the child Hispanic, Latino/a, or Spanish origin? [Interviewer note: If yes, ask: Are they… ] (Options 1-4: Read if response is yes; options 5, 7, 9: Do not read)'
+      input:
+        control: Radio
+        labels:
+          1: Mexican, Mexican American, Chicano/a (read if response is yes)
+          2: Puerto Rican (read if response is yes)
+          3: Cuban (read if response is yes)
+          4: Another Hispanic, Latino/a, or Spanish origin (read if response is yes)
+          5: No (do not read)
+          7: Don’t know / Not sure (do not read)
+          9: Refused (do not read)
+    - id: MRCS_05
+      kind: Question
+      title: Which one or more of the following would you say is the race of the child? [Select all that apply. If 40 (Asian) or 50 (Pacific Islander) is selected read and code subcategories underneath major heading.]
+      input:
+        control: Checkbox
+        labels:
+          1: 10 — White
+          2: 20 — Black or African American
+          4: 30 — American Indian or Alaska Native
+          8: 40 — Asian
+          16: 41 — Asian Indian
+          32: 42 — Chinese
+          64: 43 — Filipino
+          128: 44 — Japanese
+          256: 45 — Korean
+          512: 46 — Vietnamese
+          1024: 47 — Other Asian
+          2048: 50 — Pacific Islander
+          4096: 51 — Native Hawaiian
+          8192: 52 — Guamanian or Chamorro
+          16384: 53 — Samoan
+          32768: 54 — Other Pacific Islander
+          65536: 60 — Other (Do not read)
+          131072: 88 — No additional choices
+          262144: 77 — Don’t know / Not sure
+          524288: 99 — Refused
+    - id: MRCS_06
+      kind: Question
+      title: How are you related to the child? Are you a-- (Please read options 1-6; do not read 7 and 9)
+      input:
+        control: Radio
+        labels:
+          1: Parent (include biologic, step, or adoptive parent)
+          2: Grandparent
+          3: Foster parent or guardian
+          4: Sibling (include biologic, step, and adoptive sibling)
+          5: Other relative
+          6: Not related in any way
+          7: Don’t know / Not sure
+          9: Refused
+  - id: b_s55_childhood_asthma
+    title: 'Module 32: Childhood Asthma Prevalence'
+    precondition:
+    - predicate: not (LL01.outcome == 2)
+      hint: Asked only when question LL01. is not "No".
+    - predicate: not (LL02.outcome == 3)
+      hint: Asked only when question LL02. is not "No, this is a business".
+    - predicate: not (LL03.outcome == 2)
+      hint: Asked only when question LL03. is not "No".
+    - predicate: not (LL04.outcome == 2)
+      hint: Asked only when question LL04. is not "No".
+    - predicate: not (LL05.outcome == 1)
+      hint: Asked only when question LL05. is not "Yes, it is a cell phone".
+    - predicate: not (LL06.outcome == 2 and LL03.outcome == 1)
+      hint: Asked only when LL06 is not "No" together with LL03 "Yes".
+    - predicate: not (LL10.outcome in [7, 9])
+      hint: Asked only when question LL10 is none of "Don't know/Not sure", "Refused".
+    - predicate: not (CP01.outcome == 2)
+      hint: Asked only when question CP01. is not "No".
+    - predicate: not (CP02.outcome == 2)
+      hint: Asked only when question CP02. is not "No".
+    - predicate: not (CP03.outcome == 2)
+      hint: Asked only when question CP03. is not "No".
+    - predicate: not (CP04.outcome == 2)
+      hint: Asked only when question CP04. is not "No".
+    - predicate: not (CP06.outcome in [7, 9])
+      hint: Asked only when question CP06 is none of "Don't know/Not sure", "Refused".
+    - predicate: not (CP08.outcome == 2)
+      hint: Asked only when question CP08. is not "No".
+    - predicate: not (CP10.outcome in [77, 99])
+      hint: Asked only when question CP10. is none of "Live outside US and participating territories", "Refused".
+    - predicate: not (COVID_01.outcome in [2, 7, 9])
+      hint: Asked only when question COVID.01 is none of "No", "Don't know / Not sure", "Refused".
+    - predicate: not (COVID_02.outcome in [2, 7, 9])
+      hint: Asked only when question COVID.02 is none of "No", "Don't know / Not sure", "Refused".
+    - predicate: not (CDEM_01.outcome < 39 or SEX.outcome == 2)
+      hint: Asked only when CDEM.01 is 39 or more and the respondent is not female.
+    - predicate: not (CDEM_14.outcome in [88, 99])
+      hint: Asked only when question CDEM.14 is none of "None", "Refused".
+    items:
+    - id: MCAP_01
+      kind: Question
+      title: The next two questions are about the Xth child. [Fill in correct [Xth] number.] Has a doctor, nurse or other health professional EVER said that the child has asthma?
+      input:
+        control: Radio
+        labels:
+          1: 'Yes'
+          2: 'No'
+          7: Don't know/ not sure
+          9: Refused
+    - id: MCAP_02
+      kind: Question
+      title: Does the child still have asthma?
+      precondition:
+      - predicate: not (MCAP_01.outcome in [2, 7, 9])
+        hint: Asked only when question MCAP.01 is none of "No", "Don't know/ not sure", "Refused".
+      input:
+        control: Radio
+        labels:
+          1: 'Yes'
+          2: 'No'
+          7: Don't know/ not sure
+          9: Refused
+  - id: b_s56_asthma_callback
+    title: Asthma Call-Back Permission Script
+    precondition:
+    - predicate: not (LL01.outcome == 2)
+      hint: Asked only when question LL01. is not "No".
+    - predicate: not (LL02.outcome == 3)
+      hint: Asked only when question LL02. is not "No, this is a business".
+    - predicate: not (LL03.outcome == 2)
+      hint: Asked only when question LL03. is not "No".
+    - predicate: not (LL04.outcome == 2)
+      hint: Asked only when question LL04. is not "No".
+    - predicate: not (LL05.outcome == 1)
+      hint: Asked only when question LL05. is not "Yes, it is a cell phone".
+    - predicate: not (LL06.outcome == 2 and LL03.outcome == 1)
+      hint: Asked only when LL06. is not "No" while LL03. is "Yes".
+    - predicate: not (LL10.outcome in [7, 9])
+      hint: Asked only when question LL10 is none of "Don't know/Not sure", "Refused".
+    - predicate: not (CP01.outcome == 2)
+      hint: Asked only when question CP01. is not "No".
+    - predicate: not (CP02.outcome == 2)
+      hint: Asked only when question CP02. is not "No".
+    - predicate: not (CP03.outcome == 2)
+      hint: Asked only when question CP03. is not "No".
+    - predicate: not (CP04.outcome == 2)
+      hint: Asked only when question CP04. is not "No".
+    - predicate: not (CP06.outcome in [7, 9])
+      hint: Asked only when question CP06 is none of "Don't know/Not sure", "Refused".
+    - predicate: not (CP08.outcome == 2)
+      hint: Asked only when question CP08. is not "No".
+    - predicate: not (CP10.outcome in [77, 99])
+      hint: Asked only when question CP10. is none of "Live outside US and participating territories", "Refused".
+    - predicate: not (COVID_01.outcome in [2, 7, 9])
+      hint: Asked only when question COVID.01 is none of "No", "Don't know / Not sure", "Refused".
+    - predicate: not (COVID_02.outcome in [2, 7, 9])
+      hint: Asked only when question COVID.02 is none of "No", "Don't know / Not sure", "Refused".
+    - predicate: not (CDEM_01.outcome < 39 or SEX.outcome == 2)
+      hint: Asked only when CDEM.01 is 39 or older and sex is not 2.
+    items:
+    - id: CB01_01
+      kind: Question
+      title: Would it be okay if we called you back to ask additional asthma-related questions at a later time?
+      input:
+        control: Radio
+        labels:
+          1: 'Yes'
+          2: 'No'
+    - id: CB01_02
+      kind: Question
+      title: Which person in the household was selected as the focus of the asthma call-back?
+      input:
+        control: Radio
+        labels:
+          1: Adult
+          2: Child
+    - id: CB01_03
+      kind: Question
+      title: Can I please have either (your/your child’s) first name or initials, so we will know who to ask for when we call back? Enter first name or initials.
+      input:
+        control: Textarea
