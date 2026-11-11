@@ -21,6 +21,33 @@ severity (error/warning), machine type, human message, and suggestion:
 - A Textarea item's ``.outcome`` referenced in a precondition/postcondition or a
   codeBlock surfaces as a ``textarea_in_predicate`` ``warning`` naming the
   Textarea item and the referencing location; an unreferenced Textarea is silent.
+  A text leaf lowers on its own (#2241): a check that the text is not empty is
+  undecided, not infeasible or globally false, and a gate comparing the text
+  with a string is not unreachable; one comparing it with a number (a negative
+  one included), or ``in`` a list of numbers or an empty list, is decided
+  (unless a codeBlock stores into the Textarea); one comparison is one fact in
+  every condition, so two gates on it agree and ``== c or != c`` always holds;
+  and an infeasible check on a coded answer stays an error beside the text, in
+  its own condition or the same one.
+- A comparison with a string literal is decided as Python decides it (#2243):
+  a coded answer equals no string (``0 != ""`` holds, ``q.outcome == "1"`` on
+  code 1 gates an unreachable item, ``in [1, "x"]`` is ``in [1]``), a variable
+  assigned text compares by its text (``mode = "short"`` makes
+  ``mode == "long"`` NEVER), its numbers never meet a string however large,
+  and ``""`` is falsy; two reads of one answer are one value, also when a
+  store may put text into it; a value the model does not hold exactly (a
+  call's result, a name no code assigns, an unconstrained version, an answer
+  a store may put text into, what a codeBlock assigns after an undecided
+  test) is undecided, claims no guarantee and says so in one
+  ``inexact_condition`` warning (none beside a decided verdict, and D4 counts
+  only what is shown; a block's names every member's reads), also when the
+  string model cannot be read; a condition left out for a string, or whose
+  lowering fails, is a skipped condition; no finding prints a literal; the
+  findings are the same under every ``PYTHONHASHSEED``; and every
+  counterexample the soundness fuzzer found (a row store, an encoded variable
+  against a value that may hold text, an ordering of what may hold text, a
+  name that may be unbound) holds on every walk of the runtime; a compile
+  from the compile cache records the gaps a cold one does.
 - Language neutrality (#1973 R10, #2106 R5): an ``en`` questionnaire and its
   twin in every other supported locale (same ids, codes and conditions; every
   title and label translated; a missing twin fails) get identical Z3
@@ -28,6 +55,13 @@ severity (error/warning), machine type, human message, and suggestion:
   item text — a "none" Checkbox option and an inscription-style Comment are
   flagged in every language, and their negatives, the non-substantive
   "don't know" / "no answer" options among them, in none.
+- An "other" questionnaire language (#2200): with ``language`` outside the
+  supported locales the word-list lints do not run and one
+  ``language_not_judged`` warning names them (only when a Comment or a
+  Checkbox gives them something to read), the ``?`` arm of
+  ``comment_titled_as_question`` still flags, Z3 is unchanged, a supported
+  language or none keeps the word lists, a malformed language is refused, and
+  the publish gate passes the language on without changing ``ok``.
 - Three Demo-instrument authoring warnings (#559): a codeBlock statement that
   assigns something to itself, a postcondition admitting exactly one answer of
   a choice control, and a Checkbox "none of the above" option that can be
@@ -128,8 +162,10 @@ thesis/matrix fixtures, so they exercise the actual classification shapes the
 mapping consumes (not hand-built dicts) and lock the MCP issue contract.
 """
 
+import ast
 import copy
 import functools
+import re
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -147,7 +183,10 @@ from askalot_qml.core.validation_processor import (
     _none_unsafe_item_references,
 )
 from askalot_qml.models.qml_state import QMLState
-from askalot_qml.z3.static_builder import StaticBuilder
+from askalot_qml.z3.static_builder import StaticBuilder, _StringModel
+from z3 import Int
+
+from tests.helpers.soundness_fuzz import unsound
 
 FIXTURES_DIR = Path(__file__).parent.parent / "fixtures"
 
@@ -902,6 +941,100 @@ class TestPostconditionCoverageStatistics:
 
 
 @pytest.mark.integration
+class TestAnOtherLanguageIsNotJudgedByWordLists:
+    """#2200: a word list cannot read an "other" language, so it says so instead
+    of answering a clean verdict. Uses the English twin: its word-list positives
+    are what the lints would otherwise flag."""
+
+    @staticmethod
+    def _issues(language: str | None, filename: str = "language_neutral_en.qml"):
+        loader = QMLLoader(schema_path=None)
+        data = loader.load_from_path(str(FIXTURES_DIR / filename))
+        processor = ValidationProcessor(QMLState(data), language=language)
+        return processor, processor.to_issues(deep=True)
+
+    def test_the_word_lists_are_replaced_by_one_notice(self):
+        _, issues = self._issues("it")
+        kinds = [i["type"] for i in issues]
+        assert "combinable_none_option" not in kinds
+        assert "comment_titled_as_question" not in kinds
+        notices = [i for i in issues if i["type"] == "language_not_judged"]
+        assert len(notices) == 1
+        assert notices[0]["severity"] == "warning"
+        assert "Italian (it)" in notices[0]["message"]
+        assert "combinable_none_option" in notices[0]["message"]
+
+    @pytest.mark.parametrize("language", [None, "en", "de-AT"])
+    def test_a_supported_language_or_none_keeps_the_word_lists(self, language):
+        _, issues = self._issues(language)
+        kinds = [i["type"] for i in issues]
+        assert "language_not_judged" not in kinds
+        assert kinds.count("combinable_none_option") == 3
+        assert kinds.count("comment_titled_as_question") == 3
+
+    def test_z3_is_the_same_in_any_language(self):
+        other, _ = self._issues("pt-BR")
+        none, _ = self._issues(None)
+        assert other.get_item_classifications() == none.get_item_classifications()
+
+    def test_a_question_mark_in_a_comment_is_still_flagged(self):
+        data = QMLLoader(schema_path=None).load_from_string(
+            """
+questionnaire:
+  title: "Indagine"
+  blocks:
+    - id: b
+      items:
+        - id: c_nome
+          kind: Comment
+          title: "Come si chiama? (Cognome, Nome)"
+        - id: c_scriva
+          kind: Comment
+          title: "Scriva il suo nome qui sotto."
+"""
+        )
+        issues = ValidationProcessor(QMLState(data), language="it").to_issues()
+        assert {i["item_id"] for i in issues if i["type"] == "comment_titled_as_question"} == {"c_nome"}
+
+    def test_no_notice_when_nothing_would_have_been_read(self):
+        """A questionnaire with no Comment and no Checkbox gives the word lists nothing to read."""
+        data = QMLLoader(schema_path=None).load_from_string(
+            """
+questionnaire:
+  title: "Indagine"
+  blocks:
+    - id: b
+      items:
+        - id: q_eta
+          kind: Question
+          title: "Quanti anni ha?"
+          input:
+            control: Editbox
+            min: 18
+            max: 99
+"""
+        )
+        issues = ValidationProcessor(QMLState(data), language="it").to_issues()
+        assert "language_not_judged" not in [i["type"] for i in issues]
+
+    def test_a_malformed_language_is_refused(self):
+        loader = QMLLoader(schema_path=None)
+        data = loader.load_from_path(str(FIXTURES_DIR / "language_neutral_en.qml"))
+        with pytest.raises(ValueError, match="BCP-47"):
+            ValidationProcessor(QMLState(data), language="english")
+
+    def test_the_publish_gate_passes_the_language_on_without_changing_ok(self):
+        from askalot_qml.core.publish_gate import ISSUE_TYPE_LABELS, evaluate_publish_gate_content
+
+        content = (FIXTURES_DIR / "language_neutral_en.qml").read_text(encoding="utf-8")
+        plain = evaluate_publish_gate_content(content)
+        other = evaluate_publish_gate_content(content, language="it")
+        assert other.ok == plain.ok
+        assert [i["type"] for i in other.issues].count("language_not_judged") == 1
+        assert "language_not_judged" in ISSUE_TYPE_LABELS
+
+
+@pytest.mark.integration
 class TestLanguageNeutralVerdicts:
     """#1973 R10 / #2106 R5: a questionnaire's language never changes a verdict.
 
@@ -1316,10 +1449,13 @@ class TestTextareaInPredicateLint:
     """A Textarea outcome referenced in a predicate/codeBlock surfaces as a
     ``textarea_in_predicate`` WARNING.
 
-    A Textarea has a string outcome with no Z3 integer variable; ``.outcome`` in
-    a predicate lowers to a sentinel, so the constraint is statically wrong.
-    WARNING (not error) so stored files that already do this still save. Built
-    from inline states — no parity fixture uses a Textarea outcome in logic.
+    A Textarea has a string outcome with no Z3 integer variable. A leaf
+    comparing the text with a literal lowers on its own (#2241): a free Bool,
+    so a verdict resting on it alone is undecided, or False / True where no
+    text equals the literal (a number); the rest of the condition still
+    lowers, so a contradiction on a coded answer is still an error. WARNING
+    (not error) so stored files that already do this still save. Built from
+    inline states — no parity fixture uses a Textarea outcome in logic.
     """
 
     def _state(self, gate: dict[str, Any]) -> QMLState:
@@ -1383,6 +1519,1048 @@ class TestTextareaInPredicateLint:
         assert issue["severity"] == "warning"
         assert issue["item_id"] == "q_follow"
         assert "codeBlock" in issue["message"]
+
+    def test_a_check_on_the_textareas_own_text_is_undecided_not_an_error(self):
+        """``q_comment.outcome != ""`` on the Textarea itself ("please type in an
+        answer", #2241) is satisfiable by any text: the model holds no text, so
+        the check is undecided, CONSTRAINING (the warning says so), never
+        infeasible nor globally false."""
+        state = self._state({})
+        state.get_item("q_comment")["postcondition"] = [{"predicate": 'q_comment.outcome != ""'}]
+        processor = ValidationProcessor(state)
+        issues = processor.to_issues()
+
+        assert [i for i in issues if i["severity"] == "error"] == [], issues
+        textarea = [i for i in issues if i["type"] == "textarea_in_predicate"]
+        assert [(i["item_id"], i["severity"]) for i in textarea] == [("q_comment", "warning")]
+        assert processor.get_item_classifications()["q_comment"]["postcondition"] == {
+            "invariant": "CONSTRAINING",
+            "vacuous": False,
+            "global": {"q_globally_true": False, "q_globally_false": False},
+        }
+
+    def test_a_gate_on_textarea_text_is_not_proven_unreachable(self):
+        """A precondition comparing the text to a literal holds for that text, so
+        the item it gates is not proven unreachable (#2241)."""
+        state = self._state({"precondition": [{"predicate": 'q_comment.outcome == "yes"'}]})
+        issues = ValidationProcessor(state).to_issues()
+
+        assert [i for i in issues if i["severity"] == "error"] == [], issues
+        assert [i["type"] for i in issues if i["item_id"] == "q_follow"] == ["textarea_in_predicate"]
+
+    def test_a_contradiction_beside_a_textarea_is_still_an_error(self):
+        """An infeasible check on a coded answer stays an error in a questionnaire
+        that also reads free text: only the text is left undecided."""
+        state = self._state({"postcondition": [{"predicate": "q_follow.outcome == 3"}]})
+        state.get_item("q_comment")["postcondition"] = [{"predicate": 'q_comment.outcome != ""'}]
+        issues = ValidationProcessor(state).to_issues()
+
+        errors = {(i["item_id"], i["type"]) for i in issues if i["severity"] == "error"}
+        # No completion satisfies q_follow's check, so Level 2 says so too.
+        assert errors == {
+            ("q_follow", "infeasible_postcondition"),
+            ("q_follow", "globally_false_postcondition"),
+            (None, "global_unsat"),
+        }
+
+    def test_a_coded_contradiction_beside_a_text_read_in_one_check_is_an_error(self):
+        """``q_follow.outcome == 3 and q_comment.outcome != ""``: whatever the text,
+        no answer to q_follow (1 or 2) is 3, so the check is infeasible. The
+        text leaf lowers on its own, so it does not hide the contradiction."""
+        state = self._state(
+            {"postcondition": [{"predicate": 'q_follow.outcome == 3 and q_comment.outcome != ""'}]}
+        )
+        issues = ValidationProcessor(state).to_issues()
+
+        errors = {(i["item_id"], i["type"]) for i in issues if i["severity"] == "error"}
+        assert errors == {
+            ("q_follow", "infeasible_postcondition"),
+            ("q_follow", "globally_false_postcondition"),
+            (None, "global_unsat"),
+        }
+        assert [i["type"] for i in issues if i["severity"] == "warning"] == ["textarea_in_predicate"]
+
+    def test_a_gate_comparing_the_text_with_a_number_is_unreachable(self):
+        """A Textarea answer is a string and a skipped one None; neither equals
+        1, so ``q_comment.outcome == 1`` is never True and the item it gates is
+        unreachable, as the runtime makes it."""
+        state = self._state({"precondition": [{"predicate": "q_comment.outcome == 1"}]})
+        issues = ValidationProcessor(state).to_issues()
+
+        errors = [(i["item_id"], i["type"]) for i in issues if i["severity"] == "error"]
+        assert errors == [("q_follow", "unreachable_item")]
+
+    def test_a_number_a_codeblock_stores_in_the_textarea_keeps_the_gate_reachable(self):
+        """A codeBlock may store a number in a Textarea's outcome, so there the
+        comparison with a number is not decided and the gate is not refused."""
+        state = self._state({"precondition": [{"predicate": "q_comment.outcome == 1"}]})
+        state.get_item("q_comment")["codeBlock"] = "q_comment.outcome = 1"
+        issues = ValidationProcessor(state).to_issues()
+
+        assert [i for i in issues if i["severity"] == "error"] == [], issues
+
+    @staticmethod
+    def _items(*items: dict[str, Any]) -> QMLState:
+        """A one-block questionnaire of ``items`` (each ``{"id", "input", ...}``)."""
+        return QMLState(
+            {
+                "title": "textarea-lint",
+                "blocks": [{"id": "b1", "kind": "Group", "title": "B"}],
+                "items": [{"blockId": "b1", "kind": "Question", "title": i["id"], **i} for i in items],
+            }
+        )
+
+    def _own_check(self, predicate: str) -> str:
+        """The invariant of ``predicate`` as the Textarea's own postcondition:
+        its own item is no unknown there, so the text leaf alone decides."""
+        state = self._items({"id": "t", "input": {"control": "Textarea"}, "postcondition": [{"predicate": predicate}]})
+        return ValidationProcessor(state).get_item_classifications()["t"]["postcondition"]["invariant"]
+
+    def test_one_comparison_in_two_gates_is_one_fact(self):
+        """``y`` and ``x`` are both asked when ``t.outcome == "yes"``, so ``x``'s
+        check on ``y``'s answer reads an item asked wherever ``x`` is: no
+        ``none_unsafe_reference``. The two gates share one Bool for the text."""
+        gate = [{"predicate": 't.outcome == "yes"'}]
+        number = {"control": "Editbox", "min": 0, "max": 10}
+        state = self._items(
+            {"id": "t", "input": {"control": "Textarea"}},
+            {"id": "y", "input": number, "precondition": gate},
+            {"id": "x", "input": number, "precondition": gate, "postcondition": [{"predicate": "x.outcome <= y.outcome"}]},
+        )
+        issues = ValidationProcessor(state).to_issues()
+
+        assert [i["type"] for i in issues if i["type"] != "textarea_in_predicate"] == [], issues
+
+    def test_a_comparison_or_its_negation_always_holds(self):
+        """``!=`` is the negation of the ``==`` of the same literal, so either
+        one holds for every text: the check is tautological."""
+        assert self._own_check('t.outcome == "a" or t.outcome != "a"') == "TAUTOLOGICAL"
+
+    def test_a_negative_number_is_a_number(self):
+        """``-1`` folds to a literal, so no text equals it: the coded
+        contradiction beside it is still infeasible, and a gate on ``== -1``
+        or ``in [-1, 99]`` is never true."""
+        state = self._state({"postcondition": [{"predicate": "q_follow.outcome == 3 and q_comment.outcome != -1"}]})
+        errors = {(i["item_id"], i["type"]) for i in ValidationProcessor(state).to_issues() if i["severity"] == "error"}
+        assert ("q_follow", "infeasible_postcondition") in errors
+
+        assert self._own_check("t.outcome == -1") == "INFEASIBLE"
+        assert self._own_check("t.outcome not in [-1, 99]") == "TAUTOLOGICAL"
+
+    def test_membership_in_numbers_only_is_decided(self):
+        """No text is in ``[1, 2]``: ``in`` is never true (its gate unreachable)
+        and ``not in`` always is."""
+        assert self._own_check("t.outcome in [1, 2]") == "INFEASIBLE"
+        assert self._own_check("t.outcome not in [1, 2]") == "TAUTOLOGICAL"
+        state = self._state({"precondition": [{"predicate": "q_comment.outcome in [1, 2]"}]})
+        errors = [(i["item_id"], i["type"]) for i in ValidationProcessor(state).to_issues() if i["severity"] == "error"]
+        assert errors == [("q_follow", "unreachable_item")]
+
+    def test_membership_in_a_list_holding_a_string_is_undecided(self):
+        """A text may be ``"a"``, so a list holding it decides nothing, its
+        numbers dropped or not."""
+        assert self._own_check('t.outcome in ["a", 1]') == "CONSTRAINING"
+        assert self._own_check('t.outcome not in ["a", "b"]') == "CONSTRAINING"
+
+    def test_membership_in_an_empty_list_is_decided(self):
+        """Nothing is in ``[]``."""
+        assert self._own_check("t.outcome in []") == "INFEASIBLE"
+        assert self._own_check("t.outcome not in []") == "TAUTOLOGICAL"
+
+
+@pytest.mark.integration
+class TestStringLiteralComparison:
+    """A comparison with a string literal is decided as Python decides it.
+
+    A coded answer equals no string; a variable that may hold text keeps
+    numbers and strings apart in its value, so two strings are equal exactly
+    when their text is, a number never equals a string however large, the
+    empty string is the one falsy string, and no verdict depends on
+    ``hash()``. A value the model does not
+    hold exactly (a call's result, a name no code assigns, an unconstrained
+    version, an answer a codeBlock may store text into) leaves what a
+    condition decides about it undecided, and says so.
+    """
+
+    @staticmethod
+    def _qml(
+        control: dict[str, Any], predicate: str, code: str | None = None, init: str | None = None
+    ) -> dict[str, Any]:
+        """Item ``q`` (``control``, optionally a codeBlock) and item ``g`` gated
+        on ``predicate``, optionally after a codeInit."""
+        q: dict[str, Any] = {"id": "q", "blockId": "b1", "kind": "Question", "title": "q", "input": control}
+        if code is not None:
+            q["codeBlock"] = code
+        gated = {
+            "id": "g",
+            "blockId": "b1",
+            "kind": "Question",
+            "title": "g",
+            "input": {"control": "Editbox", "min": 0, "max": 9},
+            "precondition": [{"predicate": predicate}],
+        }
+        doc: dict[str, Any] = {
+            "title": "string-literals",
+            "blocks": [{"id": "b1", "kind": "Group", "title": "B"}],
+            "items": [q, gated],
+        }
+        if init is not None:
+            doc["codeInit"] = init
+        return doc
+
+    def _issues(self, control: dict[str, Any], predicate: str, code: str | None = None, init: str | None = None):
+        processor = ValidationProcessor(QMLState(self._qml(control, predicate, code, init)))
+        return processor, processor.to_issues()
+
+    def _gate(
+        self, control: dict[str, Any], predicate: str, code: str | None = None, init: str | None = None
+    ) -> tuple[str, list[str]]:
+        """``g``'s reachability and the types of its error findings."""
+        processor, issues = self._issues(control, predicate, code, init)
+        errors = [i["type"] for i in issues if i["severity"] == "error" and i["item_id"] == "g"]
+        return processor.get_item_classifications()["g"]["precondition"]["status"], errors
+
+    def _findings(self, control: dict[str, Any], predicate: str, code: str | None = None, init: str | None = None):
+        """The types of ``g``'s findings."""
+        return [i["type"] for i in self._issues(control, predicate, code, init)[1] if i["item_id"] == "g"]
+
+    @staticmethod
+    def _radio(*codes: int) -> dict[str, Any]:
+        return {"control": "Radio", "labels": {code: f"Option {code}" for code in codes}}
+
+    def test_an_empty_string_does_not_equal_an_answer_of_zero(self):
+        """``0 != ""`` is True, so a gate asking for an answer of 0 that is not
+        the empty string is reachable."""
+        status, errors = self._gate({"control": "Editbox", "min": 0, "max": 0}, 'q.outcome != "" and q.outcome == 0')
+
+        assert errors == []
+        assert status == "CONDITIONAL"
+
+    def test_a_coded_answer_never_equals_a_string(self):
+        """``1 == "1"`` is False, so ``q.outcome == "1"`` gates an unreachable
+        item whatever the codes, a code equal to the text's hash in this
+        process included."""
+        alias = hash("1") % 1000000
+        for control in (self._radio(1, 2), self._radio(1, 2, alias)):
+            assert self._gate(control, 'q.outcome == "1"') == ("NEVER", ["unreachable_item"]), control
+            assert self._gate(control, '"1" == q.outcome') == ("NEVER", ["unreachable_item"]), control
+
+    @pytest.mark.parametrize(
+        ("predicate", "expected"),
+        [
+            ('q.outcome in [3, "x"]', ("NEVER", ["unreachable_item"])),
+            ('q.outcome in [1, "x"] and q.outcome != 1', ("NEVER", ["unreachable_item"])),
+            ('q.outcome not in [1, 2, "x"]', ("CONDITIONAL", [])),
+            ('q.outcome not in [1, "x"] and q.outcome != 2', ("CONDITIONAL", [])),
+        ],
+    )
+    def test_membership_drops_the_strings_of_its_list(self, predicate, expected):
+        """``q.outcome in [k, "x"]`` is ``q.outcome in [k]``: no answer is
+        ``"x"``, so only the numbers decide, also when an answer's code equals
+        the hash of ``"x"`` in this process."""
+        control = self._radio(1, 2, hash("x") % 1000000)
+
+        assert self._gate(control, predicate) == expected
+        assert self._gate(control, predicate.replace(', "x"', "")) == expected
+
+    def test_membership_in_strings_only_is_decided(self):
+        """With every member a string, ``in`` is never true, whatever the
+        answers' codes."""
+        control = self._radio(1, 2, hash("a") % 1000000)
+        assert self._gate(control, 'q.outcome in ["a", "b"]') == ("NEVER", ["unreachable_item"])
+
+    @pytest.mark.parametrize(
+        ("init", "predicate", "status"),
+        [
+            ('mode = "short"', 'mode == "long"', "NEVER"),
+            ('mode = "short"', 'mode == "short"', "ALWAYS"),
+            ('mode = "short"', 'mode != "long"', "ALWAYS"),
+            ('mode = "short"', 'mode in ["long", 1]', "NEVER"),
+            ('mode = "short" if True else 1', "mode == 1", "NEVER"),
+            ('mode = "short" if True else 1', 'mode == 1 or mode == "short"', "ALWAYS"),
+        ],
+    )
+    def test_a_variable_holding_text_compares_by_its_text(self, init, predicate, status):
+        """A variable assigned only literals (or coded answers) compares
+        exactly: two strings are equal when their text is, and a string never
+        equals a number. A gate on such a codeInit value is decided, and the
+        frozen-variable lint says so too."""
+        processor, issues = self._issues(self._radio(1, 2), predicate, init=init)
+
+        assert processor.get_item_classifications()["g"]["precondition"]["status"] == status
+        assert ("codeInit", "frozen_variable") in [(i["item_id"], i["type"]) for i in issues]
+        assert "inexact_condition" not in [i["type"] for i in issues]
+
+    @pytest.mark.parametrize(
+        ("init", "predicate", "status"),
+        [
+            ('label = ""', "not label", "ALWAYS"),
+            ('label = ""', "label", "NEVER"),
+            ('label = "x"', "label", "ALWAYS"),
+            ('label = "x"', "not label", "NEVER"),
+        ],
+    )
+    def test_the_empty_string_is_the_one_falsy_string(self, init, predicate, status):
+        """``bool("")`` is False and ``bool("x")`` True."""
+        assert self._gate(self._radio(1, 2), predicate, init=init)[0] == status
+
+    @pytest.mark.parametrize(
+        ("predicate", "code", "named"),
+        [
+            ('v == "zebra"', "v = str(q.outcome)", "v"),
+            ('v in [1, "zebra"]', "v = str(q.outcome)", "v"),
+            ('q.outcome == "zebra"', 'q.outcome = "zebra"', "q"),
+            ('any(x == 5 for x in range(2)) or x == "zebra"', None, "x"),
+        ],
+    )
+    def test_an_undecided_comparison_is_a_visible_warning(self, predicate, code, named):
+        """A value the model does not hold exactly leaves the comparison
+        undecided: one warning on the condition, naming its owner, the value
+        and the condition kind, never the literal."""
+        _, issues = self._issues(self._radio(1, 2), predicate, code)
+        inexact = [i for i in issues if i["type"] == "inexact_condition"]
+
+        assert [i["item_id"] for i in inexact] == ["g"], issues
+        message = inexact[0]["message"]
+        assert f"'{named}'" in message and "precondition" in message and "'g'" in message
+        assert "zebra" not in message + inexact[0]["suggestion"]
+
+    def test_an_undecided_comparison_beside_never_raises_no_warning(self):
+        """Beside NEVER nothing is withheld: the error speaks."""
+        assert self._findings(self._radio(1, 2), 'v == "zebra" and q.outcome == 7', "v = str(q.outcome)") == [
+            "unreachable_item"
+        ]
+
+    @pytest.mark.parametrize(
+        ("control", "predicate"),
+        [
+            ({"control": "Editbox", "min": 0, "max": 9}, 'q.outcome != ""'),
+            ({"control": "Radio", "labels": {1: "Yes", 2: "No"}}, 'q.outcome == "1"'),
+            ({"control": "Radio", "labels": {1: "Yes", 2: "No"}}, 'q.outcome in [1, "x"]'),
+            ({"control": "Radio", "labels": {1: "Yes", 2: "No"}}, '1 == "1" or q.outcome == 1'),
+        ],
+    )
+    def test_a_decided_comparison_raises_no_warning(self, control, predicate):
+        """A coded answer or a literal compared with a string is decided, so
+        nothing is withheld and nothing is said."""
+        assert "inexact_condition" not in self._findings(control, predicate)
+
+    @pytest.mark.parametrize(
+        ("predicate", "expected"),
+        [
+            ('0 < q.outcome == "x"', ("NEVER", ["unreachable_item"])),
+            ('1 < q.outcome != "x"', ("CONDITIONAL", [])),
+        ],
+    )
+    def test_a_chain_holding_text_is_read_pair_by_pair(self, predicate, expected):
+        """``0 < q.outcome == "x"`` is ``0 < q.outcome and q.outcome == "x"``:
+        a coded answer is never ``"x"``, so the gate is decided as Python
+        decides it."""
+        assert self._gate(self._radio(1, 2), predicate) == expected
+
+    @pytest.mark.parametrize(
+        ("predicate", "init"),
+        [
+            ('q.outcome < "x"', None),
+            ('0 < mode == "short"', 'mode = "short"'),
+            ('0 < q.outcome in ["a", None]', None),
+            ('q.outcome in ["a", None]', None),
+            ('q.outcome in "abc"', None),
+            ("mode < 3", 'mode = "short"'),
+            ("mode + 1 == 3", 'mode = "short"'),
+        ],
+    )
+    def test_a_condition_left_out_for_a_string_is_reported(self, predicate, init):
+        """An ordering with text (it raises against a number), also as one
+        pair of a chain, a list member the model holds no value for
+        (``None``), ``in`` a string and arithmetic on text do not lower, and
+        each is a skipped condition, never a silent one."""
+        processor, issues = self._issues(self._radio(1, 2), predicate, init=init)
+
+        assert [i["type"] for i in issues if i["item_id"] == "g"] == ["skipped_condition"], issues
+        assert processor.get_item_classifications()["g"]["precondition"]["status"] == "CONDITIONAL"
+
+    @pytest.mark.parametrize(
+        ("predicate", "code"),
+        [
+            ('q.outcome["walrusnote"] == "zebra"', None),
+            ('q.outcome["walrusnote"] == "zebra"', "q.outcome = 1"),
+            ('v == "zebra"', "v = str(q.outcome)"),
+            ('q.outcome < "zebra"', None),
+        ],
+    )
+    def test_no_finding_prints_a_literal(self, predicate, code):
+        """A finding names items, variables and condition kinds; the text of a
+        literal is the author's data and never appears."""
+        _, issues = self._issues(self._radio(1, 2), predicate, code)
+
+        assert issues
+        for issue in issues:
+            text = issue["message"] + (issue["suggestion"] or "")
+            assert "zebra" not in text and "walrusnote" not in text, issue
+
+    @pytest.mark.parametrize(
+        "labels",
+        [{1: "①", 2: "②"}, {1: "One", "--5": "Minus", "²": "Square"}],
+    )
+    def test_label_text_that_is_no_ascii_number_reads_as_text(self, labels):
+        """A label key or text that only looks numeric (circled digits, a
+        superscript, a doubled sign) is no number: the comparison with text is
+        still decided."""
+        assert self._gate({"control": "Radio", "labels": labels}, 'q.outcome == "x"') == (
+            "NEVER",
+            ["unreachable_item"],
+        )
+
+    def test_a_string_model_that_cannot_be_read_leaves_text_comparisons_visible(self):
+        """When reading the questionnaire's strings fails, every comparison
+        with text is undecided and said so, never dropped silently."""
+        with patch.object(_StringModel, "_profile", side_effect=RuntimeError("unreadable")):
+            processor, issues = self._issues(self._radio(1, 2), 'q.outcome == "x"')
+
+        assert processor.get_item_classifications()["g"]["precondition"]["status"] != "NEVER"
+        assert "inexact_condition" in [i["type"] for i in issues if i["item_id"] == "g"]
+
+    @pytest.mark.parametrize(
+        ("code", "predicate"),
+        [
+            ('q.outcome = ""', "not q.outcome"),
+            ('q.outcome = "x"', "q.outcome != 1 and q.outcome != 2"),
+            ('q.outcome = "x"', "q.outcome == 7"),
+        ],
+    )
+    def test_text_stored_into_an_answer_frees_every_read_of_it(self, code, predicate):
+        """Once a codeBlock may store text into a coded answer, the answer's
+        domain no longer bounds it: a number comparison or truth test on it is
+        not proven from the domain, and the condition says so."""
+        processor, issues = self._issues(self._radio(1, 2), predicate, code)
+
+        assert processor.get_item_classifications()["g"]["precondition"]["status"] == "CONDITIONAL"
+        assert [i["type"] for i in issues if i["item_id"] == "g"] == ["inexact_condition"], issues
+
+    @pytest.mark.parametrize("predicate", ["a == b and q.outcome == 7", "a in [b, 3] and q.outcome == 7"])
+    def test_text_and_arithmetic_in_one_variable_compare_exactly(self, predicate):
+        """A variable holding text on one path and arithmetic on another
+        compares exactly with another that holds text: its number and a
+        string never share a value, so the contradiction beside it stands."""
+        assert self._gate(self._radio(1, 2), predicate, "a = q.outcome + 1", init='a = "x"\nb = "y"') == (
+            "NEVER",
+            ["unreachable_item"],
+        )
+
+    @staticmethod
+    def _items(*specs: dict[str, Any], init: str | None = None) -> QMLState:
+        """A one-block questionnaire of ``specs`` (each ``{"id", "input", ...}``)."""
+        return QMLState(TestStringLiteralComparison._doc(*specs, init=init))
+
+    @staticmethod
+    def _doc(*specs: dict[str, Any], init: str | None = None) -> dict[str, Any]:
+        """The document ``_items`` wraps."""
+        doc: dict[str, Any] = {
+            "title": "string-literals",
+            "blocks": [{"id": "b1", "kind": "Group", "title": "B"}],
+            "items": [{"blockId": "b1", "kind": "Question", "title": s["id"], **s} for s in specs],
+        }
+        if init is not None:
+            doc["codeInit"] = init
+        return doc
+
+    def _judged(self, *specs: dict[str, Any], init: str | None = None) -> tuple[dict[str, Any], list[str]]:
+        """``g``'s classification entry and finding types, after checking the
+        questionnaire against every walk of the runtime (``unsound``)."""
+        doc = self._doc(*specs, init=init)
+        assert unsound(copy.deepcopy(doc)) == []
+        processor = ValidationProcessor(QMLState(doc))
+        findings = [i["type"] for i in processor.to_issues() if i["item_id"] == "g"]
+        return processor.get_item_classifications()["g"], findings
+
+    def test_a_large_number_never_meets_a_string(self):
+        """``mode`` holds text from codeInit and a number from an answer with
+        no lower bound; ``r.outcome * 1000`` reaches any multiple of 1000 down
+        to -9000. A number in ``mode`` equal to it is a real walk, so the gate
+        is reachable: text and numbers are told apart, not cut by a bound."""
+        state = self._items(
+            {"id": "q", "input": {"control": "Editbox", "max": 10}, "codeBlock": "mode = q.outcome"},
+            {"id": "r", "input": {"control": "Editbox", "min": -9, "max": 9}},
+            {
+                "id": "g",
+                "input": self._radio(1, 2),
+                "precondition": [{"predicate": "mode == r.outcome * 1000 and r.outcome < -2"}],
+            },
+            init='mode = "a"',
+        )
+        processor = ValidationProcessor(state)
+
+        assert processor.get_item_classifications()["g"]["precondition"]["status"] == "CONDITIONAL"
+        assert [i for i in processor.to_issues() if i["severity"] == "error"] == []
+
+    @pytest.mark.parametrize("store", ['q.outcome = "x"', "x = q\nx.outcome = 1"])
+    def test_one_answer_is_one_value_in_a_condition(self, store):
+        """Two reads of one answer are one term, also when a store may put
+        text into it (or any item, through an alias), so a contradiction on it
+        still stands. (An ordering on an answer that may hold text raises in
+        Python, so it is refused rather than compared.)"""
+        state = self._items(
+            {"id": "q", "input": {"control": "Editbox", "min": 0, "max": 9}},
+            {"id": "p", "input": self._radio(1, 2), "codeBlock": store},
+            {"id": "g", "input": self._radio(1, 2), "precondition": [{"predicate": "q.outcome == 5 and q.outcome == 3"}]},
+        )
+        errors = [(i["item_id"], i["type"]) for i in ValidationProcessor(state).to_issues() if i["severity"] == "error"]
+
+        assert ("g", "unreachable_item") in errors
+
+    def test_a_number_stored_through_an_alias_keeps_the_answers_domain(self):
+        """``x.outcome = 1`` may write any item, but only a number: every
+        answer stays bound by its domain, so no answer to ``q`` exceeds 9."""
+        state = self._items(
+            {"id": "q", "input": {"control": "Editbox", "min": 0, "max": 9}},
+            {"id": "p", "input": self._radio(1, 2), "codeBlock": "x = q\nx.outcome = 1"},
+            {"id": "g", "input": self._radio(1, 2), "precondition": [{"predicate": "q.outcome > 9"}]},
+        )
+
+        assert ValidationProcessor(state).get_item_classifications()["g"]["precondition"]["status"] == "NEVER"
+
+    def test_an_answer_text_may_be_stored_into_reads_alike_in_code_and_conditions(self):
+        """``x`` is assigned exactly when ``q.outcome == 1``, and ``g`` asks for
+        both: the codeBlock's read and the gate's read of ``q`` are one value,
+        so the read of ``x`` is never uninitialized."""
+        state = self._items(
+            {"id": "q", "input": self._radio(1, 2)},
+            {"id": "p", "input": self._radio(1, 2), "codeBlock": 'q.outcome = "x"'},
+            {"id": "a", "input": self._radio(1, 2), "codeBlock": "if q.outcome == 1:\n    x = 1"},
+            {"id": "g", "input": self._radio(1, 2), "precondition": [{"predicate": "q.outcome == 1 and x == 1"}]},
+        )
+
+        assert "uninitialized_read" not in [i["type"] for i in ValidationProcessor(state).to_issues()]
+
+    def test_a_string_model_that_cannot_be_read_still_lowers_text_assignments(self):
+        """The degraded model takes ``mode = "short"`` without failing, and the
+        gate on it is undecided and said so."""
+        with patch.object(_StringModel, "_profile", side_effect=RuntimeError("unreadable")):
+            processor, issues = self._issues(self._radio(1, 2), 'mode == "short"', init='mode = "short"')
+
+        assert processor.get_item_classifications()["g"]["precondition"]["status"] == "CONDITIONAL"
+        assert "inexact_condition" in [i["type"] for i in issues if i["item_id"] == "g"]
+
+    def test_a_fault_while_lowering_a_condition_is_reported(self):
+        """A condition whose lowering fails is a skipped condition, never one
+        that is dropped silently."""
+        with patch.object(StaticBuilder, "_lower_string_compare", side_effect=RuntimeError("fault")):
+            _, issues = self._issues(self._radio(1, 2), 'q.outcome == "x"')
+
+        assert "skipped_condition" in [i["type"] for i in issues if i["item_id"] == "g"]
+
+    def test_an_undecided_gate_claims_no_guarantee(self):
+        """``v`` is ``"yes"`` exactly when ``z.outcome == 1`` (else a call's text),
+        so ``g`` is asked only when ``y`` is; the model holds the call's text as
+        anything, so it cannot prove ``y`` asked and says so as an undecided
+        read, never as a ``none_unsafe_reference`` on ``y``."""
+        state = self._items(
+            {"id": "z", "input": self._radio(1, 2), "codeBlock": 'v = "yes" if z.outcome == 1 else str(z.outcome)'},
+            {
+                "id": "y",
+                "input": {"control": "Editbox", "min": 0, "max": 9},
+                "precondition": [{"predicate": "z.outcome == 1"}],
+            },
+            {"id": "g", "input": self._radio(1, 2), "precondition": [{"predicate": 'v == "yes" and y.outcome > 3'}]},
+        )
+        types = [(i["item_id"], i["type"]) for i in ValidationProcessor(state).to_issues()]
+
+        assert ("g", "none_unsafe_reference") not in types, types
+        assert ("g", "inexact_condition") in types
+
+    @pytest.mark.parametrize("value", ["str(q.outcome)", "foo()"])
+    def test_a_variable_a_block_assigns_after_an_undecided_test_is_undecided(self, value):
+        """``flag`` depends on a comparison with text the codeBlock cannot
+        decide: the gate on ``flag`` says so."""
+        state = self._items(
+            {
+                "id": "q",
+                "input": self._radio(1, 2),
+                "codeBlock": f'mode = {value}\nif mode == "a":\n    flag = 1\nelse:\n    flag = 0',
+            },
+            {"id": "g", "input": self._radio(1, 2), "precondition": [{"predicate": "flag == 1"}]},
+        )
+
+        assert "inexact_condition" in [i["type"] for i in ValidationProcessor(state).to_issues() if i["item_id"] == "g"]
+
+    def test_verification_coverage_counts_only_what_the_report_shows(self):
+        """An undecided read beside NEVER withholds nothing and is not shown,
+        so it does not lower verification coverage either."""
+        processor, issues = self._issues(self._radio(1, 2), 'v == "zebra" and q.outcome == 7', "v = str(q.outcome)")
+        d4 = processor.get_quality_report()["dimensions"]["verification_coverage"]
+
+        assert "inexact_condition" not in [i["type"] for i in issues]
+        assert d4["metrics"]["degraded_predicates"] == 0, d4
+
+    def test_a_comparison_with_an_unconstrained_version_is_said_to_be_undecided(self):
+        """``x = mode or "b"`` gives ``x`` no value in the model, though it
+        holds only text: the comparison through it is undecided and said so."""
+        _, issues = self._issues(self._radio(1, 2), 'x == "b"', init='mode = ""\nx = mode or "b"')
+
+        assert "inexact_condition" in [i["type"] for i in issues if i["item_id"] == "g"]
+
+    def test_a_name_no_code_assigns_holds_anything(self):
+        """``lang = other`` (``other`` assigned nowhere) may hold any text, so
+        ``lang == "en"`` is undecided and said so, never NEVER."""
+        processor, issues = self._issues(self._radio(1, 2), 'lang == "en"', "lang = other")
+
+        assert processor.get_item_classifications()["g"]["precondition"]["status"] == "CONDITIONAL"
+        assert [(i["type"], i["severity"]) for i in issues if i["item_id"] == "g"] == [("inexact_condition", "warning")]
+
+    def test_a_block_finding_names_every_members_reads(self):
+        """A block condition is reported once, naming the union of its members'
+        reads: a member whose own read is answered there cannot hide the read
+        another member finds wide."""
+        radio = self._radio(1, 2)
+        doc = {
+            "title": "string-literals",
+            "blocks": [
+                {"id": "b0", "kind": "Group", "title": "A"},
+                {
+                    "id": "blk",
+                    "kind": "Group",
+                    "title": "B",
+                    "precondition": [{"predicate": 'v == "zebra" or abs(m1.outcome) > 0'}],
+                },
+            ],
+            "items": [
+                {"id": "z", "blockId": "b0", "kind": "Question", "title": "z", "input": radio, "codeBlock": "v = str(z.outcome)"},
+                {
+                    "id": "m1",
+                    "blockId": "blk",
+                    "kind": "Question",
+                    "title": "m1",
+                    "input": radio,
+                    "precondition": [{"predicate": "z.outcome == 1"}],
+                },
+                {"id": "m2", "blockId": "blk", "kind": "Question", "title": "m2", "input": radio},
+            ],
+        }
+        inexact = [i for i in ValidationProcessor(QMLState(doc)).to_issues() if i["type"] == "inexact_condition"]
+
+        assert [i["item_id"] for i in inexact] == ["blk"], inexact
+        assert "'m1', which may be unanswered" in inexact[0]["message"]
+        assert "reads 'v'" in inexact[0]["message"]
+
+    @staticmethod
+    def _matrix(code: str) -> dict[str, Any]:
+        """A 2x1 Radio matrix ``m`` (codes 1, 2) with ``code`` as its codeBlock."""
+        return {
+            "id": "m",
+            "kind": "MatrixQuestion",
+            "rows": ["r1", "r2"],
+            "columns": ["c1"],
+            "input": {"control": "Radio", "labels": {1: "a", 2: "b"}},
+            "codeBlock": code,
+        }
+
+    @pytest.mark.parametrize("stored", ['"x"', "None"])
+    def test_each_matrix_cell_a_store_reaches_is_its_own_value(self, stored):
+        """A store into one cell frees that cell only: two cells are two
+        values (``m.outcome[0][0] == 1 and m.outcome[1][0] == 2`` is
+        reachable), and a cell no store reaches keeps its domain (``== 7`` is
+        NEVER). Storing ``None`` frees nothing and leaves no warning."""
+        both = self._items(
+            self._matrix(f"m.outcome[0][0] = {stored}"),
+            {"id": "g", "input": self._radio(1, 2), "precondition": [{"predicate": "m.outcome[0][0] == 1 and m.outcome[1][0] == 2"}]},
+        )
+        unreached = self._items(
+            self._matrix(f"m.outcome[0][0] = {stored}"),
+            {"id": "g", "input": self._radio(1, 2), "precondition": [{"predicate": "m.outcome[1][0] == 7"}]},
+        )
+        processor = ValidationProcessor(both)
+        issues = processor.to_issues()
+
+        assert processor.get_item_classifications()["g"]["precondition"]["status"] == "CONDITIONAL"
+        assert "unreachable_item" not in [i["type"] for i in issues]
+        assert ("inexact_condition" in [i["type"] for i in issues]) == (stored != "None")
+        processor = ValidationProcessor(unreached)
+        assert processor.get_item_classifications()["g"]["precondition"]["status"] == "NEVER"
+        assert [i["type"] for i in processor.to_issues() if i["item_id"] == "g"] == ["unreachable_item"]
+
+    def test_two_cells_text_is_stored_into_are_two_values(self):
+        """A store through a computed row reaches every cell, and each cell
+        read is still its own value: the two cells may hold 1 and 2."""
+        state = self._items(
+            self._matrix('for r in range(2):\n    m.outcome[r][0] = "x"'),
+            {"id": "g", "input": self._radio(1, 2), "precondition": [{"predicate": "m.outcome[0][0] == 1 and m.outcome[1][0] == 2"}]},
+        )
+        processor = ValidationProcessor(state)
+
+        assert processor.get_item_classifications()["g"]["precondition"]["status"] == "CONDITIONAL"
+        assert "unreachable_item" not in [i["type"] for i in processor.to_issues()]
+
+    def test_a_value_that_may_hold_anything_copied_into_a_text_variable_is_undecided(self):
+        """``y`` (a call's result) may be ``"a"``, so after ``x = y`` the
+        postcondition ``x == "a"`` is not infeasible: it is undecided and said
+        so."""
+        state = self._items(
+            {"id": "g", "input": self._radio(1, 2), "postcondition": [{"predicate": 'x == "a"'}]},
+            init="x = ''\ny = sorted(['a'])[0]\nx = y",
+        )
+        processor = ValidationProcessor(state)
+        issues = processor.to_issues()
+
+        assert processor.get_item_classifications()["g"]["postcondition"]["invariant"] == "CONSTRAINING"
+        assert {"infeasible_postcondition", "globally_false_postcondition"}.isdisjoint(i["type"] for i in issues)
+        assert "inexact_condition" in [i["type"] for i in issues if i["item_id"] == "g"]
+
+    @pytest.mark.parametrize(("stored", "inexact"), [("1", False), ('"x"', True)])
+    def test_an_unpacking_store_pairs_element_by_element(self, stored, inexact):
+        """``q.outcome, unused = 1, 0`` stores a number, so ``q.outcome == 5``
+        stays NEVER with no warning; storing ``"x"`` that way frees the
+        answer, and the gate says so."""
+        state = self._items(
+            {"id": "q", "input": self._radio(1, 2), "codeBlock": f"q.outcome, unused = {stored}, 0"},
+            {"id": "g", "input": self._radio(1, 2), "precondition": [{"predicate": "q.outcome == 5"}]},
+        )
+        processor = ValidationProcessor(state)
+        findings = [i["type"] for i in processor.to_issues() if i["item_id"] == "g"]
+
+        assert processor.get_item_classifications()["g"]["precondition"]["status"] == ("CONDITIONAL" if inexact else "NEVER")
+        assert ("inexact_condition" in findings) == inexact
+
+    def test_storing_none_into_an_answer_keeps_its_domain(self):
+        """``q.outcome = None`` is the None model's, not text: ``q.outcome ==
+        5`` stays NEVER, with no inexact warning."""
+        state = self._items(
+            {"id": "q", "input": self._radio(1, 2), "codeBlock": "if q.outcome == 2:\n    q.outcome = None"},
+            {"id": "g", "input": self._radio(1, 2), "precondition": [{"predicate": "q.outcome == 5"}]},
+        )
+        processor = ValidationProcessor(state)
+
+        assert processor.get_item_classifications()["g"]["precondition"]["status"] == "NEVER"
+        assert [i["type"] for i in processor.to_issues() if i["item_id"] == "g"] == ["unreachable_item"]
+
+    def test_a_predicate_that_does_not_parse_is_reported_once(self):
+        """A syntax error is ``unsafe_code``'s finding alone, never also a
+        skipped condition."""
+        _, issues = self._issues(self._radio(1, 2), "q.outcome ==")
+
+        assert [i["type"] for i in issues if i["item_id"] == "g"] == ["unsafe_code"]
+
+    def test_a_fault_lowering_a_predicate_the_sandbox_refuses_is_reported_once(self):
+        """A predicate the sandbox refuses is ``unsafe_code``'s finding; a
+        fault while lowering it adds no skipped condition."""
+        with patch.object(StaticBuilder, "_lower_predicate", side_effect=RuntimeError("fault")):
+            _, issues = self._issues(self._radio(1, 2), 'eval("1") == 1')
+        findings = [i["type"] for i in issues if i["item_id"] == "g"]
+
+        assert "unsafe_code" in findings
+        assert "skipped_condition" not in findings
+
+    @pytest.mark.parametrize("failing", ["_code_trees", "_is_textarea"])
+    def test_a_string_model_whose_reading_fails_degrades_without_reading_again(self, failing):
+        """When reading the code or the Textarea items fails, the degraded
+        model reads neither again: the build completes, and the gate on text is
+        undecided and said so."""
+        reading = {"inside": False}
+        original_init = _StringModel.__init__
+
+        def init(model, builder, **kwargs):
+            reading["inside"] = True
+            try:
+                original_init(model, builder, **kwargs)
+            finally:
+                reading["inside"] = False
+
+        original = getattr(StaticBuilder, failing)
+
+        def fail(builder, *args):
+            if reading["inside"]:
+                raise RuntimeError("unreadable")
+            return original(builder, *args)
+
+        with patch.object(_StringModel, "__init__", init), patch.object(StaticBuilder, failing, fail):
+            processor, issues = self._issues(self._radio(1, 2), 'mode == "short"', init='mode = "short"')
+
+        assert processor.get_item_classifications()["g"]["precondition"]["status"] == "CONDITIONAL"
+        assert "inexact_condition" in [i["type"] for i in issues if i["item_id"] == "g"]
+
+    @pytest.mark.parametrize(
+        "test",
+        ['foo() and mode == "a"', 'any(k == "a" for k in [q.outcome]) or foo()'],
+    )
+    def test_a_test_left_out_for_no_text_reason_leaves_what_it_assigns_decided(self, test):
+        """``mode == "a"`` (``mode`` holds only ``"a"``) and ``k == "a"`` (``k``
+        a number the comprehension binds) are decided: the test is left out for
+        the call alone, as without text, so the gate on ``flag`` gets no
+        inexact warning."""
+        state = self._items(
+            {
+                "id": "q",
+                "input": self._radio(1, 2),
+                "codeBlock": f'mode = "a"\nif {test}:\n    flag = 1\nelse:\n    flag = 0',
+            },
+            {"id": "g", "input": self._radio(1, 2), "precondition": [{"predicate": "flag == 1"}]},
+        )
+
+        assert "inexact_condition" not in [i["type"] for i in ValidationProcessor(state).to_issues()]
+
+    # Each test below is a counterexample the soundness fuzzer
+    # (``tests/helpers/soundness_fuzz.py``) or the review found, written out:
+    # the static verdict must hold on every walk of the runtime.
+
+    def test_an_encoded_variable_against_a_value_that_may_hold_text_is_undecided(self):
+        """``mode == y`` with ``y = str(q.outcome)``: ``y`` may be ``"1"``, so
+        the gate is reachable; comparing ``mode``'s encoding with ``y`` doubled
+        proved it NEVER. It is undecided, and said so."""
+        entry, findings = self._judged(
+            {"id": "q", "input": self._radio(1, 2), "codeBlock": "y = str(q.outcome)"},
+            {"id": "g", "input": self._radio(1, 2), "precondition": [{"predicate": "mode == y"}]},
+            init='mode = "1"\ny = 0',
+        )
+
+        assert entry["precondition"]["status"] == "CONDITIONAL"
+        assert "inexact_condition" in findings
+
+    def test_a_ternary_tested_on_text_lowers_or_is_reported(self):
+        """A ternary whose test is a truth test of text lowers (``"a"`` is
+        truthy, so the gate always holds); one whose test refuses (an ordering
+        of text) is a skipped condition, never a silent drop."""
+        code = 'if q.outcome == 2:\n    mode = ""'
+        entry, findings = self._judged(
+            {"id": "q", "input": self._radio(1, 2)},
+            {"id": "g", "input": self._radio(1, 2), "precondition": [{"predicate": "(1 if mode else 2) == 1"}]},
+            init='mode = "a"',
+        )
+        assert entry["precondition"]["status"] == "ALWAYS"
+        assert findings == []
+
+        _, findings = self._judged(
+            {"id": "q", "input": self._radio(1, 2), "codeBlock": code},
+            {"id": "g", "input": self._radio(1, 2), "precondition": [{"predicate": "(1 if mode < 3 else 2) == 1"}]},
+            init='mode = "a"',
+        )
+        assert findings == ["skipped_condition"]
+
+    def test_a_comprehension_reads_each_cell_at_its_own_index(self):
+        """Only cell ``[1][0]`` holds text, so ``any(m.outcome[r][0] == "x"
+        ...)`` reads cell 0 decided and cell 1 undecided: one reading memoised
+        for both indices proved it NEVER."""
+        entry, findings = self._judged(
+            self._matrix('m.outcome[1][0] = "x"'),
+            {"id": "g", "input": self._radio(1, 2), "precondition": [{"predicate": 'any([m.outcome[r][0] == "x" for r in range(2)])'}]},
+        )
+
+        assert entry["precondition"]["status"] != "NEVER"
+        assert "unreachable_item" not in findings
+
+    def test_a_row_store_reaches_the_cells_of_the_row(self):
+        """``m.outcome[0] = ["b"]`` stores text into cell ``[0][0]``, so
+        ``m.outcome[0][0] == "b"`` is reachable (fuzzer seed 3009 on the round-6
+        head)."""
+        entry, findings = self._judged(
+            self._matrix('m.outcome[0] = ["b"]'),
+            {"id": "g", "input": self._radio(1, 2), "precondition": [{"predicate": 'm.outcome[0][0] == "b"'}]},
+        )
+
+        assert entry["precondition"]["status"] == "CONDITIONAL"
+        assert "unreachable_item" not in findings
+
+    @pytest.mark.parametrize(
+        ("init", "code", "check"),
+        [
+            (None, 'q.outcome = "x"', "q.outcome < 0 and q.outcome > 0"),
+            ('w = 0', 'w = sorted(["a", "b"])[0]', "w < 0 and w > 0"),
+        ],
+    )
+    def test_an_ordering_of_what_may_hold_text_is_refused(self, init, code, check):
+        """An ordering of an answer text is stored into, or of a variable that
+        may hold anything, raises in Python on text, and a postcondition that
+        raises is waived: comparing the free Int proved the check INFEASIBLE
+        (fuzzer seeds 1324, 1650). It is a skipped condition."""
+        entry, findings = self._judged(
+            {"id": "q", "input": self._radio(1, 2), "codeBlock": code},
+            {"id": "g", "input": self._radio(1, 2), "postcondition": [{"predicate": check}]},
+            init=init,
+        )
+
+        assert entry["postcondition"]["invariant"] != "INFEASIBLE"
+        assert "skipped_condition" in findings
+
+    def test_a_name_that_may_be_unbound_is_no_decided_comparison(self):
+        """``v`` is bound only when ``q`` is asked, and ``v != "a"`` raises
+        (NameError) when it is not, which skips ``g``: a number never equals
+        text, but the gate is not ALWAYS."""
+        entry, findings = self._judged(
+            {"id": "p", "input": self._radio(1, 2)},
+            {"id": "q", "input": self._radio(1, 2), "precondition": [{"predicate": "p.outcome == 1"}], "codeBlock": "v = 1"},
+            {"id": "g", "input": self._radio(1, 2), "precondition": [{"predicate": 'v != "a"'}]},
+        )
+
+        assert entry["precondition"]["status"] == "CONDITIONAL"
+        assert "inexact_condition" in findings
+
+    def test_a_gate_the_code_refutes_leaves_an_undecided_check_vacuous(self):
+        """``g`` is gated on ``v == "a"``, which ``a``'s codeBlock makes false
+        for everyone, and checks a value read undecided: no answer is ever
+        judged, so the check is vacuous (TAUTOLOGICAL, as beside a NEVER gate),
+        never an INFEASIBLE error (fuzzer seeds 142, 163)."""
+        entry, findings = self._judged(
+            {"id": "a", "input": self._radio(1, 2), "codeBlock": 'v = "b"\ny = str(a.outcome)'},
+            {"id": "g", "input": self._radio(1, 2), "precondition": [{"predicate": 'v == "a"'}],
+             "postcondition": [{"predicate": 'g.outcome == 1 and y != "x"'}]},
+            init='v = "a"\ny = 0',
+        )
+
+        assert entry["postcondition"]["invariant"] == "TAUTOLOGICAL"
+        assert "infeasible_postcondition" not in findings
+
+    def test_a_name_no_code_assigns_copied_into_a_text_variable_is_no_number(self):
+        """``x = other`` (``other`` assigned nowhere) may leave ``x`` anything,
+        here ``""`` (the codeInit stops there): it is no doubled number, so
+        ``x == ""`` is not NEVER."""
+        entry, findings = self._judged(
+            {"id": "g", "input": self._radio(1, 2), "precondition": [{"predicate": 'x == ""'}]},
+            init='x = ""\nx = other',
+        )
+
+        assert entry["precondition"]["status"] != "NEVER"
+        assert "unreachable_item" not in findings
+
+    def test_a_cached_compile_records_the_gaps_a_cold_one_does(self):
+        """``g``'s three conditions read a value undecided, fault while
+        lowering, and read a stored answer. Compiled from cold, and compiled
+        again from the compile cache after a ``compile_conditions`` call
+        (which records nothing) filled it, they record the same gaps and give
+        the same formula and exactness: the cache replays the undecided reads
+        and the ``Error`` gap as it replays the wide ones."""
+        conditions = [{"predicate": 'v == "a"'}, {"predicate": "w > 0"}, {"predicate": "q.outcome == 1"}]
+        doc = self._doc(
+            {"id": "q", "input": self._radio(1, 2), "codeBlock": 'v = str(q.outcome)\nq.outcome = "x"'},
+            {"id": "g", "input": self._radio(1, 2), "precondition": conditions},
+            init="v = 0\nw = 1",
+        )
+        original = StaticBuilder._lower_predicate
+
+        def lower(builder, node, context, kind, *args, **kwargs):
+            if isinstance(node, ast.Compare) and isinstance(node.left, ast.Name) and node.left.id == "w":
+                raise RuntimeError("fault")
+            return original(builder, node, context, kind, *args, **kwargs)
+
+        def compiled(warm: bool) -> tuple[str, bool, list[dict[str, Any]]]:
+            builder = StaticBuilder(QMLState(copy.deepcopy(doc)))
+            builder.coverage_gaps.pop("g", None)
+            with patch.object(StaticBuilder, "_lower_predicate", lower):
+                if warm:
+                    builder.compile_conditions("g", conditions, kind="precondition")
+                    assert builder.coverage_gaps.get("g") in (None, [])
+                formula, exact = builder.compile_conditions_exactly("g", conditions, kind="precondition")
+            # A hit re-mints the fresh symbols (``#n``), so compare up to them.
+            return re.sub(r"#\d+", "#n", str(formula)), exact, builder.coverage_gaps.get("g", [])
+
+        cold, hit = compiled(warm=False), compiled(warm=True)
+
+        assert hit == cold
+        assert cold[1] is False
+        assert [gap.get("undecided_reads") for gap in cold[2] if gap.get("undecided_reads")] == [["v"], ["q"]]
+        assert any("Error" in gap.get("unsupported_nodes", []) for gap in cold[2]), cold[2]
+
+    def test_a_cached_compile_mints_its_own_open_read_comparison(self):
+        """A comparison with text through an open read (a variable with no
+        value at the reading item's submission) is a fresh Bool per lowering,
+        so a compile from the cache mints its own (``_mint``, ``_remint``);
+        the shared text symbols (``str@`` per term and literal set) stay one
+        per builder."""
+        builder = StaticBuilder(self._items({"id": "g", "input": self._radio(1, 2), "codeBlock": "v = str(g.outcome)"}))
+        node = ast.parse("v", mode="eval").body
+        value = Int("open@g@v", builder.ctx)
+        builder._open_reads, builder._minting = {"v": value}, []
+        fresh = builder._string_choice(node, value, frozenset({"a"}))
+        minted = tuple(builder._minting)
+        builder._open_reads, builder._minting = {}, []
+        shared = builder._string_choice(node, value, frozenset({"a"}))
+        builder._minting = None
+
+        assert [made for made, _ in minted] == [fresh]
+        assert str(builder._remint(fresh, minted)) != str(fresh)
+        assert builder._string_choice(node, value, frozenset({"a"})) is shared
+
+    def test_each_roster_iteration_reads_its_own_stored_answer(self):
+        """A Roster member text is stored into is one free Int per iteration
+        where its own conditions read it (each iteration's own Int,
+        ``item_q@iter{K}``): one Int for every iteration would tie answers the
+        runtime keeps apart."""
+        qml = (
+            'qmlVersion: "2.0"\nquestionnaire:\n  title: T\n  blocks:\n'
+            "    - id: b0\n      title: B0\n      items:\n"
+            "        - id: pick\n          kind: Question\n          title: Pick\n"
+            "          input: {control: Checkbox, labels: {1: A, 2: B}}\n"
+            "    - id: b1\n      title: B1\n      kind: Roster\n      iterateOver: \"pick.outcome\"\n"
+            "      labels: {1: A, 2: B}\n      items:\n"
+            "        - id: q\n          kind: Question\n          title: Q\n"
+            "          input: {control: Radio, labels: {1: X, 2: Y}}\n"
+            "          codeBlock: \"q.outcome = 'x'\"\n"
+            "          postcondition:\n            - predicate: \"q.outcome != 5\"\n"
+        )
+        builder = StaticBuilder(QMLState(QMLLoader().load_from_string(qml)))
+
+        assert {"item_q@iter1", "item_q@iter2"} <= set(builder._stored_reads), sorted(builder._stored_reads)
+
+    def test_a_compile_nested_in_another_keeps_its_bookkeeping_apart(self):
+        """A compile inside another (a postcondition's blank acceptance) keeps
+        its own failure and leaves the outer compile's: its undecided reads
+        join the outer ones, since its formula is part of the outer one, but
+        its failure does not."""
+        builder = StaticBuilder(
+            self._items(
+                {"id": "q", "input": self._radio(1, 2), "codeBlock": "v = str(q.outcome)"},
+                {"id": "g", "input": self._radio(1, 2)},
+            )
+        )
+        builder._undecided_reads, builder._compile_failed = ["outer"], False
+
+        builder._compile_predicate('v == "a"', "g", "precondition")
+        with patch.object(StaticBuilder, "_lower_predicate", side_effect=RuntimeError("fault")):
+            builder._compile_predicate("q.outcome == 1", "g", "precondition")
+
+        assert builder._last_compile == ([], True)
+        assert builder._compile_failed is False
+        assert builder._undecided_reads == ["outer", "v"]
+
+    def test_only_what_an_undecided_branch_assigns_is_undecided(self):
+        """``flag`` is assigned under a test on text the block cannot decide;
+        ``other`` is assigned outside it, from a number, and stays decided."""
+        q = {
+            "id": "q",
+            "input": self._radio(1, 2),
+            "codeBlock": 'mode = str(q.outcome)\nif mode == "a":\n    flag = 1\nelse:\n    flag = 0\nother = 5',
+        }
+        _, flag = self._judged(q, {"id": "g", "input": self._radio(1, 2), "precondition": [{"predicate": "flag == 1"}]})
+        _, other = self._judged(q, {"id": "g", "input": self._radio(1, 2), "precondition": [{"predicate": "other == 5"}]})
+
+        assert "inexact_condition" in flag
+        assert "inexact_condition" not in other
+
+    def test_the_verdict_does_not_depend_on_the_hash_seed(self, tmp_path):
+        """The same file judged in processes started with different
+        ``PYTHONHASHSEED`` gets the same findings. Under seed 0 ``hash("a")``
+        falls inside the Editbox's domain and under seed 1 outside it."""
+        import json
+        import os
+        import subprocess
+        import sys
+
+        state = self._qml({"control": "Editbox", "min": 0, "max": 499999}, 'q.outcome == "a"')
+        items = [{k: v for k, v in item.items() if k != "blockId"} for item in state["items"]]
+        block = {**state["blocks"][0], "items": items}
+        path = tmp_path / "seeded.qml"
+        path.write_text(_dump_yaml({"questionnaire": {"title": state["title"], "blocks": [block]}}))
+        findings = {
+            subprocess.run(
+                [sys.executable, "-c", _ORDER_PROBE, str(path)],
+                capture_output=True,
+                text=True,
+                check=True,
+                env={**os.environ, "PYTHONHASHSEED": seed},
+            ).stdout
+            for seed in ("0", "1")
+        }
+
+        assert len(findings) == 1, findings
+        assert [(t, item) for t, item, _ in json.loads(findings.pop())] == [("unreachable_item", "g")]
 
 
 @pytest.mark.integration

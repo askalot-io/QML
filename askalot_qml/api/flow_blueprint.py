@@ -7,17 +7,21 @@ the credential check, request parsing, the request-scoped store on ``g``, and
 response shaping. Every presenting step passes channel ``web``.
 
 The sentences the respondent's page shows (``message``, and the ``error`` /
-``reason`` of a refusal it puts in its modal) are rendered in the language of
-the walk's questionnaire, as every respondent-facing render is: a survey's
-questionnaire, a preview run's questionnaire, and the browser's language only
-when no walk was read. The locale is resolved only on those paths, so a step
+``reason`` of a refusal it puts in its modal) are rendered in the page's chrome
+locale, as every respondent-facing render is (``respondent_locale``): the
+walk's content language (a survey's, a preview run's questionnaire's) when it
+is a supported locale; for an "other" content language the respondent's
+preferred language, else the browser's (never on an interviewer-assisted
+survey, whose browser is the interviewer's), else English; and the browser's
+language only when no walk was read. The locale is resolved only on those paths, so a step
 that answers an item pays no extra read. Error codes and developer-facing
 diagnostics (a missing ``survey_id``, an unknown id) stay English.
 
 Language picker. While a fielded survey holds no committed answer and its
 campaign's pin offers more than one language, the current item carries
 ``offered_languages`` (``[{code, name}]``, the name the language's own, source
-first), ``preselected`` and ``language`` (the pick so far, or None).
+first, named by ``questionnaire_native_name`` so an "other" source language
+is named too), ``preselected`` and ``language`` (the pick so far, or None).
 ``POST /choose-language`` picks one (``flow_service.choose_language``). A pick
 the walk can no longer take answers ``409`` with an error code the page acts on
 and no sentence: ``language_locked`` (an answer is already stored: reload into
@@ -49,7 +53,12 @@ from askalot_common.campaign_admission import (
     has_committed_answer,
     not_taking_answers,
 )
-from askalot_common.i18n import UnsupportedLocale, gettext, native_name, respondent_locale
+from askalot_common.i18n import (
+    UnsupportedQuestionnaireLanguage,
+    gettext,
+    respondent_locale,
+)
+from askalot_common.i18n.language_names import questionnaire_native_name
 from askalot_common.i18n.locale import preselect_language
 from askalot_common.repository.exceptions import (
     OrganizationSealedError,
@@ -404,11 +413,16 @@ def create_flow_blueprint(
         return walk
 
     def _locale() -> str:
-        """The language of this request's respondent-facing sentences.
+        """The chrome locale of this request's respondent-facing sentences.
 
-        The walk's questionnaire decides; before a walk is read (or when the id
-        named none) the browser's language does. Called only where a sentence
-        is about to be rendered, never on the answering path.
+        ``respondent_locale``'s rule over the walk read for this request: its
+        content language when supported; for an "other" one the respondent's
+        preferred language (read only then, the one case it decides), else the
+        browser's, except on an interviewer-assisted survey, where the browser
+        is the interviewer's and says nothing about the respondent, else
+        English. Before a walk is read (or when the id named none) the
+        browser's language decides. Called only where a sentence is about to be
+        rendered, never on the answering path.
         """
         return respondent_locale(
             repository,
@@ -451,7 +465,9 @@ def create_flow_blueprint(
                 offered[0],
             )
         return {
-            "offered_languages": [{"code": code, "name": native_name(code)} for code in offered],
+            "offered_languages": [
+                {"code": code, "name": questionnaire_native_name(code)} for code in offered
+            ],
             "preselected": preselected,
             "language": survey.language,
         }
@@ -671,7 +687,7 @@ def create_flow_blueprint(
                 choice = flow_service.choose_language(
                     repository, survey, language, external_input_resolver=external_input_resolver
                 )
-            except UnsupportedLocale:
+            except UnsupportedQuestionnaireLanguage:
                 return jsonify({"error": f"Unsupported language {language!r}"}), 400
 
             if choice.outcome is flow_service.LanguageChoiceOutcome.LOCKED:

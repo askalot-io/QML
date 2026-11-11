@@ -11,6 +11,9 @@ body, and ``POST /guard-tree``, the Tree view's on-demand answer for it:
   and beside every key the webview already reads;
 - every answer names the copy it judged in ``content_origin``, the label the
   registering service supplies;
+- the host's ``language_of`` hook reads the questionnaire's language from the
+  posted body (#2200): an "other" one answers ``language_not_judged`` in place
+  of the word-list lints, and no hook or ``None`` keeps them;
 - content that is not YAML is refused with the parser's own complaint (#759): a
   400 carrying ``problem`` and the 1-based ``line``/``column``, never the snippet
   or context PyYAML prints; a single offending character (a tab) survives the
@@ -180,6 +183,43 @@ class TestEveryAnswerNamesItsCopy:
     def test_the_origin_is_required(self):
         with pytest.raises(TypeError):
             create_validation_blueprint()
+
+
+class TestTheHostNamesTheLanguage:
+    """#2200: ``language_of`` reads the posted body; the blueprint reads no row itself."""
+
+    @staticmethod
+    def _types(language_of):
+        app = Flask(__name__)
+        app.register_blueprint(
+            create_validation_blueprint(posted_content_origin="editor", language_of=language_of)
+        )
+        body = {
+            "content": (FIXTURES / "language_neutral_en.qml").read_text(),
+            "name": "doc.qml",
+            "questionnaire_id": "q-1",
+        }
+        resp = app.test_client().post(ROUTE, json=body)
+        assert resp.status_code == 200, resp.get_data(as_text=True)
+        return [i["type"] for i in resp.get_json()["validation_issues"]]
+
+    def test_an_other_language_reports_not_judged(self):
+        seen = []
+
+        def language_of(body):
+            seen.append(body["questionnaire_id"])
+            return "it"
+
+        types = self._types(language_of)
+        assert seen == ["q-1"]
+        assert types.count("language_not_judged") == 1
+        assert "combinable_none_option" not in types
+
+    @pytest.mark.parametrize("language_of", [None, lambda _body: None, lambda _body: "hu"])
+    def test_no_language_or_a_supported_one_keeps_the_word_lists(self, language_of):
+        types = self._types(language_of)
+        assert "language_not_judged" not in types
+        assert "combinable_none_option" in types
 
 
 class TestAParseFailureNamesWhereItBroke:

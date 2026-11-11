@@ -415,3 +415,6 @@ msgstr "Beállított, de soha nem olvasott változó"
 msgid "Variable that only copies another"
 msgstr "Egy másikat csak lemásoló változó"
 
+msgid "Wording checks not run for this language"
+msgstr "Ezen a nyelven a megfogalmazási ellenőrzések nem futottak"
+

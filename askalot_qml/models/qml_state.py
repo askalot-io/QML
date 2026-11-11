@@ -134,11 +134,14 @@ class Condition(TypedDict):
     (useful for questionnaire design, not shown to respondents).
 
     For postconditions: hint contains the message shown to users when
-    their answer doesn't satisfy the validation constraint.
+    their answer doesn't satisfy the validation constraint, and ``invented``
+    (postconditions only) marks a check derived rather than stated by the
+    source. It is author metadata: no evaluation reads it.
     """
 
     predicate: str
     hint: NotRequired[str]
+    invented: NotRequired[bool]
 
 
 class ItemOption(TypedDict):

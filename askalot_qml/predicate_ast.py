@@ -150,16 +150,6 @@ def none_guarded_outcomes(tree: ast.AST) -> set[str]:
     return qualified
 
 
-def outcome_value_reads(tree: ast.AST) -> set[str]:
-    """Items whose ``.outcome`` the tree reads as a value, outside a None test."""
-    operands = {id(operand) for operand in none_test_operands(tree)}
-    return {
-        name
-        for node in ast.walk(tree)
-        if id(node) not in operands and (name := outcome_ref_name(node))
-    }
-
-
 def name_reads(tree: ast.AST) -> set[str]:
     """Every bare name the tree loads — variables, and item ids used as ``X.outcome`` bases."""
     return {

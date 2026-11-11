@@ -419,3 +419,6 @@ msgstr "Variable asignada pero nunca leída"
 msgid "Variable that only copies another"
 msgstr "Variable que solo copia otra"
 
+msgid "Wording checks not run for this language"
+msgstr "Comprobaciones de redacción no realizadas para este idioma"
+

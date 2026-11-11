@@ -111,10 +111,13 @@ class PathBasedValidator:
         # into a single persistent solver, then reuse both across every per-item
         # check. An item that is a predecessor of M others would otherwise have
         # its P/Q recompiled M times, and the domain base rebuilt and re-asserted
-        # once per item — O(items^2) of redundant Z3 work. compile_conditions
-        # reads the now-frozen SSA versions, so a single build yields expressions
-        # identical to the per-call ones; per-item constraints are scoped with
-        # push()/pop() so the shared base is never disturbed. The implication is
+        # once per item — O(items^2) of redundant Z3 work. After the build a
+        # compile depends only on its item and conditions, so the formula held
+        # here is the one a per-check compile would answer, up to the names of
+        # the symbols a compile mints fresh (StaticBuilder._compile_conditions),
+        # and a check asserts each item's formula once, never two copies of it;
+        # per-item constraints are scoped with push()/pop() so the shared base is
+        # never disturbed. The implication is
         # left out when P_i did not lower whole (StaticBuilder.item_implication):
         # a wider P_i would assume Q_i where the real gate is false and report
         # a reachable item as dead code.

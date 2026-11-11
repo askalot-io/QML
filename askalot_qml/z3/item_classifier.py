@@ -151,8 +151,15 @@ class ItemClassifier:
                 # Item has postconditions and is reachable
                 # Use full_base to include behavioral constraints from codeBlocks
                 with profile_block("z3_postcondition_check", {"item_id": item_id}):
-                    tautological_under_P = False
-                    if Q_true is not None:
+                    # A gate the full base refutes is as vacuous as a NEVER one
+                    # (an inexact Q withholds TAUTOLOGICAL, which must not turn
+                    # the vacuous label into an INFEASIBLE error).
+                    full_solver.push()
+                    full_solver.add(P_form)
+                    vacuous_under_base = full_solver.check() == unsat
+                    full_solver.pop()
+                    tautological_under_P = vacuous_under_base
+                    if Q_true is not None and not vacuous_under_base:
                         full_solver.push()
                         full_solver.add(P_form, Not(Q_true))
                         tautological_under_P = full_solver.check() == unsat

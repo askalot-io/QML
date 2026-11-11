@@ -132,15 +132,20 @@ def validation_record(
     }
 
 
-def evaluate_qml_content(content: str, *, source_label: str) -> tuple[PublishGateResult, dict]:
+def evaluate_qml_content(
+    content: str, *, source_label: str, language: str | None = None
+) -> tuple[PublishGateResult, dict]:
     """Gate ``content`` and return ``(gate, validation_record)`` together.
 
     The save doors' entry point: they hold content that is about to become head
     and need the verdict to hand to ``save_questionnaire_qml(validation=...)``
     in the same call, so the version lands already stamped rather than
-    momentarily unjudged.
+    momentarily unjudged. ``language`` is the questionnaire's, when the door
+    holds it (``evaluate_publish_gate_content``).
     """
-    gate = evaluate_publish_gate_content(content, source_label=source_label, logger=logger)
+    gate = evaluate_publish_gate_content(
+        content, source_label=source_label, logger=logger, language=language
+    )
     return gate, validation_record(gate)
 
 
@@ -215,6 +220,7 @@ def judge_head_version(version: Any, questionnaire: Any) -> PublishGateResult:
         version.content,
         source_label=f"questionnaire {getattr(questionnaire, 'id', '<unknown>')}",
         logger=logger,
+        language=questionnaire.language,
     )
 
 

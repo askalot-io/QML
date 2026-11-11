@@ -425,3 +425,6 @@ msgstr "Variable définie mais jamais lue"
 msgid "Variable that only copies another"
 msgstr "Variable qui ne fait que copier une autre"
 
+msgid "Wording checks not run for this language"
+msgstr "Vérifications de formulation non effectuées pour cette langue"
+

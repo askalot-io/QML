@@ -1,6 +1,7 @@
 """Modern QML file loader with type safety and no Flask dependencies."""
 
 import ast
+import functools
 import json
 import keyword
 import logging
@@ -67,6 +68,25 @@ def _ast_referenced_names(expression: str, mode: str = "eval") -> set[str]:
     return names
 
 
+def is_readable_item_id(item_id: Any) -> bool:
+    """True when a condition can read ``item_id`` as ``<id>.outcome``.
+
+    The rule ``QMLLoader._validate_reserved_item_ids`` enforces, apart from the
+    reserved sentinels (``QMLLoader.RESERVED_ITEM_IDS``), which it refuses
+    with their own message: a Python identifier in NFKC form that is neither a
+    keyword nor a sandbox builtin or module name. The inventory's source-id
+    mapper builds its ids against this same function, so a mapped id is one
+    the loader accepts.
+    """
+    return (
+        isinstance(item_id, str)
+        and item_id.isidentifier()
+        and not keyword.iskeyword(item_id)
+        and unicodedata.normalize("NFKC", item_id) == item_id
+        and item_id not in sandbox_names()
+    )
+
+
 _UNSET = object()
 
 
@@ -107,6 +127,21 @@ def normalize_switch_input(spec: Any) -> None:
             spec[name] = str(label)
         elif name in spec and label is None:
             del spec[name]
+
+
+@functools.lru_cache(maxsize=8)
+def _schema_validator(schema_path: str, mtime_ns: int) -> Any:
+    """The JSON-schema validator for the schema file at ``schema_path``, built
+    once per process (#2246): the schema is the same for every document, so it
+    is read, parsed and checked (``check_schema``) once, and each load only
+    walks its document (``iter_errors``). Keyed by the file's modification
+    time too, so a schema rewritten in place is read again. A validator holds
+    no state between ``iter_errors`` calls, so the workers' threads share one."""
+    with open(schema_path, encoding="utf-8") as schema_file:
+        schema = json.load(schema_file)
+    validator_class = validator_for(schema)
+    validator_class.check_schema(schema)
+    return validator_class(schema)
 
 
 def _root_shape(value: Any) -> str:
@@ -359,13 +394,8 @@ class QMLLoader:
             self.logger.warning(f"Schema file not found: {self.schema_path}")
             return
 
-        # Load schema
-        with open(self.schema_path, encoding="utf-8") as schema_file:
-            schema = json.load(schema_file)
-
-        validator_class = validator_for(schema)
-        validator_class.check_schema(schema)
-        error = schema_refusal(validator_class(schema).iter_errors(self.parsed_yaml))
+        validator = _schema_validator(str(self.schema_path), self.schema_path.stat().st_mtime_ns)
+        error = schema_refusal(validator.iter_errors(self.parsed_yaml))
         if error is not None:
             self.logger.error(f"QML validation failed: {error}")
             raise error
@@ -586,13 +616,7 @@ class QMLLoader:
                         f"internal Z3 static-builder sentinel. Rename the item "
                         f"(reserved ids: {list(self.RESERVED_ITEM_IDS)})."
                     )
-                if not (
-                    isinstance(item_id, str)
-                    and item_id.isidentifier()
-                    and not keyword.iskeyword(item_id)
-                    and unicodedata.normalize("NFKC", item_id) == item_id
-                    and item_id not in sandbox_names()
-                ):
+                if not is_readable_item_id(item_id):
                     raise ValueError(
                         f"Item id {item_id!r} is not a name conditions can read: "
                         f"use letters, digits and underscores, not starting with a "

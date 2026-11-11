@@ -23,6 +23,7 @@ ladder.
 import ast
 import logging
 import re
+from collections.abc import Callable
 
 import yaml
 from flask import Blueprint, jsonify, request
@@ -145,11 +146,14 @@ def _parse_error(
     }, 400
 
 
-def _validation_payload(qml_name: str, questionnaire_data: dict, origin: str) -> dict:
+def _validation_payload(
+    qml_name: str, questionnaire_data: dict, origin: str, language: str | None = None
+) -> dict:
     """The full validation answer for a loaded questionnaire.
 
     ``qml_name`` is the name echoed back (and the title's stand-in),
-    ``origin`` the copy the content came from.
+    ``origin`` the copy the content came from, ``language`` the
+    questionnaire's language when the host knows it (``ValidationProcessor``).
     """
     # Human-readable title sourced from the QML top-level field.
     # Fallback to the filename so the client's tab title always has
@@ -162,7 +166,7 @@ def _validation_payload(qml_name: str, questionnaire_data: dict, origin: str) ->
     logger.debug(f"Starting validation processing for {qml_name}")
 
     # Initialize ValidationProcessor
-    processor = ValidationProcessor(state)
+    processor = ValidationProcessor(state, language=language)
 
     # Get topology statistics from the engine
     topology_stats = processor.engine.get_statistics()
@@ -250,7 +254,9 @@ def guard_tree_answer(content: str, name: str, *, content_origin: str) -> tuple[
         return _fault(name, e, loader, content_origin)
 
 
-def validation_answer(content: str, name: str, *, content_origin: str) -> tuple[dict, int]:
+def validation_answer(
+    content: str, name: str, *, content_origin: str, language: str | None = None
+) -> tuple[dict, int]:
     """Validate one questionnaire text: the JSON body and HTTP status ``POST /validation`` answers.
 
     Args:
@@ -259,6 +265,9 @@ def validation_answer(content: str, name: str, *, content_origin: str) -> tuple[
             the questionnaire states none. It addresses nothing.
         content_origin: The ``content_origin`` the answer reports, so a
             verdict states which copy it judged.
+        language: The questionnaire's language when the host knows it; an
+            "other" one reports ``language_not_judged`` in place of the
+            word-list lints (``ValidationProcessor``).
 
     Returns:
         ``(body, 200)`` with the validation payload (``_validation_payload``:
@@ -271,7 +280,7 @@ def validation_answer(content: str, name: str, *, content_origin: str) -> tuple[
     loader = QMLLoader(logger=logger)
     try:
         questionnaire_data = loader.load_from_string(content)
-        return _validation_payload(name, questionnaire_data, content_origin), 200
+        return _validation_payload(name, questionnaire_data, content_origin, language), 200
     except Exception as e:
         return _fault(name, e, loader, content_origin)
 
@@ -280,6 +289,7 @@ def create_validation_blueprint(
     url_prefix: str = "/api/qml",
     *,
     posted_content_origin: str,
+    language_of: Callable[[dict], str | None] | None = None,
 ) -> Blueprint:
     """
     Create the QML validation API blueprint.
@@ -289,6 +299,10 @@ def create_validation_blueprint(
         posted_content_origin: The ``content_origin`` reported for content
                                validated from a request body. Required: a
                                verdict states which copy it judged.
+        language_of: The host's reading of the questionnaire's language from
+                     the posted body (Armiger reads ``questionnaire_id``
+                     through its repository), or ``None`` when it states none.
+                     This module reads no stored row itself.
 
     Returns:
         Flask blueprint with the validation endpoint
@@ -337,6 +351,8 @@ def create_validation_blueprint(
             content: The questionnaire's QML text
             name: Display name, echoed as ``qml_name`` and used as the title
                   when the questionnaire states none. It addresses nothing.
+            Any other field is the host's: ``language_of`` reads it (Armiger's
+            reads ``questionnaire_id``).
 
         Returns:
             JSON with the validation payload (``validation_answer``: the
@@ -351,7 +367,10 @@ def create_validation_blueprint(
         if refusal is not None:
             return refusal
         answer, status = validation_answer(
-            body["content"], body["name"], content_origin=posted_content_origin
+            body["content"],
+            body["name"],
+            content_origin=posted_content_origin,
+            language=language_of(body) if language_of is not None else None,
         )
         return jsonify(answer), status
 

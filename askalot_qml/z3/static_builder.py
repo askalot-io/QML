@@ -9,6 +9,8 @@ Moved from processor/ to z3/ as it belongs with other Z3 constraint solving util
 """
 
 import ast
+import enum
+import functools
 import itertools
 import logging
 from collections.abc import Callable
@@ -34,6 +36,7 @@ from z3 import (
     is_false,
     is_true,
     simplify,
+    substitute,
 )
 
 from askalot_qml.models.qml_state import QMLState
@@ -46,7 +49,6 @@ from askalot_qml.predicate_ast import (
     none_tested_outcomes,
     outcome_reads,
     outcome_ref_name,
-    outcome_value_reads,
 )
 
 #: The prefix of the Bool a None test mints per predicate (``_lower_none_test``):
@@ -55,28 +57,408 @@ ANSWERED_PREFIX = "answered@"
 
 
 def _is_str_literal(node: ast.AST) -> bool:
-    """Whether ``node`` is a string constant: an Int in the model only for
-    equality (its hash), never an arithmetic, bitwise or ordering operand
-    (#2048)."""
+    """Whether ``node`` is a string constant."""
     return isinstance(node, ast.Constant) and isinstance(node.value, str)
 
 
-def _computes_or_orders_a_string(node: ast.AST) -> bool:
-    """Whether ``node`` takes a string literal as an arithmetic, bitwise or
-    ordering operand, the uses ``_ast_to_z3`` and ``_ast_to_z3_bool`` refuse
-    (#2048), so a predicate left unlowered by one is reported, not dropped
-    silently (``_unsupported_node_kinds``)."""
-    if isinstance(node, ast.BinOp):
-        return _is_str_literal(node.left) or _is_str_literal(node.right)
-    if isinstance(node, ast.UnaryOp) and not isinstance(node.op, ast.Not):
-        return _is_str_literal(node.operand)
-    if isinstance(node, ast.Compare):
-        operands = [node.left, *node.comparators]
-        return any(
-            isinstance(op, _ORDERING_OPS) and (_is_str_literal(operands[i]) or _is_str_literal(operands[i + 1]))
-            for i, op in enumerate(node.ops)
+#: What a value may hold at runtime (``_StringModel``): a number, ``None``
+#: (the None model holds it), one of the questionnaire's string literals, or
+#: anything (a call, an unpacking, a loop target, a name no code assigns).
+_NUM, _NONE, _STR, _ANY = "num", "none", "str", "any"
+
+#: What a store or a read holds where nothing is known of it.
+_UNKNOWN = frozenset({_ANY})
+
+#: Builtins that answer a number or raise, whatever they are given.
+_NUMERIC_CALLS = frozenset({"abs", "bool", "int", "len", "round", "sum"})
+
+
+class _Operand(enum.Enum):
+    """How a comparison with a string literal lowers through its operand
+    (``_StringModel.operand``)."""
+
+    #: It holds no string: ``==`` a string is False, ``!=`` True.
+    DECIDED = "decided"
+    #: A variable that may hold text, its value encoded (``_StringModel``):
+    #: compared exactly.
+    ENCODED = "encoded"
+    #: Its value is not held exactly: the comparison is a free Bool.
+    UNDECIDED = "undecided"
+    #: A Textarea's text (``_text_leaf``).
+    TEXT = "text"
+
+
+class _CompareKind(enum.Enum):
+    """What ``StaticBuilder._string_comparison`` found."""
+
+    #: No text involved: the comparison lowers as numbers.
+    NONE = "none"
+    #: Text involved in a way the model does not lower; reported (``Str``).
+    REFUSED = "refused"
+    #: Two literals: ``truth`` is Python's answer.
+    FOLDED = "folded"
+    #: A comparison of ``operand`` with ``texts`` (and ``members``).
+    COMPARE = "compare"
+    #: A chain holding text: the conjunction of its ``parts``, one
+    #: comparison per pair of neighbouring operands, as Python reads it.
+    CHAIN = "chain"
+
+
+@dataclass(frozen=True)
+class _StringComparison:
+    """One reading of a comparison involving text, shared by the lowering and
+    the report (``StaticBuilder._string_comparison``)."""
+
+    kind: _CompareKind
+    truth: bool = False
+    negated: bool = False
+    operand: ast.AST | None = None
+    members: tuple[ast.expr, ...] = ()
+    texts: frozenset[str] = frozenset()
+    how: _Operand | None = None
+    parts: tuple[ast.Compare, ...] = ()
+
+
+_NO_STRING = _StringComparison(_CompareKind.NONE)
+_REFUSED_COMPARISON = _StringComparison(_CompareKind.REFUSED)
+
+
+class _StringModel:
+    """Text in the Z3 model, read once from the questionnaire's code.
+
+    No bound separates text from numbers. A variable that may hold text (its
+    profile holds ``_STR``) carries its value encoded in its Int: the number
+    ``n`` as ``2 * n`` and the questionnaire's ``k``-th string literal (in
+    sorted order) as ``2 * k + 1``. So a string never equals a number, two
+    strings are equal exactly when their text is, ``""`` is the one falsy
+    string, and nothing depends on ``hash()`` or on how large a number gets.
+    Arithmetic, a call or an ordering over such a value does not lower
+    (``StaticBuilder._carries_string``): Python raises there or computes text.
+    A value that may hold anything is never encoded: copied into such a
+    variable it leaves that version unconstrained (``StaticBuilder._encode``).
+
+    What each variable, and each answer a codeBlock or codeInit stores into,
+    may hold is read off the code, flow-insensitively: every store once, then
+    a fixed point over those stores while a name no code assigns adds nothing,
+    then another where it holds anything. ``None`` is a kind of its own: the
+    None model holds it, so storing it frees nothing. An answer, or one matrix
+    cell (by its literal subscript path), that a store may put text or
+    anything unknown into (``text_stored``) is no longer bound by its domain:
+    every read of it is one free Int (``StaticBuilder._unmodelled_read``). A
+    store through a path that is no literal reaches every cell of the item.
+
+    ``degraded`` is the model when reading the code failed. It reads nothing
+    but the item ids, so it cannot fail the same way again: no variable is
+    encoded and every answer is ``text_stored``, so every comparison with text
+    is undecided and every read of an answer free, each reported.
+    """
+
+    def __init__(self, builder: StaticBuilder, *, degraded: bool = False) -> None:
+        self.degraded = degraded
+        self._items = set(builder.item_details)
+        self._variables: dict[str, set[str]] = {}
+        self._outcomes: dict[str, set[str]] = {}
+        # item -> literal subscript path -> what stores put into that cell
+        self._cells: dict[str, dict[tuple[int, ...], set[str]]] = {}
+        if degraded:
+            self._texts: set[str] = set()
+            self._index = {"": 0}
+            self._outcomes = {item_id: set(_UNKNOWN) for item_id in self._items}
+            self._freeze()
+            self._bound: frozenset[str] = frozenset()
+            return
+        self._texts = {item_id for item_id in self._items if builder._is_textarea(item_id)}
+        trees = builder._code_trees()
+        strings = {""}
+        for tree in trees:
+            for node in ast.walk(tree):
+                if _is_str_literal(node):
+                    strings.add(node.value)  # type: ignore[attr-defined]
+        self._index = {text: i for i, text in enumerate(sorted(strings))}
+        self._profile(trees, builder)
+        self._freeze()
+        self._bound = self._bound_from_the_start(builder, trees)
+
+    def text_value(self, text: str) -> int:
+        """The encoded Int of string literal ``text`` (``2 * k + 1``)."""
+        if text not in self._index:
+            self._index[text] = len(self._index)
+        return 2 * self._index[text] + 1
+
+    def encoded(self, name: str) -> bool:
+        """Whether variable ``name`` carries its value encoded."""
+        return _STR in self._variables.get(name, ())
+
+    def text_stored(self, item_id: str, path: tuple[int, ...] | None = None) -> bool:
+        """Whether a store may put text, or anything not known to be a number
+        or ``None``, into ``item_id``'s answer: into the part at ``path`` (a
+        store at a prefix of it, a whole row, reaches it, and so does one
+        below it, for a read of a row), or, for ``None``, into any part of it.
+        Read from the sets ``_freeze`` computes once."""
+        if item_id in self._stored_items:
+            return True
+        return any(path is None or _overlaps(stored, path) for stored in self._stored_cells.get(item_id, ()))
+
+    def always_bound(self, name: str) -> bool:
+        """Whether variable ``name`` is bound wherever a condition reads it:
+        codeInit assigns it in its leading run of top-level assignments that
+        cannot raise, and no code deletes it."""
+        return name in self._bound
+
+    def assigned(self, name: str) -> bool:
+        """Whether some code assigns variable ``name``."""
+        return name in self._variables
+
+    def number_only(self, node: ast.AST, local: Any = frozenset()) -> bool:
+        """Whether ``node`` provably holds a number or ``None``, never text."""
+        return self._kinds(node, local, complete=True) <= {_NUM, _NONE}
+
+    @staticmethod
+    def _bound_from_the_start(builder: StaticBuilder, trees: list[ast.AST]) -> frozenset[str]:
+        """The names ``always_bound`` holds: codeInit's leading top-level
+        assignments of literals (or of a name already bound), which cannot
+        raise, less any name code deletes."""
+        bound: set[str] = set()
+        init = builder._parsed(builder.state.get_code_init() or "", "exec")
+
+        def safe(value: ast.AST) -> bool:
+            if isinstance(value, ast.Name):
+                return value.id in bound
+            if isinstance(value, (ast.List, ast.Tuple, ast.Set)):
+                return all(safe(elt) for elt in value.elts)
+            try:
+                ast.literal_eval(value)
+            except (ValueError, TypeError, SyntaxError, MemoryError, RecursionError):
+                return False
+            return True
+
+        for statement in getattr(init, "body", []):
+            targets = statement.targets if isinstance(statement, ast.Assign) else [getattr(statement, "target", None)]
+            value = getattr(statement, "value", None)
+            if (
+                not isinstance(statement, (ast.Assign, ast.AnnAssign))
+                or value is None
+                or not all(isinstance(t, ast.Name) for t in targets)
+                or not safe(value)
+            ):
+                break
+            bound.update(t.id for t in targets)  # type: ignore[union-attr]
+        deleted = {
+            node.id for tree in trees for node in ast.walk(tree) if isinstance(node, ast.Name) and isinstance(node.ctx, ast.Del)
+        }
+        return frozenset(bound - deleted)
+
+    def _held_at(self, item_id: str, path: tuple[int, ...] | None) -> set[str]:
+        """What the profiles so far put into ``item_id``'s answer at ``path``
+        (``text_stored``'s reading while the fixed point grows them)."""
+        held = set(self._outcomes.get(item_id, ()))
+        for stored, kinds in self._cells.get(item_id, {}).items():
+            if path is None or _overlaps(stored, path):
+                held |= kinds
+        return held
+
+    def _freeze(self) -> None:
+        """The items and cell paths text may be stored into, once the
+        profiles are complete."""
+        self._stored_items = frozenset(
+            item_id for item_id, kinds in self._outcomes.items() if kinds & {_STR, _ANY}
         )
-    return False
+        self._stored_cells = {
+            item_id: tuple(path for path, kinds in cells.items() if kinds & {_STR, _ANY})
+            for item_id, cells in self._cells.items()
+        }
+
+    def holds_any(self, node: ast.AST, local: Any = frozenset()) -> bool:
+        """Whether ``node`` may hold a value the model knows nothing of."""
+        return _ANY in self._kinds(node, local, complete=True)
+
+    @staticmethod
+    def read_path(node: ast.AST, local: Any = frozenset()) -> tuple[int, ...] | None:
+        """The literal subscript path of an answer read (a comprehension index
+        resolves through ``local`` when it holds values), or ``None`` for a
+        read of the whole answer or where an index is not known."""
+        while isinstance(node, ast.Attribute) and node.attr in _RANGE_ENDS:
+            node = node.value
+        path: list[int] = []
+        while isinstance(node, ast.Subscript):
+            index = node.slice
+            value = _int_literal(index)
+            if value is None and isinstance(index, ast.Name) and isinstance(local, dict):
+                bound = local.get(index.id)
+                value = bound if type(bound) is int else None
+            if value is None:
+                return None
+            path.append(value)
+            node = node.value
+        return tuple(reversed(path)) if path else None
+
+    def _profile(self, trees: list[ast.AST], builder: StaticBuilder) -> None:
+        """What each variable, answer and literal-path cell may hold."""
+        # (table, key, the stored value or None for anything): table "var"
+        # keys a name, "item" an item id (None for every item), "cell" an
+        # (item id, path) pair.
+        stores: list[tuple[str, Any, ast.AST | None]] = []
+
+        def target(node: ast.AST, value: ast.AST | None) -> None:
+            if isinstance(node, (ast.Tuple, ast.List)):
+                # ``a, b = 1, x`` pairs element by element; any other
+                # unpacking stores what the model cannot see.
+                paired = (
+                    isinstance(value, (ast.Tuple, ast.List))
+                    and len(value.elts) == len(node.elts)
+                    and not any(isinstance(e, ast.Starred) for e in [*node.elts, *value.elts])
+                )
+                for i, elt in enumerate(node.elts):
+                    target(elt, value.elts[i] if paired else None)  # type: ignore[union-attr]
+                return
+            if isinstance(node, ast.Starred):
+                target(node.value, None)
+                return
+            if isinstance(node, ast.Subscript):
+                item, indices = builder._outcome_subscript(node)
+                if item is not None and item in self._items:
+                    path = tuple(_int_literal(index) for index in indices)
+                    if None in path:
+                        stores.append(("item", item, value))
+                    else:
+                        stores.append(("cell", (item, path), value))
+                    return
+            items = builder._stored_outcomes(node)
+            if items:
+                # A store through anything but an item id may write any item.
+                stores.extend(("item", item if item in self._items else None, value) for item in items)
+                return
+            if isinstance(node, ast.Name):
+                stores.append(("var", node.id, value))
+                return
+            while isinstance(node, (ast.Subscript, ast.Attribute)):
+                node = node.value
+            if isinstance(node, ast.Name):
+                stores.append(("var", node.id, None))
+
+        for tree in trees:
+            for node in ast.walk(tree):
+                if isinstance(node, ast.Assign):
+                    for each in node.targets:
+                        target(each, node.value)
+                elif isinstance(node, ast.AnnAssign) and node.value is not None:
+                    target(node.target, node.value)
+                elif isinstance(node, ast.AugAssign):
+                    target(node.target, ast.BinOp(left=node.target, op=node.op, right=node.value))
+                elif isinstance(node, ast.NamedExpr):
+                    target(node.target, node.value)
+                elif isinstance(node, (ast.For, ast.AsyncFor)):
+                    target(node.target, None)
+                elif isinstance(node, ast.withitem) and node.optional_vars is not None:
+                    target(node.optional_vars, None)
+                elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+                    stores.append(("var", node.name, None))
+                elif isinstance(node, (ast.ExceptHandler, ast.MatchAs, ast.MatchStar)) and node.name:
+                    stores.append(("var", node.name, None))
+                elif isinstance(node, ast.MatchMapping) and node.rest:
+                    stores.append(("var", node.rest, None))
+
+        def holders(table: str, key: Any) -> list[set[str]]:
+            if table == "var":
+                return [self._variables.setdefault(key, set())]
+            if table == "cell":
+                item, path = key
+                return [self._cells.setdefault(item, {}).setdefault(path, set())]
+            return [self._outcomes.setdefault(each, set()) for each in ([key] if key is not None else sorted(self._items))]
+
+        for complete in (False, True):
+            changed = True
+            while changed:
+                changed = False
+                for table, key, value in stores:
+                    kinds = set(_UNKNOWN) if value is None else self._kinds(value, complete=complete)
+                    for held in holders(table, key):
+                        if not kinds <= held:
+                            held |= kinds
+                            changed = True
+
+    def _kinds(self, node: ast.AST, local: Any = frozenset(), *, complete: bool) -> set[str]:
+        """What ``node`` may hold at runtime, as the profiles know it so far. A
+        name no code assigns holds nothing while they grow (``complete``
+        False) and anything once they are complete."""
+        if isinstance(node, ast.Constant):
+            if isinstance(node.value, str):
+                return {_STR}
+            return {_NONE} if node.value is None else {_NUM}
+        if isinstance(node, ast.Name):
+            if node.id in local:
+                return {_NUM}
+            held = self._variables.get(node.id)
+            if not held:
+                return set(_UNKNOWN) if complete else set()
+            return set(held)
+        item = _answer_root(node)
+        if item is not None and item in self._items:
+            if item in self._texts:
+                return set(_UNKNOWN)
+            held = self._held_at(item, self.read_path(node, local))
+            return {_NUM} | (set(_UNKNOWN) if held & {_STR, _ANY} else set())
+        recurse = functools.partial(self._kinds, local=local, complete=complete)
+        if isinstance(node, ast.IfExp):
+            return recurse(node.body) | recurse(node.orelse)
+        if isinstance(node, ast.BoolOp):
+            return set().union(*(recurse(v) for v in node.values))
+        if isinstance(node, ast.Compare) or (isinstance(node, ast.UnaryOp) and isinstance(node.op, ast.Not)):
+            return {_NUM}
+        if isinstance(node, (ast.BinOp, ast.UnaryOp)):
+            parts = [node.left, node.right] if isinstance(node, ast.BinOp) else [node.operand]
+            held = set().union(*(recurse(p) for p in parts))
+            return set(_UNKNOWN) if held & {_STR, _ANY} else {_NUM}
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id in ("min", "max"):
+            # One of its arguments (or of the one list it is given).
+            args = [e for a in node.args for e in (a.elts if isinstance(a, (ast.List, ast.Tuple)) else [a])]
+            return set().union(*(recurse(a) for a in args)) if args else set(_UNKNOWN)
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id in _NUMERIC_CALLS:
+            return {_NUM}
+        if (
+            isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Attribute)
+            and isinstance(node.func.value, ast.Name)
+            and node.func.value.id == "math"
+        ):
+            return {_NUM}
+        return set(_UNKNOWN)
+
+    def operand(self, node: ast.AST, local: Any = frozenset()) -> _Operand | None:
+        """How a comparison of ``node`` with a string literal lowers, or
+        ``None`` for an operand that is no name, answer read or arithmetic
+        over those, which does not lower."""
+        item = _answer_root(node)
+        if item is not None and item in self._texts:
+            return _Operand.TEXT
+        if item is not None and item in self._items:
+            return _Operand.UNDECIDED if self.text_stored(item, self.read_path(node, local)) else _Operand.DECIDED
+        if isinstance(node, ast.Name):
+            if node.id in local:
+                return _Operand.DECIDED
+            held = self._variables.get(node.id) or _UNKNOWN
+            if _STR in held:
+                return _Operand.ENCODED
+            return _Operand.UNDECIDED if _ANY in held else _Operand.DECIDED
+        if isinstance(node, (ast.BinOp, ast.UnaryOp)):
+            return None if self._kinds(node, local, complete=True) & {_STR, _ANY} else _Operand.DECIDED
+        return None
+
+
+def _overlaps(stored: tuple[int, ...], read: tuple[int, ...]) -> bool:
+    """Whether a store at subscript path ``stored`` reaches a read at
+    ``read``: one is a prefix of the other."""
+    n = min(len(stored), len(read))
+    return stored[:n] == read[:n]
+
+
+def _answer_root(node: ast.AST) -> str | None:
+    """The item whose answer ``node`` reads: X for ``X.outcome``, a subscript
+    of it (a matrix cell, a QuestionGroup answer) or a Range end of either;
+    else ``None``."""
+    while (isinstance(node, ast.Attribute) and node.attr in _RANGE_ENDS) or isinstance(node, ast.Subscript):
+        node = node.value
+    return outcome_ref_name(node)
 
 
 def _int_literal(node: ast.AST) -> int | None:
@@ -390,7 +772,7 @@ class _CodeReads:
 
     def _none_choice(self, item_id: str) -> BoolRef | None:
         """When ``item_id`` reads ``None`` in this block: skipped or blank. A
-        Textarea's text is opaque (``StaticBuilder._lowering_code``), so only
+        Textarea's text is opaque (no Int stands for it, ``_ast_to_z3``), so only
         its raises need the choice: a free Bool, the block's own Textarea
         included (it may be submitted blank)."""
         builder = self._builder
@@ -913,6 +1295,15 @@ class StaticBuilder:
         """Initialize StaticBuilder with questionnaire state and build constraints."""
         self.logger = logging.getLogger(__name__)
         self.state = questionnaire_state
+        # Both depend on the questionnaire alone, so they outlive a rebuild
+        # (``_reset_build_state``): author code parsed once (``_parsed``), and
+        # the string model, read once the first build pass knows the items
+        # (``_read_string_model``).
+        self._parse_cache: dict[tuple[str, str], ast.AST | None] = {}
+        # Per-node readings (``_memoised``), kept for the builder's lifetime.
+        self._node_memo: dict[tuple[str, int, frozenset[Any] | None], tuple[ast.AST, Any]] = {}
+        self._runner: Any = None
+        self._string_model: _StringModel | None = None
         self._reset_build_state()
         self._build()
 
@@ -974,7 +1365,6 @@ class StaticBuilder:
         # being lowered may None-test, and its answered Bool per item.
         self._none_guarded: set[str] = set()
         self._predicate_answered: dict[str, BoolRef] = {}
-        self._predicate_value_reads: set[str] = set()
         self._predicate_reads_variables = False
         self._answered_count = 0
         # Each minted ``answered@X#n``: (X, the item whose condition minted it),
@@ -1032,11 +1422,21 @@ class StaticBuilder:
         # Per item, computed once: an open variable is one Int for every
         # compile of that item's conditions (its pre- and postcondition alike).
         self._runtime_version_cache: dict[str, tuple[dict[str, int], dict[str, ExprRef]]] = {}
+        # Each compile after the build (``_compile_conditions``), keyed by what
+        # it reads: ``(item_id, predicates in order, kind, blank)`` -> ``(formula,
+        # exact, the (index, wide items) of each wide condition, what the
+        # lowering minted fresh with its makers)``.
+        self._compiled_conditions: dict[
+            tuple[str, tuple[str, ...], str, bool],
+            tuple[
+                BoolRef, bool, tuple[tuple[int, list[str]], ...], tuple[tuple[Any, Callable[[], Any]], ...]
+            ],
+        ] = {}
+        # The fresh symbols a cached compile's lowering mints (``_mint``), while
+        # one is recording; ``None`` otherwise.
+        self._minting: list[tuple[Any, Callable[[], Any]]] | None = None
         self._topology = None
         self._built = False
-        # Whether a codeBlock is being lowered: a Textarea's text is opaque
-        # there (#2003), no Int stands for it (``_CodeReads``).
-        self._lowering_code = False
         # #1844: per SSA version (``_ssa_key``), when the runtime may mark it
         # unknown (computed from a blank answer, #1044), as ``_UnknownMarks``
         # builds it; a version missing here is never marked.
@@ -1046,6 +1446,35 @@ class StaticBuilder:
         # Fresh lenient outcomes of condition leaves holding a raise the
         # two-sided lowering cannot place (#1779, ``_lower_kleene``).
         self._loose_count = 0
+        # Truths of condition leaves comparing a Textarea's text (#2241,
+        # ``_text_leaf``): one per (item, literal set), and the fresh ones of
+        # a Textarea code writes.
+        self._text_choices: dict[str, dict[frozenset[str | None], BoolRef]] = {}
+        self._text_count = 0
+        # Truths of comparisons of a value the model may not know to be a
+        # number with string literals (#2243, ``_string_choice``): one per
+        # (variable version, literal set), and fresh ones for any other value.
+        self._string_choices: dict[str, dict[frozenset[str], BoolRef]] = {}
+        self._string_count = 0
+        # The names a condition being compiled leaves undecided
+        # (``_note_undecided``, ``_compile_conditions``); the variables some
+        # version of which is unconstrained (``_register_variable_assignment``);
+        # one reading per node (``_memoised``).
+        self._undecided_reads: list[str] | None = None
+        self._free_variables: set[str] = set()
+        # Variables a codeBlock assigned after minting a free value
+        # (``_process_code_block``), and what they are copied into
+        # (``_register_variable_assignment``): a condition reading one is
+        # undecided. ``_code_mints`` counts the free values minted in code.
+        self._undecided_variables: set[str] = set()
+        self._code_mints = 0
+        # The one free Int of each answer or matrix cell a store may put text into
+        # (``_unmodelled_read``).
+        self._stored_reads: dict[str, ExprRef] = {}
+        # Whether the predicate being compiled failed (``_compile_predicate``).
+        self._compile_failed = False
+        # What the last ``_compile_predicate`` left undecided and whether it failed.
+        self._last_compile: tuple[list[str], bool] = ([], False)
 
         # Domain constraints D_i(S_i) - only min/max and enumeration constraints
         # These define the valid value space for each item variable
@@ -1505,20 +1934,24 @@ class StaticBuilder:
             return Not(list_none) if tests_answered else list_none
         if not self._answerable(item_id):
             return None
-        # Free text lowers to a sentinel, so a predicate that also reads the
-        # text, directly or through a variable that may hold it, would be
-        # proven against a constant (#1250).
-        if self.item_details[item_id].get("control") == "Textarea" and (
-            item_id in self._predicate_value_reads or self._predicate_reads_variables
-        ):
+        # A variable may hold the text or a value computed from it, which the
+        # model does not tie to the Textarea's answeredness (#1250), so a
+        # predicate reading a variable keeps the None test unlowered. The
+        # text's own reads lower leaf by leaf (``_text_leaf``).
+        if self._is_textarea(item_id) and self._predicate_reads_variables:
             return None
         answered = self._predicate_answered.get(item_id)
         if answered is None:
-            self._answered_count += 1
-            # ``@`` cannot occur in an item id, so no item or variable shares the name.
-            answered = Bool(f"{ANSWERED_PREFIX}{item_id}#{self._answered_count}", self.ctx)
-            self._predicate_answered[item_id] = answered
-            self._answered_minted[answered.decl().name()] = (item_id, self._predicate_context)
+            context = self._predicate_context
+
+            def mint() -> BoolRef:
+                self._answered_count += 1
+                # ``@`` cannot occur in an item id, so no item or variable shares the name.
+                symbol = Bool(f"{ANSWERED_PREFIX}{item_id}#{self._answered_count}", self.ctx)
+                self._answered_minted[symbol.decl().name()] = (item_id, context)
+                return symbol
+
+            answered = self._predicate_answered[item_id] = self._mint(mint)
         return answered if tests_answered else Not(answered)
 
     def _has_outcome_model(self, item_id: str) -> bool:
@@ -1746,8 +2179,8 @@ class StaticBuilder:
     def block_condition_reads(self) -> dict[tuple[str, str, int], dict[str, list[str]]]:
         """``{(block id, kind, condition_idx): {field: items}}``: for each block
         condition with a coverage gap, the union over its items of the items
-        each gap names in ``wide_items``, ``skippable_items`` and
-        ``ternary_items`` (#1817).
+        each gap names in ``wide_items``, ``skippable_items``,
+        ``ternary_items`` and ``undecided_reads`` (#1817).
 
         The block predicate lowers in each item's own context, where the item's
         own outcome is answered and another member's may not be, so each item's
@@ -1762,7 +2195,7 @@ class StaticBuilder:
                 if scope != "block":
                     continue
                 reads = merged.setdefault((owner, gap["kind"], idx), {})
-                for field in ("wide_items", "skippable_items", "ternary_items"):
+                for field in ("wide_items", "skippable_items", "ternary_items", "undecided_reads"):
                     names = reads.setdefault(field, [])
                     names.extend(n for n in gap.get(field) or [] if n not in names)
         return merged
@@ -1946,6 +2379,11 @@ class StaticBuilder:
         # gating when constraints are emitted.
         self._emit_present_gated_domain()
 
+        # The string model reads the code once, with the items pass 1 just
+        # registered (``_is_textarea``); a rebuild keeps it.
+        if self._string_model is None:
+            self._string_model = self._read_string_model()
+
         # Process initialization code
         init_code = self.state.get_code_init()
         if init_code:
@@ -2056,14 +2494,13 @@ class StaticBuilder:
             iterate_over = item.get("_roster_iterate_over") if item_id else None
             if not iterate_over:
                 continue
-            try:
-                expr_tree = ast.parse(iterate_over, mode="eval")
-                iter_deps = self._extract_dependencies_from_ast(expr_tree)
-            except SyntaxError:
+            expr_tree = self._parsed(iterate_over, "eval")
+            if expr_tree is None:
                 # Malformed iterateOver — surface elsewhere; don't poison the
                 # dep graph silently. FlowProcessor's runtime eval will surface
                 # the same error via the roster_iterate_over warning channel.
                 continue
+            iter_deps = self._extract_dependencies_from_ast(expr_tree)
             self.dependency_graph.setdefault(item_id, set()).update(iter_deps)
 
         # ------------------------------------------------------------------
@@ -2225,9 +2662,8 @@ class StaticBuilder:
             # runtime eval already surface the author-facing error; emitting
             # nothing here just falls back to the canonical single-pass
             # model, never a crash).
-            try:
-                expr_tree = ast.parse(iterate_over, mode="eval")
-            except SyntaxError:
+            expr_tree = self._parsed(iterate_over, "eval")
+            if expr_tree is None:
                 continue
             iter_z3 = self._ast_to_z3(expr_tree.body, item_id)
             if iter_z3 is None:
@@ -2523,36 +2959,30 @@ class StaticBuilder:
         item's None choice, and an assignment the block may not reach (a read
         raised first) keeps its target's old value.
         """
+        tree = self._parsed(code, "exec")
+        if tree is None:
+            self.logger.error(f"Syntax error in code block for {context_id}")
+            return
+        # Build parent map so we can find enclosing if-conditions
+        parent_map = self._build_parent_map(tree)
+        outer_blank, self._predicate_blank = self._predicate_blank, {}
         try:
-            tree = ast.parse(code)
+            reads = _CodeReads(self, tree, context_id, parent_map)
+            entry = dict(self.version_map)
+            marks = None
+            if context_id != "__init__":
+                marks = _UnknownMarks(
+                    tree, self._version_mark, lambda item_id: self._code_blank(item_id, reads), BoolVal(True, self.ctx)
+                )
+            self._lower_code_assignments(tree, context_id, parent_map, reads)
+            if marks is not None:
+                self._settle_marks(marks, entry)
+        finally:
+            self._predicate_skipped, self._predicate_blank = {}, outer_blank
 
-            # Build parent map so we can find enclosing if-conditions
-            parent_map = self._build_parent_map(tree)
-            outer_blank, self._predicate_blank = self._predicate_blank, {}
-            try:
-                reads = _CodeReads(self, tree, context_id, parent_map)
-                entry = dict(self.version_map)
-                marks = None
-                if context_id != "__init__":
-                    marks = _UnknownMarks(
-                        tree, self._version_mark, lambda item_id: self._code_blank(item_id, reads), BoolVal(True, self.ctx)
-                    )
-                self._lowering_code = True
-                try:
-                    self._lower_code_assignments(tree, context_id, parent_map, reads)
-                finally:
-                    self._lowering_code = False
-                if marks is not None:
-                    self._settle_marks(marks, entry)
-            finally:
-                self._predicate_skipped, self._predicate_blank = {}, outer_blank
-
-            for item_id in self._stored_outcomes(tree):
-                if item_id is not None and self._is_question_group(item_id):
-                    self._record_group_write(item_id, context_id)
-
-        except SyntaxError as e:
-            self.logger.error(f"Syntax error in code block for {context_id}: {e}")
+        for item_id in self._stored_outcomes(tree):
+            if item_id is not None and self._is_question_group(item_id):
+                self._record_group_write(item_id, context_id)
 
     def _code_blank(self, item_id: str, reads: _CodeReads) -> BoolRef | None:
         """When ``item_id`` is blank as a codeBlock reads it, for the #1044
@@ -2678,7 +3108,18 @@ class StaticBuilder:
             elif isinstance(statement, ast.AugAssign):
                 self._lower_code_aug_assign(statement, path, context_id, parent_map, reads)
             elif isinstance(statement, ast.If):
+                mints = self._code_mints
                 test = self._code_branch_test(statement, context_id, reads)
+                if self._code_mints > mints:
+                    # A test the block cannot decide (text it does not hold
+                    # exactly): what either branch assigns is undecided
+                    # wherever a condition reads it.
+                    self._undecided_variables.update(
+                        n.id
+                        for branch in (*statement.body, *statement.orelse)
+                        for n in ast.walk(branch)
+                        if isinstance(n, ast.Name) and isinstance(n.ctx, ast.Store)
+                    )
                 # A test that raises runs neither branch (the block stops,
                 # ``CodeExecutionError``); later statements see it through
                 # ``_CodeReads`` (``_halted_within`` / ``_halted_before``).
@@ -2710,10 +3151,39 @@ class StaticBuilder:
             finally:
                 self._predicate_skipped = {}
         if test is None:
+            if self._text_left_unlowered(statement.test, frozenset()):
+                # A test on text the block cannot decide leaves what it assigns
+                # undecided, and that is said where a condition reads it.
+                self._note_undecided(None)
             self._code_raise_count += 1
             # ``@`` cannot occur in an item id, so no item or variable shares the name.
             test = Bool(f"branch@{context_id}#{self._code_raise_count}", self.ctx)
         return test
+
+    def _text_left_unlowered(self, node: ast.AST, bound: frozenset[str]) -> bool:
+        """Whether a comparison with text in ``node`` is one the model cannot
+        decide (refused, a Textarea's text, or an operand it does not hold
+        exactly), each read with the names the comprehensions around it bind
+        (``bound``), so a test that does not lower for another reason (a
+        comparison it decides beside a call) mints nothing
+        (``_code_branch_test``)."""
+        if isinstance(node, ast.Compare):
+            found = self._string_comparison(node, bound)
+            if found.kind is _CompareKind.REFUSED or found.how in (_Operand.TEXT, _Operand.UNDECIDED):
+                return True
+            if any(self._text_left_unlowered(part, bound) for part in found.parts):
+                return True
+        if isinstance(node, (ast.ListComp, ast.SetComp, ast.GeneratorExp, ast.DictComp)):
+            inner = set(bound)
+            for generator in node.generators:
+                if self._text_left_unlowered(generator.iter, frozenset(inner)):
+                    return True
+                inner.update(n.id for n in ast.walk(generator.target) if isinstance(n, ast.Name))
+                if any(self._text_left_unlowered(test, frozenset(inner)) for test in generator.ifs):
+                    return True
+            parts = [node.key, node.value] if isinstance(node, ast.DictComp) else [node.elt]
+            return any(self._text_left_unlowered(part, frozenset(inner)) for part in parts)
+        return any(self._text_left_unlowered(child, bound) for child in ast.iter_child_nodes(node))
 
     @staticmethod
     def _on_path(path: BoolRef | None, value: ExprRef | None, old: ExprRef) -> ExprRef | None:
@@ -2756,7 +3226,14 @@ class StaticBuilder:
                     rhs_deps = self._extract_dependencies_from_ast(node.value)
                     rhs_deps.update(enclosing_deps)
                     old = reads.old_value(var_name)
-                    z3_value = reads.guarded(node, self._lower_code_value(node.value, context_id, reads), old)
+                    mints = self._code_mints
+                    value = self._lower_code_value(
+                        node.value, context_id, reads, encoded=self._string_model.encoded(var_name)
+                    )
+                    if self._code_mints > mints:
+                        # Computed from a value the block cannot decide.
+                        self._undecided_variables.add(var_name)
+                    z3_value = reads.guarded(node, value, old)
                     if path is not None:
                         z3_value = self._on_path(path, z3_value, self._path_old_value(var_name, context_id))
                     self._register_variable_assignment(var_name, z3_value, rhs_deps, context_id)
@@ -2788,7 +3265,14 @@ class StaticBuilder:
                 if var_name in self.version_map:
                     rhs_deps.add(f"var:{var_name}")
                 # Build Z3 value: old_value OP rhs
+                mints = self._code_mints
                 rhs_z3 = self._lower_code_value(node.value, context_id, reads)
+                if self._code_mints > mints:
+                    # Computed from a value the block cannot decide.
+                    self._undecided_variables.add(var_name)
+                if self._carries_string(target) or self._carries_string(node.value):
+                    # ``s += 1`` raises on a string, ``s += "a"`` makes one.
+                    rhs_z3 = None
                 old_z3 = self._get_current_z3_var(var_name)
                 z3_value = reads.guarded(node, self._apply_aug_op(node.op, old_z3, rhs_z3, node.value), old_z3)
                 z3_value = self._on_path(path, z3_value, old_z3)
@@ -2880,12 +3364,20 @@ class StaticBuilder:
         for name in sorted(names - set(self.item_vars)):
             self._register_variable_assignment(name, None, set(), context_id)
 
-    def _lower_code_value(self, node: ast.AST, context_id: str, reads: _CodeReads) -> ExprRef | None:
+    def _lower_code_value(
+        self, node: ast.AST, context_id: str, reads: _CodeReads, *, encoded: bool = False
+    ) -> ExprRef | None:
         """Lower one codeBlock value with the None choices of the items it
         reads (#1776): ``==`` / ``!=`` / ``in`` / truth tests see ``None``
-        under them (``_skip_aware_equality``, ``_skipped_operand``)."""
+        under them (``_skip_aware_equality``, ``_skipped_operand``). For a
+        variable that may hold text (``encoded``) the value is encoded
+        (``_encode``); any other target takes no value built from text."""
         self._predicate_skipped = reads.choices
         try:
+            if encoded:
+                return self._encode(node, context_id)
+            if self._carries_string(node):
+                return None
             return self._ast_to_z3(node, context_id)
         finally:
             self._predicate_skipped = {}
@@ -2914,6 +3406,13 @@ class StaticBuilder:
 
         # Track definition source
         self.variable_definitions[(var_name, new_version)] = context_id
+        # A version with no value, or one a Roster / capped-Group writer
+        # leaves free below, holds anything (``_lower_string_compare``).
+        if z3_value is None or (context_id != "__init__" and not self._plain_writer(context_id)):
+            self._free_variables.add(var_name)
+        # A value computed from an undecided variable is undecided too.
+        if any(dep.startswith("var:") and dep[4:] in self._undecided_variables for dep in deps):
+            self._undecided_variables.add(var_name)
 
         # Variable depends on the item that defines it
         # (if defined in an item's codeBlock, not in __init__)
@@ -2989,9 +3488,11 @@ class StaticBuilder:
         if item_id not in self.item_vars:
             return
         target = self.item_vars[item_id]
-        z3_value = reads.guarded(
-            statement, self._lower_code_value(value_node, context_id, reads), target, variable=False
-        )
+        # A value that may be text does not lower (``_lower_code_value``):
+        # the answer is then ``text_stored``, and each read of it is its free
+        # Int (``_unmodelled_read``).
+        lowered = self._lower_code_value(value_node, context_id, reads)
+        z3_value = reads.guarded(statement, lowered, target, variable=False)
         if z3_value is not None and self._item_code(context_id):
             self.codeblock_constraints.append(
                 Implies(self._code_ran(context_id, path), self.item_vars[item_id] == z3_value)
@@ -3087,9 +3588,9 @@ class StaticBuilder:
     ) -> ExprRef | None:
         """Apply augmented assignment operator to Z3 expressions, under the
         same rule as ``_ast_to_z3``: ``//=`` and ``%=`` only by a positive
-        literal, ``/=`` never (#1767), ``&=`` only by a literal (#2037), and
-        never by a string literal (#2048)."""
-        if left is None or right is None or _is_str_literal(right_node):
+        literal, ``/=`` never (#1767) and ``&=`` only by a literal (#2037); the
+        caller refuses text (``_carries_string``, #2048)."""
+        if left is None or right is None:
             return None
         if isinstance(op, ast.Add):
             return left + right
@@ -3162,6 +3663,7 @@ class StaticBuilder:
         clears; a None test on a variable or on a list or pair item was never
         modelled, and a warning there could not be cleared.
 
+        A use of a string the lowering refuses is ``Str`` (``_string_refusal``).
         A division Z3 reads differently from Python is reported by its operator
         (``Div``, ``FloorDiv``, ``Mod``; ``_z3_division_agrees``). No variable
         can hold a fraction: the loader refuses every construct that makes one
@@ -3169,10 +3671,12 @@ class StaticBuilder:
         """
         unsupported: list[str] = []
         guarded = none_guarded_outcomes(tree)
+        # A comprehension's own names hold its iteration values, numbers.
+        local = self._collect_bound_names(tree)
         for node in ast.walk(tree):
             if isinstance(node, (ast.Call, ast.ListComp, ast.GeneratorExp, ast.Subscript)):
                 kind_name = type(node).__name__
-            elif _computes_or_orders_a_string(node):
+            elif self._string_refusal(node, local):
                 kind_name = "Str"
             elif isinstance(node, ast.BinOp) and not _z3_division_agrees(node.op, node.right):
                 kind_name = type(node.op).__name__
@@ -3200,6 +3704,7 @@ class StaticBuilder:
         skippable_items: list[str] | None = None,
         wide_items: list[str] | None = None,
         ternary_items: list[str] | None = None,
+        undecided_reads: list[str] | None = None,
     ) -> None:
         """Record a coverage gap (R13) and emit a one-shot WARNING (R7).
 
@@ -3219,7 +3724,9 @@ class StaticBuilder:
         ``wide_items`` marks a condition that DID lower, but wider than it is:
         the items whose raise on ``None`` the lowering could not place (#1775),
         so the classifier withholds the verdicts only a narrower formula proves
-        (#1815).
+        (#1815). ``undecided_reads`` names the variables and items a condition
+        that did lower compares with a string through a free Bool
+        (``_string_choice``): what it decides about them is not proven.
         """
         gaps = self.coverage_gaps.setdefault(item_id, [])
         # Deduplicate by (kind, condition_idx) — same condition shouldn't log twice.
@@ -3243,7 +3750,18 @@ class StaticBuilder:
             gap["ternary_items"] = list(ternary_items)
         if wide_items:
             gap["wide_items"] = list(wide_items)
+        if undecided_reads:
+            gap["undecided_reads"] = list(undecided_reads)
         gaps.append(gap)
+        if undecided_reads and not wide_items:
+            self.logger.warning(
+                "static validator left a comparison of %s with a string undecided in %s on %s #%d",
+                undecided_reads,
+                kind,
+                item_id,
+                condition_idx,
+            )
+            return
         if wide_items:
             self.logger.warning(
                 "static validator lowered %s on %s #%d wider than it is: a raise on None of %s "
@@ -3328,10 +3846,9 @@ class StaticBuilder:
         for code in code_units:
             if not code:
                 continue
-            try:
-                names |= self._collect_leaking_bound_names(ast.parse(code))
-            except SyntaxError:
-                continue
+            tree = self._parsed(code, "exec")
+            if tree is not None:
+                names |= self._collect_leaking_bound_names(tree)
         return names
 
     @staticmethod
@@ -3494,12 +4011,17 @@ class StaticBuilder:
         """Record one ``textarea_in_predicate`` gap under ``owner_id`` and WARN once.
 
         A Textarea item has a string outcome for which no Z3 integer variable is
-        created; ``<item>.outcome`` in a predicate lowers to the sentinel
-        ``IntVal(0)``, so the constraint is statically wrong and can even
-        misclassify reachability. Deduplicated by ``(item_name, condition_kind)``
-        so a Textarea outcome referenced several times in one location yields a
-        single finding. WARNING, not error — a stored file that already does this
-        must still save.
+        created. In a condition a leaf comparing the text with literals lowers
+        on its own (``_text_leaf``, #2241): decided where no text satisfies it,
+        else free, and the rest of the condition still lowers. Any other read
+        of the text (a call, an ordering, a method) does not lower
+        (``_ast_to_z3``), so the condition is left out whole; a call there is
+        also a ``skipped_condition`` on another item's condition (the build pass
+        records no gap for a Textarea's own conditions). What a codeBlock
+        computes from the text is unconstrained. Deduplicated by
+        ``(item_name, condition_kind)`` so a Textarea outcome referenced several
+        times in one location yields a single finding. WARNING, not error — a
+        stored file that already does this must still save.
         """
         gaps = self.coverage_gaps.setdefault(owner_id, [])
         for existing in gaps:
@@ -3518,8 +4040,8 @@ class StaticBuilder:
         )
         self.logger.warning(
             "Textarea outcome '%s.outcome' referenced in the %s of '%s' — a "
-            "free-text outcome has no verified Z3 model (it lowers to a sentinel), "
-            "so gating logic on it is outside the verified envelope.",
+            "free-text outcome has no Z3 model, so logic on it is outside the "
+            "verified envelope.",
             item_name,
             condition_kind,
             owner_id,
@@ -3608,9 +4130,8 @@ class StaticBuilder:
         a variable consumed only by a Roster (``family_mask`` → ``iterateOver``)
         is not mis-flagged write-only by the U3 hygiene lint.
         """
-        try:
-            tree = ast.parse(expr, mode="eval")
-        except SyntaxError:
+        tree = self._parsed(expr, "eval")
+        if tree is None:
             return
         for node in ast.walk(tree):
             if isinstance(node, ast.Name) and isinstance(node.ctx, ast.Load):
@@ -3621,9 +4142,8 @@ class StaticBuilder:
     ) -> None:
         """Walk one precondition/postcondition string: flag undefined Load names
         (attributed to ``owner_id``) and count variable reads for the census."""
-        try:
-            tree = ast.parse(predicate, mode="eval")
-        except SyntaxError:
+        tree = self._parsed(predicate, "eval")
+        if tree is None:
             # Unparseable predicate — the runtime warning channel and the R13
             # coverage-gap path already surface it; nothing to lint here.
             return
@@ -3658,9 +4178,8 @@ class StaticBuilder:
         to attribute an undefined_name to and runs before any item); otherwise it
         is both the assignment context label and the undefined-name owner.
         """
-        try:
-            tree = ast.parse(code)
-        except SyntaxError:
+        tree = self._parsed(code, "exec")
+        if tree is None:
             return
         context = item_id if item_id is not None else "codeInit"
         bound = self._collect_bound_names(tree)
@@ -3890,9 +4409,8 @@ class StaticBuilder:
                 predicate = cond.get("predicate", "")
                 if not predicate:
                     continue
-                try:
-                    tree = ast.parse(predicate, mode="eval")
-                except SyntaxError:
+                tree = self._parsed(predicate, "eval")
+                if tree is None:
                     continue
                 deps = self._extract_dependencies_from_ast(tree.body)
                 # Relational iff any dependency is a variable (``var:`` node) or
@@ -4045,9 +4563,11 @@ class StaticBuilder:
         stripped from the returned dep set for backward compatibility.
         """
         _require_condition_kind(kind)
+        tree = self._parsed(predicate, "eval")
+        if tree is None:
+            # ``unsafe_code`` reports a predicate that does not parse.
+            return None, set()
         try:
-            tree = ast.parse(predicate, mode="eval")
-
             # Extract ALL dependencies (items AND variables)
             all_deps = self._extract_dependencies_from_ast(tree.body)
 
@@ -4088,7 +4608,11 @@ class StaticBuilder:
             item_deps = {d for d in all_deps if not d.startswith("var:")}
             return constraint, item_deps
         except Exception as e:
-            self.logger.error(f"Error building {kind} constraint for {item_id}: {e}")
+            self.logger.error(f"Error building {kind} constraint for {item_id}: {type(e).__name__}")
+            # A fault in the lowering is a skipped condition, never a silent
+            # one, unless ``unsafe_code`` already reports the predicate.
+            if not self._reported_unsafe(predicate):
+                self._record_coverage_gap(item_id, kind, condition_idx, ["Error"])
             return None, set()
 
     def _build_precondition_constraint(
@@ -4533,9 +5057,13 @@ class StaticBuilder:
 
         ``len(...)`` is intentionally NOT lowered here — its only meaningful
         shape inside a Z3 expression is part of the ``len(set(...)) == k``
-        Distinct pattern, which is matched at the Compare-node level.
+        Distinct pattern, which is matched at the Compare-node level. None
+        lowers over a value that may hold a string (``_carries_string``):
+        ``int("a")`` raises and ``sum`` of strings too.
         """
         if not isinstance(node.func, ast.Name):
+            return None
+        if self._string_refusal(node, local_bindings):
             return None
         fname = node.func.id
 
@@ -4723,13 +5251,15 @@ class StaticBuilder:
                 return IntVal(1 if node.value else 0, self.ctx)
             elif isinstance(node.value, int):
                 return IntVal(node.value, self.ctx)
-            elif isinstance(node.value, str):
-                return IntVal(hash(node.value) % 1000000, self.ctx)
+            # A string has no Int of its own: a comparison with one lowers in
+            # ``_lower_string_compare``, an assignment of one in ``_encode``.
 
         elif isinstance(node, ast.Name):
             # Comprehension loop variables shadow everything else.
             if node.id in local_bindings:
                 return IntVal(local_bindings[node.id], self.ctx)
+            if node.id in self._undecided_variables:
+                self._note_undecided(node.id)
             return self._get_current_z3_var(node.id)
 
         elif isinstance(node, ast.Attribute):
@@ -4738,13 +5268,18 @@ class StaticBuilder:
             if isinstance(node.value, ast.Name) and node.attr == "outcome":
                 item_id = node.value.id
                 if item_id in self.item_vars:
+                    if self._string_model.text_stored(item_id):
+                        # Keyed by the Int read now, which a Roster iteration
+                        # or capped-Group presence swaps in (``item_vars``).
+                        return self._unmodelled_read(item_id, self.item_vars[item_id])
                     return self.item_vars[item_id]
-                # Text items have string outcomes — return sentinel 0 in a
-                # predicate (flagged ``textarea_in_predicate``); in any
-                # codeBlock the text is opaque (#2003): no Int stands for it,
-                # so what it computes is unconstrained.
+                # Free text has no Int (``textarea_in_predicate``): a
+                # condition leaf comparing it with literals lowers in
+                # ``_text_leaf`` (#2241), any other read leaves the condition
+                # unlowered, and in a codeBlock what it computes is
+                # unconstrained (#2003).
                 if self._is_textarea(item_id):
-                    return None if self._lowering_code else IntVal(0, self.ctx)
+                    return None
                 # Matrix items: bare .outcome (no subscript) is unsupported.
                 # Caller's WARNING-on-None machinery surfaces this to the author.
                 if item_id in self.item_cells:
@@ -4756,14 +5291,17 @@ class StaticBuilder:
             #                       scalar lowering; only fold-context unrolling
             #                       handles row-slice reads — see _unroll_list_arg)
             # arr[i] for non-matrix arr → None (no Python list semantics in Z3)
-            return self._lower_subscript(node, context, local_bindings)
+            cell = self._lower_subscript(node, context, local_bindings)
+            root = _answer_root(node)
+            path = self._string_model.read_path(node, local_bindings)
+            if cell is not None and root is not None and self._string_model.text_stored(root, path):
+                return self._unmodelled_read(root, cell)
+            return cell
 
         elif isinstance(node, ast.BinOp):
-            if _is_str_literal(node.left) or _is_str_literal(node.right):
-                # A string literal is an Int here only so equality in a
-                # predicate can compare it (its hash); as an arithmetic or
-                # bitwise operand the hash would stand for a number Python never
-                # computes (``"a" - 1`` raises, ``"a" * 2`` is a string), #2048.
+            if self._string_refusal(node, local_bindings):
+                # ``"a" - 1`` raises and ``"a" * 2`` is a string (#2048), so
+                # arithmetic over what may hold one has no Int.
                 return None
             left = self._ast_to_z3(node.left, context, local_bindings)
             right = self._ast_to_z3(node.right, context, local_bindings)
@@ -4784,7 +5322,7 @@ class StaticBuilder:
                     return self._lower_bit_and(node, left, right)
 
         elif isinstance(node, ast.UnaryOp):
-            operand = None if _is_str_literal(node.operand) else self._ast_to_z3(
+            operand = None if self._string_refusal(node, local_bindings) else self._ast_to_z3(
                 node.operand, context, local_bindings
             )
             if operand is not None:
@@ -4794,7 +5332,11 @@ class StaticBuilder:
                     return operand
 
         elif isinstance(node, ast.IfExp):
-            # Ternary operator: a if condition else b
+            # Ternary operator: a if condition else b. A branch carrying text
+            # has no Int beside a number's (``_encode`` lowers it for a
+            # variable that may hold text); the test is a truth test.
+            if self._string_refusal(node, local_bindings):
+                return None
             test = self._ast_to_z3_bool(node.test, context, local_bindings)
             body = self._ast_to_z3(node.body, context, local_bindings)
             orelse = self._ast_to_z3(node.orelse, context, local_bindings)
@@ -4848,6 +5390,9 @@ class StaticBuilder:
             none_test = self._lower_none_test(node)
             if none_test is not None:
                 return none_test
+            found = self._string_comparison(node, local_bindings)
+            if found.kind is not _CompareKind.NONE:
+                return self._lower_string_compare(found, context, local_bindings)
 
             # Support chained comparisons: a < b < c → (a < b) and (b < c)
             if len(node.ops) != len(node.comparators):
@@ -4860,43 +5405,23 @@ class StaticBuilder:
             for op, comp in zip(node.ops, node.comparators, strict=False):
                 # In/NotIn need the raw AST comparator (list/tuple/set), not Z3 value
                 if isinstance(op, (ast.In, ast.NotIn)):
-                    if isinstance(comp, (ast.List, ast.Tuple, ast.Set)):
-                        member_vals = [
-                            self._ast_to_z3(elt, context, local_bindings) for elt in comp.elts
-                        ]
-                        # One unlowerable member makes the whole membership
-                        # unlowerable: dropping it would narrow ``in`` and widen
-                        # ``not in`` (#1164).
-                        if not member_vals or any(v is None for v in member_vals):
-                            return None
-                        # ``in`` is ``==`` against each member, a skipped
-                        # item's None included on either side (#1769).
-                        membership = Or(
-                            *[
-                                self._skip_aware_equality(lhs == v, lhs_node, elt, local_bindings)
-                                for v, elt in zip(member_vals, comp.elts, strict=True)
-                            ]
-                        )
-                        if isinstance(op, ast.In):
-                            clauses.append(membership)
-                        else:
-                            clauses.append(Not(membership))
-                    else:
+                    if not isinstance(comp, (ast.List, ast.Tuple, ast.Set)) or not comp.elts:
                         return None
+                    membership = self._lower_membership(lhs, lhs_node, comp.elts, context, local_bindings)
+                    if membership is None:
+                        return None
+                    clauses.append(membership if isinstance(op, ast.In) else Not(membership))
                     # For chained comparisons after In/NotIn, lhs stays the same
                     continue
 
-                if isinstance(op, _ORDERING_OPS) and (_is_str_literal(lhs_node) or _is_str_literal(comp)):
-                    # A string orders against a number by raising and against
-                    # another string by its text, never by its hash (#2048).
-                    return None
                 rhs = self._ast_to_z3(comp, context, local_bindings)
                 if rhs is None:
                     return None
-                if isinstance(op, ast.Eq):
-                    clauses.append(self._skip_aware_equality(lhs == rhs, lhs_node, comp, local_bindings))
-                elif isinstance(op, ast.NotEq):
-                    clauses.append(Not(self._skip_aware_equality(lhs == rhs, lhs_node, comp, local_bindings)))
+                if isinstance(op, (ast.Eq, ast.NotEq)):
+                    equal = self._equality(lhs, lhs_node, rhs, comp, local_bindings)
+                    if equal is None:
+                        return None
+                    clauses.append(equal if isinstance(op, ast.Eq) else Not(equal))
                 elif isinstance(op, ast.Lt):
                     clauses.append(lhs < rhs)
                 elif isinstance(op, ast.LtE):
@@ -4946,11 +5471,392 @@ class StaticBuilder:
         if expr is not None:
             if isinstance(expr, BoolRef):
                 return expr
-            # Non-zero is true; a skipped item's None is false (#1769).
+            # Non-zero is true; a skipped item's None is false (#1769); so is
+            # the empty string, the one falsy string.
+            truthy = expr != 0
+            if self._is_encoded(node, local_bindings):
+                truthy = And(truthy, expr != IntVal(self._string_model.text_value(""), self.ctx))
             skipped = self._skipped_operand(node, local_bindings)
-            return expr != 0 if skipped is None else And(Not(skipped), expr != 0)
+            return truthy if skipped is None else And(Not(skipped), truthy)
 
         return None
+
+    def _read_string_model(self) -> _StringModel:
+        """The questionnaire's string model, or, when reading its code fails,
+        the degraded one (logged; every comparison with text is then
+        undecided and reported, never dropped)."""
+        try:
+            return _StringModel(self)
+        except Exception as error:
+            self.logger.error(
+                "string model could not be read (%s): comparisons with text are left undecided",
+                type(error).__name__,
+            )
+            return _StringModel(self, degraded=True)
+
+    def _parsed(self, source: str, mode: str) -> ast.AST | None:
+        """``source`` parsed once per builder, so every reading of one unit
+        meets the same nodes (``_memoised``); ``None`` when it does not parse
+        (``unsafe_code`` reports that)."""
+        key = (source, mode)
+        if key not in self._parse_cache:
+            try:
+                self._parse_cache[key] = ast.parse(source, mode=mode)
+            except SyntaxError:
+                self._parse_cache[key] = None
+        return self._parse_cache[key]
+
+    def _reported_unsafe(self, predicate: str) -> bool:
+        """Whether ``unsafe_code`` reports ``predicate`` (it does not parse,
+        or the sandbox refuses it), so a fault lowering it is reported there,
+        once, and not again as a skipped condition."""
+        if self._runner is None:
+            # Imported here: ``askalot_qml.core`` imports the engine, which
+            # imports this module.
+            from askalot_qml.core.python_runner import PythonRunner
+
+            self._runner = PythonRunner()
+        return bool(self._runner.validate_expr(predicate))
+
+    def _code_trees(self) -> list[ast.AST]:
+        """Every unit of author code, parsed (``_parsed``): codeInit, each
+        codeBlock, each ``iterateOver`` and each condition."""
+        sources: list[tuple[str, str]] = [(self.state.get_code_init() or "", "exec")]
+        for owner in [*self.state.get_all_items(), *self.state.get_blocks()]:
+            sources.append((owner.get("codeBlock") or "", "exec"))
+            sources.append((owner.get("iterateOver") or "", "eval"))
+            for kind in ("precondition", "postcondition"):
+                sources.extend((condition.get("predicate") or "", "eval") for condition in owner.get(kind) or [])
+        trees = (self._parsed(source, mode) for source, mode in sources if source)
+        return [tree for tree in trees if tree is not None]
+
+    def _memoised(self, tag: str, node: ast.AST, local_bindings: Any, compute: Callable[[], Any]) -> Any:
+        """``compute()`` once per (``tag``, node, comprehension bindings): the
+        bound names with their values where they have them, since an unrolled
+        index decides which cell a read is (``_StringModel.read_path``). What
+        is memoised reads only the string model, which is fixed for the
+        builder, so the memo lives as long as the builder; it holds each node
+        it keys on (the parse cache pins the trees too), so an id is never
+        reused while it lives."""
+        if isinstance(local_bindings, dict):
+            bound: frozenset[Any] | None = frozenset(local_bindings.items()) if local_bindings else None
+        else:
+            bound = frozenset(local_bindings) if local_bindings else None
+        key = (tag, id(node), bound)
+        hit = self._node_memo.get(key)
+        if hit is not None and hit[0] is node:
+            return hit[1]
+        value = compute()
+        self._node_memo[key] = (node, value)
+        return value
+
+    def _note_undecided(self, name: str | None) -> None:
+        """Record ``name`` as read undecided by the condition being compiled
+        (``_compile_conditions``), or, while a codeBlock is lowered, count the
+        free value so what that block assigns is undecided too
+        (``_process_code_block``)."""
+        if self._undecided_reads is None:
+            self._code_mints += 1
+        elif name is not None and name not in self._undecided_reads:
+            self._undecided_reads.append(name)
+
+    def _unmodelled_read(self, item_id: str, own: ExprRef) -> ExprRef:
+        """A read of an answer, or of one matrix cell, a store may put text
+        into: one free Int per Int the read would otherwise be (``own``: the
+        answer's, a Roster iteration's or capped-Group presence's, a cell's),
+        the same term at every read of it, since ``own`` is bound by its
+        domain and the text is not (``_StringModel.text_stored``)."""
+        self._note_undecided(item_id)
+        key = str(own)
+        read = self._stored_reads.get(key)
+        if read is None:
+            # ``@`` cannot occur in an item id, so no item, cell or variable
+            # shares the name.
+            read = self._stored_reads[key] = Int(f"stored@{key}", self.ctx)
+        return read
+
+    def _is_encoded(self, node: ast.AST, local_bindings: Any = frozenset()) -> bool:
+        """Whether ``node`` is a variable carrying its value encoded
+        (``_StringModel``)."""
+        return isinstance(node, ast.Name) and node.id not in local_bindings and self._string_model.encoded(node.id)
+
+    def _carries_string(self, node: ast.AST, local_bindings: Any = frozenset()) -> bool:
+        """Whether ``node``'s value may be built from text (a string literal,
+        a variable that may hold text or anything, an answer text may be
+        stored into) other than through a comparison, which yields a bool.
+        Arithmetic, a call or an ordering over such a value does not lower:
+        Python raises on text there or computes text."""
+
+        def compute() -> bool:
+            if _is_str_literal(node):
+                return True
+            if isinstance(node, ast.Name):
+                # A name no code assigns (a builtin, an item id) holds no text here.
+                return (
+                    node.id not in local_bindings
+                    and self._string_model.assigned(node.id)
+                    and not self._string_model.number_only(node, local_bindings)
+                )
+            item = _answer_root(node)
+            if item is not None and item in self.item_details:
+                return self._string_model.text_stored(item, self._string_model.read_path(node, local_bindings))
+            if isinstance(node, (ast.Compare, ast.BoolOp)) or (
+                isinstance(node, ast.UnaryOp) and isinstance(node.op, ast.Not)
+            ):
+                return False
+            return any(self._carries_string(child, local_bindings) for child in ast.iter_child_nodes(node))
+
+        return self._memoised("carries", node, local_bindings, compute)
+
+    def _encode(self, node: ast.AST, context: str, local_bindings: dict[str, int] | None = None) -> ExprRef | None:
+        """``node``'s value encoded for a variable that may hold text
+        (``_StringModel``): a string literal as its text value, an encoded
+        variable as it is, a ternary branch by branch, any other value that
+        lowers as ``2 * value``. A value that may hold anything
+        (``_StringModel.holds_any``) is ``None``: it may be text, so it is no
+        doubled number, and the version it writes is unconstrained, which a
+        condition reading it says (``_free_variables``)."""
+        local_bindings = local_bindings or {}
+        if _is_str_literal(node):
+            return IntVal(self._string_model.text_value(node.value), self.ctx)  # type: ignore[attr-defined]
+        if self._is_encoded(node, local_bindings):
+            return self._ast_to_z3(node, context, local_bindings)
+        if isinstance(node, ast.IfExp):
+            test = self._ast_to_z3_bool(node.test, context, local_bindings)
+            body = self._encode(node.body, context, local_bindings)
+            orelse = self._encode(node.orelse, context, local_bindings)
+            return None if test is None or body is None or orelse is None else If(test, body, orelse)
+        if self._carries_string(node, local_bindings) or self._string_model.holds_any(node, local_bindings):
+            return None
+        value = self._ast_to_z3(node, context, local_bindings)
+        return None if value is None else IntVal(2, self.ctx) * value
+
+    def _equality(
+        self, lhs: ExprRef, lhs_node: ast.AST, rhs: ExprRef, rhs_node: ast.AST, local_bindings: dict[str, int]
+    ) -> BoolRef:
+        """``lhs == rhs`` as Python answers it: skip-aware (#1769), and an
+        encoded side against a value that is provably a number (or ``None``,
+        which equals no text and no number: ``_StringModel.number_only``)
+        compares the number's encoding. Against anything else (a call's
+        result, an answer text may be stored into) the comparison is
+        undecided (``_undecided_equality``): never a doubled guess."""
+        encoded_l, encoded_r = self._is_encoded(lhs_node, local_bindings), self._is_encoded(rhs_node, local_bindings)
+        if encoded_l != encoded_r:
+            other = rhs_node if encoded_l else lhs_node
+            if not self._string_model.number_only(other, local_bindings):
+                equal = self._undecided_equality(lhs, lhs_node, rhs, rhs_node)
+                return self._skip_aware_equality(equal, lhs_node, rhs_node, local_bindings)
+            if encoded_l:
+                rhs = IntVal(2, self.ctx) * rhs
+            else:
+                lhs = IntVal(2, self.ctx) * lhs
+        return self._skip_aware_equality(lhs == rhs, lhs_node, rhs_node, local_bindings)
+
+    def _undecided_equality(self, lhs: ExprRef, lhs_node: ast.AST, rhs: ExprRef, rhs_node: ast.AST) -> BoolRef:
+        """``lhs == rhs`` where the model cannot tell text from a number on
+        one side: one free Bool per pair of terms (so ``a == b or a != b``
+        holds), noted where it is minted (``_note_undecided``)."""
+        for node in (lhs_node, rhs_node):
+            self._note_undecided(node.id if isinstance(node, ast.Name) else _answer_root(node))
+        key = "eq@" + "|".join(sorted([str(lhs), str(rhs)]))
+        choices = self._string_choices.setdefault(key, {})
+        choice = choices.get(frozenset())
+        if choice is None:
+            # ``@`` cannot occur in an item id or variable name, so nothing
+            # shares the name.
+            choice = choices[frozenset()] = Bool(f"str@{key}", self.ctx)
+        return choice
+
+    def _lower_membership(
+        self,
+        lhs: ExprRef,
+        lhs_node: ast.AST,
+        elts: list[ast.expr] | tuple[ast.expr, ...],
+        context: str,
+        local_bindings: dict[str, int],
+    ) -> BoolRef | None:
+        """``lhs in [elts]`` as ``==`` against each member (``_equality``);
+        ``None`` when a member does not lower, since dropping it would narrow
+        ``in`` and widen ``not in`` (#1164)."""
+        parts = []
+        for elt in elts:
+            value = self._ast_to_z3(elt, context, local_bindings)
+            if value is None:
+                return None
+            parts.append(self._equality(lhs, lhs_node, value, elt, local_bindings))
+        return Or(*parts)
+
+    def _string_comparison(self, node: ast.Compare, local_bindings: Any) -> _StringComparison:
+        """How a comparison involving text lowers, once per node: the one
+        reading the lowering (``_lower_string_compare``) and the report
+        (``_string_refusal``) share.
+
+        A string literal on either side of ``==`` / ``!=``, or a member of a
+        literal list tested with ``in`` / ``not in``, makes a string
+        comparison; so does an ordering of anything that may hold text (it
+        raises against a number). A chain holding text is the conjunction of
+        its pairs (``CHAIN``), each read on its own. Refused: an ordering,
+        ``in`` a string, a string ``in`` a list that is not all literals, a
+        list member that is a literal other than a whole number or a string
+        (the model holds no ``None`` value), and an operand the string model
+        cannot place (``_StringModel.operand``)."""
+        return self._memoised("compare", node, local_bindings, lambda: self._read_string_comparison(node, local_bindings))
+
+    def _read_string_comparison(self, node: ast.Compare, local_bindings: Any) -> _StringComparison:
+        operands = [node.left, *node.comparators]
+        strings = False
+        for i, op in enumerate(node.ops):
+            left, right = operands[i], operands[i + 1]
+            if isinstance(op, _ORDERING_OPS):
+                if self._carries_string(left, local_bindings) or self._carries_string(right, local_bindings):
+                    return _REFUSED_COMPARISON
+            elif _is_str_literal(left) or _is_str_literal(right):
+                strings = True
+            elif isinstance(op, (ast.In, ast.NotIn)) and isinstance(right, (ast.List, ast.Tuple, ast.Set)):
+                strings = strings or any(_is_str_literal(elt) for elt in right.elts)
+        if not strings:
+            return _NO_STRING
+        if len(node.ops) != 1:
+            parts = tuple(
+                ast.copy_location(ast.Compare(left=operands[i], ops=[op], comparators=[operands[i + 1]]), node)
+                for i, op in enumerate(node.ops)
+            )
+            return _StringComparison(_CompareKind.CHAIN, parts=parts)
+        op, left, right = node.ops[0], node.left, node.comparators[0]
+        negated = isinstance(op, (ast.NotEq, ast.NotIn))
+        if isinstance(op, (ast.Eq, ast.NotEq)):
+            if _is_str_literal(left):
+                left, right = right, left
+            literal = self._literal_values(left, scalar=True)
+            if literal is not None:
+                return _StringComparison(_CompareKind.FOLDED, truth=literal[0] == right.value, negated=negated)  # type: ignore[attr-defined]
+            members: tuple[ast.expr, ...] = ()
+            texts = frozenset([right.value])  # type: ignore[attr-defined]
+        elif isinstance(op, (ast.In, ast.NotIn)) and isinstance(right, (ast.List, ast.Tuple, ast.Set)):
+            literal = self._literal_values(left, scalar=True)
+            listed = self._literal_values(right, scalar=False)
+            if literal is not None and listed is not None:
+                return _StringComparison(_CompareKind.FOLDED, truth=literal[0] in listed, negated=negated)
+            if _is_str_literal(left):
+                return _REFUSED_COMPARISON
+            members = tuple(elt for elt in right.elts if not _is_str_literal(elt))
+            if any(isinstance(elt, ast.Constant) and not isinstance(elt.value, int) for elt in members):
+                return _REFUSED_COMPARISON
+            texts = frozenset(elt.value for elt in right.elts if _is_str_literal(elt))  # type: ignore[attr-defined]
+        else:
+            return _REFUSED_COMPARISON
+        how = self._string_model.operand(left, local_bindings)
+        if how is None:
+            return _REFUSED_COMPARISON
+        return _StringComparison(_CompareKind.COMPARE, negated=negated, operand=left, members=members, texts=texts, how=how)
+
+    def _lower_string_compare(
+        self, found: _StringComparison, context: str, local_bindings: dict[str, int]
+    ) -> BoolRef | None:
+        """A comparison with a string literal (``_string_comparison``) as
+        Python answers it, or ``None`` where it does not lower.
+
+        Two literals fold (``1 == "1"`` is False). The operand's class decides
+        the strings (``_StringModel.operand``): an operand holding no string
+        equals none (``q.outcome in [1, "x"]`` is ``q.outcome in [1]``); an
+        encoded variable compares exactly with each string's text value (and
+        is noted undecided where some version of it is unconstrained); any
+        other is a free Bool (``_string_choice``), noted where it is minted.
+        The list's other members compare as ``==`` (``_equality``). A
+        Textarea's text is ``_text_leaf``'s (#2241) and does not lower here.
+        """
+        if found.kind is _CompareKind.REFUSED:
+            return None
+        if found.kind is _CompareKind.CHAIN:
+            # Every operand of a chain is a read without side effects here, so
+            # reading a middle one twice is reading it once.
+            parts = [self._ast_to_z3_bool(part, context, local_bindings) for part in found.parts]
+            return None if any(part is None for part in parts) else And(*parts)
+        if found.kind is _CompareKind.FOLDED:
+            return BoolVal(found.truth != found.negated, self.ctx)
+        if found.how is _Operand.TEXT or found.operand is None:
+            return None
+        value = self._ast_to_z3(found.operand, context, local_bindings)
+        if value is None:
+            return None
+        parts: list[BoolRef] = []
+        if found.members:
+            numbers = self._lower_membership(value, found.operand, found.members, context, local_bindings)
+            if numbers is None:
+                return None
+            parts.append(numbers)
+        if found.how is _Operand.ENCODED:
+            operand = found.operand
+            if isinstance(operand, ast.Name) and (operand.id in self._free_variables or operand.id in self._open_reads):
+                # An unconstrained version holds anything: exact where it is
+                # pinned, undecided where it is not, and said so.
+                self._note_undecided(operand.id)
+            parts.extend(value == IntVal(self._string_model.text_value(text), self.ctx) for text in sorted(found.texts))
+        elif found.how is _Operand.UNDECIDED or (
+            isinstance(found.operand, ast.Name)
+            and found.operand.id not in local_bindings
+            and not self._string_model.always_bound(found.operand.id)
+        ):
+            # A name that may be unbound here raises (NameError), which no
+            # constant answers for both condition kinds: undecided.
+            parts.append(self._string_choice(found.operand, value, found.texts))
+        truth = Or(*parts) if len(parts) > 1 else parts[0] if parts else BoolVal(False, self.ctx)
+        return Not(truth) if found.negated else truth
+
+    def _string_choice(self, node: ast.AST, value: ExprRef, texts: frozenset[str]) -> BoolRef:
+        """Whether ``node`` (lowered to ``value``) equals one of ``texts``,
+        for a value the model does not hold exactly (``_Operand.UNDECIDED``),
+        noted where it is minted (``_note_undecided``).
+
+        A variable read at one SSA version, and an answer or cell a store may
+        put text into (``_unmodelled_read``), is one term wherever it is read,
+        so the comparison is one Bool per (term, literal set) and ``x == "a"
+        or x != "a"`` always holds; two cells are two terms. An open read of a
+        variable gets a fresh Bool per comparison."""
+        self._note_undecided(node.id if isinstance(node, ast.Name) else _answer_root(node))
+        shared = (isinstance(node, ast.Name) and node.id not in self._open_reads) or (
+            _answer_root(node) is not None
+        )
+        if shared:
+            key = str(value)
+            choices = self._string_choices.setdefault(key, {})
+            choice = choices.get(texts)
+            if choice is None:
+                # ``@`` cannot occur in an item id or variable name, so nothing
+                # shares the name; no ``#``, since one Bool serves every lowering.
+                choice = choices[texts] = Bool(f"str@{key}@{len(choices)}", self.ctx)
+            return choice
+
+        def mint() -> BoolRef:
+            self._string_count += 1
+            return Bool(f"str@#{self._string_count}", self.ctx)
+
+        return self._mint(mint)
+
+    def _string_refusal(self, node: ast.AST, local: Any) -> bool:
+        """Whether ``node`` is a use of text the lowering refuses: the one
+        predicate the lowering (``_ast_to_z3``, ``_lower_call_value``) and the
+        report (``_unsupported_node_kinds``, ``Str``) both ask, so a node is
+        never left out without being reported. Arithmetic, a ternary branch
+        or a call argument over a value that may hold text
+        (``_carries_string``), and a refused string comparison
+        (``_string_comparison``). A comparison whose operand holds a call or a
+        subscript is reported under that node's kind instead."""
+        if isinstance(node, ast.BinOp):
+            return self._carries_string(node.left, local) or self._carries_string(node.right, local)
+        if isinstance(node, ast.UnaryOp) and not isinstance(node.op, ast.Not):
+            return self._carries_string(node.operand, local)
+        if isinstance(node, ast.IfExp):
+            return self._carries_string(node.body, local) or self._carries_string(node.orelse, local)
+        if isinstance(node, ast.Call):
+            return any(self._carries_string(arg, local) for arg in [*node.args, *(k.value for k in node.keywords)])
+        if isinstance(node, ast.Compare) and self._string_comparison(node, local).kind is _CompareKind.CHAIN:
+            return any(self._string_refusal(part, local) for part in self._string_comparison(node, local).parts)
+        if isinstance(node, ast.Compare) and self._string_comparison(node, local).kind is _CompareKind.REFUSED:
+            return not any(
+                isinstance(n, (ast.Call, ast.Subscript, ast.ListComp, ast.GeneratorExp)) for n in ast.walk(node)
+            )
+        return False
 
     def _raise_on_skip(
         self, node: ast.Compare, context: str, local_bindings: dict[str, int]
@@ -5372,10 +6278,13 @@ class StaticBuilder:
             return BoolVal(True, self.ctx)
         if item_id in self._code_written_items():
             # A codeBlock may answer it between two predicates, so each gets its own.
-            self._skipped_count += 1
-            choice = Bool(f"skipped@{item_id}#{self._skipped_count}", self.ctx)
-            self._fresh_skip_choices.setdefault(item_id, []).append(choice)
-            return choice
+            def mint() -> BoolRef:
+                self._skipped_count += 1
+                fresh = Bool(f"skipped@{item_id}#{self._skipped_count}", self.ctx)
+                self._fresh_skip_choices.setdefault(item_id, []).append(fresh)
+                return fresh
+
+            return self._mint(mint)
         choice = self._skip_choices.get(item_id)
         if choice is None:
             # ``@`` cannot occur in an item id, so no item or variable shares the name.
@@ -5473,14 +6382,22 @@ class StaticBuilder:
         if choice is not None:
             return choice
         if item_id in self._code_written_items():
-            self._blank_count += 1
-            fresh = Bool(f"blank@{item_id}#{self._blank_count}", self.ctx)
             accept = self._blank_acceptance(item_id) if self._built else None
-            # ``None``: the build is still running (its conditions only feed the
-            # dependency graph), or its acceptance is being computed (a cycle
-            # through postconditions); a free choice is wider, never narrower.
+
+            # ``accept`` is ``None`` while the build is still running (its
+            # conditions only feed the dependency graph), or while the
+            # acceptance is being computed (a cycle through postconditions); a
+            # free choice is wider, never narrower.
+            def mint() -> BoolRef:
+                self._blank_count += 1
+                symbol = Bool(f"blank@{item_id}#{self._blank_count}", self.ctx)
+                self._fresh_blank_choices.setdefault(item_id, []).append(
+                    symbol if accept is None else And(symbol, accept)
+                )
+                return symbol
+
+            fresh = self._mint(mint)
             choice = fresh if accept is None else And(fresh, accept)
-            self._fresh_blank_choices.setdefault(item_id, []).append(choice)
         else:
             choice = self._shared_blank_choice(item_id)
         self._predicate_blank[item_id] = choice
@@ -5618,6 +6535,9 @@ class StaticBuilder:
             outer = self._own_none
             self._own_none = item_id
             outer_versions = self._enter_submission(item_id)
+            # The acceptance is computed once and shared by every compile that
+            # reads it, so what its lowering mints belongs to no compile.
+            outer_minting, self._minting = self._minting, None
             try:
                 for condition in self.item_details[item_id]["postconditions"]:
                     predicate = condition.get("predicate", "")
@@ -5629,6 +6549,7 @@ class StaticBuilder:
                         break
                     parts.append(lowered)
             finally:
+                self._minting = outer_minting
                 self._own_none = outer
                 self._leave_submission(outer_versions)
         accept = self._conjoin(parts)
@@ -5847,9 +6768,8 @@ class StaticBuilder:
             for code in [self.state.get_code_init() or ""] + [
                 item.get("codeBlock") or "" for item in self.state.get_all_items()
             ]:
-                try:
-                    tree = ast.parse(code)
-                except SyntaxError:
+                tree = self._parsed(code, "exec")
+                if tree is None:
                     continue
                 for name in self._stored_outcomes(tree):
                     if name not in self.item_details:
@@ -6329,9 +7249,8 @@ class StaticBuilder:
             item_id, code = item.get("id"), item.get("codeBlock")
             if not item_id or not code:
                 continue
-            try:
-                tree = ast.parse(code)
-            except SyntaxError:
+            tree = self._parsed(code, "exec")
+            if tree is None:
                 continue
             deleted = any(
                 isinstance(node, ast.Name) and isinstance(node.ctx, ast.Del) and node.id == var_name
@@ -6392,9 +7311,8 @@ class StaticBuilder:
                 predicate = cond.get("predicate", "")
                 if not predicate:
                     continue
-                try:
-                    tree = ast.parse(predicate, mode="eval")
-                except SyntaxError:
+                tree = self._parsed(predicate, "eval")
+                if tree is None:
                     continue
                 names = {n.id for n in ast.walk(tree) if isinstance(n, ast.Name)}
                 for var_name in frozen & names:
@@ -6518,34 +7436,119 @@ class StaticBuilder:
     ) -> tuple[BoolRef, bool]:
         """The body of :meth:`compile_conditions_exactly`; ``record_wide`` records
         each wide condition as a ``wide_items`` coverage gap of ``item_id``;
-        ``blank`` models blank answers (``_lower_kleene``)."""
+        ``blank`` models blank answers (``_lower_kleene``).
+
+        The lowering is memoised once the build is complete (#2246), because
+        the classifier, the lints, the guard tree and the Global and
+        Path-based formulas each compile the same item's conditions, and the
+        lowering is the costly part. After the build the lowering depends only
+        on the key (``_compiled_conditions``): the versions an item's own
+        conditions read are fixed per item (``_enter_submission``), any other
+        compile reads the final ones, and the shared choices are one per item.
+        What a compile mints fresh (``_mint``: ``answered@X#n``, a code-written
+        item's ``skipped@`` / ``blank@`` / ``text@`` and the ``loose@`` pair)
+        is minted again on every hit and substituted into the cached formula,
+        so each compile answers a formula over its own fresh symbols, as an
+        uncached compile does, and two compiles conjoined stay independent.
+        Only a top-level compile is cached, never one made while another
+        predicate is being lowered. A hit still records the gaps when
+        ``record_wide`` asks for them (wide items, undecided reads, a fault
+        while lowering), so a ``record_wide=False`` compile that filled the
+        cache first never hides one (``_record_coverage_gap`` is
+        de-duplicated, so a repeat records nothing twice). The text model's
+        shared symbols (``str@`` per term and literal set, ``eq@``, an answer's
+        ``stored@`` Int) are one per builder, like the item Ints they stand
+        beside, so they are kept; only the fresh ``str@#n`` of an open read is
+        minted (``_mint``)."""
         _require_condition_kind(kind)
+        predicates = tuple(condition.get("predicate", "") for condition in conditions)
+        key = (item_id, predicates, kind, blank)
+        cacheable = self._built and not self._lowering_predicate
+        cached = self._compiled_conditions.get(key) if cacheable else None
+        if cached is None:
+            outer_minting = self._minting
+            if cacheable:
+                self._minting = []
+            try:
+                formula, exact, gaps = self._lower_conditions(item_id, predicates, kind, blank)
+                minted = tuple(self._minting) if cacheable else ()
+            finally:
+                self._minting = outer_minting
+            if cacheable:
+                self._compiled_conditions[key] = (formula, exact, gaps, minted)
+        else:
+            formula, exact, gaps, minted = cached
+            formula = self._remint(formula, minted)
+        if record_wide:
+            for idx, wide, undecided, failed in gaps:
+                if failed:
+                    # A fault in the lowering is a skipped condition, never a silent one.
+                    self._record_coverage_gap(item_id, kind, idx, ["Error"])
+                else:
+                    # Recorded where exactness is decided, so every owner the
+                    # classifier judges is covered, Textarea items included (the
+                    # build pass skips them): a withheld verdict is never silent
+                    # (#1815), and neither is a comparison with text left
+                    # undecided (``_note_undecided``).
+                    self._record_coverage_gap(item_id, kind, idx, [], wide_items=wide, undecided_reads=undecided)
+        return formula, exact
+
+    def _mint(self, make: Callable[[], Any]) -> Any:
+        """A symbol (or a tuple of them) a lowering mints fresh, made by
+        ``make``, which also keeps its bookkeeping (``_answered_minted``,
+        ``_fresh_skip_choices``, ``_fresh_blank_choices``). While a cached
+        compile lowers (``_compile_conditions``) the maker is kept with what
+        it made, so a cache hit makes its own (``_remint``)."""
+        made = make()
+        if self._minting is not None:
+            self._minting.append((made, make))
+        return made
+
+    def _remint(self, formula: BoolRef, minted: tuple[tuple[Any, Callable[[], Any]], ...]) -> BoolRef:
+        """``formula`` over symbols minted for this compile in place of the
+        ones its first lowering minted (``_mint``)."""
+        if not minted:
+            return formula
+        pairs = []
+        for made, make in minted:
+            fresh = make()
+            olds = made if isinstance(made, tuple) else (made,)
+            news = fresh if isinstance(fresh, tuple) else (fresh,)
+            pairs.extend(zip(olds, news, strict=True))
+        return substitute(formula, *pairs)
+
+    def _lower_conditions(
+        self, item_id: str, predicates: tuple[str, ...], kind: ConditionKind, blank: bool
+    ) -> tuple[BoolRef, bool, tuple[tuple[int, list[str] | None, list[str] | None, bool], ...]]:
+        """Lower ``item_id``'s ``predicates`` (``_compile_conditions``):
+        ``(conjunction of those that lowered, whether every one lowered exact,
+        each condition's gap: (index, wide items, undecided reads, whether its
+        lowering failed))``."""
         compiled_conditions = []
+        gaps: list[tuple[int, list[str] | None, list[str] | None, bool]] = []
         exact = True
         # After the build, an item's own conditions read the versions of its
         # submission, not the final ones (#1838, ``_enter_submission``).
         at_submission = self._built and item_id in self._submission_versions
         outer_versions = self._enter_submission(item_id) if at_submission else None
         try:
-            for idx, condition in enumerate(conditions):
-                predicate = condition.get("predicate", "")
+            for idx, predicate in enumerate(predicates):
                 if predicate:
                     compiled, wide = self._compile_predicate(predicate, item_id, kind, blank=blank)
-                    if compiled is None or wide:
+                    undecided, failed = self._last_compile
+                    # An undecided read leaves the condition wider than it is:
+                    # its consumers claim only what a wider formula proves.
+                    if compiled is None or wide or undecided:
                         exact = False
                     if compiled is not None:
                         compiled_conditions.append(compiled)
-                        if wide and record_wide:
-                            # Recorded where exactness is decided, so every owner the
-                            # classifier judges is covered, Textarea items included
-                            # (the build pass skips them): a withheld verdict is
-                            # never silent (#1815).
-                            self._record_coverage_gap(item_id, kind, idx, [], wide_items=wide)
+                    if failed or (compiled is not None and (wide or undecided)):
+                        gaps.append((idx, wide or None, list(undecided) or None, failed))
         finally:
             if outer_versions is not None:
                 self._leave_submission(outer_versions)
 
-        return self._conjoin(compiled_conditions), exact
+        return self._conjoin(compiled_conditions), exact, tuple(gaps)
 
     def item_implication(self, item_id: str) -> BoolRef:
         """``P_i ⇒ Q_i`` for one item, or ``True`` when its precondition did not
@@ -6585,7 +7588,6 @@ class StaticBuilder:
         outer = (
             self._none_guarded,
             self._predicate_answered,
-            self._predicate_value_reads,
             self._predicate_reads_variables,
             self._predicate_skipped,
             self._predicate_raising,
@@ -6599,7 +7601,6 @@ class StaticBuilder:
         try:
             self._predicate_context = context
             self._none_guarded, self._predicate_answered = none_guarded_outcomes(tree), {}
-            self._predicate_value_reads = outcome_value_reads(tree)
             self._predicate_reads_variables = bool(name_reads(tree) - outcome_reads(tree))
             self._lowering_predicate = True
             self._predicate_blank, self._model_blank = {}, blank
@@ -6644,7 +7645,6 @@ class StaticBuilder:
             (
                 self._none_guarded,
                 self._predicate_answered,
-                self._predicate_value_reads,
                 self._predicate_reads_variables,
                 self._predicate_skipped,
                 self._predicate_raising,
@@ -6724,7 +7724,9 @@ class StaticBuilder:
         if isinstance(node, ast.UnaryOp) and isinstance(node.op, ast.Not):
             operand = self._lower_kleene(node.operand, context, placed, loose)
             return None if operand is None else _outcome_not(operand)
-        leaf = self._ast_to_z3_bool(node, context)
+        leaf = self._text_leaf(node)
+        if leaf is None:
+            leaf = self._ast_to_z3_bool(node, context)
         if leaf is None:
             return None
         raises = None
@@ -6751,13 +7753,113 @@ class StaticBuilder:
         if id(node) not in loose:
             return outcome
         may_raise = self._disjoin(loose[id(node)])
-        self._loose_count += 1
-        # ``@`` cannot occur in an item id, so no item or variable shares the name.
-        free_true, free_accepted = (
-            Bool(f"loose@{part}@{context}#{self._loose_count}", self.ctx) for part in ("true", "accepted")
-        )
+
+        def mint() -> tuple[BoolRef, BoolRef]:
+            self._loose_count += 1
+            # ``@`` cannot occur in an item id, so no item or variable shares the name.
+            return (
+                Bool(f"loose@true@{context}#{self._loose_count}", self.ctx),
+                Bool(f"loose@accepted@{context}#{self._loose_count}", self.ctx),
+            )
+
+        free_true, free_accepted = self._mint(mint)
         lenient = (If(may_raise, free_true, outcome.true), If(may_raise, free_accepted, outcome.accepted))
         return _Outcome(outcome.true, outcome.accepted, outcome.raises, lenient)
+
+    def _text_leaf(self, leaf: ast.AST) -> BoolRef | None:
+        """The truth of a condition leaf that compares a Textarea's text with
+        literals (#2241), or None when ``leaf`` is not that shape.
+
+        Free text has no Int (``_ast_to_z3``), so such a leaf is lowered on its
+        own and the rest of the condition still lowers: a contradiction on a
+        coded answer beside it stays provable. The shape is one ``==`` / ``!=``
+        with a literal, or ``in`` / ``not in`` a literal list, on
+        ``t.outcome`` (``_literal_values``: a negative number or a list of
+        them is a literal too): neither raises on a string or on ``None``, so
+        the leaf is True or False and nothing else. Any other leaf reading the
+        text (a call, an ordering, arithmetic, a method) is not this shape and
+        does not lower.
+
+        An answer to a Textarea is a string (``domain_validator``) and a
+        skipped one is ``None``; neither equals a number. So for a Textarea no
+        code writes, the numbers in the literals are dropped, and a leaf with
+        none left is decided: ``t.outcome == 1`` and ``t.outcome in [1, 2]``
+        are False, ``!=`` / ``not in`` True (so is ``in []`` whatever writes
+        it). What is left is one Bool per (Textarea, literal set),
+        ``_text_choice``, shared by every condition, and ``!=`` / ``not in``
+        is its negation: the same comparison in two gates (a block's
+        precondition composed into each member) is one fact, and
+        ``t == "a" or t != "a"`` always holds. A blank answer still makes the
+        leaf unknown (``_lower_kleene``). A Textarea a codeBlock or codeInit
+        stores into gets a fresh Bool per leaf instead, since the write can
+        change it between two conditions (as ``_skipped_choice`` does), and
+        is never decided by the numbers.
+        """
+        if not (isinstance(leaf, ast.Compare) and len(leaf.ops) == 1):
+            return None
+        op, (left, right) = leaf.ops[0], (leaf.left, leaf.comparators[0])
+        if isinstance(op, (ast.Eq, ast.NotEq)):
+            item_id = self._is_textarea_outcome_ref(left)
+            other = right
+            if item_id is None:
+                item_id, other = self._is_textarea_outcome_ref(right), left
+            values = self._literal_values(other, scalar=True) if item_id is not None else None
+            # ``t.outcome == None`` is a None test (``_lower_none_test``).
+            if values is None or values == [None]:
+                return None
+        elif isinstance(op, (ast.In, ast.NotIn)):
+            item_id = self._is_textarea_outcome_ref(left)
+            values = self._literal_values(right, scalar=False) if item_id is not None else None
+            if values is None:
+                return None
+        else:
+            return None
+        negated = isinstance(op, (ast.NotEq, ast.NotIn))
+        if not values:
+            return BoolVal(negated, self.ctx)
+        if item_id in self._code_written_items():
+            def mint() -> BoolRef:
+                self._text_count += 1
+                # ``@`` cannot occur in an item id, so no item or variable shares the name.
+                return Bool(f"text@{item_id}#{self._text_count}", self.ctx)
+
+            fresh = self._mint(mint)
+            return Not(fresh) if negated else fresh
+        texts = frozenset(v for v in values if v is None or isinstance(v, str))
+        if not texts:
+            return BoolVal(negated, self.ctx)
+        choice = self._text_choice(item_id, texts)  # type: ignore[arg-type]
+        return Not(choice) if negated else choice
+
+    @staticmethod
+    def _literal_values(node: ast.AST, *, scalar: bool) -> list[Any] | None:
+        """The values ``node`` evaluates to as a literal: one value when
+        ``scalar``, else the members of a list, tuple or set literal; None for
+        anything else. Each value is a string, a number or None (anything else,
+        a nested list included, is no literal here). ``ast.literal_eval``
+        folds what Python folds at parse time, so ``-1`` and ``[-1, 99]`` count."""
+        if not scalar and not isinstance(node, (ast.List, ast.Tuple, ast.Set)):
+            return None
+        try:
+            value = ast.literal_eval(node)
+        except (ValueError, TypeError, SyntaxError, MemoryError, RecursionError):
+            return None
+        members = [value] if scalar else list(value)
+        if not all(m is None or isinstance(m, (str, int, float)) for m in members):
+            return None
+        return members
+
+    def _text_choice(self, item_id: str, texts: frozenset[str | None]) -> BoolRef:
+        """Whether Textarea ``item_id``'s outcome is one of ``texts``: one Bool
+        per (item, literal set) for the whole questionnaire (``_text_leaf``),
+        like an answer's one Int."""
+        choices = self._text_choices.setdefault(item_id, {})
+        choice = choices.get(texts)
+        if choice is None:
+            # ``@`` cannot occur in an item id, so no item or variable shares
+            # the name; no ``#``, since one Bool serves every lowering.
+            choice = choices[texts] = Bool(f"text@{item_id}@{len(choices)}", self.ctx)
+        return choice
 
     def _blank_operands(self, leaf: ast.AST, context: str) -> set[str]:
         """The items whose blank answer makes ``leaf`` unknown (#1784): what it
@@ -6775,17 +7877,34 @@ class StaticBuilder:
         self, predicate: str, context: str, kind: ConditionKind, *, blank: bool = True
     ) -> tuple[BoolRef | None, list[str]]:
         """Compile a predicate string: ``(Z3 formula or None, the items that leave it
-        wider than the condition)`` (``_lower_predicate``)."""
+        wider than the condition)`` (``_lower_predicate``).
+
+        What it reads undecided and whether it failed are its own, left in
+        ``_last_compile``: a compile nested in another (a postcondition's
+        blank acceptance, ``_blank_acceptance``) restores the outer one's on
+        the way out, adding its undecided reads to them, since its formula is
+        part of the outer one, but never its failure."""
+        outer_reads, outer_failed = self._undecided_reads, self._compile_failed
+        self._undecided_reads, self._compile_failed = [], False
         try:
-            tree = ast.parse(predicate, mode="eval")
+            tree = self._parsed(predicate, "eval")
+            if tree is None:
+                # ``unsafe_code`` reports a predicate that does not parse.
+                return None, []
             return self._lower_predicate(tree.body, context, kind, blank=blank)
         except Exception as e:
-            self.logger.error(f"Error compiling predicate '{predicate}' in context {context}: {e}")
+            self.logger.error(f"Error compiling a predicate in context {context}: {type(e).__name__}")
+            self._compile_failed = not self._reported_unsafe(predicate)
             return None, []
         finally:
             # The build already reported this condition's refusals (#1799, #1867).
             self._distinct_refusals.pop(context, None)
             self._ternary_refusals.pop(context, None)
+            reads, failed = self._undecided_reads or [], self._compile_failed
+            self._last_compile = (reads, failed)
+            if outer_reads is not None:
+                outer_reads.extend(name for name in reads if name not in outer_reads)
+            self._undecided_reads, self._compile_failed = outer_reads, outer_failed
 
     def debug_dump(self) -> str:
         """Generate debug output."""

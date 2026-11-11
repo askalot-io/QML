@@ -17,6 +17,8 @@ import operator
 import re
 from typing import Any
 
+from askalot_common.i18n import is_supported_locale, require_questionnaire_language
+from askalot_common.i18n.language_names import questionnaire_language_name
 from askalot_common.tracing import create_span
 from z3 import And, Not, Solver, sat, unsat
 
@@ -98,8 +100,9 @@ _YAML_LITERAL_SUGGESTIONS: dict[str, str] = {
 #: "Por favor, lea", "Veuillez lire" and "Bitte lesen Sie"
 #: are instructions to read and stay silent. Every ``en`` instrument and its
 #: twin in another supported language get the same verdict. A language added
-#: to the supported locales adds its verbs here, or its instruments fall back
-#: to the ``?`` arm alone.
+#: to the supported locales adds its verbs here. On an instrument in an "other"
+#: language (the caller passes ``language``) only the ``?`` arm runs, and
+#: ``language_not_judged`` says the wording arm did not.
 _COMMENT_ASKS_QUESTION_MARK = re.compile(r"\?")
 _COMMENT_ASKS_INSCRIPTION = re.compile(
     r"(?:^|[.;:]\s+|\b(?:please|kér(?:jük|em)|por\s+favor|veuillez|bitte),?\s+)"
@@ -262,6 +265,8 @@ def _none_unsafe_item_references(predicate: str) -> set[str]:
 #: Angabe", "Keine Ahnung", "Keine Antwort", "Keine Meinung".
 #: Every ``en`` instrument and its twin in another supported language get the
 #: same verdict; a language added to the supported locales adds its words here.
+#: On an instrument in an "other" language the lint does not run
+#: (``language_not_judged``).
 _CHECKBOX_NONE_LABEL = re.compile(
     r"^\s*(?:"
     r"no(?!\s+(?:lo\s+)?(?:s[eé]|sabe)\b"
@@ -434,15 +439,22 @@ class ValidationProcessor:
     - Comprehensive static validation reports
     """
 
-    def __init__(self, questionnaire_state: QMLState):
+    def __init__(self, questionnaire_state: QMLState, *, language: str | None = None):
         """
         Initialize validation processor with questionnaire state.
 
         Args:
             questionnaire_state: The questionnaire to validate
+            language: The questionnaire's language (``questionnaires.language``)
+                when the caller holds one. An "other" language (outside the
+                supported locales) turns off the word-list lints, which cannot
+                read it, and reports ``language_not_judged`` instead (#2200).
+                ``None`` (a bare file no questionnaire states a language for)
+                keeps the union of every supported language's words.
         """
         self.logger = logging.getLogger(__name__)
         self.state = questionnaire_state
+        self.language = None if language is None else require_questionnaire_language(language)
 
         # Use unified engine for common pipeline
         self.engine = QMLEngine(questionnaire_state)
@@ -465,6 +477,23 @@ class ValidationProcessor:
 
         self.logger.info(
             f"ValidationProcessor initialized for {len(self.engine.get_items())} items"
+        )
+
+    @property
+    def _words_judged(self) -> bool:
+        """Whether the word-list lints can read this questionnaire's language."""
+        return self.language is None or is_supported_locale(self.language)
+
+    def _has_word_judged_items(self) -> bool:
+        """Whether a word-list lint would have read anything: a Comment, or a Checkbox Question.
+
+        With neither, the skipped lints had nothing to judge, so no notice asks
+        the author to read titles or options that do not exist.
+        """
+        return any(
+            item.get("kind") == "Comment"
+            or (item.get("kind") == "Question" and (item.get("input") or {}).get("control") == "Checkbox")
+            for item in self.state.get_all_items()
         )
 
     def get_item_classifications(self) -> dict[str, Any]:
@@ -593,6 +622,8 @@ class ValidationProcessor:
         # Each item's gap names only the reads skippable in ITS context; the
         # block's one finding names (and guards) the union.
         block_reads = builder.block_condition_reads()
+        # Imported here as ``compute_quality_report`` is (``get_quality_report``).
+        from askalot_qml.core.quality_metrics import inexact_gap_withholds_nothing
 
         def gap_owner(item_id: str, gap: dict[str, Any]) -> tuple[str, str, tuple[str, str, int] | None]:
             """``(owner, "Item" | "Block", the block condition's key or None)``."""
@@ -778,11 +809,14 @@ class ValidationProcessor:
 
                 # Textarea-in-predicate lint (WARNING). A predicate/codeBlock
                 # references a Textarea item's ``.outcome`` — a free-text answer
-                # with no verified Z3 model (it lowers to a sentinel), so gating
-                # logic on it is statically wrong and outside the verified
-                # envelope. WARNING (not error) so stored files that already do
-                # this still save. ``item_id`` is the referencing location's
-                # classification key; ``gap["item"]`` is the Textarea item.
+                # with no Z3 model. A comparison of the text with a literal is
+                # judged only where no text satisfies it (the builder's
+                # ``_text_leaf``, #2241) and any other read leaves the condition
+                # unverified, so this warning says the logic is outside the
+                # verified envelope. WARNING (not error) so
+                # stored files that already do this still save. ``item_id`` is
+                # the referencing location's classification key; ``gap["item"]``
+                # is the Textarea item.
                 elif gap_kind == "textarea_in_predicate":
                     textarea_item = gap["item"]
                     condition_kind = gap["condition_kind"]
@@ -794,9 +828,10 @@ class ValidationProcessor:
                             "message": (
                                 f"Item '{item_id}' references Textarea outcome "
                                 f"'{textarea_item}.outcome' in its {condition_kind}. A "
-                                f"free-text outcome has no verified Z3 model — it lowers "
-                                f"to a sentinel, so the logic is outside the verified "
-                                f"envelope and may misclassify reachability."
+                                f"free-text outcome has no Z3 model: a comparison of the "
+                                f"text with a number is decided statically (no text equals "
+                                f"a number), and everything else about what the text says "
+                                f"is left undecided, outside the verified envelope."
                             ),
                             "suggestion": (
                                 "free-text outcomes are outside the verified envelope — "
@@ -841,41 +876,67 @@ class ValidationProcessor:
                 # place the raise (#1775). Only NEVER / INFEASIBLE stand on it,
                 # so ALWAYS / TAUTOLOGICAL are withheld; the owner rule is that
                 # a withheld verdict is never silent.
-                elif gap.get("wide_items"):
+                # A comparison with text that lowered to a free Bool
+                # (``undecided_reads``): what it decides about those values is
+                # not proven, and an undecided verdict is never silent. Named
+                # by the variables and items it reads, never by a literal.
+                elif gap.get("wide_items") or gap.get("undecided_reads"):
                     # NEVER / INFEASIBLE are what a wider formula still proves:
-                    # nothing was withheld, and the error already speaks. An
-                    # unreachable item's postcondition is vacuous, so its
-                    # inexactness withholds nothing either.
-                    if post_vacuous or (gap_kind == "postcondition" and post_invariant == "INFEASIBLE"):
+                    # nothing was withheld, and the error already speaks; D4
+                    # applies the same rule (``inexact_gap_withholds_nothing``).
+                    if inexact_gap_withholds_nothing(classification, gap):
                         continue
                     owner, scope, block_key = gap_owner(item_id, gap)
-                    wide_items = block_reads[block_key]["wide_items"] if block_key else gap["wide_items"]
-                    named = ", ".join(f"'{w}'" for w in wide_items)
-                    if gap_kind == "precondition":
-                        withheld = "ALWAYS reachable"
-                        guard = " and ".join(f"{w}.outcome is not None" for w in wide_items)
-                        guarded = f"'{guard} and (…)'"
-                    else:
-                        withheld = "always satisfied"
-                        guard = " or ".join(f"{w}.outcome is None" for w in wide_items)
-                        guarded = f"'{guard} or (…)'"
+                    # A block condition names the union of its members' reads,
+                    # so one member's gap cannot hide another's.
+                    reads = block_reads[block_key] if block_key else gap
+                    messages: list[str] = []
+                    suggestions: list[str] = []
+                    if reads.get("wide_items"):
+                        wide_items = reads["wide_items"]
+                        named = ", ".join(f"'{w}'" for w in wide_items)
+                        if gap_kind == "precondition":
+                            withheld = "ALWAYS reachable"
+                            guard = " and ".join(f"{w}.outcome is not None" for w in wide_items)
+                            guarded = f"'{guard} and (…)'"
+                        else:
+                            withheld = "always satisfied"
+                            guard = " or ".join(f"{w}.outcome is None" for w in wide_items)
+                            guarded = f"'{guard} or (…)'"
+                        messages.append(
+                            f"{scope} '{owner}' has a {gap_kind} that is only partly "
+                            f"verified: it reads {named}, which may be unanswered, and "
+                            f"the static validator cannot tell where reading None raises "
+                            f"in this condition. A contradiction it finds still stands, "
+                            f"but it cannot prove the {gap_kind} is {withheld}."
+                        )
+                        suggestions.append(
+                            f"Test for an answer first ({guarded}), and compare the "
+                            f"answer directly rather than through a call, a list, a "
+                            f"ternary ('x if c else y') or a comprehension."
+                        )
+                    if reads.get("undecided_reads"):
+                        named = ", ".join(f"'{r}'" for r in reads["undecided_reads"])
+                        messages.append(
+                            f"{scope} '{owner}' has a {gap_kind} that reads {named}, and the "
+                            f"static validator does not know what {named} may hold there "
+                            f"(text a codeBlock stores into an answer, a value from a call, a "
+                            f"loop or an unpacking, a name no code assigns, or a variable also "
+                            f"computed by arithmetic), so it leaves what the {gap_kind} "
+                            f"decides about {named} undecided. A contradiction elsewhere in it "
+                            f"still stands, but nothing is proven from those reads."
+                        )
+                        suggestions.append(
+                            "Assign the value from literals or coded answers only, or "
+                            "compare the coded answer it comes from."
+                        )
                     emit(
                         {
                             "item_id": owner,
                             "severity": "warning",
                             "type": "inexact_condition",
-                            "message": (
-                                f"{scope} '{owner}' has a {gap_kind} that is only partly "
-                                f"verified: it reads {named}, which may be unanswered, and "
-                                f"the static validator cannot tell where reading None raises "
-                                f"in this condition. A contradiction it finds still stands, "
-                                f"but it cannot prove the {gap_kind} is {withheld}."
-                            ),
-                            "suggestion": (
-                                f"Test for an answer first ({guarded}), and compare the "
-                                f"answer directly rather than through a call, a list, a "
-                                f"ternary ('x if c else y') or a comprehension."
-                            ),
+                            "message": " ".join(messages),
+                            "suggestion": " ".join(suggestions),
                         },
                         block_key,
                     )
@@ -1964,6 +2025,34 @@ class ValidationProcessor:
         """
         issues: list[dict[str, Any]] = []
 
+        # --- Word lists that cannot read the language (#2200) -------------
+        # The inscription arm of ``comment_titled_as_question`` and the whole of
+        # ``combinable_none_option`` read words in the supported languages only.
+        # On an "other" instrument they would answer a silent clean verdict, so
+        # they do not run and one notice says so; the ``?`` arm, which reads no
+        # words, still does.
+        if not self._words_judged and self._has_word_judged_items():
+            issues.append(
+                {
+                    "item_id": self.state.get("title") or "questionnaire",
+                    "severity": "warning",
+                    "type": "language_not_judged",
+                    "message": (
+                        f"The questionnaire is written in "
+                        f"{questionnaire_language_name(self.language)} ({self.language}), "
+                        f"which the word-based checks cannot read: "
+                        f"comment_titled_as_question (its wording arm; a '?' in a "
+                        f"Comment title is still checked) and combinable_none_option "
+                        f"were not run."
+                    ),
+                    "suggestion": (
+                        "Read the Comment titles for requests to write an answer, and "
+                        "check that a Checkbox 'none of the above' option cannot be "
+                        "ticked together with the others."
+                    ),
+                }
+            )
+
         # --- A questionnaire-level condition (#559) ----------------------
         # Conditions exist at ITEM and BLOCK level. The schema advertised the
         # two root-level keys and no consumer ever read them: not the flow
@@ -2009,7 +2098,7 @@ class ValidationProcessor:
                 continue
             if not (
                 _COMMENT_ASKS_QUESTION_MARK.search(title)
-                or _COMMENT_ASKS_INSCRIPTION.search(title)
+                or (self._words_judged and _COMMENT_ASKS_INSCRIPTION.search(title))
             ):
                 continue
             item_id = item.get("id")
@@ -2090,7 +2179,8 @@ class ValidationProcessor:
                 item.get("postcondition") or []
             )
             issues.extend(self._mandated_answer_issues(item, postconditions))
-            issues.extend(self._combinable_none_option_issues(item, postconditions))
+            if self._words_judged:
+                issues.extend(self._combinable_none_option_issues(item, postconditions))
 
         return issues
 

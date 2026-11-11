@@ -32,6 +32,8 @@ Key format (a plain string, so a map serializes into JSONB as is)::
 
 Ids are identifiers and codes are integers, so neither can hold the ``/``
 separator. Precondition hints are not keys: nothing shows them to a respondent.
+A postcondition's ``invented`` marker is not text either, so it has no key and
+a translator never receives it; the check's hint is keyed like any other.
 
 Two key families behave differently:
 

@@ -6,7 +6,7 @@ Tests the decoupled Major.Minor.Patch schema-version signal:
 - `version` is valid three-part semver
 - `QML_SCHEMA_VERSION` is read from (never hardcoded apart from) the schema
   file — the single-source-of-truth / no-drift guarantee
-- the current contract version is 2.6.4 (the 2.0.0 breaking collapse of block
+- the current contract version is 2.7.0 (the 2.0.0 breaking collapse of block
   kinds to Group + Roster, the 2.1.0 backward-compatible addition of the optional
   Roster `subjectFrom` key, the 2.1.1 PATCH tightening that closes the
   Item and Condition objects with `unevaluatedProperties: false`, the 2.2.0
@@ -14,7 +14,8 @@ Tests the decoupled Major.Minor.Patch schema-version signal:
   2.3.0 backward-compatible addition of the optional `coding` key on the two
   text controls, the 2.4.0 removal of that same key, the 2.6.0 closing
   of `Input`, and the 2.6.1–2.6.4 PATCH tightenings: identifier item ids,
-  whole-number arithmetic, whole-number Range defaults, in-domain defaults)
+  whole-number arithmetic, whole-number Range defaults, in-domain defaults,
+  and the 2.7.0 backward-compatible optional `invented` postcondition marker)
 - the schema version is independent of the askalot_qml package version
 - `$defs.Input` is closed (2.6.0): a misspelt or retired key is refused, while
   the keys stored documents carry (Textarea `minLength`, Switch `left` /
@@ -23,6 +24,8 @@ Tests the decoupled Major.Minor.Patch schema-version signal:
 - the EBNF grammar rendering carries no `Coding` production
 - the EBNF `Questionnaire` production declares no `precondition`/`postcondition`
   (removed at 2.4.1), while `BlockMeta` still declares both
+- the loader builds the schema validator once per process (#2246), still
+  refuses what the schema refuses, and reads a schema rewritten in place again
 
 These unit tests pin the contract so a schema change cannot silently ship
 without a deliberate version move, and the in-code constant can never drift
@@ -30,14 +33,17 @@ from the schema file.
 """
 
 import json
+import os
 import re
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 import yaml
-from askalot_qml.core.qml_loader import QMLLoader
+from askalot_qml.core.qml_loader import QMLLoader, _schema_validator
 from askalot_qml.schema import QML_SCHEMA_VERSION, SCHEMA_PATH
 from jsonschema import ValidationError
+from jsonschema.validators import validator_for
 
 _SEMVER = re.compile(r"^\d+\.\d+\.\d+$")
 
@@ -81,7 +87,7 @@ class TestSchemaVersionContract:
         # sourced from the schema and cannot drift from a hardcoded copy.
         assert QML_SCHEMA_VERSION == self._schema()["version"]
 
-    def test_current_contract_version_is_2_4_1(self):
+    def test_current_contract_version_is_2_7_0(self):
         # 2.0.0 was the first breaking (MAJOR) change: block kinds collapse to
         # Group + Roster (Sequence/Sample removed, is_random dropped, kind made
         # optional). 2.1.0 is a backward-compatible (MINOR) addition: the
@@ -141,7 +147,13 @@ class TestSchemaVersionContract:
         # 2.6.4 refuses a control default outside the item's answer domain
         # (#1823). PATCH: all 1,034 stored dev versions (heads and campaign
         # pins) load, 77 carry defaults, none outside its domain (checked 2026-10-24).
-        assert QML_SCHEMA_VERSION == "2.6.4"
+        # 2.7.0 is a backward-compatible (MINOR) addition (#1972): the optional
+        # boolean `invented` on a postcondition, author metadata marking a check
+        # derived rather than stated by the source. Like `external` it is
+        # invisible to evaluation: Z3, the walk and the publish gate read a
+        # marked check as the same check unmarked, and it is no translation key.
+        # A precondition still takes no such key.
+        assert QML_SCHEMA_VERSION == "2.7.0"
 
     def test_schema_version_decoupled_from_package_version(self):
         # Decoupled by policy: a code-only release moves the package version
@@ -395,6 +407,52 @@ class TestFixtureCorpusValidatesAgainstSchema:
             pytest.skip("unparseable on purpose — there is no document to sweep")
         offending = [e for e in self._errors(path) if "coding" in str(e.message).lower()]
         assert not offending, f"{path.name}: {[e.message for e in offending]}"
+
+
+_MINIMAL_DOCUMENT = f"""\
+qmlVersion: "{QML_SCHEMA_VERSION}"
+questionnaire:
+  title: "T"
+  blocks:
+    - id: b
+      items:
+        - id: q
+          kind: Question
+          title: "Q"
+          input:
+            control: Editbox
+            min: 0
+            max: 9
+"""
+
+
+@pytest.mark.unit
+class TestTheSchemaValidatorIsBuiltOnce:
+    """#2246: the loader reads, parses and checks the schema once per process,
+    not on every load, and still refuses what the schema refuses."""
+
+    def test_two_loads_build_one_validator(self):
+        _schema_validator.cache_clear()
+        with patch("askalot_qml.core.qml_loader.validator_for", wraps=validator_for) as built:
+            QMLLoader().load_from_string(_MINIMAL_DOCUMENT)
+            QMLLoader().load_from_string(_MINIMAL_DOCUMENT)
+        assert built.call_count == 1
+
+    def test_the_cached_validator_still_refuses(self):
+        QMLLoader().load_from_string(_MINIMAL_DOCUMENT)
+        with pytest.raises(ValidationError):
+            QMLLoader().load_from_string(_MINIMAL_DOCUMENT.replace("max: 9", "max: 9\n            mnLength: 1"))
+
+    def test_a_schema_rewritten_in_place_is_read_again(self, tmp_path):
+        schema_file = tmp_path / "schema.json"
+        schema_file.write_text(SCHEMA_PATH.read_text(encoding="utf-8"), encoding="utf-8")
+        QMLLoader(schema_path=schema_file).load_from_string(_MINIMAL_DOCUMENT)
+        schema = _load_schema()
+        schema["required"] = [*schema["required"], "notAKey"]
+        schema_file.write_text(json.dumps(schema), encoding="utf-8")
+        os.utime(schema_file, ns=(0, schema_file.stat().st_mtime_ns + 1_000_000))
+        with pytest.raises(ValidationError):
+            QMLLoader(schema_path=schema_file).load_from_string(_MINIMAL_DOCUMENT)
 
 
 @pytest.mark.unit

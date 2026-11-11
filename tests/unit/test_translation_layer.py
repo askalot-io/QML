@@ -8,6 +8,7 @@ Tests the pure functions in askalot_qml.core.qml_translation:
 - Z3 gives the same verdict on the source and on the source overlaid with a translation
 - `untranslated` is empty for a complete translation and names exactly a dropped hint
 - Postcondition hints, the questionnaire title and block titles are text keys
+- An invented postcondition's hint is one key and its `invented` marker none
 - Carry-forward keeps unchanged text, drops changed keys, and drops a changed positional list whole
 - `apply_translation` replaces text only: ids, codes, preconditions and code blocks stay byte-identical
 
@@ -276,6 +277,24 @@ class TestTextKeys:
         assert keys["block:b_people/labels/2"] == "Child"
         # Conditions, code blocks, ids and numeric bounds are never text.
         assert not any("predicate" in key or "codeBlock" in key for key in keys)
+
+    def test_an_invented_check_gives_its_hint_once_and_its_marker_no_key(self):
+        """The `invented` marker is for authors: a translator receives only the hint."""
+        marked = ALL_FIELDS_QML.replace(
+            '              hint: "Pick an answer."\n',
+            '              hint: "Pick an answer."\n              invented: true\n',
+        ).replace(
+            '          hint: "Block-level hint"\n',
+            '          hint: "Block-level hint"\n          invented: true\n',
+        )
+        assert marked.count("invented: true") == 2
+
+        keys = text_keys(_load(marked))
+
+        assert keys == text_keys(_load(ALL_FIELDS_QML))
+        assert list(keys.values()).count("Pick an answer.") == 1
+        assert list(keys.values()).count("Block-level hint") == 1
+        assert not any("invented" in key for key in keys)
 
     def test_keys_serialize_into_json(self):
         qml = _load(ALL_FIELDS_QML)

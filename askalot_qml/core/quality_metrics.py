@@ -104,7 +104,7 @@ GATE_STRONG_MIN_BOUND_COVERAGE = 0.25
 GATE_ADEQUATE_MIN_BOUND_COVERAGE = 0.10
 
 # D4: share of authored predicates fully lowered to Z3 (no runtime fallback,
-# no textarea sentinel, no phantom). The "formally verified" claim should
+# no read of a Textarea's text, no phantom). The "formally verified" claim should
 # cover (nearly) everything; a file living off runtime fallbacks isn't
 # verified in any meaningful sense.
 VERIFICATION_STRONG_MIN_COVERAGE = 0.95
@@ -179,7 +179,7 @@ def compute_quality_report(
         "quality_gate_density": _quality_gate_density(
             items, classifications, postcondition_records
         ),
-        "verification_coverage": _verification_coverage(state, builder),
+        "verification_coverage": _verification_coverage(state, builder, classifications),
         "structural_complexity": _structural_complexity(state, topology, items),
         "order_coherence": _order_coherence(items, topology),
         "path_diversity": _path_diversity(classifications, topology),
@@ -393,13 +393,32 @@ def _quality_gate_density(
 # ---------------------------------------------------------------------------
 
 
-def _verification_coverage(state: QMLState, builder: StaticBuilder) -> dict[str, Any]:
+def inexact_gap_withholds_nothing(classification: Mapping[str, Any], gap: Mapping[str, Any]) -> bool:
+    """Whether an inexact condition's gap (``wide_items``, ``undecided_reads``)
+    withholds no verdict, so neither the ``inexact_condition`` warning nor D4
+    counts it: the item is unreachable (its postcondition vacuous, its
+    precondition NEVER) or its postcondition INFEASIBLE, which a wider formula
+    still proves and an error already reports."""
+    post = classification.get("postcondition", {}) or {}
+    if post.get("vacuous"):
+        return True
+    if gap.get("kind") == "postcondition" and post.get("invariant") == "INFEASIBLE":
+        return True
+    return gap.get("kind") == "precondition" and (classification.get("precondition", {}) or {}).get("status") == "NEVER"
+
+
+def _verification_coverage(
+    state: QMLState, builder: StaticBuilder, classifications: Mapping[str, Any]
+) -> dict[str, Any]:
     """Share of authored predicates fully inside Z3's reach.
 
     A predicate that fell back to runtime enforcement (unsupported AST node),
-    references a Textarea sentinel, or contains a phantom name is authored
-    logic the formal layer does not verify. ``group_dependency`` gaps are
-    excluded — those are structural errors, not verification degradation.
+    reads a Textarea's text (free text has no Z3 model: only a comparison with
+    a number is decided, anything else about the text is not), or contains a
+    phantom name is authored logic the formal layer does not verify. ``group_dependency`` gaps are
+    excluded — those are structural errors, not verification degradation, and
+    so is an inexact condition that withholds no verdict
+    (``inexact_gap_withholds_nothing``): D4 counts what the report shows.
     """
     total_predicates = 0
     for item in state.get_all_items():
@@ -419,6 +438,10 @@ def _verification_coverage(state: QMLState, builder: StaticBuilder) -> dict[str,
             kind = gap.get("kind", "")
             if kind == "group_dependency":
                 continue
+            if (gap.get("wide_items") or gap.get("undecided_reads")) and inexact_gap_withholds_nothing(
+                classifications.get(owner_id, {}), gap
+            ):
+                continue
             idx = gap.get("condition_idx", 0)
             condition_owner, scope = builder.condition_owner(owner_id, kind, idx)
             wide_items = gap.get("wide_items")
@@ -433,6 +456,9 @@ def _verification_coverage(state: QMLState, builder: StaticBuilder) -> dict[str,
                 detail = f"{kind} fell back to runtime: {', '.join(gap['unsupported_nodes'])}"
             elif wide_items:
                 detail = f"{kind} only partly verified: may read None of {', '.join(wide_items)}"
+            elif gap.get("undecided_reads"):
+                reads = block_reads[key]["undecided_reads"] if scope == "block" else gap["undecided_reads"]
+                detail = f"{kind} leaves what it decides about {', '.join(reads)} undecided"
             elif kind == "undefined_name":
                 detail = f"phantom identifier '{gap.get('identifier', '?')}'"
             elif kind == "textarea_in_predicate":

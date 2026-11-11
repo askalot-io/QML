@@ -57,6 +57,8 @@ progress shows. It records the translation row it copied in
 answer (see ``askalot_common.repository.mixins.survey``). The first committed
 answer locks the pick; only a complete translation is offered
 (``offered_languages``), so nothing falls back to source text item by item.
+The languages offered are the version's own: its source language, supported
+or "other" (any well-formed BCP-47 code), and its complete translations.
 
 An answer names the pick it was shown under (``pick_token``, the record's id
 from ``language_pick_token``, ``None`` for a walk no pick re-materialized).
@@ -76,10 +78,11 @@ from enum import StrEnum
 from typing import Any
 
 from askalot_common.campaign_admission import has_committed_answer
-from askalot_common.i18n.locale import require_locale
+from askalot_common.i18n.locale import require_questionnaire_language
 from askalot_common.repository.mixins.survey import (
     LANGUAGE_PICK_KEY,
     SurveyLanguageLockedError,
+    SurveyLanguageNotOfferedError,
     SurveyLanguagePinMovedError,
     language_pick_record,
     language_pick_token,
@@ -438,9 +441,11 @@ def choose_language(
     ``choose_survey_language``, which refuses under the survey row's lock once
     an answer is committed or when the pin moved since it was read here. The
     walk's position is cleared, so the next presentation starts from its first
-    item. An unsupported ``locale`` raises ``UnsupportedLocale``.
+    item. ``locale`` is checked against what the version offers, so a
+    questionnaire's "other" source language is a valid pick; a code that is
+    not a well-formed language tag raises ``UnsupportedQuestionnaireLanguage``.
     """
-    locale = require_locale(locale)
+    locale = require_questionnaire_language(locale)
     if has_committed_answer(walk.qml_state):
         return LanguageChoice(LanguageChoiceOutcome.LOCKED)
     questionnaire = repository.get_questionnaire(walk.questionnaire_id)
@@ -466,7 +471,7 @@ def choose_language(
         )
     except SurveyLanguageLockedError:
         return LanguageChoice(LanguageChoiceOutcome.LOCKED)
-    except SurveyLanguagePinMovedError:
+    except (SurveyLanguagePinMovedError, SurveyLanguageNotOfferedError):
         return LanguageChoice(LanguageChoiceOutcome.NOT_OFFERED, offered_languages(repository, walk))
     walk.language = locale
     walk.modified_at = stored.modified_at

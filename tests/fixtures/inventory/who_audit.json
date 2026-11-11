@@ -1,0 +1,537 @@
+{
+  "schema": "inventory/v1",
+  "source_language": "en",
+  "sections": [
+    {
+      "id": "s_admin",
+      "title": "Administration",
+      "purpose": "Inputs the interview receives from the sample",
+      "mode": "interviewer",
+      "questions": [
+        {
+          "source_id": "Clinic code",
+          "qml_id": "Clinic_code",
+          "text": "Clinic code",
+          "answer_type": "number",
+          "min": 1,
+          "max": 999,
+          "external": true
+        }
+      ]
+    },
+    {
+      "id": "s_audit",
+      "title": "AUDIT",
+      "purpose": "Screen for hazardous and harmful alcohol use over the past year",
+      "mode": "interviewer",
+      "questions": [
+        {
+          "source_id": "1",
+          "qml_id": "Q1",
+          "text": "How often do you have a drink containing alcohol?",
+          "answer_type": "single_choice",
+          "codes": [
+            {
+              "value": 0,
+              "label": "Never"
+            },
+            {
+              "value": 1,
+              "label": "Monthly or less"
+            },
+            {
+              "value": 2,
+              "label": "2 to 4 times a month"
+            },
+            {
+              "value": 3,
+              "label": "2 to 3 times a week"
+            },
+            {
+              "value": 4,
+              "label": "4 or more times a week"
+            }
+          ],
+          "provenance": {
+            "page": 1
+          }
+        },
+        {
+          "source_id": "2",
+          "qml_id": "Q2",
+          "text": "How many drinks containing alcohol do you have on a typical day when you are drinking?",
+          "answer_type": "single_choice",
+          "codes": [
+            {
+              "value": 0,
+              "label": "1 or 2"
+            },
+            {
+              "value": 1,
+              "label": "3 or 4"
+            },
+            {
+              "value": 2,
+              "label": "5 or 6"
+            },
+            {
+              "value": 3,
+              "label": "7, 8 or 9"
+            },
+            {
+              "value": 4,
+              "label": "10 or more"
+            }
+          ],
+          "provenance": {
+            "page": 1
+          },
+          "preconditions": [
+            {
+              "predicate": "Q1.outcome != 0",
+              "hint": "Skip to questions 9 and 10 if the answer to question 1 is Never",
+              "provenance": {
+                "page": 1,
+                "source_text": "If Never, skip to Questions 9-10"
+              }
+            }
+          ]
+        },
+        {
+          "source_id": "3",
+          "qml_id": "Q3",
+          "text": "How often do you have six or more drinks on one occasion?",
+          "answer_type": "single_choice",
+          "codes": [
+            {
+              "value": 0,
+              "label": "Never"
+            },
+            {
+              "value": 1,
+              "label": "Less than monthly"
+            },
+            {
+              "value": 2,
+              "label": "Monthly"
+            },
+            {
+              "value": 3,
+              "label": "Weekly"
+            },
+            {
+              "value": 4,
+              "label": "Daily or almost daily"
+            }
+          ],
+          "provenance": {
+            "page": 1
+          },
+          "preconditions": [
+            {
+              "predicate": "Q1.outcome != 0",
+              "hint": "Skip to questions 9 and 10 if the answer to question 1 is Never",
+              "provenance": {
+                "page": 1,
+                "source_text": "If Never, skip to Questions 9-10"
+              }
+            }
+          ],
+          "postconditions": [
+            {
+              "predicate": "Q3.outcome == 0 or Q2.outcome >= 1",
+              "hint": "Six or more drinks on one occasion, yet a typical day of 1 or 2: please check both answers",
+              "invented": true,
+              "provenance": {
+                "page": 1,
+                "source_text": "Interviewer: probe if the answers to questions 2 and 3 disagree"
+              }
+            }
+          ]
+        },
+        {
+          "source_id": "4",
+          "qml_id": "Q4",
+          "text": "How often during the last year have you found that you were not able to stop drinking once you had started?",
+          "answer_type": "single_choice",
+          "codes": [
+            {
+              "value": 0,
+              "label": "Never"
+            },
+            {
+              "value": 1,
+              "label": "Less than monthly"
+            },
+            {
+              "value": 2,
+              "label": "Monthly"
+            },
+            {
+              "value": 3,
+              "label": "Weekly"
+            },
+            {
+              "value": 4,
+              "label": "Daily or almost daily"
+            }
+          ],
+          "provenance": {
+            "page": 1
+          },
+          "preconditions": [
+            {
+              "predicate": "Q1.outcome != 0",
+              "hint": "Skip to questions 9 and 10 if the answer to question 1 is Never",
+              "provenance": {
+                "page": 1,
+                "source_text": "If Never, skip to Questions 9-10"
+              }
+            },
+            {
+              "predicate": "Q2.outcome + Q3.outcome > 0",
+              "hint": "Skip to questions 9 and 10 if the total for questions 2 and 3 is 0",
+              "provenance": {
+                "page": 1,
+                "source_text": "Skip to Questions 9 and 10 if Total Score for Questions 2 and 3 = 0"
+              }
+            }
+          ]
+        },
+        {
+          "source_id": "5",
+          "qml_id": "Q5",
+          "text": "How often during the last year have you failed to do what was normally expected from you because of drinking?",
+          "answer_type": "single_choice",
+          "codes": [
+            {
+              "value": 0,
+              "label": "Never"
+            },
+            {
+              "value": 1,
+              "label": "Less than monthly"
+            },
+            {
+              "value": 2,
+              "label": "Monthly"
+            },
+            {
+              "value": 3,
+              "label": "Weekly"
+            },
+            {
+              "value": 4,
+              "label": "Daily or almost daily"
+            }
+          ],
+          "provenance": {
+            "page": 1
+          },
+          "preconditions": [
+            {
+              "predicate": "Q1.outcome != 0",
+              "hint": "Skip to questions 9 and 10 if the answer to question 1 is Never",
+              "provenance": {
+                "page": 1,
+                "source_text": "If Never, skip to Questions 9-10"
+              }
+            },
+            {
+              "predicate": "Q2.outcome + Q3.outcome > 0",
+              "hint": "Skip to questions 9 and 10 if the total for questions 2 and 3 is 0",
+              "provenance": {
+                "page": 1,
+                "source_text": "Skip to Questions 9 and 10 if Total Score for Questions 2 and 3 = 0"
+              }
+            }
+          ]
+        },
+        {
+          "source_id": "6",
+          "qml_id": "Q6",
+          "text": "How often during the last year have you needed a first drink in the morning to get yourself going after a heavy drinking session?",
+          "answer_type": "single_choice",
+          "codes": [
+            {
+              "value": 0,
+              "label": "Never"
+            },
+            {
+              "value": 1,
+              "label": "Less than monthly"
+            },
+            {
+              "value": 2,
+              "label": "Monthly"
+            },
+            {
+              "value": 3,
+              "label": "Weekly"
+            },
+            {
+              "value": 4,
+              "label": "Daily or almost daily"
+            }
+          ],
+          "provenance": {
+            "page": 1
+          },
+          "preconditions": [
+            {
+              "predicate": "Q1.outcome != 0",
+              "hint": "Skip to questions 9 and 10 if the answer to question 1 is Never",
+              "provenance": {
+                "page": 1,
+                "source_text": "If Never, skip to Questions 9-10"
+              }
+            },
+            {
+              "predicate": "Q2.outcome + Q3.outcome > 0",
+              "hint": "Skip to questions 9 and 10 if the total for questions 2 and 3 is 0",
+              "provenance": {
+                "page": 1,
+                "source_text": "Skip to Questions 9 and 10 if Total Score for Questions 2 and 3 = 0"
+              }
+            }
+          ]
+        },
+        {
+          "source_id": "7",
+          "qml_id": "Q7",
+          "text": "How often during the last year have you had a feeling of guilt or remorse after drinking?",
+          "answer_type": "single_choice",
+          "codes": [
+            {
+              "value": 0,
+              "label": "Never"
+            },
+            {
+              "value": 1,
+              "label": "Less than monthly"
+            },
+            {
+              "value": 2,
+              "label": "Monthly"
+            },
+            {
+              "value": 3,
+              "label": "Weekly"
+            },
+            {
+              "value": 4,
+              "label": "Daily or almost daily"
+            }
+          ],
+          "provenance": {
+            "page": 1
+          },
+          "preconditions": [
+            {
+              "predicate": "Q1.outcome != 0",
+              "hint": "Skip to questions 9 and 10 if the answer to question 1 is Never",
+              "provenance": {
+                "page": 1,
+                "source_text": "If Never, skip to Questions 9-10"
+              }
+            },
+            {
+              "predicate": "Q2.outcome + Q3.outcome > 0",
+              "hint": "Skip to questions 9 and 10 if the total for questions 2 and 3 is 0",
+              "provenance": {
+                "page": 1,
+                "source_text": "Skip to Questions 9 and 10 if Total Score for Questions 2 and 3 = 0"
+              }
+            }
+          ]
+        },
+        {
+          "source_id": "8",
+          "qml_id": "Q8",
+          "text": "How often during the last year have you been unable to remember what happened the night before because you had been drinking?",
+          "answer_type": "single_choice",
+          "codes": [
+            {
+              "value": 0,
+              "label": "Never"
+            },
+            {
+              "value": 1,
+              "label": "Less than monthly"
+            },
+            {
+              "value": 2,
+              "label": "Monthly"
+            },
+            {
+              "value": 3,
+              "label": "Weekly"
+            },
+            {
+              "value": 4,
+              "label": "Daily or almost daily"
+            }
+          ],
+          "provenance": {
+            "page": 1
+          },
+          "preconditions": [
+            {
+              "predicate": "Q1.outcome != 0",
+              "hint": "Skip to questions 9 and 10 if the answer to question 1 is Never",
+              "provenance": {
+                "page": 1,
+                "source_text": "If Never, skip to Questions 9-10"
+              }
+            },
+            {
+              "predicate": "Q2.outcome + Q3.outcome > 0",
+              "hint": "Skip to questions 9 and 10 if the total for questions 2 and 3 is 0",
+              "provenance": {
+                "page": 1,
+                "source_text": "Skip to Questions 9 and 10 if Total Score for Questions 2 and 3 = 0"
+              }
+            }
+          ]
+        },
+        {
+          "source_id": "9",
+          "qml_id": "Q9",
+          "text": "Have you or someone else been injured as a result of your drinking?",
+          "answer_type": "single_choice",
+          "codes": [
+            {
+              "value": 0,
+              "label": "No"
+            },
+            {
+              "value": 2,
+              "label": "Yes, but not in the last year"
+            },
+            {
+              "value": 4,
+              "label": "Yes, during the last year"
+            }
+          ],
+          "provenance": {
+            "page": 1
+          }
+        },
+        {
+          "source_id": "10",
+          "qml_id": "Q10",
+          "text": "Has a relative or friend or a doctor or another health worker been concerned about your drinking or suggested you cut down?",
+          "answer_type": "single_choice",
+          "codes": [
+            {
+              "value": 0,
+              "label": "No"
+            },
+            {
+              "value": 2,
+              "label": "Yes, but not in the last year"
+            },
+            {
+              "value": 4,
+              "label": "Yes, during the last year"
+            }
+          ],
+          "provenance": {
+            "page": 1
+          }
+        }
+      ],
+      "provenance": {
+        "page": 1
+      }
+    }
+  ],
+  "scope": [
+    {
+      "unit": "Clinic code",
+      "status": "in",
+      "qml_id": "Clinic_code"
+    },
+    {
+      "unit": "Question 1",
+      "status": "in",
+      "qml_id": "Q1"
+    },
+    {
+      "unit": "Question 2",
+      "status": "in",
+      "qml_id": "Q2"
+    },
+    {
+      "unit": "Question 3",
+      "status": "in",
+      "qml_id": "Q3"
+    },
+    {
+      "unit": "Question 4",
+      "status": "in",
+      "qml_id": "Q4"
+    },
+    {
+      "unit": "Question 5",
+      "status": "in",
+      "qml_id": "Q5"
+    },
+    {
+      "unit": "Question 6",
+      "status": "in",
+      "qml_id": "Q6"
+    },
+    {
+      "unit": "Question 7",
+      "status": "in",
+      "qml_id": "Q7"
+    },
+    {
+      "unit": "Question 8",
+      "status": "in",
+      "qml_id": "Q8"
+    },
+    {
+      "unit": "Question 9",
+      "status": "in",
+      "qml_id": "Q9"
+    },
+    {
+      "unit": "Question 10",
+      "status": "in",
+      "qml_id": "Q10"
+    },
+    {
+      "unit": "Interviewer probe for questions 2 and 3",
+      "status": "in",
+      "provenance": {
+        "page": 1
+      }
+    },
+    {
+      "unit": "Scoring table",
+      "status": "out",
+      "reason": "A scoring key for the clinician, not a question asked",
+      "provenance": {
+        "page": 2
+      }
+    },
+    {
+      "unit": "Patient name and date",
+      "status": "out",
+      "reason": "Identifying fields the respondent record already holds",
+      "provenance": {
+        "page": 1
+      }
+    }
+  ],
+  "report": {
+    "answers_discarded": false,
+    "vision_pages": [
+      2
+    ],
+    "gate_objections": [],
+    "remaining_problems": []
+  }
+}

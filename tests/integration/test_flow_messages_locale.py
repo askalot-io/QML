@@ -1,11 +1,15 @@
 """
-The flow API's fixed sentences render in the language of the walk's questionnaire.
+The flow API's fixed sentences render in the chrome locale the walk's questionnaire decides.
 
 Tests the respondent-facing messages of ``create_flow_blueprint``:
 - "Survey completed" is Hungarian for a survey whose questionnaire is ``hu``
 - the same message is English for an ``en`` questionnaire, whatever the browser asks for
 - "Cannot navigate to this item" is Hungarian for a ``hu`` survey and English for an ``en`` one
 - the browser's language never overrides a known walk's questionnaire language
+- a walk in an "other" language (``it``) speaks the browser's supported
+  language, the respondent's preferred language before it, and English on an
+  interviewer-assisted survey, whose browser is the interviewer's; a launched
+  preview (``field_interview`` mode, no interviewer) still follows the browser
 - the refusal's error code and the engine's own reason are not what is translated
 - any askalot_qml import registers the catalog, not only the flow API's (a
   service rendering an askalot_qml word through its own template, #2137)
@@ -113,15 +117,21 @@ class _Survey:
 class _Repo:
     """One fielding survey whose questionnaire is in ``language``; writes are kept."""
 
-    def __init__(self, language, qml):
+    def __init__(self, language, qml, *, preferred=None, mode="direct", interviewer_user_id=None):
         self.qml = qml
         self.survey = _Survey()
+        self.survey.mode = mode
+        self.survey.interviewer_user_id = interviewer_user_id
+        self.respondent = type("R", (), {"id": "r-1", "preferred_language": preferred})()
         self.questionnaire = type(
             "Q", (), {"id": "q-1", "name": "Locale", "document_id": "doc-1", "language": language}
         )()
 
     def get_survey(self, survey_id):
         return self.survey if survey_id == SURVEY_ID else None
+
+    def get_respondent(self, respondent_id):
+        return self.respondent if respondent_id == "r-1" else None
 
     def get_questionnaire(self, questionnaire_id, include_deleted=False):
         return self.questionnaire if questionnaire_id == "q-1" else None
@@ -137,11 +147,11 @@ class _Repo:
         return survey.id
 
 
-def _client(language, qml=_QML):
+def _client(language, qml=_QML, **survey):
     app = Flask(__name__)
     app.register_blueprint(
         create_flow_blueprint(
-            repository=_Repo(language, qml),
+            repository=_Repo(language, qml, **survey),
             url_prefix="/api/flow",
             session_resolver=lambda: ("org-1", "org-slug", SURVEY_ID),
         )
@@ -158,9 +168,9 @@ def _clean_context():
     clear_organization_context()
 
 
-def _complete(language, accept_language):
+def _complete(language, accept_language, **survey):
     """Present a walk with nothing to ask: the presentation completes it."""
-    client = _client(language, _QML_NOTHING_TO_ASK)
+    client = _client(language, _QML_NOTHING_TO_ASK, **survey)
     return client.get(
         f"/api/flow/current-item?survey_id={SURVEY_ID}",
         headers={"Accept-Language": accept_language},
@@ -203,6 +213,39 @@ class TestSurveyCompleted:
         resp = _complete("en", accept_language="hu")
 
         assert resp.get_json()["message"] == "Survey completed"
+
+
+@pytest.mark.integration
+@pytest.mark.flow
+class TestAnOtherLanguageWalk:
+    """``it`` is no supported locale, so the sentences take a chrome locale of their own."""
+
+    def test_the_browsers_supported_language_is_the_chrome(self):
+        resp = _complete("it", accept_language="de-CH, en;q=0.5")
+
+        assert resp.get_json()["message"] == "Umfrage abgeschlossen"
+
+    def test_the_respondents_preferred_language_comes_before_the_browser(self):
+        resp = _complete("it", accept_language="de", preferred="hu")
+
+        assert resp.get_json()["message"] == "A kérdőív kitöltése befejeződött"
+
+    def test_an_interviewers_browser_is_never_asked(self):
+        resp = _complete("it", accept_language="de", mode="field_interview", interviewer_user_id="u-1")
+
+        assert resp.get_json()["message"] == "Survey completed"
+
+    def test_a_launched_preview_follows_the_researchers_browser(self):
+        """``DTO_PreviewRun.mode`` is ``field_interview`` once launched, with no interviewer."""
+        resp = _complete("it", accept_language="de", mode="field_interview")
+
+        assert resp.get_json()["message"] == "Umfrage abgeschlossen"
+
+    def test_a_refusal_speaks_the_chrome_too(self):
+        resp = _navigate_ahead(_client("it"), accept_language="hu")
+
+        assert resp.status_code == 400
+        assert resp.get_json()["error"] == "Ehhez a kérdéshez most nem lehet ugrani"
 
 
 @pytest.mark.integration

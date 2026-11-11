@@ -5,7 +5,8 @@ Covers AE6).
 Tests the asymmetry that IS the product rule: a save is evaluated and stamped
 but never blocked, while fielding refuses anything unvalidated.
 
-- ``evaluate_qml_content`` grades real QML and produces the stored verdict shape
+- ``evaluate_qml_content`` grades real QML and produces the stored verdict shape;
+  ``judge_head_version`` judges in the questionnaire's language (#2200)
 - ``stamp_questionnaire_validation`` writes the verdict on the head VERSION and
   on the questionnaire row, and never raises for unsound content (AE6, save half)
 - a fail-closed gate (unparseable QML) clears the quality report to "not
@@ -136,6 +137,7 @@ class _FakeQuestionnaire:
         self.quality_report = {"stale": "report"}
         self.quality_report_at = "2020-01-01T00:00:00+00:00"
         self.quality_report_version_id = "an-earlier-version"
+        self.language = "en"
 
 
 class _FakeRepo:
@@ -539,6 +541,23 @@ class TestStampThenPinRunsTheGateOnce:
         assert (ticket.version_id, result.pinned) == ("v1", True)
         assert repo.pins == {CAMPAIGN_ID: "v1"}
         assert questionnaire.quality_report_version_id == "v1"
+
+    def test_the_head_is_judged_in_the_questionnaires_language(self):
+        """#2200: an "other" questionnaire's word-list lints answer one notice."""
+        from askalot_qml.core import head_version_to_stamp, judge_head_version
+
+        questionnaire = _FakeQuestionnaire()
+        questionnaire.language = "it"
+        with_comment = (
+            'qmlVersion: "2.0"\nquestionnaire:\n  title: "Indagine"\n  blocks:\n'
+            "    - id: b\n      items:\n        - id: c_intro\n          kind: Comment\n"
+            '          title: "Benvenuto."\n'
+        )
+        repo = _FakeRepo(questionnaire, [_FakeVersion("v1", with_comment)])
+
+        gate = judge_head_version(head_version_to_stamp(repo, questionnaire), questionnaire)
+
+        assert [i["type"] for i in gate.issues].count("language_not_judged") == 1
 
     def test_a_head_that_moved_while_the_gate_ran_gets_no_row_write(self):
         """#1696: the judged version is stamped alone (the pin reads it); the row

@@ -11,7 +11,7 @@ Import from the specific submodule you need:
     from askalot_qml.schema import SCHEMA_PATH
 """
 
-__version__ = "1.113.0"
+__version__ = "1.119.0"
 
 # Registers this package's translation catalog on any askalot_qml import, so a
 # service never has to remember to: a word askalot_qml owns reaches a page

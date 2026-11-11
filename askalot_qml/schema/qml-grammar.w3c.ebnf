@@ -29,7 +29,7 @@ RosterBlock   ::= "id" String "kind" "Roster"
 
 BlockMeta     ::= ( "title" String )?
                   ( "precondition" Condition* )?
-                  ( "postcondition" Condition* )?
+                  ( "postcondition" Postcondition* )?
 
 /* Item */
 
@@ -51,7 +51,7 @@ MatrixQuestionItem ::= "id" ItemId "kind" "MatrixQuestion" ItemMeta
 
 ItemMeta           ::= ( "title" String )?
                        ( "precondition" Condition* )?
-                       ( "postcondition" Condition* )?
+                       ( "postcondition" Postcondition* )?
                        ( "codeBlock" CodeBlock )?
 
 /* Input */
@@ -114,6 +114,11 @@ SwitchDefault ::= "0" | "1"
 
 Condition     ::= "predicate" ( String | Boolean | Number )
                   ( "hint" String )?
+
+/* invented (2.7.0): author metadata, a check derived rather than stated by
+   the source; never shown, never translated, ignored by every evaluation. */
+Postcondition ::= Condition
+                  ( "invented" Boolean )?
 
 Labels        ::= ( IntegerKey String )*
 

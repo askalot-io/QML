@@ -159,7 +159,7 @@ This test suite verifies the StaticBuilder class which provides:
 - A check on what it sets is not refused, the reader depends on it, a gated
   one may not run its codeBlock, its own text is opaque in it, a blank one may
   stop its codeBlock at a raise, and another Textarea's text is opaque in any
-  codeBlock (never the predicate sentinel 0)
+  codeBlock (never a stand-in constant)
 
 ### QuestionGroup answers (#184)
 - A group holds one variable per answer (``item_qg@{i}``, a ``@lo`` / ``@hi``
@@ -260,12 +260,21 @@ This test suite verifies the StaticBuilder class which provides:
   right condition kind
 - Per-variable read/write census (assignments with context, bare-outcome RHS
   shape, read count across predicates and code) exposed for the U3 hygiene lints
+
+### A condition is lowered once after the build (#2246)
+- Each condition is lowered at most once across ``to_issues(deep=True)`` and
+  the classification; findings and verdicts equal those of a builder that
+  keeps nothing
+- Two compiles of one key share exactly the symbols two uncached compiles
+  share, and conjoined (``P ∧ ¬P'``) stay as independent as they are
+- A cache hit still records the wide gap a ``record_wide`` compile asks for
 """
 
 import ast
 import subprocess
 import sys
 import unittest
+import unittest.mock
 
 import pytest
 from askalot_qml.core.flow_processor import FlowProcessor
@@ -276,6 +285,7 @@ from askalot_qml.z3.static_builder import StaticBuilder
 from tests.helpers.block_counter import NO_YES, counter_questionnaire
 from tests.helpers.flow_walker import walk_and_answer
 from z3 import *
+from z3.z3util import get_vars
 
 
 def create_questionnaire(items_data: list, code_init: str = "") -> QMLState:
@@ -3351,7 +3361,7 @@ class TestSkippedItemCodeBlocksAreLowered(unittest.TestCase):
 
     def test_the_textareas_own_text_is_opaque(self):
         """``t.outcome`` is free text: what the codeBlock computes from it is
-        unconstrained, never the sentinel 0 a predicate reads."""
+        unconstrained, never a stand-in constant."""
         builder = _textarea_writer("x = t.outcome", "x == 0")
 
         self.assertEqual(_invariant(builder, "r"), "CONSTRAINING")
@@ -3372,7 +3382,7 @@ class TestSkippedItemCodeBlocksAreLowered(unittest.TestCase):
     def test_another_textareas_text_is_opaque_in_a_codeblock(self):
         """``b``'s codeBlock writes ``r.outcome = 1 if a.outcome else 2``; with
         ``a`` answered the runtime writes 1, r's only label. ``a``'s text is
-        not the sentinel 0 there, which would force 2 and leave no world."""
+        not a stand-in 0 there, which would force 2 and leave no world."""
         items = [
             {"id": "a", "input": {"control": "Textarea"}},
             {"id": "b", "input": {"control": "Textarea"}, "codeBlock": "r.outcome = 1 if a.outcome else 2"},
@@ -5447,6 +5457,211 @@ class TestCounterGateIsVerified(unittest.TestCase):
         )
 
         self.assertEqual(_counter_statuses(state)["q2"], "CONDITIONAL")
+
+
+@pytest.mark.unit
+@pytest.mark.z3
+class TestCompilesAfterTheBuildAreMemoised(unittest.TestCase):
+    """A condition is lowered once after the build, whoever asks (#2246).
+
+    The classifier, the lints (``is_guaranteed`` in ``_condition_reference_issues``)
+    and the Global and Path-based formulas each compile the same item's
+    conditions, and a hit answers the kept lowering with fresh symbols of its
+    own. The cases spy on ``_lower_predicate`` from the end of the build
+    through a full ``to_issues(deep=True)``, compare with a builder that keeps
+    nothing, and conjoin two compiles of one key.
+    """
+
+    FIXTURES = (
+        "inline",
+        "code_written",
+        "roster_household_labour.qml",
+        "lint_hygiene.qml",
+        "lint_authoring_559.qml",
+        "defect_dead_end.qml",
+        "thesis_dead_code_income.qml",
+    )
+
+    @staticmethod
+    def _state(fixture: str) -> QMLState:
+        if fixture == "code_written":
+            # Every per-compile mint: a code-written item's skip, blank and
+            # text choices, an answeredness test, a raise the lowering cannot
+            # place (``loose@``) and a blank acceptance read through them.
+            return create_questionnaire(
+                [
+                    {"id": "q_s", "input": NO_YES, "codeBlock": "q_w.outcome = 1\nq_t.outcome = 'x'\n"},
+                    {"id": "q_w", "input": {"control": "Editbox", "min": 0, "max": 9},
+                     "precondition": [{"predicate": "q_s.outcome == 1"}],
+                     # Its blank acceptance, which a compile reading q_w's
+                     # blank computes, mints an answeredness test of its own.
+                     "postcondition": [{"predicate": "q_a.outcome is None or q_w.outcome in [1, 2]", "hint": "h"}]},
+                    {"id": "q_t", "input": {"control": "Textarea"}},
+                    {"id": "q_a", "input": {"control": "Editbox", "min": 0, "max": 9}},
+                    {"id": "q_c", "input": NO_YES,
+                     "precondition": [
+                         {"predicate": "q_w.outcome != 2 or abs(q_w.outcome) > 3"},
+                         {"predicate": "q_a.outcome is not None and q_a.outcome > 1"},
+                         {"predicate": "q_t.outcome == 'x' or q_w.outcome == 1"},
+                     ],
+                     # No build-time acceptance reads q_w, so the first
+                     # compile of q_c's gate computes q_w's acceptance.
+                     "postcondition": [{"predicate": "q_c.outcome == 1 or q_a.outcome != 1", "hint": "h"}]},
+                ]
+            )
+        if fixture != "inline":
+            return _state_from_fixture(fixture)
+        # Orderings on a gated answer (``none_unsafe_reference`` asks
+        # ``is_guaranteed`` per reference), relational postconditions and a
+        # codeBlock writer read by a later gate.
+        return create_questionnaire(
+            [
+                {"id": "q_g", "input": NO_YES},
+                {"id": "q_a", "input": {"control": "Editbox", "min": 0, "max": 9},
+                 "precondition": [{"predicate": "q_g.outcome == 1"}],
+                 "postcondition": [{"predicate": "q_a.outcome < 8 or q_g.outcome == 0", "hint": "h"}],
+                 "codeBlock": "n = q_a.outcome + 1\n"},
+                {"id": "q_c", "input": NO_YES,
+                 "precondition": [{"predicate": "q_a.outcome > 3"}, {"predicate": "n >= 2"}],
+                 "postcondition": [{"predicate": "q_c.outcome == 1 or q_a.outcome < 5", "hint": "h"}]},
+                {"id": "q_d", "input": NO_YES,
+                 "precondition": [{"predicate": "q_a.outcome > 3 and q_c.outcome == 1"}]},
+            ],
+            code_init="n = 0",
+        )
+
+    def _lowerings_after_the_build(self, fixture: str) -> tuple[ValidationProcessor, dict, list]:
+        processor = ValidationProcessor(self._state(fixture))
+        lowered: dict[tuple[str, str, str, bool, str | None], int] = {}
+        original = StaticBuilder._lower_predicate
+
+        def spy(builder, tree, context, kind, *, blank=True):
+            # A blank acceptance lowers an item's postcondition with its own
+            # outcome None (``_own_none``): another lowering, kept apart.
+            key = (context, kind, ast.unparse(tree), blank, builder._own_none)
+            lowered[key] = lowered.get(key, 0) + 1
+            return original(builder, tree, context, kind, blank=blank)
+
+        with unittest.mock.patch.object(StaticBuilder, "_lower_predicate", spy):
+            issues = processor.to_issues(deep=True)
+            processor.get_item_classifications()
+        return processor, lowered, issues
+
+    def test_each_condition_is_lowered_at_most_once(self):
+        for fixture in self.FIXTURES:
+            with self.subTest(fixture=fixture):
+                _, lowered, _ = self._lowerings_after_the_build(fixture)
+                self.assertTrue(lowered, "the spy saw no lowering, so it proves nothing")
+                repeated = {key: n for key, n in lowered.items() if n > 1}
+                self.assertEqual(repeated, {})
+
+    def test_memoised_compiles_answer_as_uncached_ones_do(self):
+        # The verdicts and the findings equal those of a processor whose cache
+        # never stores, where every compile is a first one.
+        class _NeverStores(dict):
+            def __setitem__(self, key, value):
+                pass
+
+        for fixture in self.FIXTURES:
+            with self.subTest(fixture=fixture):
+                processor, _, issues = self._lowerings_after_the_build(fixture)
+                uncached = ValidationProcessor(self._state(fixture))
+                uncached.engine.static_builder._compiled_conditions = _NeverStores()
+                self.assertEqual(issues, uncached.to_issues(deep=True))
+                self.assertEqual(
+                    json.dumps(processor.get_item_classifications(), sort_keys=True, default=str),
+                    json.dumps(uncached.get_item_classifications(), sort_keys=True, default=str),
+                )
+
+    def test_repeated_compiles_share_exactly_what_uncached_ones_share(self):
+        # A hit mints its own fresh symbols and keeps the shared ones (a
+        # world choice, a cached blank acceptance, an item's open reads), so
+        # every pair of same-key compiles has the same symbols in common, and
+        # as many of its own, as two uncached compiles.
+        class _NeverStores(dict):
+            def __setitem__(self, key, value):
+                pass
+
+        for fixture in self.FIXTURES:
+            with self.subTest(fixture=fixture):
+                records = []
+                for cache in (True, False):
+                    built = ValidationProcessor(self._state(fixture)).engine.static_builder
+                    if not cache:
+                        built._compiled_conditions = _NeverStores()
+                    record = []
+                    for item_id, details in built.item_details.items():
+                        for kind in ("precondition", "postcondition"):
+                            conditions = details[f"{kind}s"]
+                            one, two = (
+                                {str(v) for v in get_vars(built.compile_conditions(item_id, conditions, kind=kind))}
+                                for _ in range(2)
+                            )
+                            record.append((item_id, kind, sorted(one & two), len(one - two), len(two - one)))
+                    records.append(record)
+                self.assertEqual(records[0], records[1])
+                if fixture == "code_written":
+                    self.assertTrue(any(own for *_, own, _ in records[0]), "no compile minted anything")
+
+    def test_two_compiles_conjoined_stay_independent(self):
+        # An answeredness test mints a fresh Bool per compile (#1250): the two
+        # compiles of one gate may see X answered and unanswered, so
+        # ``P ∧ ¬P'`` holds, as it does for two uncached compiles.
+        class _NeverStores(dict):
+            def __setitem__(self, key, value):
+                pass
+
+        def builder(cache: bool) -> StaticBuilder:
+            built = StaticBuilder(
+                create_questionnaire(
+                    [
+                        {"id": "q_a", "input": {"control": "Editbox", "min": 0, "max": 9}},
+                        {"id": "q_c", "input": NO_YES,
+                         "precondition": [{"predicate": "q_a.outcome is not None and q_a.outcome > 3"}]},
+                    ]
+                )
+            )
+            if not cache:
+                built._compiled_conditions = _NeverStores()
+            return built
+
+        for cache in (True, False):
+            with self.subTest(cache=cache):
+                built = builder(cache)
+                conditions = built.item_details["q_c"]["preconditions"]
+                first = built.compile_conditions("q_c", conditions, kind="precondition")
+                second = built.compile_conditions("q_c", conditions, kind="precondition")
+                fresh = [
+                    {str(symbol) for symbol in get_vars(formula) if "#" in str(symbol)}
+                    for formula in (first, second)
+                ]
+                self.assertTrue(fresh[0] and fresh[1])
+                self.assertFalse(fresh[0] & fresh[1])
+                self.assertTrue(all(built.answered_mint(name) == ("q_a", "q_c") for name in fresh[1]))
+                solver = Solver(ctx=built.ctx)
+                solver.add(built.get_domain_base(), first, Not(second))
+                self.assertEqual(solver.check(), sat)
+
+    def test_a_cache_hit_still_records_the_wide_gap(self):
+        # compile_conditions (record_wide=False) fills the cache first; the
+        # exact compile after it must still surface the inexact condition.
+        builder = StaticBuilder(
+            create_questionnaire(
+                [
+                    {"id": "q_g", "input": NO_YES},
+                    {"id": "q_a", "input": {"control": "Editbox", "min": 0, "max": 9},
+                     "precondition": [{"predicate": "q_g.outcome == 1"}]},
+                    {"id": "q_c", "input": NO_YES, "precondition": [{"predicate": "abs(q_a.outcome) > 3"}]},
+                ]
+            )
+        )
+        conditions = builder.item_details["q_c"]["preconditions"]
+        builder.coverage_gaps.pop("q_c", None)
+        builder.compile_conditions("q_c", conditions, kind="precondition")
+        self.assertNotIn("q_c", builder.coverage_gaps)
+        _, exact = builder.compile_conditions_exactly("q_c", conditions, kind="precondition")
+        self.assertFalse(exact)
+        self.assertTrue(any(gap.get("wide_items") for gap in builder.coverage_gaps["q_c"]))
 
 
 @pytest.mark.unit

@@ -17,6 +17,8 @@ Tests the complete pipeline from QML files to Z3 constraints:
   Dropdown default that is no label key and a Checkbox default with an
   undeclared bit are refused naming the item and the domain; in-domain
   defaults load unchanged
+- A postcondition marked `invented: true` loads, gets the twin's Z3 verdict and
+  walk refusals, a non-boolean marker is refused, and a precondition takes none
 - QMLState is initialized with correct flat structure and blockId references
 - StaticBuilder generates Z3 constraints including inherited block preconditions
 - QMLTopology discovers dependencies from block-inherited preconditions
@@ -27,6 +29,7 @@ that block precondition inheritance works correctly through the entire pipeline,
 YAML parsing through Z3 constraint generation to item classification.
 """
 
+import re
 import unittest
 from pathlib import Path
 
@@ -950,6 +953,115 @@ class TestSchemaClosedObjects(unittest.TestCase):
         with self.assertRaises(Exception) as ctx:
             QMLLoader().load_from_string(self._doc(item))
         self.assertIn("hnt", str(ctx.exception))
+
+
+_INVENTED_QML = """
+qmlVersion: "2.7.0"
+questionnaire:
+  title: "Invented checks"
+  blocks:
+    - id: b
+      title: "B"
+      postcondition:
+        - predicate: "hours.outcome is None or hours.outcome >= 0"
+          hint: "Hours cannot be negative."
+          invented: true
+      items:
+        - id: hours
+          kind: Question
+          title: "Hours worked last week"
+          input:
+            control: Editbox
+            min: 0
+            max: 168
+          postcondition:
+            - predicate: "hours.outcome <= 80"
+              hint: "Please confirm more than 80 hours."
+              invented: true
+            - predicate: "hours.outcome != 13"
+              hint: "Thirteen is not accepted."
+        - id: done
+          kind: Comment
+          title: "Thanks"
+"""
+
+
+@pytest.mark.integration
+class TestInventedPostcondition(unittest.TestCase):
+    """A postcondition may carry `invented: true` (schema 2.7.0, #1972): the check
+    was derived by an import, not stated by the source. The marker is metadata
+    for authors only, so the loader keeps it and every evaluation ignores it.
+
+    Each test compares the document with its twin that carries no marker.
+    """
+
+    @staticmethod
+    def _twin() -> str:
+        return re.sub(r"(?m)^ *invented: true\n", "", _INVENTED_QML)
+
+    def test_the_marker_is_kept_and_nothing_else_differs(self):
+        marked = QMLLoader().load_from_string(_INVENTED_QML)
+        plain = QMLLoader().load_from_string(self._twin())
+        self.assertNotIn("invented", self._twin())
+
+        self.assertIs(marked["blocks"][0]["postcondition"][0]["invented"], True)
+        self.assertIs(marked["items"][0]["postcondition"][0]["invented"], True)
+        self.assertNotIn("invented", marked["items"][0]["postcondition"][1])
+        for block in marked["blocks"]:
+            for condition in block.get("postcondition", []):
+                condition.pop("invented", None)
+        for item in marked["items"]:
+            for condition in item.get("postcondition", []):
+                condition.pop("invented", None)
+        self.assertEqual(marked, plain)
+
+    def test_the_z3_verdict_is_the_twins(self):
+        def verdict(content: str):
+            processor = ValidationProcessor(QMLState(QMLLoader().load_from_string(content)))
+            issues = [(i["item_id"], i["severity"], i["type"]) for i in processor.to_issues(deep=True)]
+            return processor.get_item_classifications(), issues
+
+        self.assertEqual(verdict(_INVENTED_QML), verdict(self._twin()))
+
+    def test_the_walk_refuses_and_accepts_as_the_twin_does(self):
+        from askalot_qml.core.flow_processor import FlowProcessor
+        from askalot_qml.models.qml_state import SOURCE_RESPONDENT
+
+        def outcomes(content: str) -> list[dict]:
+            results = []
+            for answer in (90, 13, 40):
+                state = QMLState(QMLLoader().load_from_string(content))
+                processor = FlowProcessor(state)
+                self.assertEqual(processor.get_current_item(state, backward=False)["id"], "hours")
+                result = processor.process_item(state, "hours", answer, source=SOURCE_RESPONDENT)
+                results.append({"success": result["success"], "message": result.get("message")})
+            return results
+
+        marked = outcomes(_INVENTED_QML)
+        self.assertEqual(marked, outcomes(self._twin()))
+        self.assertEqual(
+            [r["message"] for r in marked[:2]],
+            ["Please confirm more than 80 hours.", "Thirteen is not accepted."],
+        )
+        self.assertTrue(marked[2]["success"])
+
+    def test_a_marker_that_is_not_a_boolean_is_refused(self):
+        with self.assertRaises(ValidationError) as ctx:
+            QMLLoader().load_from_string(
+                _INVENTED_QML.replace("              invented: true", '              invented: "yes"')
+            )
+        self.assertIn("yes", str(ctx.exception))
+
+    def test_a_precondition_takes_no_marker(self):
+        """Only a check can be invented; a precondition routes, and the source states its routing."""
+        content = self._twin().replace(
+            "        - id: done\n",
+            '        - id: done\n          precondition:\n            - predicate: "True"\n'
+            "              invented: true\n",
+        )
+        with self.assertRaises(ValidationError) as ctx:
+            QMLLoader().load_from_string(content)
+        self.assertIn("invented", str(ctx.exception))
 
 
 @pytest.mark.integration

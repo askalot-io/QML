@@ -73,6 +73,7 @@ ISSUE_TYPE_LABELS: dict[str, str] = {
     "self_assignment": N_("Variable assigned to itself"),
     "mandated_answer_postcondition": N_("Answer check that allows only one choice"),
     "combinable_none_option": N_("A 'none' option that can be ticked with others"),
+    "language_not_judged": N_("Wording checks not run for this language"),
 }
 
 
@@ -144,6 +145,7 @@ def _analyze(
     qml_dict: dict[str, Any],
     source_label: str,
     log: logging.Logger,
+    language: str | None,
 ) -> PublishGateResult:
     """Run Z3 static analysis on already-loaded QML and grade the result.
 
@@ -152,7 +154,7 @@ def _analyze(
     ``source_label`` only names the source in messages and logs.
     """
     try:
-        processor = ValidationProcessor(QMLState(qml_dict))
+        processor = ValidationProcessor(QMLState(qml_dict), language=language)
         # deep=True runs the full validation hierarchy, including the O(items²)
         # Level 4 accumulated-dead-code pass. Publication is a deliberate,
         # infrequent action where soundness matters more than latency; the
@@ -187,6 +189,7 @@ def evaluate_publish_gate_content(
     *,
     source_label: str = "QML content",
     logger: logging.Logger | None = None,
+    language: str | None = None,
 ) -> PublishGateResult:
     """Run the full publish gate on QML text held in memory.
 
@@ -198,6 +201,10 @@ def evaluate_publish_gate_content(
         qml_content: The QML YAML document.
         source_label: How the source is named in issue messages and logs.
         logger: Optional logger threaded into the loader/processor.
+        language: The questionnaire's language when the caller holds its row;
+            an "other" one turns the word-list lints into one
+            ``language_not_judged`` warning (``ValidationProcessor``). It never
+            changes ``ok``: every lint it touches is a warning.
 
     Returns:
         PublishGateResult — ``ok=False`` when publication must be refused.
@@ -230,4 +237,4 @@ def evaluate_publish_gate_content(
             "Fix the YAML/schema errors, then run validate_qml_file until clean.",
         )
 
-    return _analyze(qml_dict, source_label, log)
+    return _analyze(qml_dict, source_label, log, language)
