@@ -21,10 +21,20 @@ Tests the respondent-facing messages of ``create_flow_blueprint``:
   it has none (#2177); ``add_warning`` takes only a singular ``Sentence`` with
   plain variables (a ``Paragraph``, alone or nested, is refused too), and nothing in the package calls it but the engine's
   ``_warning`` (#2191)
+- a sandbox refusal's reason (``reason``, the one slot that may nest a
+  Sentence) is stored as its msgid, so a refused condition or codeBlock reads
+  wholly in the page's language, its named construct too, while ``message``
+  stays the same English; a reason stored as text before that still reads (#2194)
 - a flow endpoint that fails on an exception quoting an answer logs the
   endpoint, the survey, the exception's class and where it was raised, never
   its text; no logging call in the flow API or runtime formats an exception or
   logs a traceback, read off the syntax tree (#2193)
+- every one of the ten endpoints answers such a failure with
+  ``flow_failed`` and a fixed sentence in the walk's language, never the
+  text (#2198); a failing session resolver in the ``before_request`` hook is
+  answered the same way and leaves no text or traceback in any log, while an
+  HTTP error (a resolver's 403, routing's 404 / 405, a malformed body's 400)
+  keeps its status and headers, and an ``abort(response)`` its response (#2199)
 
 These integration tests drive the real blueprint over Flask's test client with a
 fake repository holding the survey, its questionnaire (with its ``language``) and
@@ -147,13 +157,17 @@ class _Repo:
         return survey.id
 
 
-def _client(language, qml=_QML, **survey):
+def _bound_session():
+    return ("org-1", "org-slug", SURVEY_ID)
+
+
+def _client(language, qml=_QML, *, session_resolver=_bound_session, **survey):
     app = Flask(__name__)
     app.register_blueprint(
         create_flow_blueprint(
             repository=_Repo(language, qml, **survey),
             url_prefix="/api/flow",
-            session_resolver=lambda: ("org-1", "org-slug", SURVEY_ID),
+            session_resolver=session_resolver,
         )
     )
     return app.test_client()
@@ -264,37 +278,161 @@ class TestCannotNavigate:
         assert resp.get_json()["error"] == "Cannot navigate to this item"
 
 
+#: Every flow endpoint, with a request that reaches its ``prepare_walk``: each
+#: catches an unexpected failure in its own ``except Exception``.
+_ENDPOINTS = [
+    ("get", f"/api/flow/current-item?survey_id={SURVEY_ID}", None, "current_item"),
+    (
+        "post",
+        "/api/flow/evaluate-item",
+        {"survey_id": SURVEY_ID, "item_id": "q1", "response": "Jane"},
+        "evaluate_item",
+    ),
+    ("post", "/api/flow/choose-language", {"survey_id": SURVEY_ID, "language": "de"}, "choose_language"),
+    ("get", f"/api/flow/previous-item?survey_id={SURVEY_ID}", None, "previous_item"),
+    ("get", f"/api/flow/stepper?survey_id={SURVEY_ID}", None, "stepper"),
+    ("get", f"/api/flow/navigation-path?survey_id={SURVEY_ID}", None, "navigation_path"),
+    ("post", "/api/flow/navigate-to-item", {"survey_id": SURVEY_ID, "target_item_id": "q2"}, "navigate_to_item"),
+    ("post", "/api/flow/reset", {"survey_id": SURVEY_ID}, "reset"),
+    ("post", "/api/flow/finish", {"survey_id": SURVEY_ID}, "finish"),
+    ("post", "/api/flow/resume", {"survey_id": SURVEY_ID}, "resume"),
+]
+
+_FAILED_EN = "Something went wrong on our side. Please try again in a moment."
+_FAILED_HU = "Valami hiba történt nálunk. Kérjük, próbálja újra egy kis idő múlva."
+
+
+def _send(client, method, path, body, headers=None):
+    if method == "get":
+        return client.get(path, headers=headers)
+    return client.post(path, json=body, headers=headers)
+
+
+def _fail_on_the_answer(monkeypatch):
+    from askalot_qml.api import flow_service
+
+    def fails_on_the_answer(walk):
+        raise ValueError("invalid literal for int() with base 10: 'Jane'")
+
+    monkeypatch.setattr(flow_service, "prepare_walk", fails_on_the_answer)
+
+
+def _assert_logged_nothing_of(caplog, text):
+    """No record of any logger (Flask's app logger included) holds *text* or a traceback."""
+    for record in caplog.records:
+        assert text not in record.getMessage(), record.name
+        assert not record.exc_info, f"{record.name} logged a traceback"
+    assert text not in caplog.text
+    assert "Traceback" not in caplog.text
+
+
 @pytest.mark.integration
 @pytest.mark.flow
 class TestAFailureLogsNoAnswer:
     """#2193: an exception's text can quote what the respondent typed, and Loki
-    cannot be scrubbed, so a failing endpoint logs its class and the survey."""
+    cannot be scrubbed, so a failing endpoint logs its class and the survey.
+    #2198: the answer is a fixed sentence in the walk's language, never the
+    text. #2199: a failure in the ``before_request`` hook is answered and
+    logged the same way, not by Flask's default handler."""
 
-    @pytest.mark.parametrize(
-        ("method", "path", "body", "action"),
-        [
-            ("get", f"/api/flow/current-item?survey_id={SURVEY_ID}", None, "current_item"),
-            ("post", "/api/flow/evaluate-item", {"survey_id": SURVEY_ID, "item_id": "q1", "response": "Jane"}, "evaluate_item"),
-        ],
-    )
+    @pytest.mark.parametrize(("method", "path", "body", "action"), _ENDPOINTS)
     def test_the_log_names_the_class_never_the_text(self, monkeypatch, caplog, method, path, body, action):
-        from askalot_qml.api import flow_service
-
-        def fails_on_the_answer(walk):
-            raise ValueError("invalid literal for int() with base 10: 'Jane'")
-
-        monkeypatch.setattr(flow_service, "prepare_walk", fails_on_the_answer)
-        client = _client("en")
+        _fail_on_the_answer(monkeypatch)
         with caplog.at_level("DEBUG"):
-            resp = client.get(path) if method == "get" else client.post(path, json=body)
+            resp = _send(_client("en"), method, path, body)
 
         assert resp.status_code == 500
+        _assert_logged_nothing_of(caplog, "Jane")
         logged = "\n".join(record.getMessage() for record in caplog.records)
-        assert "Jane" not in logged
         assert (
             f"flow.{action}_failed survey_ids={SURVEY_ID} error=ValueError"
             " at=test_flow_messages_locale.py:"
         ) in logged
+
+    @pytest.mark.parametrize(("language", "expected"), [("en", _FAILED_EN), ("hu", _FAILED_HU)])
+    @pytest.mark.parametrize(("method", "path", "body", "action"), _ENDPOINTS)
+    def test_the_answer_is_a_fixed_sentence_in_the_walks_language(
+        self, monkeypatch, method, path, body, action, language, expected
+    ):
+        """The browser asks for the other language: the walk's questionnaire decides."""
+        _fail_on_the_answer(monkeypatch)
+        browser = "hu" if language == "en" else "en"
+        resp = _send(_client(language), method, path, body, headers={"Accept-Language": browser})
+
+        assert resp.status_code == 500
+        assert "Jane" not in resp.get_data(as_text=True)
+        assert resp.get_json() == {"error": "flow_failed", "message": expected}
+
+    def test_a_failing_session_resolver_is_answered_and_logged_without_its_text(self, caplog):
+        """The hook runs before any endpoint's ``except``; unhandled, Flask's
+        default handler would log the text with a traceback and answer HTML."""
+
+        def resolver_fails():
+            raise RuntimeError("session row for Jane could not be decoded")
+
+        client = _client("en", session_resolver=resolver_fails)
+        with caplog.at_level("DEBUG"):
+            resp = client.get(
+                f"/api/flow/current-item?survey_id={SURVEY_ID}", headers={"Accept-Language": "hu"}
+            )
+
+        assert resp.status_code == 500
+        # No walk was read, so the browser's language decides.
+        assert resp.get_json() == {"error": "flow_failed", "message": _FAILED_HU}
+        _assert_logged_nothing_of(caplog, "Jane")
+        assert f"survey_ids={SURVEY_ID} error=RuntimeError" in caplog.text
+
+    def test_an_http_error_keeps_its_own_status(self, caplog):
+        """A resolver that refuses with an HTTP error (and routing's 404 / 405)
+        keeps its status, never re-dressed as a 500, and its description, which
+        may quote caller text, never reaches the body."""
+        from werkzeug.exceptions import BadRequest
+
+        def resolver_refuses():
+            raise BadRequest(description="Invalid answer: Jane")
+
+        refused = _client("en", session_resolver=resolver_refuses).get(
+            f"/api/flow/current-item?survey_id={SURVEY_ID}"
+        )
+        assert refused.status_code == 400
+        assert refused.get_json() == {"error": "bad_request"}
+        assert b"Jane" not in refused.data
+        client = _client("en")
+        assert client.get("/api/flow/no-such-endpoint").status_code == 404
+        assert client.get("/api/flow/evaluate-item").status_code == 405
+        # A malformed body is the caller's fault, inside an endpoint too.
+        malformed = client.post(
+            "/api/flow/evaluate-item", data="{not json", content_type="application/json"
+        )
+        assert malformed.status_code == 400
+        assert malformed.get_json() == {"error": "bad_request"}
+        assert "flow_failed" not in caplog.text
+
+    def test_an_http_error_keeps_its_headers_and_a_built_response(self):
+        """Its headers are protocol (a 401's ``WWW-Authenticate``), and an
+        ``abort(response)`` (the capability gate's 402) is answered as built."""
+        from flask import abort, jsonify, make_response
+        from werkzeug.datastructures import WWWAuthenticate
+        from werkzeug.exceptions import Unauthorized
+
+        def resolver_challenges():
+            raise Unauthorized(www_authenticate=WWWAuthenticate("Bearer"))
+
+        challenged = _client("en", session_resolver=resolver_challenges).get(
+            f"/api/flow/current-item?survey_id={SURVEY_ID}"
+        )
+        assert challenged.status_code == 401
+        assert challenged.get_json() == {"error": "unauthorized"}
+        assert challenged.headers["WWW-Authenticate"] == "Bearer"
+
+        def resolver_gates():
+            abort(make_response(jsonify({"error": "payment_required"}), 402))
+
+        gated = _client("en", session_resolver=resolver_gates).get(
+            f"/api/flow/current-item?survey_id={SURVEY_ID}"
+        )
+        assert gated.status_code == 402
+        assert gated.get_json() == {"error": "payment_required"}
 
     def test_a_survey_id_that_is_not_a_uuid_is_not_logged(self, monkeypatch, caplog):
         """The id field is caller text too: anything but a UUID reads ``<invalid>``."""
@@ -544,9 +682,103 @@ class TestEngineWordsAreTranslated:
         in_paragraph = Sentence("Item %(item)s not found", item=paragraph(Sentence("q1")))
         with pytest.raises(TypeError, match="singular Sentence"):
             state.add_warning("q1", "item_missing", in_paragraph, severity="degraded")
+        # ``reason`` may nest a Sentence (#2194), but not one that cannot be rebuilt.
+        for reason in (counted, paragraph(Sentence("q1"))):
+            refused = Sentence("Item %(item)s refused (%(reason)s)", item="q1", reason=reason)
+            with pytest.raises(TypeError, match="singular Sentence"):
+                state.add_warning("q1", "item_missing", refused, severity="degraded")
         with pytest.raises(TypeError, match="takes a Sentence"):
             state.add_warning("q1", "item_missing", paragraph(Sentence("q1")), severity="degraded")
         assert state.get_warnings() == []
+
+    def test_a_refused_conditions_reason_reads_in_the_readers_language(self):
+        """#2194: the sandbox's refusal is a Sentence, stored as its msgid, so a
+        Hungarian page shows no English clause; ``message`` stays the English
+        text it always was, and the stored warning is JSON."""
+        import json
+
+        from askalot_common.i18n import gettext
+        from askalot_qml.core.flow_processor import _REFUSED_CONDITION_MESSAGES, _warning
+        from askalot_qml.core.python_runner import CodeRefused, PythonRunner
+        from askalot_qml.models import QMLState, warning_message_text
+
+        expr = "q1.outcome.__class__ == 1"
+        with pytest.raises(CodeRefused) as refused:
+            PythonRunner().eval_expr(expr, q1=None)
+        state = QMLState({"items": [{"id": "q1", "kind": "Question"}], "blocks": [], "history": []})
+        msgid = _REFUSED_CONDITION_MESSAGES["precondition"]
+        _warning(state, "q1", "precondition", msgid, severity="degraded", expr=expr, reason=refused.value.reason)
+        [warning] = json.loads(json.dumps(state.get_warnings()))
+
+        assert warning["message"] == (
+            "Precondition 'q1.outcome.__class__ == 1' was refused (Access to disallowed "
+            "attribute: __class__), so it never ran. Treating it as unsatisfied (the gated "
+            "item is skipped)."
+        )
+        assert warning["message_vars"]["reason"] == {
+            "msgid": "Access to disallowed attribute: %(attr)s",
+            "vars": {"attr": "__class__"},
+        }
+        assert warning_message_text(warning, "en") == warning["message"]
+        hungarian = warning_message_text(warning, "hu")
+        assert "Nem engedélyezett attribútum elérése: __class__" in hungarian
+        assert hungarian == gettext(
+            "hu", msgid, expr=expr, reason="Nem engedélyezett attribútum elérése: __class__"
+        )
+        assert "disallowed" not in hungarian
+
+    def test_a_refusal_naming_a_construct_translates_both(self):
+        """The whole-number refusal names its construct in words, a Sentence
+        inside the reason: both levels are stored and both translate."""
+        import json
+
+        from askalot_common.i18n import Sentence
+        from askalot_qml.core.flow_processor import _CODEBLOCK_REFUSED_MESSAGE
+        from askalot_qml.core.python_runner import PythonRunner
+        from askalot_qml.models import QMLState, warning_message_text
+
+        reason = PythonRunner().validate_code("x = q1.outcome * 1.5")
+        state = QMLState({"items": [{"id": "q1", "kind": "Question"}], "blocks": [], "history": []})
+        state.add_warning(
+            "q1", "codeblock", Sentence(_CODEBLOCK_REFUSED_MESSAGE, reason=reason), severity="critical"
+        )
+        [warning] = json.loads(json.dumps(state.get_warnings()))
+
+        assert "the number 1.5 can produce a fraction; use '//'" in warning["message"]
+        hungarian = warning_message_text(warning, "hu")
+        assert "A QML csak egész számokkal számol: a(z) 1.5 szám törtet adhat" in hungarian
+        assert "the number" not in hungarian and "whole numbers" not in hungarian
+
+    def test_a_parse_failure_is_refused_by_line_or_by_class(self):
+        """A syntax error names its line; one with no line (a NUL byte) names
+        its class, never "line None"."""
+        from askalot_qml.core.python_runner import SYNTAX_ERROR_MSGID, PythonRunner
+
+        runner = PythonRunner()
+        unclosed = runner.validate_code("x = (")
+        assert unclosed.msgid == SYNTAX_ERROR_MSGID
+        assert unclosed.variables == {"line": 1}
+        nul = runner.validate_code("x = 1\x00")
+        assert nul == "Validation error (SyntaxError)"
+        assert "None" not in runner.validate_expr("1\x00")
+
+    def test_a_reason_stored_as_text_reads_as_it_did(self):
+        """A refusal warning written before #2194 holds its reason as English
+        text: the sentence around it translates, the reason reads as stored."""
+        from askalot_common.i18n import gettext
+        from askalot_qml.core.flow_processor import _REFUSED_CONDITION_MESSAGES
+        from askalot_qml.models import warning_message_text
+
+        msgid = _REFUSED_CONDITION_MESSAGES["postcondition"]
+        variables = {"expr": "import_ok", "reason": "Disallowed node type: Import"}
+        stored = {
+            "type": "postcondition",
+            "message": msgid % variables,
+            "message_msgid": msgid,
+            "message_vars": variables,
+        }
+        assert warning_message_text(stored, "hu") == gettext("hu", msgid, **variables)
+        assert warning_message_text(stored, "en") == stored["message"]
 
     def test_a_warning_type_with_no_label_is_refused(self):
         from askalot_common.i18n import Sentence
@@ -561,3 +793,14 @@ class TestEngineWordsAreTranslated:
 
         assert warning_type_label("hu", "retired_kind") == "retired_kind"
         assert warning_type_label("hu", "codeblock") == _hungarian("Code block error")
+
+
+class TestTheSandboxStatesTheOneWholeNumberFix:
+    def test_the_refusal_quotes_the_fix_the_loader_and_runtime_give(self):
+        """The sandbox's refusal msgid writes the fix out (a catalog needs a
+        literal), so it is held equal to ``WHOLE_NUMBER_FIX`` here: an edit to
+        one cannot leave one refusal reading two ways."""
+        from askalot_qml.core.python_runner import WHOLE_NUMBER_FIX, PythonRunner
+
+        refusal = PythonRunner().validate_expr("a / 2")
+        assert refusal is not None and str(refusal).endswith(WHOLE_NUMBER_FIX)

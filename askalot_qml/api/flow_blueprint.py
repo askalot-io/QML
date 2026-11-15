@@ -69,6 +69,7 @@ from askalot_common.repository.mixins.survey import (
     language_pick_token,
 )
 from flask import Blueprint, g, jsonify, request
+from werkzeug.exceptions import HTTPException
 
 from askalot_qml.api import flow_service
 from askalot_qml.api.flow_service import (
@@ -430,6 +431,55 @@ def create_flow_blueprint(
             accept_language=request.headers.get("Accept-Language"),
         )
 
+    def _failed(action: str, error: Exception):
+        """The one answer to an unexpected flow failure (#2198): logged by class
+        and place (``_log_failure``), answered with a fixed, translated sentence.
+
+        Never the exception's text: a coercion error quotes what the respondent
+        typed, and a database error names tables, so neither may reach the page.
+        SirWay's ``survey.js`` shows ``message`` (else ``error``), so the page still
+        has a sentence to show. The locale is ``_locale``'s unless reading it is
+        what failed (it may read the repository): then the browser's language
+        decides, which reads nothing. An HTTP error (a malformed body's 400 from
+        ``request.get_json``, an ``abort``) is no server fault: it keeps its own
+        status (``_http_error``), as one raised outside an endpoint does.
+        """
+        if isinstance(error, HTTPException):
+            return _http_error(error)
+        _log_failure(action, error)
+        try:
+            locale = _locale()
+        except Exception:  # noqa: BLE001 - the failure being answered may be the repository's
+            locale = respondent_locale(repository, survey=None, accept_language=request.headers.get("Accept-Language"))
+        message = gettext(locale, "Something went wrong on our side. Please try again in a moment.")
+        return jsonify({"error": "flow_failed", "message": message}), 500
+
+    def _http_error(error: HTTPException):
+        """An HTTP error with its own status and headers but never its description.
+
+        A hook or library that raises one may have put caller text in the
+        description (Codex on #2199), so the body names only the status. Its
+        headers stay (``Allow``, ``WWW-Authenticate``, ``Retry-After``,
+        ``Location``): they are the protocol, not text. An ``abort(response)``
+        carries the response its raiser built (the capability gate's 402 / 503),
+        so that response is answered as it is.
+        """
+        if error.response is not None:
+            return error.response
+        response = jsonify({"error": error.name.lower().replace(" ", "_")})
+        response.status_code = error.code or 500
+        for name, value in error.get_headers():
+            if name.lower() != "content-type":
+                response.headers[name] = value
+        return response
+
+    @blueprint.errorhandler(Exception)
+    def _unhandled(error: Exception):
+        """Every failure no handler caught, the ``before_request`` hooks' above
+        all (#2199): answered and logged as ``_failed`` does, so none reaches
+        Flask's default logger, which writes the text and a traceback."""
+        return _failed((request.endpoint or "flow").rsplit(".", 1)[-1], error)
+
     def _fielded_campaign(survey):
         """The fielded survey's campaign, read fresh so a pause lands on the next
         step; ``None`` for a survey without one."""
@@ -566,8 +616,7 @@ def create_flow_blueprint(
         except SurveyStateConflictError:
             return _conflict_walk_response(_locale())
         except Exception as e:
-            _log_failure("current_item", e)
-            return jsonify({"error": str(e)}), 500
+            return _failed("current_item", e)
 
     @blueprint.route("/evaluate-item", methods=["POST"])
     def evaluate_item():
@@ -653,8 +702,7 @@ def create_flow_blueprint(
         except SurveyStateConflictError:
             return _conflict_walk_response(_locale())
         except Exception as e:
-            _log_failure("evaluate_item", e)
-            return jsonify({"error": str(e)}), 500
+            return _failed("evaluate_item", e)
 
     @blueprint.route("/choose-language", methods=["POST"])
     def choose_language():
@@ -705,8 +753,7 @@ def create_flow_blueprint(
         except SurveyStateConflictError:
             return _conflict_walk_response(_locale())
         except Exception as e:
-            _log_failure("choose_language", e)
-            return jsonify({"error": str(e)}), 500
+            return _failed("choose_language", e)
 
     @blueprint.route("/previous-item", methods=["GET"])
     def previous_item():
@@ -743,8 +790,7 @@ def create_flow_blueprint(
         except SurveyStateConflictError:
             return _conflict_walk_response(_locale())
         except Exception as e:
-            _log_failure("previous_item", e)
-            return jsonify({"error": str(e)}), 500
+            return _failed("previous_item", e)
 
     @blueprint.route("/stepper", methods=["GET"])
     def get_stepper():
@@ -801,8 +847,7 @@ def create_flow_blueprint(
         except SurveyStateConflictError:
             return _conflict_walk_response(_locale())
         except Exception as e:
-            _log_failure("stepper", e)
-            return jsonify({"error": str(e)}), 500
+            return _failed("stepper", e)
 
     @blueprint.route("/navigation-path", methods=["GET"])
     def get_navigation_path():
@@ -845,8 +890,7 @@ def create_flow_blueprint(
         except SurveyStateConflictError:
             return _conflict_walk_response(_locale())
         except Exception as e:
-            _log_failure("navigation_path", e)
-            return jsonify({"error": str(e)}), 500
+            return _failed("navigation_path", e)
 
     @blueprint.route("/navigate-to-item", methods=["POST"])
     def navigate_to_item():
@@ -910,8 +954,7 @@ def create_flow_blueprint(
         except SurveyStateConflictError:
             return _conflict_walk_response(_locale())
         except Exception as e:
-            _log_failure("navigate_to_item", e)
-            return jsonify({"error": str(e)}), 500
+            return _failed("navigate_to_item", e)
 
     @blueprint.route("/reset", methods=["POST"])
     def reset_survey():
@@ -1029,8 +1072,7 @@ def create_flow_blueprint(
         except SurveyStateConflictError:
             return _conflict_walk_response(_locale())
         except Exception as e:
-            _log_failure("reset", e)
-            return jsonify({"error": str(e)}), 500
+            return _failed("reset", e)
 
     @blueprint.route("/finish", methods=["POST"])
     def finish_survey():
@@ -1083,8 +1125,7 @@ def create_flow_blueprint(
         except SurveyStateConflictError:
             return _conflict_walk_response(_locale())
         except Exception as e:
-            _log_failure("finish", e)
-            return jsonify({"error": str(e)}), 500
+            return _failed("finish", e)
 
     @blueprint.route("/resume", methods=["POST"])
     def resume_survey():
@@ -1157,7 +1198,6 @@ def create_flow_blueprint(
         except SurveyStateConflictError:
             return _conflict_walk_response(_locale())
         except Exception as e:
-            _log_failure("resume", e)
-            return jsonify({"error": str(e)}), 500
+            return _failed("resume", e)
 
     return blueprint

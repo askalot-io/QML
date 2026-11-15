@@ -11,6 +11,9 @@ Tests the pure functions in askalot_qml.core.qml_translation:
 - An invented postcondition's hint is one key and its `invented` marker none
 - Carry-forward keeps unchanged text, drops changed keys, and drops a changed positional list whole
 - `apply_translation` replaces text only: ids, codes, preconditions and code blocks stay byte-identical
+- The source-level appliers rewrite a raw parsed QML file: the dumped file loads with exactly the
+  translation's text keys, its non-text structure is the source's, and precondition hints are
+  keyed, replaced and re-read like the other texts
 
 These unit tests run on documents parsed by the real QMLLoader (the flattened
 shape the flow service materializes) and on the real ValidationProcessor, so the
@@ -22,11 +25,16 @@ import copy
 import json
 from pathlib import Path
 
+import yaml
 from askalot_qml.core.qml_loader import QMLLoader
 from askalot_qml.core.qml_translation import (
     RefusalKind,
+    apply_source_precondition_hints,
+    apply_source_translation,
     apply_translation,
     carry_forward,
+    dump_source,
+    source_precondition_hints,
     text_keys,
     untranslated,
     validate_translation,
@@ -412,3 +420,99 @@ class TestZ3VerdictIsLanguageBlind:
 
         assert translated == _load_fixture("language_neutral_hu.qml")
         assert self._verdict(translated) == self._verdict(_load_fixture("language_neutral_en.qml"))
+
+
+#: A source file whose preconditions carry hints at block and item level, one unhinted.
+HINTED_QML = """
+qmlVersion: "2.0"
+questionnaire:
+  title: "Hinted"
+  blocks:
+    - id: b_main
+      title: "Main"
+      items:
+        - id: q_pet
+          kind: Question
+          title: "Do you have a pet?"
+          input:
+            control: Radio
+            labels:
+              1: "Yes"
+              2: "No"
+    - id: b_pets
+      title: "Pets"
+      precondition:
+        - predicate: "q_pet.outcome == 1"
+          hint: "Only pet owners"
+      items:
+        - id: q_kind
+          kind: Question
+          title: "Which pet?"
+          precondition:
+            - predicate: "q_pet.outcome == 1"
+            - predicate: "q_pet.outcome != 2"
+              hint: "Not for those without one"
+          input:
+            control: Textarea
+          codeBlock: |
+            note = 1
+            other = 2
+"""
+
+
+class TestSourceLevelAppliers:
+    """A translation applied to the raw source file, dumped, reads as the translated twin."""
+
+    def test_the_dumped_source_loads_with_exactly_the_translation(self):
+        raw = yaml.safe_load(ALL_FIELDS_QML)
+        before = copy.deepcopy(raw)
+        hungarian = _hungarian(_load(ALL_FIELDS_QML))
+
+        dumped = dump_source(apply_source_translation(raw, hungarian))
+
+        assert raw == before, "the source document is not mutated"
+        translated = _load(dumped)
+        assert text_keys(translated) == hungarian
+        assert _strip_text(translated) == _strip_text(_load(ALL_FIELDS_QML))
+
+    def test_a_switch_written_with_bare_on_off_keys_is_translated(self):
+        raw = yaml.safe_load(ALL_FIELDS_QML)
+
+        translated = _load(
+            dump_source(apply_source_translation(raw, {"item:q_switch/on": "Egyetért"}))
+        )
+
+        switch = next(i for i in translated["items"] if i["id"] == "q_switch")
+        assert switch["input"]["on"] == "Egyetért"
+        assert switch["input"]["off"] == "Disagree"
+
+    def test_precondition_hints_are_keyed_by_scope_and_position(self):
+        assert source_precondition_hints(yaml.safe_load(HINTED_QML)) == {
+            "block:b_pets/precondition/0/hint": "Only pet owners",
+            "item:q_kind/precondition/1/hint": "Not for those without one",
+        }
+
+    def test_applied_hints_replace_only_the_hints(self):
+        raw = yaml.safe_load(HINTED_QML)
+        before = copy.deepcopy(raw)
+        hints = {
+            "block:b_pets/precondition/0/hint": "Csak kisállattartóknak",
+            "item:q_kind/precondition/1/hint": "Annak nem, akinek nincs",
+        }
+
+        dumped = dump_source(apply_source_precondition_hints(raw, hints))
+
+        assert raw == before, "the source document is not mutated"
+        reread = yaml.safe_load(dumped)
+        assert source_precondition_hints(reread) == hints
+        blank = dict.fromkeys(hints, "")
+        assert apply_source_precondition_hints(reread, blank) == apply_source_precondition_hints(
+            raw, blank
+        )
+        assert text_keys(_load(dumped)) == text_keys(_load(HINTED_QML))
+
+    def test_a_multi_line_string_stays_a_literal_block(self):
+        dumped = dump_source(yaml.safe_load(HINTED_QML))
+
+        assert "codeBlock: |" in dumped
+        assert _load(dumped) == _load(HINTED_QML)

@@ -455,8 +455,12 @@ class TestAuthorCodeFactsAreNamed:
         assert warning["severity"] == "critical"
         assert warning["message_msgid"].startswith("The code block was refused (")
         assert set(warning["message_vars"]) == {"reason"}
-        assert warning["message_vars"]["reason"]
-        assert warning["message_vars"]["reason"] in warning["message"]
+        # The reason is the sandbox's Sentence, stored by its msgid (#2194).
+        assert warning["message_vars"]["reason"] == {
+            "msgid": "Disallowed node type: %(node)s",
+            "vars": {"node": "Import"},
+        }
+        assert "(Disallowed node type: Import)" in warning["message"]
 
     def test_a_refused_precondition_names_its_reason_and_skips_the_item(self):
         state = _state(_QML_REFUSED_CODE)

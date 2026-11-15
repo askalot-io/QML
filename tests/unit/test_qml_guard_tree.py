@@ -35,7 +35,6 @@ Z3 proves, not a mock's.
 import time
 from pathlib import Path
 
-from askalot_common.questionnaire_templates import get_questionnaire_template_qml
 from askalot_qml.api import guard_tree_answer
 from askalot_qml.core import qml_guard_tree
 from askalot_qml.core.qml_engine import QMLEngine
@@ -46,6 +45,15 @@ from askalot_qml.models.qml_state import QMLState
 from z3 import is_not, unknown
 
 FIXTURES_DIR = Path(__file__).parent.parent / "fixtures"
+
+
+def _library_template(asset: str) -> str:
+    """A template of the committed library source (``content/templates/``), found by walking up."""
+    for ancestor in Path(__file__).resolve().parents:
+        candidate = ancestor / "content" / "templates" / asset
+        if candidate.is_file():
+            return candidate.read_text(encoding="utf-8")
+    raise FileNotFoundError(f"content/templates/{asset} not found walking up from {__file__}")
 
 
 def _state(fixture: str) -> QMLState:
@@ -413,7 +421,7 @@ class TestSoundAcrossLowerings:
 
     def test_the_market_trends_template_has_no_undecided_branch(self):
         state = QMLState(
-            QMLLoader().load_from_string(get_questionnaire_template_qml("market-trends-and-challenges"))
+            QMLLoader().load_from_string(_library_template("market-research/market-trends-and-challenges.qml"))
         )
         tree = _tree_of(state)
         assert tree["checks"]["undecided"] == 0

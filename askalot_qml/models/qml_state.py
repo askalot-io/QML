@@ -53,17 +53,56 @@ def warning_type_label(locale: str, warning_type: str) -> str:
     return gettext(locale, label) if label is not None else warning_type
 
 
+#: The one warning variable that may hold a ``Sentence`` (#2194): a sandbox
+#: refusal's reason (``CodeRefused.reason``), which is itself a translatable
+#: sentence, possibly naming a construct that is one too. Every other variable
+#: stays plain, so what a page rebuilds is never guessed from a value's shape.
+_SENTENCE_SLOT = "reason"
+
+
+def _stored_sentence(value: Any) -> Any:
+    """The ``reason`` variable as stored JSON: a ``Sentence`` as ``{"msgid", "vars"}``
+    (its own Sentence variables likewise), anything else as itself.
+
+    A counted Sentence or a ``Paragraph`` is refused, as in any other slot:
+    neither can be rebuilt from one msgid and its variables.
+    """
+    if isinstance(value, Paragraph) or (isinstance(value, Sentence) and value.plural_msgid is not None):
+        raise TypeError("add_warning takes a singular Sentence with plain variables")
+    if isinstance(value, Sentence):
+        return {
+            "msgid": value.msgid,
+            "vars": {name: _stored_sentence(inner) for name, inner in value.variables.items()},
+        }
+    return value
+
+
+def _rebuilt_sentence(value: Any) -> Any:
+    """The inverse of :func:`_stored_sentence`; a plain value (a reason stored
+    as text before #2194) is returned as it is."""
+    if isinstance(value, dict) and set(value) == {"msgid", "vars"}:
+        # Unpacked first: the catalog tool extracts every string literal inside
+        # a ``Sentence(...)`` call, and would take a subscript's key for a msgid.
+        msgid, variables = value["msgid"], value["vars"]
+        return Sentence(msgid, **{name: _rebuilt_sentence(inner) for name, inner in variables.items()})
+    return value
+
+
 def warning_message_text(warning: dict[str, Any], locale: str) -> str:
     """A stored warning's detail as a page shows it, in ``locale`` (#2177).
 
     The ``Sentence`` :meth:`QMLState.add_warning` recorded is rebuilt from its
-    stored ``message_msgid`` / ``message_vars`` and shown in ``locale``; a
-    warning stored before they existed reads as its stored English ``message``.
+    stored ``message_msgid`` / ``message_vars`` and shown in ``locale``, its
+    ``reason`` too when that was stored as a sentence (#2194); a warning stored
+    before they existed reads as its stored English ``message``.
     """
     msgid = warning.get("message_msgid")
     if not msgid:
         return warning.get("message", "")
-    return Sentence(msgid, **(warning.get("message_vars") or {})).in_locale(locale)
+    variables = dict(warning.get("message_vars") or {})
+    if _SENTENCE_SLOT in variables:
+        variables[_SENTENCE_SLOT] = _rebuilt_sentence(variables[_SENTENCE_SLOT])
+    return Sentence(msgid, **variables).in_locale(locale)
 
 
 # Degradation-warning severities, ordered by data consequence (see add_warning).
@@ -1260,7 +1299,10 @@ class QMLState(dict):
                 (:func:`warning_message_text`). A plain ``str`` is refused, so
                 no writer can store a warning a page cannot translate. Its
                 variables are JSON-safe and never a respondent's answer value
-                (an exception is named by its class, never its text, #2190).
+                (an exception is named by its class, never its text, #2190);
+                the one exception to "plain" is ``reason``, a sandbox refusal,
+                which may be a singular ``Sentence`` and is stored as its msgid
+                and variables so it translates with the rest (#2194).
             severity: Data consequence, one of ``WARNING_SEVERITIES``.
                 'critical' — the accepted data may be wrong (a code block that
                 raised part-way); this is what excludes a survey from dataset
@@ -1275,13 +1317,20 @@ class QMLState(dict):
         if not isinstance(message, Sentence):
             raise TypeError("add_warning takes a Sentence, so a page can translate the message")
         if message.plural_msgid is not None or any(
-            isinstance(value, (Sentence, Paragraph)) for value in message.variables.values()
+            isinstance(value, (Sentence, Paragraph))
+            for name, value in message.variables.items()
+            if name != _SENTENCE_SLOT
         ):
             # Only msgid + JSON variables are stored and warning_message_text
             # rebuilds a singular Sentence from them: a counted form would lose
             # its plural (and ``num``), a nested Sentence or Paragraph the
-            # msgids it translates by.
+            # msgids it translates by. ``reason`` alone is stored nested
+            # (``_stored_sentence``, which refuses the same two shapes).
             raise TypeError("add_warning takes a singular Sentence with plain variables")
+        stored_vars = {
+            name: _stored_sentence(value) if name == _SENTENCE_SLOT else value
+            for name, value in message.variables.items()
+        }
         if warning_type not in WARNING_TYPE_LABELS:
             # A type with no label would print as its raw code on every page
             # that shows warnings; name it in WARNING_TYPE_LABELS first.
@@ -1323,7 +1372,7 @@ class QMLState(dict):
             "severity": severity,
             "message": str(message),
             "message_msgid": message.msgid,
-            "message_vars": dict(message.variables),
+            "message_vars": stored_vars,
             "count": 1,
             "first_seen": now,
             "last_seen": now,

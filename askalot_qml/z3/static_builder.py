@@ -9,6 +9,7 @@ Moved from processor/ to z3/ as it belongs with other Z3 constraint solving util
 """
 
 import ast
+import copy
 import enum
 import functools
 import itertools
@@ -19,6 +20,7 @@ from typing import Any, Literal
 
 from askalot_common.profiling import profile_block
 from z3 import (
+    Z3_OP_UNINTERPRETED,
     And,
     Bool,
     BoolRef,
@@ -32,15 +34,20 @@ from z3 import (
     IntVal,
     Not,
     Or,
+    Solver,
     Sum,
+    is_const,
     is_false,
     is_true,
+    sat,
     simplify,
     substitute,
+    unsat,
 )
 
 from askalot_qml.models.qml_state import QMLState
 from askalot_qml.predicate_ast import (
+    is_none_literal,
     name_reads,
     none_guarded_outcomes,
     none_test_of,
@@ -516,6 +523,11 @@ def _gated_write(
     return []
 
 
+#: A code-written answer's key (#2257): an item id (a scalar or Range
+#: Question's answer) or ``(matrix id, cell)``.
+_AnswerKey = str | tuple[str, tuple[int, ...]]
+
+
 def _scoped_name(item_id: str, *scope: object) -> str:
     """Z3 name of one part of an item's answer: ``item_{id}@{scope…}``.
 
@@ -536,6 +548,74 @@ def _scoped_name(item_id: str, *scope: object) -> str:
 # holding its length: what ``len(m.rows)`` is at build time. ItemProxy exposes
 # the same three lists at runtime (#1782), only on the kind that declares them.
 _DECLARED_LIST_LENGTHS = {"rows": "rows_len", "columns": "cols_len", "questions": "questions_len"}
+
+
+def _merge_gaps(
+    *gap_lists: tuple[tuple[int, list[str] | None, list[str] | None, bool], ...],
+) -> tuple[tuple[int, list[str] | None, list[str] | None, bool], ...]:
+    """Conditions' gaps (``_lower_conditions``) from several lowerings of the
+    same conditions, one per condition: the union of its wide items and
+    undecided reads, failed if any lowering failed."""
+    merged: dict[int, tuple[list[str], list[str], bool]] = {}
+    for gaps in gap_lists:
+        for idx, wide, undecided, failed in gaps:
+            items, reads, fault = merged.get(idx, ([], [], False))
+            items += [w for w in wide or [] if w not in items]
+            reads += [u for u in undecided or [] if u not in reads]
+            merged[idx] = (items, reads, fault or failed)
+    return tuple((idx, items or None, reads or None, fault) for idx, (items, reads, fault) in sorted(merged.items()))
+
+
+def _bound_in_scope(node: ast.Name, parents: dict[ast.AST, ast.AST]) -> bool:
+    """Whether the name ``node`` reads is bound by a comprehension, lambda
+    or function around it (#2258), so it is that scope's local, not a
+    variable. A comprehension binds its targets everywhere in it but its
+    first iterable, which Python evaluates in the enclosing scope."""
+    child, parent = node, parents.get(node)
+    through_iter: ast.comprehension | None = None
+    while parent is not None:
+        if isinstance(parent, ast.comprehension):
+            through_iter = parent if child is parent.iter else None
+        elif isinstance(parent, (ast.ListComp, ast.SetComp, ast.GeneratorExp, ast.DictComp)):
+            if through_iter is not parent.generators[0]:
+                bound = {
+                    n.id for generator in parent.generators for n in ast.walk(generator.target) if isinstance(n, ast.Name)
+                }
+                if node.id in bound:
+                    return True
+            through_iter = None
+        elif isinstance(parent, (ast.Lambda, ast.FunctionDef, ast.AsyncFunctionDef)):
+            arguments = parent.args
+            if node.id in {a.arg for a in [*arguments.posonlyargs, *arguments.args, *arguments.kwonlyargs]}:
+                return True
+        child, parent = parent, parents.get(parent)
+    return False
+
+
+@functools.cache
+def _sandbox_names() -> frozenset[str]:
+    """The builtin and module names every condition and codeBlock has bound
+    (``python_runner.sandbox_names``), imported here: ``askalot_qml.core``
+    imports the engine, which imports this module."""
+    from askalot_qml.core.python_runner import sandbox_names
+
+    return sandbox_names()
+
+
+def _constant_names(expr: ExprRef) -> set[str]:
+    """The names of the uninterpreted constants ``expr`` mentions."""
+    names: set[str] = set()
+    seen: set[int] = set()
+    stack = [expr]
+    while stack:
+        node = stack.pop()
+        if node.get_id() in seen:
+            continue
+        seen.add(node.get_id())
+        if is_const(node) and node.decl().kind() == Z3_OP_UNINTERPRETED:
+            names.add(node.decl().name())
+        stack.extend(node.children())
+    return names
 
 
 def _ssa_symbol(var_name: str, version: int) -> str:
@@ -630,6 +710,19 @@ class _CodeReads:
     compound statement ran is the builder's path condition (#1843,
     ``_lower_code_statements``), not this class's.
 
+    A subscript of a MatrixQuestion's or QuestionGroup's answer (read or
+    stored into) raises on the list's ``None`` (``_read_answer_lists``), so a
+    block that subscripts a blank, skipped or unasked list stops there too.
+    One cell or answer of an answered list (a Range cell's ``.low`` /
+    ``.high`` included) is ``None`` where it was left unanswered, under the
+    slot choice conditions read (``_slot_choice``; never for a written
+    matrix's cell a store may reach, #2300). Its reads are classed under that
+    choice (#2315): an ordering or arithmetic read raises as a scalar's does,
+    and any other is ``copy`` or ``other``, since the cell lowers in-domain
+    and only a scalar's ``None`` is lowered Python's way: the target is a
+    fresh Int there and a variable it fills may hold ``None``
+    (``_none_vars``).
+
     codeInit gets no model: no item is answered when it runs.
     """
 
@@ -642,6 +735,13 @@ class _CodeReads:
         self._parents = parents
         self.choices: dict[str, BoolRef] = {}
         self._blank: dict[str, BoolRef] = {}
+        # Answer lists (matrix, QuestionGroup) this block subscripts -> when
+        # their ``None`` makes the subscript raise (``_read_answer_lists``).
+        self._list_none: dict[str, BoolRef] = {}
+        # Whether this block reads a cell or answer that may be unanswered (#2315).
+        self.cell_reads = False
+        # Variables whose read raises in this block (#2258, ``_read_variables``).
+        self._var_none: dict[str, BoolRef] = {}
         # id(statement) -> [(read, effect, certainly evaluated, None choice)]
         self._reads: dict[int, list[tuple[ast.AST, str, bool, BoolRef]]] = {}
         # Variables this block assigned a value that may be ``None`` -> when.
@@ -680,7 +780,9 @@ class _CodeReads:
             self._reads.setdefault(id(statement), []).append(
                 (node, self._effect(node), self._certainly_evaluated(node), self.choices[item_id])
             )
-        if self.choices:
+        self._read_answer_lists(tree, none_tested)
+        self._read_variables(tree)
+        if self.choices or self.cell_reads:
             self._read_none_vars(tree, none_tested)
         halted: list[BoolRef | None] = []
         before: BoolRef | None = None
@@ -690,6 +792,121 @@ class _CodeReads:
             if raised is not None:
                 before = raised if before is None else Or(before, raised)
         self._halted_before = halted
+
+    def _read_answer_lists(self, tree: ast.Module, none_tested: set[int]) -> None:
+        """Record each subscript of a MatrixQuestion's or QuestionGroup's answer
+        (``m.outcome[0][0]`` read or stored into, ``qg.outcome[1]``) as a read
+        that raises on the list's ``None``: subscripting ``None`` raises
+        ``TypeError``, so the block stops there and keeps what it assigned
+        before, as for a scalar's ordering read. The list is ``None`` where it
+        was skipped (another item's, gated or scoped), left blank (the block's
+        own included: it runs after the submission), or not asked yet;
+        ``_list_none`` holds when, per item."""
+        builder = self._builder
+        for node in ast.walk(tree):
+            if not (isinstance(node, ast.Subscript) and isinstance(node.value, ast.Attribute)):
+                continue
+            item_id = outcome_ref_name(node.value)
+            if item_id is None or not (item_id in builder.matrices or builder._is_question_group(item_id)):
+                continue
+            if self._in_annotation(node):
+                continue
+            if item_id not in self._list_none:
+                self._list_none[item_id] = self._list_none_choice(item_id)
+            self._reads.setdefault(id(self._statement_of(node)), []).append(
+                (node, "raise", self._certainly_evaluated(node), self._list_none[item_id])
+            )
+        for node in ast.walk(tree):
+            if not (isinstance(node, (ast.Subscript, ast.Attribute)) and isinstance(node.ctx, ast.Load)):
+                continue
+            found = builder._answer_read(node)
+            if found is None or id(node) in none_tested or self._in_annotation(node):
+                continue
+            slots = [slot for slot in builder._slots_a_read_may_take(node) if not is_false(slot)]
+            if not slots:
+                continue
+            self.cell_reads = True
+            # ``None.low`` raises however it is read; a cell's own ``None``
+            # raises only under an ordering or arithmetic read.
+            effect = "raise" if isinstance(node, ast.Attribute) else self._effect(node)
+            if effect not in ("raise", "copy"):
+                effect = "other"
+            # One literal slot is exact; a slot an index picks at run time is not.
+            exact = len(slots) == 1 and all(builder._resolve_int_const(i, {}) is not None for i in found[1])
+            self._reads.setdefault(id(self._statement_of(node)), []).append(
+                (node, effect, exact and self._certainly_evaluated(node), builder._disjoin(slots))
+            )
+
+    def _read_variables(self, tree: ast.Module) -> None:
+        """Record each read of a variable that raises at runtime (#2258), as
+        an item read that raises is: any read of one that may be unbound
+        here (``StaticBuilder._may_be_unbound``, unless a top-level statement
+        before it in this block assigns it), and an ordering or arithmetic
+        read of one some code may leave ``None`` (``_none_variables``). Each
+        variable takes one free choice per block (``_var_none``)."""
+        builder = self._builder
+        assigned_at: dict[str, int] = {}
+        for index, statement in enumerate(tree.body):
+            if isinstance(statement, (ast.Assign, ast.AnnAssign)):
+                targets = statement.targets if isinstance(statement, ast.Assign) else [statement.target]
+                for target in targets:
+                    if isinstance(target, ast.Name):
+                        assigned_at.setdefault(target.id, index)
+        none_tested = {id(operand) for operand in none_test_operands(tree)}
+        none_vars = builder._none_variables()
+        # ``v += 1`` reads ``v`` first (its target is a Store node): unbound
+        # it raises ``NameError``, ``None`` it raises ``TypeError``.
+        aug_targets = {
+            id(node.target) for node in ast.walk(tree) if isinstance(node, ast.AugAssign) and isinstance(node.target, ast.Name)
+        }
+        for node in ast.walk(tree):
+            if not (isinstance(node, ast.Name) and (isinstance(node.ctx, ast.Load) or id(node) in aug_targets)):
+                continue
+            name = node.id
+            if (
+                _bound_in_scope(node, self._parents)
+                or name in builder.item_details
+                or name in _sandbox_names()
+                or id(node) in none_tested
+                or self._in_annotation(node)
+            ):
+                continue
+            statement = self._statement_of(node)
+            effect = None
+            if assigned_at.get(name, len(tree.body)) >= self._top[id(statement)] and builder._may_be_unbound(
+                name, self._context
+            ):
+                effect = ("unbound", True)
+            elif name in none_vars and (id(node) in aug_targets or self._effect(node) == "raise"):
+                effect = ("none", self._certainly_evaluated(node))
+            if effect is None:
+                continue
+            key = f"{effect[0]}:{name}"
+            if key not in self._var_none:
+                self._var_none[key] = builder._variable_raise_choice(effect[0], name)
+            self._reads.setdefault(id(statement), []).append(
+                (node, "raise", effect[1] and self._certainly_evaluated(node), self._var_none[key])
+            )
+
+    def _list_none_choice(self, item_id: str) -> BoolRef:
+        """When answer list ``item_id`` is ``None`` as this block reads it
+        (``_read_answer_lists``): its skip choice where another item's gate
+        or scope may skip it, its blank choice (a free Bool where the item has
+        none modelled), and a free Bool where the walk has not asked it yet."""
+        builder = self._builder
+        details = builder.item_details.get(item_id, {})
+        parts: list[BoolRef] = []
+        if item_id != self._context and (details.get("preconditions") or builder._is_scoped(item_id)):
+            parts.append(builder._skipped_choice(item_id))
+        if builder._blank_candidate(item_id):
+            parts.append(builder._blank_choice(item_id))
+        if not builder._blank_candidate(item_id) or (
+            item_id != self._context and item_id not in builder._submission_versions
+        ):
+            builder._code_raise_count += 1
+            # ``@`` cannot occur in an item id, so no item or variable shares the name.
+            parts.append(Bool(f"none@{item_id}#{builder._code_raise_count}", builder.ctx))
+        return builder._disjoin(parts)
 
     def _read_none_vars(self, tree: ast.Module, none_tested: set[int]) -> None:
         """Record, in source order, the variables a statement assigns a value
@@ -938,7 +1155,7 @@ class _CodeReads:
         unbound name; no version is created, so the numbering stays).
         ``None`` when the block reads no item that may be ``None``."""
         builder = self._builder
-        if not self.choices:
+        if not (self.choices or self._list_none or self._var_none):
             return None
         if var_name in builder.version_map:
             return builder._get_current_z3_var(var_name)
@@ -949,6 +1166,23 @@ class _CodeReads:
         builder._code_raise_count += 1
         return Int(f"unknown@{self._context}#{builder._code_raise_count}", builder.ctx)
 
+    def stop(self, statement: ast.stmt) -> BoolRef | None:
+        """When the block stops at or before ``statement`` (a modelled raise
+        in it or before it, ``guarded``); ``None`` when it never does here.
+        codeInit models none."""
+        if self._context == "__init__":
+            return None
+        stops = [
+            part
+            for part in (
+                self._halted_before[self._top[id(statement)]],
+                *self._halted_within(statement),
+                self._statement_raise(statement),
+            )
+            if part is not None
+        ]
+        return self._builder._disjoin(stops) if stops else None
+
     def guarded(
         self, statement: ast.stmt, value: ExprRef | None, old: ExprRef | None, *, variable: bool = True
     ) -> ExprRef | None:
@@ -957,7 +1191,7 @@ class _CodeReads:
         its value reads a ``None`` no Int holds or, for a ``variable`` target
         (an outcome write carries no #1044 mark), where it is computed from a
         blank item; ``value`` itself when none can happen."""
-        if value is None or old is None or not self.choices:
+        if value is None or old is None or not (self.choices or self._list_none or self._var_none):
             return value
         stops = [
             part
@@ -1302,6 +1536,9 @@ class StaticBuilder:
         self._parse_cache: dict[tuple[str, str], ast.AST | None] = {}
         # Per-node readings (``_memoised``), kept for the builder's lifetime.
         self._node_memo: dict[tuple[str, int, frozenset[Any] | None], tuple[ast.AST, Any]] = {}
+        # A chained assignment's read of its first target, per target node
+        # (``_read_back``), kept with the parse cache that pins the target.
+        self._read_backs: dict[int, tuple[ast.expr, ast.expr]] = {}
         self._runner: Any = None
         self._string_model: _StringModel | None = None
         self._reset_build_state()
@@ -1394,8 +1631,19 @@ class StaticBuilder:
         self._slot_choices: dict[tuple[str | int, ...], BoolRef] = {}
         self._skip_choices: dict[str, BoolRef] = {}
         self._skipped_count = 0
+        # #2258: the variable versions an assignment that certainly runs made
+        # (``_binds_for_certain``), the variables some code may leave ``None``
+        # (``_none_variables``, computed once), and the per-predicate choices
+        # of a variable read raising (``_variable_raising_reads``).
+        self._binding_versions: set[tuple[str, int]] = set()
+        self._none_vars: frozenset[str] | None = None
+        self._deleted: frozenset[str] | None = None
+        self._variable_raise_count = 0
         self._fresh_skip_choices: dict[str, list[BoolRef]] = {}
         self._code_written: set[str] | None = None
+        # #2300: per code-written matrix, the cells no code may reach
+        # (``_unwritten_cells``), computed once.
+        self._unwritten_cell_census: dict[str, frozenset[tuple[int, int]]] | None = None
         # Blank answers (#1784), see ``_blank_choice``: the one choice per item,
         # a code-written item's per-predicate choices, the choices of the
         # predicate being lowered, and whether that predicate models a blank at
@@ -1415,13 +1663,53 @@ class StaticBuilder:
         # the build and in its acceptance. Acceptance is computed only once the
         # build is complete.
         self._submission_versions: dict[str, dict[str, int]] = {}
+        # Code-written answers (#2257, D122): every codeBlock write into a
+        # scalar or Range Question's answer or a matrix cell, made once the
+        # walk has asked the item, is a version of its own
+        # (``_version_answer``), in build order with its writer, keyed by the
+        # item id or ``(matrix id, cell)`` (``_AnswerKey``); ``_answer_now``
+        # is the version a read sees now (no entry: the submitted answer,
+        # ``_submitted_answer``).
+        self._answer_versions: dict[_AnswerKey, list[tuple[ExprRef | tuple[ExprRef, ExprRef], str]]] = {}
+        self._answer_now: dict[_AnswerKey, ExprRef | tuple[ExprRef, ExprRef]] = {}
+        # Their write constraints, which both bases take where the walk keeps
+        # the build's order (``_held_answer_constraints``, computed once).
+        self._answer_constraints: list[BoolRef] = []
+        self._held_answers: list[BoolRef] | None = None
         # Variables an own-condition compile reads as a fresh Int, and the
         # navigation order it judges against (``_runtime_versions``).
         self._open_reads: dict[str, ExprRef] = {}
         self._navigation_positions: dict[str, int] | None = None
         # Per item, computed once: an open variable is one Int for every
         # compile of that item's conditions (its pre- and postcondition alike).
-        self._runtime_version_cache: dict[str, tuple[dict[str, int], dict[str, ExprRef]]] = {}
+        self._runtime_version_cache: dict[
+            str, tuple[dict[str, int], dict[str, ExprRef], dict[_AnswerKey, ExprRef | tuple[ExprRef, ExprRef]]]
+        ] = {}
+        # The same with what a later codeBlock may write read free (#2260,
+        # ``_late_versions``), per item.
+        self._late_written_cache: dict[
+            str, tuple[set[str], dict[_AnswerKey, list[ExprRef | tuple[ExprRef, ExprRef]]], dict[str, list[int]]]
+        ] = {}
+        self._re_askable_items: frozenset[str] | None = None
+        # #2259: per item, when each codeBlock store before the walk asks it
+        # happened (``_note_pre_store``), by statement; and whether the block
+        # being lowered may have raised where the model cannot tell.
+        self._pre_stores: dict[str, dict[int, BoolRef]] = {}
+        self._block_unheld = False
+        self._place_gates: dict[
+            str, tuple[BoolRef, bool, tuple[tuple[int, list[str] | None, list[str] | None, bool], ...]]
+        ] = {}
+        # The same gates without the code-answered conjunct (#2259,
+        # ``answered_by_code_only``).
+        self._place_gates_uncoded: dict[str, BoolRef] = {}
+        self._uncoded_gates: dict[str, BoolRef] = {}
+        # Whether the predicate being lowered reads the later state (#2260).
+        self._lowering_late = False
+        # Per item, what its later state's accumulators may be (``_late_versions``).
+        self._late_candidates: dict[str, BoolRef] = {}
+        self._late_version_cache: dict[
+            str, tuple[dict[str, int], dict[str, ExprRef], dict[_AnswerKey, ExprRef | tuple[ExprRef, ExprRef]]]
+        ] = {}
         # Each compile after the build (``_compile_conditions``), keyed by what
         # it reads: ``(item_id, predicates in order, kind, blank)`` -> ``(formula,
         # exact, the (index, wide items) of each wide condition, what the
@@ -2231,7 +2519,8 @@ class StaticBuilder:
     def _navigation_build_order(self) -> list[str] | None:
         """The item order the second build lowers in, or ``None`` when the file
         order already is the walk's order for every item that touches code
-        state (a codeBlock, or a condition reading a variable): only their
+        state (a codeBlock, a condition reading a variable, or an answer code
+        stores into, whose submission orders its versions): only their
         relative order numbers SSA versions, so a questionnaire whose other
         items move builds exactly as before. ``None`` too on a dependency
         cycle: the topology is only an order of an acyclic graph, and a cycle
@@ -2241,6 +2530,8 @@ class StaticBuilder:
             for item_id in self.item_order
             if self.item_details[item_id].get("code_block")
             or any(dep.startswith("var:") for dep in self.dependency_graph.get(item_id, ()))
+            # A code-written answer's versions follow its submission (#2257).
+            or item_id in self._code_written_items()
         ]
         if len(code_state) < 2:
             return None
@@ -2469,6 +2760,7 @@ class StaticBuilder:
                         )
 
             self._submission_versions[item_id] = dict(self.version_map)
+            self._merge_pre_stores(item_id)
 
             # Process code blocks (state transitions) — AFTER postconditions
             if "codeBlock" in item and item["codeBlock"]:
@@ -3080,7 +3372,11 @@ class StaticBuilder:
         """Lower one codeBlock's assignments in statement order, each under the
         path condition of the ``if`` / ``elif`` / ``else`` branches holding it
         (#1843), its value read through ``reads`` (#1776)."""
-        self._lower_code_statements(tree.body, None, context_id, parent_map, reads)
+        outer, self._block_unheld = self._block_unheld, False
+        try:
+            self._lower_code_statements(tree.body, None, context_id, parent_map, reads)
+        finally:
+            self._block_unheld = outer
 
     def _lower_code_statements(
         self,
@@ -3103,6 +3399,12 @@ class StaticBuilder:
         runtime, never a wrong constant."""
         for statement in statements:
             self._widen_walrus_targets(statement, context_id, parent_map)
+            if not isinstance(statement, (ast.Assign, ast.AnnAssign, ast.AugAssign, ast.If, ast.Pass)) or (
+                not isinstance(statement, (ast.If, ast.Pass)) and not self._lowers_whole(statement, context_id)
+            ):
+                # A statement the model does not hold whole may raise where it
+                # cannot tell (#2259, ``_note_pre_store``).
+                self._block_unheld = True
             if isinstance(statement, ast.Assign) or (isinstance(statement, ast.AnnAssign) and statement.value is not None):
                 self._lower_code_assign(statement, path, context_id, parent_map, reads)
             elif isinstance(statement, ast.AugAssign):
@@ -3110,6 +3412,9 @@ class StaticBuilder:
             elif isinstance(statement, ast.If):
                 mints = self._code_mints
                 test = self._code_branch_test(statement, context_id, reads)
+                if str(test).startswith("branch@"):
+                    # A test that does not lower may raise where the model cannot tell.
+                    self._block_unheld = True
                 if self._code_mints > mints:
                     # A test the block cannot decide (text it does not hold
                     # exactly): what either branch assigns is undecided
@@ -3131,6 +3436,25 @@ class StaticBuilder:
                 self._lower_code_statements(statement.orelse, skipped, context_id, parent_map, reads)
             elif isinstance(statement, self._UNFOLLOWED_STATEMENTS):
                 self._widen_code_statement(statement, context_id, parent_map)
+
+    def _lowers_whole(self, statement: ast.stmt, context_id: str) -> bool:
+        """Whether the model holds an assignment's value whole (#2259): it
+        lowers to a number and carries no text, so no raise it cannot tell
+        hides in it (``_note_pre_store``). A ``None`` literal stores nothing."""
+        value = getattr(statement, "value", None)
+        if value is None or is_none_literal(value):
+            return value is not None
+        if self._carries_string(value):
+            return False
+        mints = self._code_mints
+        self._predicate_skipped = {}
+        try:
+            lowered = self._ast_to_z3(value, context_id)
+        except Exception:
+            lowered = None
+        finally:
+            self._code_mints = mints
+        return lowered is not None
 
     def _code_branch_test(self, statement: ast.If, context_id: str, reads: _CodeReads) -> BoolRef:
         """An ``if`` test as the codeBlock reads it: lowered with the items'
@@ -3216,10 +3540,21 @@ class StaticBuilder:
         ``x: int = v``, binds like ``x = v``; its annotation is never
         evaluated): a variable target gets a new SSA version, an
         ``item.outcome`` target a write constraint, and each name an unpacking
-        target binds is widened."""
+        target binds is widened.
+
+        Python evaluates the value once and assigns it to each target left to
+        right, so in a chained assignment (``a.outcome = b.outcome = v``) every
+        target after the first takes what the first now holds
+        (``_read_back``), not ``v`` lowered again over the first's new version."""
         enclosing_deps = self._get_enclosing_if_deps(node, parent_map)
         reads.mark_ran(node, path)
-        for target in node.targets if isinstance(node, ast.Assign) else [node.target]:
+        targets = node.targets if isinstance(node, ast.Assign) else [node.target]
+        value_node = node.value
+        for position, target in enumerate(targets):
+            if position == 1 and (read_back := self._read_back(targets[0])) is not None:
+                value_node = read_back
+                # The value's own reads stay its dependencies.
+                enclosing_deps = enclosing_deps | self._extract_dependencies_from_ast(node.value)
             if isinstance(target, ast.Name):
                 var_name = target.id
                 if var_name not in self.item_vars:
@@ -3228,7 +3563,7 @@ class StaticBuilder:
                     old = reads.old_value(var_name)
                     mints = self._code_mints
                     value = self._lower_code_value(
-                        node.value, context_id, reads, encoded=self._string_model.encoded(var_name)
+                        value_node, context_id, reads, encoded=self._string_model.encoded(var_name)
                     )
                     if self._code_mints > mints:
                         # Computed from a value the block cannot decide.
@@ -3236,19 +3571,50 @@ class StaticBuilder:
                     z3_value = reads.guarded(node, value, old)
                     if path is not None:
                         z3_value = self._on_path(path, z3_value, self._path_old_value(var_name, context_id))
-                    self._register_variable_assignment(var_name, z3_value, rhs_deps, context_id)
+                    self._register_variable_assignment(
+                        var_name, z3_value, rhs_deps, context_id, binds=self._binds_for_certain(node, path, context_id, reads)
+                    )
             elif isinstance(target, ast.Attribute) and target.attr == "outcome":
                 # Handle item.outcome = expr (e.g., q_total.outcome = q1.outcome + q2.outcome)
                 if isinstance(target.value, ast.Name):
                     self._register_outcome_assignment(
-                        target.value.id, node.value, enclosing_deps, context_id, reads, node, path
+                        target.value.id, value_node, enclosing_deps, context_id, reads, node, path
                     )
+            elif isinstance(target, ast.Subscript):
+                # One cell or row of a matrix answer (``m.outcome[0][1] = v``):
+                # the writer depends on what the value and the indices read, as
+                # for a whole-answer store (#2301).
+                item_id, indices = self._outcome_subscript(target)
+                if item_id is not None:
+                    self._add_code_write_dependencies(
+                        context_id, self._cell_store_dependencies(value_node, indices, enclosing_deps)
+                    )
+                    self._register_cell_assignment(item_id, indices, value_node, context_id, reads, node, path)
             elif isinstance(target, (ast.Tuple, ast.List)):
                 # Unpacking is not lowered: each name it binds is widened.
                 deps = self._extract_dependencies_from_ast(node.value) | enclosing_deps
                 for name in ast.walk(target):
                     if isinstance(name, ast.Name) and name.id not in self.item_vars:
                         self._register_variable_assignment(name.id, None, set(deps), context_id)
+
+    def _read_back(self, target: ast.expr) -> ast.expr | None:
+        """A read of what assignment target ``target`` holds (a name, an
+        ``X.outcome``, a subscript of one), for the later targets of a chained
+        assignment (``_lower_code_assign``); ``None`` for an unpacking target,
+        which changes only the names it widens, so the later targets lower the
+        value itself (over those widened versions). One per target for
+        the builder's lifetime, so the node readings keyed on it stay valid
+        (``_memoised``)."""
+        if not isinstance(target, (ast.Name, ast.Attribute, ast.Subscript)):
+            return None
+        held = self._read_backs.get(id(target))
+        if held is None or held[0] is not target:
+            read = copy.deepcopy(target)
+            for part in ast.walk(read):
+                if hasattr(part, "ctx"):
+                    part.ctx = ast.Load()
+            held = self._read_backs[id(target)] = (target, read)
+        return held[1]
 
     def _lower_code_aug_assign(
         self, node: ast.AugAssign, path: BoolRef | None, context_id: str, parent_map: dict, reads: _CodeReads
@@ -3277,15 +3643,65 @@ class StaticBuilder:
                 z3_value = reads.guarded(node, self._apply_aug_op(node.op, old_z3, rhs_z3, node.value), old_z3)
                 z3_value = self._on_path(path, z3_value, old_z3)
                 self._register_variable_assignment(var_name, z3_value, rhs_deps, context_id)
+        elif isinstance(target, ast.Subscript):
+            # ``m.outcome[0][1] += v`` reads and writes one cell.
+            item_id, indices = self._outcome_subscript(target)
+            if item_id is not None:
+                deps = self._cell_store_dependencies(node.value, indices, enclosing_deps)
+                deps.add(item_id)
+                self._add_code_write_dependencies(context_id, deps)
+                self._register_cell_assignment(
+                    item_id, indices, node.value, context_id, reads, node, path, aug_op=node.op
+                )
         elif isinstance(target, ast.Attribute) and target.attr == "outcome":
             # Handle item.outcome += expr
             if isinstance(target.value, ast.Name):
                 item_id = target.value.id
-                if item_id in self.item_vars:
+                if self._has_outcome_model(item_id):
                     rhs_deps = self._extract_dependencies_from_ast(node.value)
                     rhs_deps.update(enclosing_deps)
                     rhs_deps.add(item_id)
                     self._add_code_write_dependencies(context_id, rhs_deps)
+                self._register_outcome_aug_assignment(item_id, node, context_id, reads, path)
+
+    def _register_outcome_aug_assignment(
+        self, item_id: str, node: ast.AugAssign, context_id: str, reads: _CodeReads, path: BoolRef | None
+    ) -> None:
+        """``q.outcome += v`` as a version of the answer, as ``=`` makes one
+        (#2257, ``_version_answer``): a scalar's is its current version with
+        the operator applied, free where it does not lower or may be text
+        (#2048); a Range answer's (list arithmetic on the pair) is free; a
+        matrix's is its cells' (``_register_cell_assignment``)."""
+        if item_id in self.matrices:
+            self._register_cell_assignment(item_id, [], node.value, context_id, reads, node, path, aug_op=node.op)
+            return
+        if item_id not in self.item_vars and item_id not in self.item_pairs:
+            return
+        if item_id in self.item_pairs:
+            self._record_range_write(item_id, context_id)
+        if not self._versions_answer(item_id, context_id):
+            return
+        value = None
+        if item_id in self.item_vars and not (
+            self._carries_string(node.target) or self._carries_string(node.value)
+        ):
+            before = self._answer_value(item_id)
+            rhs = self._lower_code_value(node.value, context_id, reads)
+            value = reads.guarded(node, self._apply_aug_op(node.op, before, rhs, node.value), before, variable=False)
+        # ``+=`` on an answer not asked yet raises on its ``None``: it may store nothing.
+        self._version_answer(item_id, value, context_id, path, store=(node, reads, None))
+
+    def _cell_store_dependencies(
+        self, value_node: ast.AST | None, indices: list[ast.expr], enclosing_deps: set[str]
+    ) -> set[str]:
+        """What a store into a cell or row of an answer reads: its value, its
+        indices (``m.outcome[q1.outcome][0] = 1`` reads ``q1``) and the
+        enclosing tests, the edges a whole-answer store of the same value adds
+        (#2301)."""
+        deps = self._extract_dependencies_from_ast(value_node) if value_node is not None else set()
+        for index in indices:
+            deps |= self._extract_dependencies_from_ast(index)
+        return deps | enclosing_deps
 
     def _add_code_write_dependencies(self, context_id: str, deps: set[str]) -> None:
         """The item whose codeBlock writes an outcome depends on the items the
@@ -3310,6 +3726,13 @@ class StaticBuilder:
                 for target in targets:
                     if isinstance(target, ast.Attribute) and target.attr == "outcome" and isinstance(target.value, ast.Name):
                         self._add_code_write_dependencies(context_id, value_deps)
+                    elif isinstance(target, ast.Subscript) and (cell := self._outcome_subscript(target))[0] is not None:
+                        # ``value_deps`` holds the value's reads already; ``+=``
+                        # also reads the cell it writes.
+                        deps = self._cell_store_dependencies(None, cell[1], value_deps)
+                        if isinstance(node, ast.AugAssign):
+                            deps.add(cell[0])
+                        self._add_code_write_dependencies(context_id, deps)
                     for name in ast.walk(target):
                         if isinstance(name, ast.Name):
                             widened.setdefault(name.id, set()).update(value_deps)
@@ -3382,12 +3805,39 @@ class StaticBuilder:
         finally:
             self._predicate_skipped = {}
 
+    def _binds_for_certain(
+        self, statement: ast.stmt, path: BoolRef | None, context_id: str, reads: _CodeReads
+    ) -> bool:
+        """Whether an assignment certainly runs once its block is reached
+        (#2258, ``_may_be_unbound``): a top-level statement of codeInit, or of
+        an ungated plain item's codeBlock, that no modelled raise stops and
+        that, in a codeBlock, no statement the model does not hold whole
+        precedes or is (``_block_unheld``: it may raise where the model cannot
+        tell). codeInit models no raise and runs before any answer, so there
+        it binds for certain only when every top-level statement up to it is
+        a plain assignment reading no answer, call, subscript or attribute."""
+        if path is not None or reads.stop(statement) is not None:
+            return False
+        if context_id == "__init__":
+            body = getattr(self._parsed(self.state.get_code_init() or "", "exec"), "body", [])
+            index = next((i for i, top in enumerate(body) if top is statement), None)
+            return index is not None and all(
+                isinstance(top, (ast.Assign, ast.AnnAssign, ast.AugAssign))
+                and not any(isinstance(n, (ast.Call, ast.Subscript, ast.Attribute)) for n in ast.walk(top))
+                for top in body[: index + 1]
+            )
+        return not self._block_unheld and self._plain_writer(context_id) and is_true(self._writer_ran(context_id))
+
     def _register_variable_assignment(
-        self, var_name: str, z3_value: ExprRef | None, deps: set[str], context_id: str
+        self, var_name: str, z3_value: ExprRef | None, deps: set[str], context_id: str, *, binds: bool = False
     ):
-        """Register an SSA variable assignment with dependencies and Z3 constraint."""
+        """Register an SSA variable assignment with dependencies and Z3
+        constraint; ``binds`` when it certainly runs once its block is reached
+        (``_binds_for_certain``)."""
         before_version = self.version_map.get(var_name)
         new_version = self._get_next_version(var_name)
+        if binds:
+            self._binding_versions.add((var_name, new_version))
         versioned_name = _ssa_key(var_name, new_version)
         var_node = f"var:{var_name}"
 
@@ -3456,19 +3906,23 @@ class StaticBuilder:
         statement: ast.stmt,
         path: BoolRef | None = None,
     ):
-        """Register item.outcome = expr, tracking dependencies without creating SSA.
+        """Register item.outcome = expr: its dependency edges and the answer
+        it writes.
 
         Under a branch ``path`` (#1843) the write holds only where the path does.
 
-        The dependency edges count for any modelled target. The value is
-        equated for a scalar target, and for a Range Question when the RHS is
-        a two-element list/tuple literal whose elements lower: each end is
-        equated with its element. Any other write to a Range item (another
-        RHS shape, a Range matrix or QuestionGroup target) is recorded as a
-        ``codeBlock`` coverage gap naming the Range item — the runtime still
-        writes the pair, so dropping it silently would leave later conditions
-        on it proven against a wider model than the real one. A non-Range
-        matrix target stays unconstrained.
+        The dependency edges count for any modelled target. A write
+        ``_versions_answer`` versions is a new version of the answer
+        (``_version_answer``, #2257): a scalar's holds the value, a Range
+        Question's both ends when the RHS is a two-element list/tuple literal
+        whose elements lower, a non-Range matrix's each cell it reaches
+        (``_register_cell_assignment``). Any other write is equated with the
+        submitted answer where an item's codeBlock makes it. Any other write
+        to a Range item (another RHS shape, a Range matrix or QuestionGroup
+        target) is recorded as a ``codeBlock`` coverage gap naming the Range
+        item — the runtime still writes the pair, so dropping it silently
+        would leave later conditions on it proven against a wider model than
+        the real one.
         """
         if not self._has_outcome_model(item_id):
             return
@@ -3485,18 +3939,287 @@ class StaticBuilder:
         if self._is_range_item(item_id):
             self._register_range_outcome_assignment(item_id, value_node, context_id, reads, statement, path)
             return
+        if item_id in self.matrices:
+            self._register_cell_assignment(item_id, [], value_node, context_id, reads, statement, path)
+            return
         if item_id not in self.item_vars:
             return
-        target = self.item_vars[item_id]
+        target = self._answer_value(item_id)
         # A value that may be text does not lower (``_lower_code_value``):
         # the answer is then ``text_stored``, and each read of it is its free
         # Int (``_unmodelled_read``).
         lowered = self._lower_code_value(value_node, context_id, reads)
+        if is_none_literal(value_node):
+            # ``q.outcome = None`` is the None model's, not a value: the
+            # version keeps the Int it had, read through the item's skip and
+            # blank choices.
+            lowered = target
         z3_value = reads.guarded(statement, lowered, target, variable=False)
-        if z3_value is not None and self._item_code(context_id):
+        if self._versions_answer(item_id, context_id):
+            self._version_answer(item_id, z3_value, context_id, path, store=(statement, reads, value_node))
+        elif z3_value is not None and self._item_code(context_id):
             self.codeblock_constraints.append(
                 Implies(self._code_ran(context_id, path), self.item_vars[item_id] == z3_value)
             )
+
+    def _versions_answer(self, item_id: str, context_id: str) -> bool:
+        """Whether a write of ``context_id``'s codeBlock into ``item_id``'s
+        answer is a version of its own (#2257, D122): every write an item's
+        codeBlock makes, the item's own included, into an item asked at most
+        once (``_plain_writer``: a Roster iteration or capped-Group presence
+        swaps the item's Int, which no version follows). A write before the
+        walk asks the item answers it (#2259, ``_note_pre_store``), and its
+        submission merges that version with the submitted answer
+        (``_merge_pre_stores``).
+
+        The runtime checks the item's own conditions on the answer as
+        submitted, before the codeBlock runs, so a write equated with the
+        submitted Int would make its own postcondition read the written value
+        (a false INFEASIBLE), two writes would equate the one Int with two
+        values (a vacuous model), and a written number outside the domain
+        would contradict it (#2255). codeInit's writes are not held."""
+        return self._item_code(context_id) and self._plain_writer(item_id)
+
+    def _answer_value(self, key: _AnswerKey) -> ExprRef | tuple[ExprRef, ExprRef]:
+        """The version of an answer (``_AnswerKey``) a read sees now: the last
+        code-written one (``_answer_now``), else the submitted answer."""
+        current = self._answer_now.get(key)
+        return current if current is not None else self._submitted_answer(key)
+
+    def _submitted_answer(self, key: _AnswerKey) -> ExprRef | tuple[ExprRef, ExprRef]:
+        """The answer as submitted: a scalar's Int, a Range Question's pair, a
+        matrix cell's Int."""
+        if isinstance(key, tuple):
+            return self.item_cells[key[0]][key[1]]
+        return self.item_pairs[key] if key in self.item_pairs else self.item_vars[key]
+
+    def _fresh_answer(self, key: _AnswerKey, kind: str) -> ExprRef | tuple[ExprRef, ExprRef]:
+        """A new unconstrained version of an answer, shaped like it."""
+        self._code_raise_count += 1
+        # ``@`` cannot occur in an item id, so no item or variable shares the name.
+        scope = key if isinstance(key, str) else "@".join([key[0], *map(str, key[1])])
+        name = f"{kind}@answer@{scope}#{self._code_raise_count}"
+        if key in self.item_pairs:
+            return (Int(f"{name}@lo", self.ctx), Int(f"{name}@hi", self.ctx))
+        return Int(name, self.ctx)
+
+    def _version_answer(
+        self,
+        key: _AnswerKey,
+        value: ExprRef | tuple[ExprRef | None, ExprRef | None] | None,
+        context_id: str,
+        path: BoolRef | None,
+        *,
+        store: tuple[ast.stmt, _CodeReads, ast.AST | None] | None = None,
+    ) -> None:
+        """Record one codeBlock write of ``value`` into the answer ``key``
+        names (``_versions_answer``) as a new version, read after the write by later
+        statements, later items' conditions and codeBlocks (``_answer_value``,
+        ``_runtime_answers``), never by the item's own conditions. It holds
+        ``value`` where the write ran (the block ran and, inside a branch, its
+        path was taken, #1843) and the version it found elsewhere
+        (``_gated_write``, as a variable's); a value that does not lower
+        leaves that side free. A Roster or capped-Group writer, run once per
+        iteration or only when drawn, leaves the version free, as it leaves a
+        variable's (``_register_variable_assignment``). A Range answer's
+        version is a pair, each end written on its own. A write before the
+        walk asks the item (``store``: the statement, its reads and the
+        stored value, ``None`` where it may store nothing) answers it, so the
+        walk never asks it (#2259, ``_note_pre_store``)."""
+        item_id = key if isinstance(key, str) else key[0]
+        if store is not None and item_id != context_id and item_id not in self._submission_versions:
+            self._note_pre_store(item_id, context_id, path, *store)
+        before = self._answer_value(key)
+        version = self._fresh_answer(key, "written")
+        if self._plain_writer(context_id):
+            ran = self._code_ran(context_id, path)
+            written: list[BoolRef] = []
+            if isinstance(version, tuple):
+                values = value if isinstance(value, tuple) else (None, None)
+                for end, end_value, end_before in zip(version, values, before, strict=True):
+                    written.extend(_gated_write(end, end_value, end_before, ran))
+            else:
+                written.extend(_gated_write(version, value, before, ran))
+            self._answer_constraints.extend(written)
+        self._answer_versions.setdefault(key, []).append((version, context_id))
+        self._answer_now[key] = version
+
+    def _note_pre_store(
+        self,
+        item_id: str,
+        context_id: str,
+        path: BoolRef | None,
+        statement: ast.stmt,
+        reads: _CodeReads,
+        value_node: ast.AST | None,
+    ) -> None:
+        """When a codeBlock store into ``item_id`` before the walk asks it
+        happened (#2259): the runtime marks an item a block gives a value
+        visited, and the forward walk never asks a visited item. It happened
+        where the block ran, on its branch path, past every raise before and
+        in the statement (``_CodeReads.stop``), and the value is no ``None``
+        (a ``None`` changes nothing). Exact for a plain writer and a value that
+        cannot be ``None``, when the block stores into the item once: the
+        runtime judges the outcome the block leaves, so a later store (``=
+        None``, the baseline back) can undo an earlier one
+        (``_stores_once``). Anywhere else a free Bool the run bounds. One per
+        statement (a row or matrix store versions each cell)."""
+        stores = self._pre_stores.setdefault(item_id, {})
+        if id(statement) in stores or is_none_literal(value_node):
+            return
+        happened: BoolRef = self._code_ran(context_id, path)
+        stop = reads.stop(statement)
+        if stop is not None:
+            happened = And(happened, Not(stop))
+        if (
+            value_node is None
+            or self._block_unheld
+            or not self._plain_writer(context_id)
+            or self._may_be_none(value_node, set(self._none_variables()))
+            or self._init_stores_into(item_id)
+            or not self._stores_once(context_id, item_id)
+        ):
+            self._code_raise_count += 1
+            # ``@`` cannot occur in an item id, so no item or variable shares the name.
+            fresh = Bool(f"stored@{item_id}#{self._code_raise_count}", self.ctx)
+            if self._plain_writer(context_id):
+                self._answer_constraints.append(Implies(fresh, happened))
+            happened = fresh
+        stores[id(statement)] = happened
+
+    def _stores_once(self, context_id: str, item_id: str) -> bool:
+        """Whether ``context_id``'s codeBlock has exactly one outcome store
+        into ``item_id`` and none through an alias (``_stored_outcomes``)."""
+        tree = self._parsed(self.item_details.get(context_id, {}).get("code_block") or "", "exec")
+        stored = self._stored_outcomes(tree) if tree is not None else []
+        return stored.count(item_id) == 1 and all(name in self.item_details for name in stored)
+
+    def _init_stores_into(self, item_id: str) -> bool:
+        """Whether codeInit may store into ``item_id`` (#2259): the runtime
+        marks an item visited only when a codeBlock changes its outcome, and
+        codeInit's value is the baseline, so a store of the same value
+        answers nothing. A store through anything but an item id may reach
+        every item."""
+        tree = self._parsed(self.state.get_code_init() or "", "exec")
+        if tree is None:
+            return False
+        stored = self._stored_outcomes(tree)
+        return item_id in stored or any(name not in self.item_details for name in stored)
+
+    def _code_answered(self, item_id: str) -> BoolRef | None:
+        """Whether a codeBlock answered ``item_id`` before the walk asked it
+        (``_note_pre_store``), so the walk never asks it; ``None`` when no
+        store comes first. One Bool per item, ``coded@{id}``, which the bases
+        tie to its stores (``_held_answer_constraints``): on a dependency
+        cycle the build's order is not the walk's, so it is left free there."""
+        if not self._pre_stores.get(item_id):
+            return None
+        # ``@`` cannot occur in an item id, so no item or variable shares the name.
+        return Bool(f"coded@{item_id}", self.ctx)
+
+    def _merge_pre_stores(self, item_id: str) -> None:
+        """At ``item_id``'s submission: its answer is what code stored before
+        the walk reached it where a store happened (#2259, the item is then
+        never asked), else the answer the respondent submits."""
+        answered = self._code_answered(item_id)
+        if answered is None:
+            return
+        for key in [k for k in self._answer_versions if (k if isinstance(k, str) else k[0]) == item_id]:
+            current, submitted = self._answer_value(key), self._submitted_answer(key)
+            version = self._fresh_answer(key, "asked")
+            pairs = zip(version, current, submitted, strict=True) if isinstance(version, tuple) else [
+                (version, current, submitted)
+            ]
+            self._answer_constraints.extend(merged == If(answered, held, given) for merged, held, given in pairs)
+            self._answer_versions[key].append((version, item_id))
+            self._answer_now[key] = version
+
+    def _register_cell_assignment(
+        self,
+        item_id: str,
+        indices: list[ast.expr],
+        value_node: ast.AST | None,
+        context_id: str,
+        reads: _CodeReads,
+        statement: ast.stmt,
+        path: BoolRef | None,
+        aug_op: ast.operator | None = None,
+    ) -> None:
+        """A codeBlock store into a non-Range matrix answer (``m.outcome[r][c]
+        = v``, a row ``m.outcome[r] = [..]``, the whole ``m.outcome = [[..]]``;
+        ``indices`` the store's subscripts) as versions of the cells it
+        reaches (#2257, ``_version_answer``): each cell named by literal
+        indices takes its element's value where the store's shape gives one,
+        any other cell it may reach a free version. An augmented store
+        (``aug_op``) into one cell reads that cell's current version; into a
+        row or the whole answer it is list arithmetic (``row += [1]``
+        extends the row), so every cell it may reach is free. ``= None``
+        empties the cell, which no cell choice of a written matrix holds
+        (``_written_matrix_read``), so that version is free too. A Range
+        matrix store is a ``codeBlock`` coverage gap
+        (``_record_range_write``). Only a store ``_versions_answer`` versions:
+        any other (codeInit, a codeBlock run before the matrix is asked)
+        leaves the cells unconstrained by it."""
+        if item_id not in self.matrices:
+            return
+        if self._is_range_item(item_id):
+            self._record_range_write(item_id, context_id)
+            return
+        if not self._versions_answer(item_id, context_id):
+            return
+        cells = self.item_cells[item_id]
+        index = [self._resolve_int_const(node, {}) for node in indices]
+        if (
+            any(i is None or i < 0 for i in index)
+            or len(index) > 2
+            or (aug_op is not None and len(index) != 2)
+        ):
+            # A computed or negative index (``m.outcome[-1][0]`` is the last
+            # row) may reach any cell, and so may list arithmetic on a row.
+            stores = dict.fromkeys(cells)
+        elif len(index) == 2:
+            stores = {(index[0], index[1]): value_node}
+        else:
+            rows = sorted({cell[0] for cell in cells})
+            row_values = self._literal_rows(value_node, index, rows)
+            stores = {
+                cell: row_values.get(cell)
+                for cell in cells
+                if not index or cell[0] == index[0]
+            }
+        for cell, node in stores.items():
+            if cell not in cells:
+                continue
+            before = self._answer_value((item_id, cell))
+            # A ``None`` store empties the cell: a free version (see above).
+            value = None if node is None or is_none_literal(node) else self._lower_code_value(node, context_id, reads)
+            if aug_op is not None and isinstance(statement, ast.AugAssign):
+                # ``+=`` on a cell that may hold text raises or makes text (#2048).
+                carries = self._carries_string(statement.target)
+                value = None if value is None or carries else self._apply_aug_op(aug_op, before, value, node)
+            value = reads.guarded(statement, value, before, variable=False)
+            self._version_answer(
+                (item_id, cell), value, context_id, path, store=(statement, reads, None if aug_op else node)
+            )
+
+    @staticmethod
+    def _literal_rows(
+        value_node: ast.AST | None, index: list[int | None], rows: list[int]
+    ) -> dict[tuple[int, int], ast.AST]:
+        """The element of a list-literal store each cell gets: a row store's
+        ``[v0, v1]`` (``index`` its row), or the whole answer's ``[[..], ..]``
+        (``index`` empty); a cell the literal does not name gets none."""
+        def elements(node: ast.AST | None) -> list[ast.AST] | None:
+            return list(node.elts) if isinstance(node, (ast.List, ast.Tuple)) else None
+
+        if index:
+            return {(index[0], c): element for c, element in enumerate(elements(value_node) or [])}
+        found: dict[tuple[int, int], ast.AST] = {}
+        for r, row in enumerate(elements(value_node) or []):
+            if r in rows:
+                for c, element in enumerate(elements(row) or []):
+                    found[(r, c)] = element
+        return found
 
     def _code_ran(self, context_id: str, path: BoolRef | None) -> BoolRef:
         """When a write of ``context_id``'s codeBlock happens: the item was
@@ -3558,26 +4281,44 @@ class StaticBuilder:
         outcome model (codeInit included) contributes no constraint.
         """
         ends: list[ExprRef | None] = []
+        versioned = item_id in self.item_pairs and self._versions_answer(item_id, context_id)
         if (
             item_id in self.item_pairs
             and isinstance(value_node, (ast.List, ast.Tuple))
             and len(value_node.elts) == 2
         ):
-            lo, hi = self.item_pairs[item_id]
+            lo, hi = self._answer_value(item_id)
             ends = [
                 reads.guarded(statement, self._lower_code_value(elt, context_id, reads), old, variable=False)
                 for elt, old in ((value_node.elts[0], lo), (value_node.elts[1], hi))
             ]
-        if len(ends) == 2 and all(end is not None for end in ends):
+        if versioned:
+            # A write the model cannot hold still makes a version (free),
+            # besides its coverage gap below.
+            self._version_answer(
+                item_id, (ends[0], ends[1]) if len(ends) == 2 else None, context_id, path,
+                store=(statement, reads, value_node),
+            )
+            if len(ends) == 2 and all(end is not None for end in ends):
+                return
+        elif len(ends) == 2 and all(end is not None for end in ends):
             if self._item_code(context_id):
                 lo, hi = self.item_pairs[item_id]
                 sentinel = self._code_ran(context_id, path)
                 self.codeblock_constraints.append(Implies(sentinel, lo == ends[0]))
                 self.codeblock_constraints.append(Implies(sentinel, hi == ends[1]))
             return
+        self._record_range_write(item_id, context_id)
+
+    def _record_range_write(self, item_id: str, context_id: str) -> None:
+        """A codeBlock write to a Range item the model cannot hold (another
+        RHS shape, a Range matrix target) is a ``codeBlock`` coverage gap
+        naming the item: the runtime still writes it, so conditions read
+        later are proven without it."""
         for gap in self.coverage_gaps.get(context_id, []):
             if gap.get("kind") == "codeBlock":
-                if item_id not in gap["range_items"]:
+                # The gap may be a QuestionGroup write's, with no Range key yet.
+                if item_id not in gap.setdefault("range_items", []):
                     gap["range_items"].append(item_id)
                 return
         self._record_coverage_gap(context_id, "codeBlock", 0, [], [item_id])
@@ -4736,9 +5477,10 @@ class StaticBuilder:
             return None
         j = self._resolve_int_const(indices[0], local_bindings)
         k = self._resolve_int_const(indices[1], local_bindings)
-        if j is None or k is None:
+        if j is None or k is None or (j, k) not in cells:
             return None
-        return cells.get((j, k))
+        # The version current here (#2257, ``_answer_value``).
+        return self._answer_value((item_id, (j, k)))
 
     def _is_question_group(self, item_id: str) -> bool:
         return item_id in self.question_groups
@@ -4747,8 +5489,8 @@ class StaticBuilder:
         """A QuestionGroup's answer cells, where a read of them may lower: in
         a predicate (``_lower_predicate``) and outside a Roster or capped
         Group. A codeBlock read stays unlowered: a sum over an unanswered
-        slot raises and leaves its variable as it was, and the codeBlock None
-        model (``_CodeReads``, #1776) covers scalar Question reads only. A scoped
+        slot raises and leaves its variable as it was, which the codeBlock
+        None model places (``_CodeReads._read_answer_lists``, #2315). A scoped
         group has no cells per iteration or draw, so one canonical cell would
         tie answers the runtime keeps apart, and a group a codeBlock writes can
         hold any value between two conditions, which one cell per answer
@@ -4817,8 +5559,8 @@ class StaticBuilder:
         end = _RANGE_ENDS.index(node.attr)
         item_id = outcome_ref_name(node.value)
         if item_id is not None:
-            pair = self.item_pairs.get(item_id)
-            return pair[end] if pair is not None else None
+            # The version current here (#2257, ``_answer_value``).
+            return self._answer_value(item_id)[end] if item_id in self.item_pairs else None
         if not isinstance(node.value, ast.Subscript):
             return None
         item_id, indices = self._outcome_subscript(node.value)
@@ -4934,7 +5676,7 @@ class StaticBuilder:
             top, depth = self._subscript_top(node, parents)
             nullable_cell = (
                 depth == 2
-                and self._matrix_has_choices(item_id)
+                and self._cell_may_be_unanswered(item_id, self._answer_read(top)[1])
                 and (self._slot_through_ternary(top, parents) or self._in_set(top, parents))
             )
             if nullable_cell or (depth != 2 and not (depth == 0 and id(node) in none_operands)):
@@ -5006,7 +5748,7 @@ class StaticBuilder:
             (found := self._answer_read(n)) is not None
             and (
                 self._is_question_group(found[0])
-                or (found[0] in self.matrices and self._matrix_has_choices(found[0]))
+                or (found[0] in self.matrices and self._cell_may_be_unanswered(found[0], found[1]))
             )
             for n in ast.walk(list_arg)
         ):
@@ -5268,11 +6010,14 @@ class StaticBuilder:
             if isinstance(node.value, ast.Name) and node.attr == "outcome":
                 item_id = node.value.id
                 if item_id in self.item_vars:
+                    # The version current here (#2257): the submitted Int, or
+                    # the last code-written one (``_answer_value``).
+                    answer = self._answer_value(item_id)
                     if self._string_model.text_stored(item_id):
                         # Keyed by the Int read now, which a Roster iteration
                         # or capped-Group presence swaps in (``item_vars``).
-                        return self._unmodelled_read(item_id, self.item_vars[item_id])
-                    return self.item_vars[item_id]
+                        return self._unmodelled_read(item_id, answer)
+                    return answer
                 # Free text has no Int (``textarea_in_predicate``): a
                 # condition leaf comparing it with literals lowers in
                 # ``_text_leaf`` (#2241), any other read leaves the condition
@@ -5958,6 +6703,185 @@ class StaticBuilder:
             raise _UnmodelledAnswerRead(refused[0])
         return safe, raising, parents
 
+    def _variable_raising_reads(
+        self, tree: ast.AST, context: str, parents: dict[ast.AST, ast.AST], choices: dict[str, BoolRef]
+    ) -> tuple[list[tuple[str, ast.AST]], list[tuple[str, ast.AST]]]:
+        """``(reads that raise on a variable's None, reads that raise because
+        the variable may be unbound)`` of a condition, #2258, with their
+        choices added to ``choices``.
+
+        A variable some code may leave ``None`` (``_none_variables``) raises
+        ``TypeError`` where Python orders or computes with it, as a skipped
+        item's ``None`` does (``_skippable_reads``); one that may be unbound
+        where ``context``'s conditions run (``_may_be_unbound``) raises
+        ``NameError`` at any read. Either raise then follows the condition
+        kind (a precondition is False, a postcondition waived) through the
+        same placement as an item's (``_place_raises``), under one free choice
+        per variable and predicate (keyed ``$v`` for ``None``, ``!v`` for
+        unbound), since nothing in the model says when it holds. A gate on a
+        variable that always holds a number reads it as before."""
+        none_reads: list[tuple[str, ast.AST]] = []
+        unbound_reads: list[tuple[str, ast.AST]] = []
+        if not self._predicate_reads_variables:
+            return none_reads, unbound_reads
+        none_operands = {id(operand) for operand in none_test_operands(tree)}
+        none_vars = self._none_variables()
+        for node in ast.walk(tree):
+            if not (isinstance(node, ast.Name) and isinstance(node.ctx, ast.Load)):
+                continue
+            name = node.id
+            if (
+                _bound_in_scope(node, parents)
+                or name in self.item_details
+                or name in _sandbox_names()
+                or id(node) in none_operands
+            ):
+                continue
+            if self._may_be_unbound(name, context):
+                unbound_reads.append((f"!{name}", node))
+                choices.setdefault(f"!{name}", self._variable_raise_choice("unbound", name))
+            if (
+                name in none_vars
+                and not self._none_safe_read(node, parents)
+                and (not self._value_through_ternary(node, parents) or self._ternary_certainly_raises(node, parents))
+            ):
+                none_reads.append((f"${name}", node))
+                choices.setdefault(f"${name}", self._variable_raise_choice("none", name))
+        return none_reads, unbound_reads
+
+    def _variable_raise_choice(self, kind: str, name: str) -> BoolRef:
+        """A fresh choice of a condition's variable read raising (#2258)."""
+
+        def mint() -> BoolRef:
+            self._variable_raise_count += 1
+            # ``@`` cannot occur in an item id, so no item or variable shares the name.
+            return Bool(f"{kind}@{name}#{self._variable_raise_count}", self.ctx)
+
+        return self._mint(mint)
+
+    def _may_be_unbound(self, name: str, context: str) -> bool:
+        """Whether variable ``name`` may be unbound where ``context``'s
+        conditions run (#2258): codeInit does not bind it from the start
+        (``always_bound``) and no version an assignment that certainly runs
+        made (``_binds_for_certain``) comes from codeInit or from an item the
+        walk asks before ``context`` (after the build; during it, one lowered
+        so far). Code that deletes it may unbind it anywhere."""
+        if self._string_model.always_bound(name):
+            return False
+        if name in self._deleted_names():
+            return True
+        position = self._navigation_index() if self._built else None
+        here = position.get(context) if position is not None else None
+        for version, writer in self.version_history.get(name, []):
+            if (name, version) not in self._binding_versions or writer == context:
+                continue
+            if writer == "__init__" or position is None or (here is not None and position.get(writer, here) < here):
+                return False
+        return True
+
+    def _deleted_names(self) -> frozenset[str]:
+        """The names some code deletes (``del x``)."""
+        if self._deleted is None:
+            deleted: set[str] = set()
+            for code in [self.state.get_code_init() or ""] + [
+                item.get("codeBlock") or "" for item in self.state.get_all_items()
+            ]:
+                tree = self._parsed(code, "exec")
+                if tree is not None:
+                    deleted.update(
+                        n.id for n in ast.walk(tree) if isinstance(n, ast.Name) and isinstance(n.ctx, ast.Del)
+                    )
+            self._deleted = frozenset(deleted)
+        return self._deleted
+
+    def _none_variables(self) -> frozenset[str]:
+        """The variables some codeInit or codeBlock store may leave ``None``
+        (#2258), read off the code once: one assigned ``None``, a value that
+        may be ``None`` (an answer that may be skipped or code-written, a
+        matrix or QuestionGroup answer, a call other than a numeric builtin,
+        a subscript, a ternary branch or ``or`` / ``and`` operand of those,
+        another such variable), or anything a loop, ``with``, unpacking or
+        exception target binds. Arithmetic never yields ``None``: it raises
+        on one, so its target keeps what it held. codeInit runs before any
+        answer, so a codeInit value reading one is taken as ``None``."""
+        if self._none_vars is not None:
+            return self._none_vars
+        assignments: list[tuple[str, ast.AST | None]] = []
+        for index, code in enumerate([self.state.get_code_init() or ""] + [
+            item.get("codeBlock") or "" for item in self.state.get_all_items()
+        ]):
+            tree = self._parsed(code, "exec")
+            if tree is None:
+                continue
+            for node in ast.walk(tree):
+                if isinstance(node, (ast.Assign, ast.AnnAssign)) and node.value is not None:
+                    targets = node.targets if isinstance(node, ast.Assign) else [node.target]
+                    value = None if index == 0 and outcome_reads(node.value) else node.value
+                    for target in targets:
+                        if isinstance(target, ast.Name):
+                            assignments.append((target.id, value))
+                        else:
+                            assignments.extend(
+                                (n.id, None) for n in ast.walk(target) if isinstance(n, ast.Name) and isinstance(n.ctx, ast.Store)
+                            )
+                elif isinstance(node, ast.NamedExpr) and isinstance(node.target, ast.Name):
+                    assignments.append((node.target.id, node.value))
+                elif isinstance(node, (ast.For, ast.AsyncFor, ast.With, ast.AsyncWith, ast.ExceptHandler)):
+                    bound = [node.target] if isinstance(node, (ast.For, ast.AsyncFor)) else (
+                        [i.optional_vars for i in node.items if i.optional_vars is not None]
+                        if isinstance(node, (ast.With, ast.AsyncWith))
+                        else []
+                    )
+                    for part in bound:
+                        assignments.extend((n.id, None) for n in ast.walk(part) if isinstance(n, ast.Name))
+                    if isinstance(node, ast.ExceptHandler) and node.name:
+                        assignments.append((node.name, None))
+        none_vars: set[str] = set()
+        changed = True
+        while changed:
+            changed = False
+            for name, value in assignments:
+                if name not in none_vars and (value is None or self._may_be_none(value, none_vars)):
+                    none_vars.add(name)
+                    changed = True
+        self._none_vars = frozenset(none_vars)
+        return self._none_vars
+
+    def _may_be_none(self, node: ast.AST, none_vars: set[str]) -> bool:
+        """Whether a stored value may be ``None`` (``_none_variables``)."""
+        if isinstance(node, ast.Constant):
+            return node.value is None
+        if isinstance(node, ast.Name):
+            return node.id in none_vars
+        if isinstance(node, ast.IfExp):
+            return self._may_be_none(node.body, none_vars) or self._may_be_none(node.orelse, none_vars)
+        if isinstance(node, ast.BoolOp):
+            return any(self._may_be_none(value, none_vars) for value in node.values)
+        if isinstance(node, ast.NamedExpr):
+            return self._may_be_none(node.value, none_vars)
+        item = outcome_ref_name(node) if isinstance(node, ast.Attribute) else None
+        if item is not None:
+            details = self.item_details.get(item, {})
+            return bool(
+                details.get("preconditions")
+                or self._is_scoped(item)
+                or item in self._code_written_items()
+                or details.get("kind") in ("MatrixQuestion", "QuestionGroup")
+                or self._is_textarea(item)
+            )
+        if isinstance(node, ast.Subscript):
+            return True
+        if isinstance(node, ast.Call):
+            if isinstance(node.func, ast.Name) and node.func.id in _NUMERIC_CALLS:
+                return False
+            if isinstance(node.func, ast.Name) and node.func.id in ("min", "max"):
+                args = [e for a in node.args for e in (a.elts if isinstance(a, (ast.List, ast.Tuple)) else [a])]
+                return any(self._may_be_none(a, none_vars) for a in args)
+            if isinstance(node.func, ast.Attribute) and isinstance(node.func.value, ast.Name) and node.func.value.id == "math":
+                return False
+            return True
+        return False
+
     @staticmethod
     def _value_through_ternary(node: ast.AST, parents: dict[ast.AST, ast.AST]) -> bool:
         """Whether ``node`` is itself a branch of a ternary (``q.outcome if c
@@ -6356,13 +7280,15 @@ class StaticBuilder:
     def _blank_candidate(self, item_id: str) -> bool:
         """Whether a read of ``item_id`` gets a blank choice (#1784): a
         Question, whatever its control, a QuestionGroup, and a MatrixQuestion
-        whose ``None`` states are modelled (``_matrix_has_choices``). Every
+        whose ``None`` states are modelled (``_matrix_has_choices``) or that
+        code writes (``_written_matrix_read``). Every
         channel can submit an item blank (owner decision on #1784)."""
         details = self.item_details.get(item_id)
         if details is None:
             return False
         if details.get("kind") == "MatrixQuestion":
-            return self._matrix_has_choices(item_id)
+            # A code-written one too (#2256, ``_written_matrix_read``).
+            return self._matrix_has_choices(item_id) or item_id in self._code_written_items()
         return details.get("kind") in ("Question", "QuestionGroup")
 
     def _blank_choice(self, item_id: str) -> BoolRef:
@@ -6417,10 +7343,13 @@ class StaticBuilder:
         the item ``None``."""
         return self._any_choice(item_id, self._fresh_blank_choices, self._blank_choices)
 
-    def _enter_submission(self, item_id: str) -> tuple[dict[str, int], dict[str, ExprRef]]:
+    def _enter_submission(
+        self, item_id: str, *, late: bool = False
+    ) -> tuple[dict[str, int], dict[str, ExprRef], dict[_AnswerKey, ExprRef | tuple[ExprRef, ExprRef]]]:
         """Point ``version_map`` at the versions ``item_id``'s own conditions
         read (``_runtime_versions``) and return the state it replaced, for
-        ``_leave_submission``.
+        ``_leave_submission``; ``late`` reads what a codeBlock may write
+        after the walk's place for the item free (``_late_versions``).
 
         An item's own conditions run before its own codeBlock (precondition,
         postcondition, then codeBlock), so they read every variable as it is
@@ -6428,20 +7357,153 @@ class StaticBuilder:
         after the build would otherwise see (#1838). A copy, because a phantom
         read seeds version 0 into the map it reads.
         """
-        outer = (self.version_map, self._open_reads)
+        outer = (self.version_map, self._open_reads, self._answer_now)
         if item_id not in self._runtime_version_cache:
             self._runtime_version_cache[item_id] = self._runtime_versions(item_id)
-        versions, open_reads = self._runtime_version_cache[item_id]
+        if late and item_id not in self._late_version_cache:
+            self._late_version_cache[item_id] = self._late_versions(item_id)
+        cache = self._late_version_cache if late else self._runtime_version_cache
+        versions, open_reads, answers = cache[item_id]
         # A copy: a phantom read seeds version 0 into the map it reads.
-        self.version_map, self._open_reads = dict(versions), open_reads
+        self.version_map, self._open_reads, self._answer_now = dict(versions), open_reads, answers
         return outer
 
-    def _leave_submission(self, outer: tuple[dict[str, int], dict[str, ExprRef]]) -> None:
-        self.version_map, self._open_reads = outer
+    def _leave_submission(
+        self,
+        outer: tuple[dict[str, int], dict[str, ExprRef], dict[_AnswerKey, ExprRef | tuple[ExprRef, ExprRef]]],
+    ) -> None:
+        self.version_map, self._open_reads, self._answer_now = outer
 
-    def _runtime_versions(self, item_id: str) -> tuple[dict[str, int], dict[str, ExprRef]]:
-        """``(version map, variables read as a fresh Int)`` when the walk
-        reaches ``item_id``.
+    def _late_written(
+        self, item_id: str
+    ) -> tuple[set[str], dict[_AnswerKey, list[ExprRef | tuple[ExprRef, ExprRef]]], dict[str, list[int]]]:
+        """``(variables, code-written answers, accumulators with the versions
+        their later writers make)`` a codeBlock may write after the walk's
+        place for ``item_id`` (#2260): the forward walk asks the first
+        unvisited item whose precondition holds now, so an item skipped at its
+        place is asked once a later codeBlock makes its gate true, and its
+        conditions then read what that block wrote. The writers are the items
+        after it in navigation order and the gated ones before it (a skipped
+        one is asked later too). An accumulator (#1891, D91) keeps its file
+        order, so it takes one of the versions its later writers make, not
+        any value (``_late_versions``)."""
+        if item_id in self._late_written_cache:
+            return self._late_written_cache[item_id]
+        position = self._navigation_index()
+        here = position.get(item_id)
+        if here is None:
+            return set(), {}, {}
+        later = {
+            writer
+            for writer in self.item_details
+            if writer != item_id
+            and (position.get(writer, -1) > here or (position.get(writer, here) < here and self._re_askable(writer)))
+        }
+        accumulators = self.accumulator_variables()
+        written = {
+            name for name, history in self.version_history.items() if any(context in later for _, context in history)
+        }
+        stepped = {
+            name: [version for version, context in self.version_history[name] if context in later]
+            for name in written & accumulators
+        }
+        answers = {
+            key: [version for version, context in history if context in later]
+            for key, history in self._answer_versions.items()
+            if any(context in later for _, context in history)
+        }
+        self._late_written_cache[item_id] = (written - accumulators, answers, stepped)
+        return self._late_written_cache[item_id]
+
+    def _re_askable(self, item_id: str) -> bool:
+        """Whether the walk may skip ``item_id`` at its place and ask it later
+        (#2260): it is gated, and its gate reads a variable or an answer a
+        codeBlock may write after its place (``_late_written``). Computed for
+        every item at once, as a fixed point: a re-askable item's codeBlock
+        writes after the place of every item before it too."""
+        if self._re_askable_items is None:
+            position = self._navigation_index()
+            gates = {}
+            for item in self.item_order:
+                tree_reads: set[str] = set()
+                answer_reads: set[str] = set()
+                for predicate in self._gate_predicates(item):
+                    tree = self._parsed(predicate, "eval")
+                    if tree is not None:
+                        tree_reads |= name_reads(tree)
+                        answer_reads |= outcome_reads(tree)
+                if tree_reads or answer_reads:
+                    gates[item] = (tree_reads, answer_reads)
+            writes: dict[str, set[str]] = {}
+            for name, history in self.version_history.items():
+                for _, context in history:
+                    writes.setdefault(context, set()).add(name)
+            for key, history in self._answer_versions.items():
+                target = key if isinstance(key, str) else key[0]
+                for _, context in history:
+                    writes.setdefault(context, set()).add(f"{target}.outcome")
+            re_askable: set[str] = set()
+            changed = True
+            while changed:
+                changed = False
+                for item, (names, answers) in gates.items():
+                    if item in re_askable:
+                        continue
+                    here = position.get(item, -1)
+                    read = names | {f"{a}.outcome" for a in answers}
+                    if any(
+                        writer != item
+                        and (position.get(writer, -1) > here or writer in re_askable)
+                        and written & read
+                        for writer, written in writes.items()
+                    ):
+                        re_askable.add(item)
+                        changed = True
+            self._re_askable_items = frozenset(re_askable)
+        return item_id in self._re_askable_items
+
+    def _late_versions(
+        self, item_id: str
+    ) -> tuple[dict[str, int], dict[str, ExprRef], dict[_AnswerKey, ExprRef | tuple[ExprRef, ExprRef]]]:
+        """``_runtime_versions`` with what a codeBlock may write after the
+        walk's place for ``item_id`` (``_late_written``) read as a fresh
+        value: the state the item's conditions read if it is asked later, or
+        at its place, one Int per item for all its conditions."""
+        versions, open_reads, answers = self._runtime_version_cache[item_id]
+        variables, written, stepped = self._late_written(item_id)
+        open_reads, answers = dict(open_reads), dict(answers)
+        candidates: list[BoolRef] = []
+        for name in sorted(variables | set(stepped)):
+            current = open_reads.get(name)
+            if current is None and name in versions:
+                current = self.z3_vars.get(_ssa_key(name, versions[name]))
+            self._code_raise_count += 1
+            # ``@`` cannot occur in an item id, so no item or variable shares the name.
+            late = open_reads[name] = Int(f"late@{name}#{self._code_raise_count}", self.ctx)
+            if name in stepped and current is not None:
+                # An accumulator holds the version current at the place or one
+                # a later writer makes, as the base pins them.
+                values = [current, *(self.z3_vars[_ssa_key(name, version)] for version in stepped[name])]
+                candidates.append(self._disjoin([late == value for value in values]))
+        for key in sorted(written, key=str):
+            # A written answer holds the value at the place or one a later
+            # writer's version holds (free where that write does not lower).
+            current = answers.get(key, self._submitted_answer(key))
+            late_answer = answers[key] = self._fresh_answer(key, "late")
+            values = [current, *written[key]]
+            if isinstance(late_answer, tuple):
+                for end in (0, 1):
+                    candidates.append(self._disjoin([late_answer[end] == value[end] for value in values]))
+            else:
+                candidates.append(self._disjoin([late_answer == value for value in values]))
+        self._late_candidates[item_id] = self._conjoin(candidates)
+        return versions, open_reads, answers
+
+    def _runtime_versions(
+        self, item_id: str
+    ) -> tuple[dict[str, int], dict[str, ExprRef], dict[_AnswerKey, ExprRef | tuple[ExprRef, ExprRef]]]:
+        """``(version map, variables read as a fresh Int, code-written answers
+        as read there)`` when the walk reaches ``item_id``.
 
         SSA versions are numbered in the build's order (``_submission_versions``),
         the walk's navigation order (``QMLTopology``) wherever it orders code
@@ -6460,7 +7522,9 @@ class StaticBuilder:
         position = self._navigation_index()
         here = position.get(item_id)
         if here is None:
-            return versions, open_reads
+            # No place on the walk to read a written answer's version at: any.
+            answers = {key: self._fresh_answer(key, "open") for key in self._answer_versions}
+            return versions, open_reads, answers
         for var_name, history in self.version_history.items():
             ran = [
                 context == "__init__" or (context != item_id and position.get(context, here) < here)
@@ -6478,7 +7542,36 @@ class StaticBuilder:
                 versions[var_name] = history[prefix - 1][0]
             else:
                 versions.pop(var_name, None)
-        return versions, open_reads
+        return versions, open_reads, self._runtime_answers(item_id, position, here)
+
+    def _runtime_answers(
+        self, item_id: str, position: dict[str, int], here: int
+    ) -> dict[_AnswerKey, ExprRef | tuple[ExprRef, ExprRef]]:
+        """Each code-written answer (``_version_answer``) as ``item_id``'s
+        conditions read it, by the rule ``_runtime_versions`` reads a variable
+        by: the last version of the longest prefix of its writes whose writers
+        run before ``item_id`` on the walk, in the order they run there; the
+        submitted answer when no write has run (``item_id``'s own conditions
+        always: they run before its codeBlock); a fresh unconstrained value
+        when no prefix is the value there. Every written item has an entry, so
+        the final version never leaks into an own-condition compile."""
+        answers: dict[_AnswerKey, ExprRef | tuple[ExprRef, ExprRef]] = {}
+        for target, history in self._answer_versions.items():
+            ran = [context != item_id and position.get(context, here) < here for _, context in history]
+            prefix = ran.index(False) if False in ran else len(ran)
+            walked = [position.get(context, -1) for _, context in history[:prefix]]
+            if (target if isinstance(target, str) else target[0]) == item_id:
+                # The item's own conditions run only where it is asked, on
+                # the answer submitted (a store before it means it is never
+                # asked, #2259).
+                answers[target] = self._submitted_answer(target)
+            elif any(ran[prefix:]) or walked != sorted(walked):
+                answers[target] = self._fresh_answer(target, "open")
+            elif prefix:
+                answers[target] = history[prefix - 1][0]
+            else:
+                answers[target] = self._submitted_answer(target)
+        return answers
 
     def _navigation_index(self) -> dict[str, int]:
         """Each item's position in the walk's navigation order (the stable
@@ -6534,7 +7627,10 @@ class StaticBuilder:
         if item_id in self.item_vars or self._is_question_group(item_id) or item_id in self.matrices:
             outer = self._own_none
             self._own_none = item_id
-            outer_versions = self._enter_submission(item_id)
+            # Read as the item's own postconditions are (#2260, ``_lower_conditions``).
+            outer_versions = self._enter_submission(item_id, late=self._built)
+            if self._built:
+                parts.append(self._late_candidates[item_id])
             # The acceptance is computed once and shared by every compile that
             # reads it, so what its lowering mints belongs to no compile.
             outer_minting, self._minting = self._minting, None
@@ -6605,15 +7701,24 @@ class StaticBuilder:
             return list_raising, slot_raising, slot_safe, set()
         for node in ast.walk(tree):
             found = self._answer_read(node)
-            if found is None or self._answer_cells(found[0]) is None:
+            if found is None:
                 continue
             item_id = found[0]
+            cells = self._answer_cells(item_id)
+            if cells is None and not self._written_matrix_read(item_id):
+                continue
             if (
                 item_id not in self._none_guarded
                 and not self._judged_on_answers(item_id, context)
                 and self._whole_answer_skippable(item_id, context)
             ):
                 list_raising.append((item_id, node))
+            if cells is None or (
+                self._written_matrix_read(item_id) and not self._cell_may_be_unanswered(item_id, found[1])
+            ):
+                # A cell of a code-written matrix some store may reach keeps
+                # no per-cell None (#2300, ``_unwritten_cells``).
+                continue
             if not self._is_range_item(item_id) and self._none_safe_read(node, parents):
                 slot_safe.add(id(node))
             elif not self._is_range_item(item_id) and self._slot_through_ternary(node, parents):
@@ -6626,6 +7731,7 @@ class StaticBuilder:
             if (found := none_test_of(node)) is not None
             and found[0] in self._none_guarded
             and self._answer_cells(found[0]) is not None
+            and not self._written_matrix_read(found[0])
         }
         return list_raising, slot_raising, slot_safe, none_tested
 
@@ -6633,17 +7739,20 @@ class StaticBuilder:
         """The cells of an answer-list item whose ``None`` states a predicate
         models (``_answer_list_reads``): a QuestionGroup's where its reads
         lower (``_group_cells``); a MatrixQuestion's in a condition (not a
-        codeBlock ``if`` guard or assigned value: ``_CodeReads`` models scalar
-        Question reads only), outside a Roster or capped Group and when no
-        codeBlock writes it. Anywhere else a matrix cell lowers in-domain,
-        with no choice."""
+        codeBlock ``if`` guard or assigned value, whose cell lowers in-domain:
+        there ``_CodeReads`` places what an unanswered cell does, #2315),
+        outside a Roster or capped Group, when no
+        codeBlock writes it or some of its cells no store may reach
+        (``_unwritten_cells``; only those take an unanswered choice,
+        ``_slot_choice``). Anywhere else a matrix cell lowers in-domain, with
+        no choice."""
         if self._is_question_group(item_id):
             return self._group_cells(item_id)
         if (
             item_id not in self.matrices
             or not self._lowering_predicate
             or not self._model_blank
-            or not self._matrix_has_choices(item_id)
+            or not (self._matrix_has_choices(item_id) or self._unwritten_cells(item_id))
         ):
             return None
         return self.item_cells.get(item_id)
@@ -6652,8 +7761,143 @@ class StaticBuilder:
         """A matrix outside a Roster or capped Group that no codeBlock writes:
         one cell variable stands for its answer everywhere, so its ``None``
         states are modelled. A scoped matrix has no cells per iteration
-        or draw, and a written one can change between two conditions."""
+        or draw, and a written one can change between two conditions (only
+        its cells no store reaches keep the choice, ``_unwritten_cells``)."""
         return not self._is_scoped(item_id) and item_id not in self._code_written_items()
+
+    def _cell_has_choice(self, item_id: str, row: int, col: int) -> bool:
+        """Whether cell ``(row, col)`` of matrix ``item_id`` takes an
+        unanswered choice: every cell of an unwritten matrix
+        (``_matrix_has_choices``), and a cell of a written one that no store
+        may reach (``_unwritten_cells``)."""
+        return self._matrix_has_choices(item_id) or (row, col) in self._unwritten_cells(item_id)
+
+    def _cell_may_be_unanswered(self, item_id: str, index_nodes: list[ast.expr]) -> bool:
+        """Whether a cell read of matrix ``item_id`` (its two index nodes)
+        may name a cell with an unanswered choice (``_cell_has_choice``): an
+        index that does not resolve here (a comprehension variable) may name
+        any cell along its axis."""
+        if self._matrix_has_choices(item_id):
+            return True
+        # A negative index counts from the end, so it too may name any cell.
+        resolved = tuple(
+            None if i is None or i < 0 else i for i in (self._resolve_int_const(node, {}) for node in index_nodes)
+        )
+        return any(self._path_covers(resolved, cell) for cell in self._unwritten_cells(item_id))
+
+    @staticmethod
+    def _path_covers(path: tuple[int | None, ...], cell: tuple[int, int]) -> bool:
+        """Whether an index path (``None`` an index that may be any) names
+        ``cell`` or a row or whole answer holding it."""
+        return all(i is None or i == cell[axis] for axis, i in enumerate(path))
+
+    def _unwritten_cells(self, item_id: str) -> frozenset[tuple[int, int]]:
+        """The ``(row, col)`` cells of a code-written matrix outside a
+        Roster or capped Group that no code may reach (#2300). The respondent
+        submits such a cell, possibly left unanswered, and no store changes
+        it afterwards: a cell store into a ``None`` matrix raises, so code
+        answers a skipped or blank matrix only by a whole-answer store, which
+        reaches every cell. So the cell keeps the shared unanswered choice
+        (``unanswered@{m}@{r}@{c}``) an unwritten matrix's cell has, while its
+        whole-answer choices stay fresh per predicate
+        (``_written_matrix_read``). Empty for any other item.
+
+        A store may reach a cell (``_cells_code_may_reach``) when it names it:
+        a cell, row or whole-answer store, any index that is not a
+        non-negative build-time integer reaching every cell along its axis,
+        and a ``del``. So may code holding the matrix's whole answer or a row
+        as a value (``row = m.outcome[1]``, ``m.outcome[0].append(9)``): the
+        getter hands out the stored list, which an alias can mutate in place.
+        A store or read through anything but an item id (``alias.outcome``)
+        may reach every cell of every matrix."""
+        if self._unwritten_cell_census is None:
+            written = self.matrices & self._code_written_items()
+            reached = self._cells_code_may_reach() if written else {}
+            census: dict[str, frozenset[tuple[int, int]]] = {}
+            for matrix in written:
+                if self._is_scoped(matrix) or reached is None:
+                    continue
+                cells = {cell[:2] for cell in self.item_cells.get(matrix, {})}
+                hit = reached.get(matrix, [])
+                census[matrix] = frozenset(
+                    cell
+                    for cell in cells
+                    if not any(self._path_covers(path, cell) for path in hit)
+                )
+            self._unwritten_cell_census = census
+        return self._unwritten_cell_census.get(item_id, frozenset())
+
+    @staticmethod
+    def _inspects_only(node: ast.AST, parents: dict[ast.AST, ast.AST]) -> bool:
+        """Whether a whole-answer or row read in code only inspects the list
+        (an operand of a comparison, a ``None`` test included, the argument of
+        ``len``, a truth test), so no alias of it outlives the expression."""
+        parent = parents.get(node)
+        if isinstance(parent, ast.Compare) or (isinstance(parent, ast.UnaryOp) and isinstance(parent.op, ast.Not)):
+            return True
+        if isinstance(parent, (ast.If, ast.While, ast.IfExp)) and parent.test is node:
+            return True
+        return isinstance(parent, ast.Call) and _is_call_to(parent, ("len",)) and parent.args == [node]
+
+    def _cells_code_may_reach(self) -> dict[str, list[tuple[int | None, ...]]] | None:
+        """Per matrix, the index paths of every store or aliasing read in
+        codeInit and the codeBlocks (``_unwritten_cells``): ``()`` the whole
+        answer, ``(r,)`` a row, ``(r, c)`` a cell, ``None`` an index that may
+        be any. ``None`` when one goes through anything but an item id."""
+        reached: dict[str, list[tuple[int | None, ...]]] = {}
+        sources = [self.state.get_code_init() or ""] + [
+            owner.get("codeBlock") or "" for owner in [*self.state.get_all_items(), *self.state.get_blocks()]
+        ]
+        for code in sources:
+            tree = self._parsed(code, "exec")
+            if tree is None:
+                continue
+            parents = self._build_parent_map(tree)
+            for node in ast.walk(tree):
+                if not (isinstance(node, ast.Attribute) and node.attr == "outcome"):
+                    continue
+                # ``[m][0].outcome`` or ``(m if c else n).outcome`` names no
+                # item id, so it may be any matrix.
+                name = outcome_ref_name(node)
+                if name is None or name not in self.item_details:
+                    return None
+                if name not in self.matrices:
+                    continue
+                top, depth = self._subscript_top(node, parents)
+                indices = self._outcome_subscript(top)[1] if isinstance(top, ast.Subscript) else []
+                ctx = getattr(top, "ctx", None)
+                if isinstance(ctx, ast.Del):
+                    path: tuple[int | None, ...] = ()
+                elif depth < 2 and self._inspects_only(top, parents):
+                    continue
+                elif isinstance(ctx, ast.Store) or depth < 2:
+                    resolved = [self._resolve_int_const(index, {}) for index in indices[:2]]
+                    path = tuple(None if i is None or i < 0 else i for i in resolved)
+                else:
+                    # A cell read: an Int (or a frozen Range pair) no alias can change.
+                    continue
+                reached.setdefault(name, []).append(path)
+        return reached
+
+    def _written_matrix_read(self, item_id: str) -> bool:
+        """Whether a cell read of ``item_id`` in the condition being lowered
+        is one of a matrix code writes, whose whole answer is still ``None``
+        where it was skipped or left blank (#2256): subscripting that ``None``
+        raises at runtime whatever the operator, and the reading leaf of a
+        blank one is unknown, so the read takes the whole-answer choices as an
+        unwritten matrix's does (``_answer_list_reads``, ``_blank_candidate``),
+        fresh per predicate since a write can answer it between two
+        (``_skipped_choice``, ``_blank_choice``). A cell some store may reach
+        keeps no per-cell ``None``: a write can put a value into it between
+        two conditions; a cell no store reaches takes the unwritten matrix's
+        shared unanswered choice (``_unwritten_cells``). In a condition only,
+        as ``_answer_cells``."""
+        return (
+            item_id in self.matrices
+            and item_id in self._code_written_items()
+            and self._lowering_predicate
+            and self._model_blank
+        )
 
     def _judged_on_answers(self, item_id: str, context: str) -> bool:
         """Whether an answer-list read is the item's own, in its own condition
@@ -6680,7 +7924,9 @@ class StaticBuilder:
         if item_id == context or not self._model_blank:
             return True
         details = self.item_details.get(item_id)
-        return bool(details and details.get("preconditions"))
+        # A scoped item reaches here only as a code-written matrix
+        # (``_written_matrix_read``): a Roster or capped Group may skip it.
+        return bool(details and (details.get("preconditions") or self._is_scoped(item_id)))
 
     @staticmethod
     def _slot_through_ternary(node: ast.AST, parents: dict[ast.AST, ast.AST]) -> bool:
@@ -6727,7 +7973,12 @@ class StaticBuilder:
         """Whether answer ``index`` of QuestionGroup ``item_id`` (one index),
         or cell ``(row, col)`` of MatrixQuestion ``item_id``, is unanswered:
         a free Bool like ``_skipped_choice``, one per slot (an item a codeBlock
-        writes gets none, ``_answer_cells``)."""
+        writes gets none, ``_answer_cells``, except a matrix cell no store may
+        reach, ``_unwritten_cells``). False for a cell of a written matrix a
+        store may reach, which a comprehension over the matrix can name
+        beside an unwritten one."""
+        if item_id in self.matrices and len(index) == 2 and not self._cell_has_choice(item_id, *index):
+            return BoolVal(False, self.ctx)
         key = (item_id, *index)
         choice = self._slot_choices.get(key)
         if choice is None:
@@ -7161,14 +8412,60 @@ class StaticBuilder:
         ``codeblock_constraints`` (hence the full base) — this accessor conjoins
         only the frozen subset onto the domain base, leaving ``get_full_base``
         untouched.
+
+        A code-written answer's versions (``_version_answer``, #2257) enter it
+        too, as the submitted answer's domain does: a gate on a written total
+        keeps the verdict its written value gives (``q_total.outcome > 10`` over two answers of at most 5 is
+        NEVER), and a gate after two writes is decided on the last. What a
+        written value reads of a produced variable stays free here, so such a
+        version is free with it; where the walk may order the writes
+        differently from the build, they stay out (``_held_answer_constraints``).
         """
         frozen = self._frozen_variable_names()
         frozen_constraints: list[BoolRef] = []
         for var_name in frozen:
             frozen_constraints.extend(self.codeinit_constant_constraints.get(var_name, []))
         return self._conjoin(
-            list(self.domain_constraints) + frozen_constraints + self._accumulator_reachability()
+            list(self.domain_constraints)
+            + frozen_constraints
+            + self._accumulator_reachability()
+            + self._held_answer_constraints()
         )
+
+    def _held_answer_constraints(self) -> list[BoolRef]:
+        """The code-written answer versions' write constraints (#2257) both
+        bases hold, computed once after the build: each version's value is
+        lowered over what the build had written before it, which is the
+        walk's state only where the walk runs the writers in the build's
+        order. So none on a dependency cycle (the build keeps file order
+        there, #1979, and the walk may ask a writer earlier), and none whose
+        value reads an accumulator (#1891: the walk keeps only its
+        participants in file order, so a writer taking no part in it may run
+        on either side of the version it read). A version left out is free,
+        and so is every later one that keeps it: wider, never a false NEVER
+        or INFEASIBLE. Before the build is complete none is held."""
+        if not self._built:
+            return []
+        if self._held_answers is None:
+            coded = [
+                answered == self._disjoin(list(self._pre_stores[item_id].values()))
+                for item_id in sorted(self._pre_stores)
+                if (answered := self._code_answered(item_id)) is not None
+            ]
+            if self.topology.has_cycles:
+                self._held_answers = []
+            else:
+                accumulated = {
+                    _ssa_symbol(name, version)
+                    for name in self.accumulator_variables()
+                    for version in [0, *(v for v, _ in self.version_history.get(name, []))]
+                }
+                self._held_answers = [
+                    constraint
+                    for constraint in self._answer_constraints + coded
+                    if not accumulated & _constant_names(constraint)
+                ]
+        return self._held_answers
 
     def _accumulator_reachability(self) -> list[BoolRef]:
         """Each accumulator version as its writers produce it, for precondition
@@ -7271,11 +8568,16 @@ class StaticBuilder:
 
     def _writer_ran(self, item_id: str) -> BoolRef:
         """Whether ``item_id``'s codeBlock ran: True for an ungated item, else a
-        free choice (its gate may skip it, and then its codeBlock does not run)."""
+        free choice (its gate may skip it, and then its codeBlock does not run),
+        and never where code answered it before the walk reached it (#2259:
+        it is never asked)."""
+        answered = self._code_answered(item_id)
         if not self.item_details.get(item_id, {}).get("preconditions"):
-            return BoolVal(True, self.ctx)
-        # ``@`` cannot occur in an item id, so no item or variable shares the name.
-        return Bool(f"ran@{item_id}", self.ctx)
+            ran: BoolRef = BoolVal(True, self.ctx)
+        else:
+            # ``@`` cannot occur in an item id, so no item or variable shares the name.
+            ran = Bool(f"ran@{item_id}", self.ctx)
+        return ran if answered is None else And(Not(answered), ran)
 
     def get_frozen_variable_gates(self) -> dict[str, list[str]]:
         """Frozen variables that GATE logic: those read by ≥1 predicate.
@@ -7340,6 +8642,8 @@ class StaticBuilder:
         This includes:
         - Domain constraints D_i(S_i) from get_domain_base()
         - CodeBlock constraints from codeBlock assignments (SSA)
+        - The code-written answer versions the walk's order keeps
+          (``_held_answer_constraints``, #2257)
 
         Does NOT include precondition/postcondition implications from self.constraints,
         as those are what we're validating against.
@@ -7353,7 +8657,9 @@ class StaticBuilder:
         and q1 ∈ [0,10], q2 ∈ [10,20], then var1 ∈ [10,30].
         Without codeBlock constraints, var1 would be unconstrained.
         """
-        all_constraints = list(self.domain_constraints) + list(self.codeblock_constraints)
+        all_constraints = (
+            list(self.domain_constraints) + list(self.codeblock_constraints) + self._held_answer_constraints()
+        )
         return self._conjoin(all_constraints)
 
     def compile_conditions(
@@ -7524,13 +8830,115 @@ class StaticBuilder:
         ``(conjunction of those that lowered, whether every one lowered exact,
         each condition's gap: (index, wide items, undecided reads, whether its
         lowering failed))``."""
+        # After the build, an item's own conditions read the versions of its
+        # submission, not the final ones (#1838, ``_enter_submission``). The
+        # walk may ask the item later instead, once a later codeBlock made its
+        # gate true (#2260): its gate is then reachable at its place or later,
+        # ``P@place or P@later``, and every other condition (a postcondition,
+        # its truth) reads the later state as free (``_late_versions``). A
+        # codeBlock ``if`` guard (no blank model) keeps its place.
+        at_submission = self._built and item_id in self._submission_versions
+        late = (
+            at_submission
+            and blank
+            and any(self._late_written(item_id))
+            and any(predicates)
+        )
+        gate = self._gate_predicates(item_id)
+        if (
+            at_submission
+            and blank
+            and kind == "precondition"
+            and predicates == gate
+            and (late or self._code_answered(item_id) is not None)
+        ):
+            # The item's gate: asked at its place, or later (#2260); never
+            # where code answered it first (#2259, ``_place_gate``).
+            formula, exact, gaps = self._place_gate(item_id)
+            if not late:
+                self._uncoded_gates.setdefault(item_id, self._place_gates_uncoded[item_id])
+                return formula, exact, gaps
+            later, _, _ = self._lower_conditions_at(item_id, predicates, kind, blank, late=True)
+            later = And(self._late_candidates[item_id], later)
+            self._uncoded_gates.setdefault(item_id, Or(self._place_gates_uncoded[item_id], later))
+            answered = self._code_answered(item_id)
+            if answered is not None:
+                later = And(Not(answered), later)
+            return Or(formula, later), exact, gaps
+        if not late:
+            return self._lower_conditions_at(item_id, predicates, kind, blank, late=False)
+        # Asked at its place (the gate holds there), the item's other
+        # conditions read that state; asked later, a later one: one in which
+        # a postcondition is accepted, its truth (lowered under the precondition
+        # rule) in every one.
+        formula, exact, gaps = self._lower_conditions_at(item_id, predicates, kind, blank, late=False)
+        if not any(gate):
+            return formula, exact, gaps
+        later, later_exact, later_gaps = self._lower_conditions_at(item_id, predicates, kind, blank, late=True)
+        here = self._place_gate(item_id)[0]
+        candidates = self._late_candidates[item_id]
+        later = And(candidates, later) if kind == "postcondition" else Implies(candidates, later)
+        # A verdict the later state withholds is reported too (#1815).
+        return If(here, formula, later), exact and later_exact, _merge_gaps(gaps, later_gaps)
+
+    def _place_gate(
+        self, item_id: str
+    ) -> tuple[BoolRef, bool, tuple[tuple[int, list[str] | None, list[str] | None, bool], ...]]:
+        """The item's gate at its place (#2260), lowered once and shared by its
+        precondition's and its other conditions' compiles (``_lower_conditions``),
+        so asked-at-its-place reads one state in both; what it mints belongs to
+        no compile, as a blank acceptance's does. The walk never asks an item
+        a codeBlock answered before reaching it (#2259, ``_code_answered``)."""
+        if item_id not in self._place_gates:
+            outer_minting, self._minting = self._minting, None
+            try:
+                formula, exact, gaps = self._lower_conditions_at(
+                    item_id, self._gate_predicates(item_id), "precondition", True, late=False
+                )
+            finally:
+                self._minting = outer_minting
+            self._place_gates_uncoded[item_id] = formula
+            answered = self._code_answered(item_id)
+            if answered is not None:
+                formula = And(Not(answered), formula)
+            self._place_gates[item_id] = (formula, exact, gaps)
+        return self._place_gates[item_id]
+
+    def answered_by_code_only(self, item_id: str) -> bool:
+        """Whether ``item_id`` is never asked only because a codeBlock answers
+        it before the walk reaches it, in every walk where its gate holds
+        (#2259): its gate without that conjunct is satisfiable over the
+        reachability base, and in each such world the code answered it. Such
+        an item has an answer, so it is not unreachable (``code_answered_item``)."""
+        answered = self._code_answered(item_id)
+        if answered is None:
+            return False
+        self.compile_conditions_exactly(item_id, self.item_details[item_id]["preconditions"], kind="precondition")
+        gate = self._uncoded_gates.get(item_id)
+        if gate is None:
+            return False
+        solver = Solver(ctx=self.ctx)
+        solver.add(self.get_reachability_base(), gate)
+        if solver.check() != sat:
+            return False
+        solver.add(Not(answered))
+        return solver.check() == unsat
+
+    def _gate_predicates(self, item_id: str) -> tuple[str, ...]:
+        """The item's effective precondition predicates, as compiled for it."""
+        return tuple(condition.get("predicate", "") for condition in self.item_details[item_id]["preconditions"])
+
+    def _lower_conditions_at(
+        self, item_id: str, predicates: tuple[str, ...], kind: ConditionKind, blank: bool, *, late: bool
+    ) -> tuple[BoolRef, bool, tuple[tuple[int, list[str] | None, list[str] | None, bool], ...]]:
+        """``_lower_conditions`` at the item's place, or with what a later
+        codeBlock may write free (``late``)."""
         compiled_conditions = []
         gaps: list[tuple[int, list[str] | None, list[str] | None, bool]] = []
         exact = True
-        # After the build, an item's own conditions read the versions of its
-        # submission, not the final ones (#1838, ``_enter_submission``).
         at_submission = self._built and item_id in self._submission_versions
-        outer_versions = self._enter_submission(item_id) if at_submission else None
+        outer_versions = self._enter_submission(item_id, late=late) if at_submission else None
+        outer_late, self._lowering_late = self._lowering_late, late
         try:
             for idx, predicate in enumerate(predicates):
                 if predicate:
@@ -7545,6 +8953,7 @@ class StaticBuilder:
                     if failed or (compiled is not None and (wide or undecided)):
                         gaps.append((idx, wide or None, list(undecided) or None, failed))
         finally:
+            self._lowering_late = outer_late
             if outer_versions is not None:
                 self._leave_submission(outer_versions)
 
@@ -7624,8 +9033,11 @@ class StaticBuilder:
             self._predicate_list_none = {
                 item: self._answer_list_none(item, context, choices) for item in none_tested
             }
+            # A variable's ``None`` raises as a skipped item's does; an unbound
+            # one at any read, as evaluating the read raises (#2258).
+            none_reads, unbound_reads = self._variable_raising_reads(tree, context, parents, choices)
             placed, placed_slots, unplaced = self._place_raises(
-                raising, list_raising, slot_raising, choices, parents
+                raising + none_reads, list_raising + unbound_reads, slot_raising, choices, parents
             )
             self._predicate_slot_safe = self._predicate_slot_safe | placed_slots
             waived: list[BoolRef] = []
@@ -7635,6 +9047,12 @@ class StaticBuilder:
                 self._predicate_raising = {}
                 waived, wide = self._waive_unplaced(unplaced, choices)
             loose = self._loose_leaves(unplaced, choices, parents)
+            # A variable's unplaced raise names no item: it is an undecided
+            # read of the variable instead (``inexact_condition``).
+            for read in wide:
+                if read[:1] in ("$", "!"):
+                    self._note_undecided(read[1:])
+            wide = [read for read in wide if read[:1] not in ("$", "!")]
             lowered = self._lower_kleene(tree, context, placed, loose)
             if lowered is None:
                 return None, wide

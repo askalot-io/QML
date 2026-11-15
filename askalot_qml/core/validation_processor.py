@@ -17,7 +17,7 @@ import operator
 import re
 from typing import Any
 
-from askalot_common.i18n import is_supported_locale, require_questionnaire_language
+from askalot_common.i18n import Sentence, is_supported_locale, require_questionnaire_language
 from askalot_common.i18n.language_names import questionnaire_language_name
 from askalot_common.tracing import create_span
 from z3 import And, Not, Solver, sat, unsat
@@ -126,6 +126,20 @@ _COMMENT_ASKS_INSCRIPTION = re.compile(
 #: cleanly, which is why gating on an unasked item with ``!=`` is a sanctioned
 #: idiom and ordering against one is a defect (#659).
 _NONE_UNSAFE_COMPARE_OPS = (ast.Lt, ast.LtE, ast.Gt, ast.GtE)
+
+
+def _syntax_error_detail(source: str, mode: str) -> str | None:
+    """Python's own words for why *source* does not parse, with the line; None if it parses.
+
+    For the ``unsafe_code`` lint, whose reader is the author: the sandbox's
+    refusal names only the line (#2194), and "'(' was never closed" is what
+    tells the author what to fix.
+    """
+    try:
+        ast.parse(source, mode=mode)
+    except SyntaxError as e:
+        return f"{e.msg} (line {e.lineno})"
+    return None
 
 
 def _definitely_assigned(statements: list[ast.stmt]) -> set[str]:
@@ -645,8 +659,27 @@ class ValidationProcessor:
             post_vacuous = classification.get("postcondition", {}).get("vacuous", False)
             post_global = classification.get("postcondition", {}).get("global", {})
 
+            # An item code answers before the walk reaches it, in every walk,
+            # is never asked but has its answer: not unreachable (#2259).
+            if pre_status == "NEVER" and classification.get("precondition", {}).get("code_answered"):
+                issues.append(
+                    {
+                        "item_id": item_id,
+                        "severity": "warning",
+                        "type": "code_answered_item",
+                        "message": (
+                            f"Item '{item_id}' is answered by code before the walk reaches it, "
+                            f"so it is never asked."
+                        ),
+                        "suggestion": (
+                            f"If '{item_id}' should be asked, move the codeBlock that sets "
+                            f"'{item_id}.outcome' after it, or keep it out of the questionnaire's "
+                            f"questions if it only holds a computed value."
+                        ),
+                    }
+                )
             # Unreachable items (NEVER reachable)
-            if pre_status == "NEVER":
+            elif pre_status == "NEVER":
                 issues.append(
                     {
                         "item_id": item_id,
@@ -1158,7 +1191,11 @@ class ValidationProcessor:
 
         Every message is the runner's verbatim text: the author needs to see
         the sandbox's own reason, and paraphrasing it here would give the
-        static path and the runtime path two vocabularies for one refusal.
+        static path and the runtime path two vocabularies for one refusal. The
+        refusal is a ``Sentence``, so its shape is told by its msgid, never by
+        matching its English. A syntax error is the exception: the runner names
+        only its line (Python's text is English and can quote the code, #2194),
+        and the author needs Python's words, so they are read off the unit here.
 
         **A call refusal is worded neutrally, because the runner cannot tell a
         typo from an escape.** ``_check_ast_safety``'s Call-to-Name branch asks
@@ -1205,7 +1242,11 @@ class ValidationProcessor:
         ``issues`` is passed in rather than created here so a partial result
         survives the caller's except branch — refusals already proven stay.
         """
-        from askalot_qml.core.python_runner import PythonRunner
+        from askalot_qml.core.python_runner import (
+            SYNTAX_ERROR_MSGID,
+            UNKNOWN_CALL_MSGID,
+            PythonRunner,
+        )
 
         runner = PythonRunner()
 
@@ -1217,10 +1258,8 @@ class ValidationProcessor:
             "and any item gated on that variable takes the wrong branch."
         )
 
-        def _refuse(owner_id: str, where: str, refusal: str) -> None:
-            syntax_error = re.match(r"Syntax error: (.+)$", refusal)
-            unknown_call = re.match(r"Call to disallowed function: (.+)$", refusal)
-            if syntax_error:
+        def _refuse(owner_id: str, where: str, refusal: Sentence, source: str, mode: str) -> None:
+            if refusal.msgid == SYNTAX_ERROR_MSGID:
                 # Not a refusal at all: the sandbox never got as far as judging
                 # what the code DOES. Saying it "will be refused by the execution
                 # sandbox" and advising the author to use only declared modules
@@ -1228,7 +1267,7 @@ class ValidationProcessor:
                 # not parse.
                 message = (
                     f"'{owner_id}': the {where} is not valid Python — "
-                    f"{syntax_error.group(1)}"
+                    f"{_syntax_error_detail(source, mode) or refusal}"
                 )
                 suggestion = (
                     "Fix the syntax. An unparseable unit is skipped for every "
@@ -1236,11 +1275,11 @@ class ValidationProcessor:
                     "assigns is missing and any item gated on that variable "
                     "takes the wrong branch."
                 )
-            elif unknown_call:
+            elif refusal.msgid == UNKNOWN_CALL_MSGID:
                 # Ambiguous by construction: the runner returns this same string
                 # for a misspelling and for ``__import__``. Say only what holds
                 # of both.
-                name = unknown_call.group(1)
+                name = refusal.variables["name"]
                 message = (
                     f"'{owner_id}': the {where} calls '{name}', which the "
                     f"execution sandbox does not provide."
@@ -1273,7 +1312,7 @@ class ValidationProcessor:
         if code_init:
             refusal = runner.validate_code(code_init)
             if refusal:
-                _refuse("codeInit", "questionnaire codeInit", refusal)
+                _refuse("codeInit", "questionnaire codeInit", refusal, code_init, "exec")
 
         for block in self.state.get_blocks():
             block_id = block.get("id")
@@ -1288,7 +1327,7 @@ class ValidationProcessor:
             if iterate_over:
                 refusal = runner.validate_expr(iterate_over)
                 if refusal:
-                    _refuse(block_id, f"block iterateOver '{iterate_over}'", refusal)
+                    _refuse(block_id, f"block iterateOver '{iterate_over}'", refusal, iterate_over, "eval")
 
             for kind in ("precondition", "postcondition"):
                 for condition in block.get(kind) or []:
@@ -1297,7 +1336,7 @@ class ValidationProcessor:
                         continue
                     refusal = runner.validate_expr(predicate)
                     if refusal:
-                        _refuse(block_id, f"block {kind} '{predicate}'", refusal)
+                        _refuse(block_id, f"block {kind} '{predicate}'", refusal, predicate, "eval")
 
         for item in self.state.get_all_items():
             item_id = item.get("id")
@@ -1307,7 +1346,7 @@ class ValidationProcessor:
             if body:
                 refusal = runner.validate_code(body)
                 if refusal:
-                    _refuse(item_id, "codeBlock", refusal)
+                    _refuse(item_id, "codeBlock", refusal, body, "exec")
             for kind in ("precondition", "postcondition"):
                 for condition in item.get(kind) or []:
                     predicate = (condition or {}).get("predicate")
@@ -1315,7 +1354,7 @@ class ValidationProcessor:
                         continue
                     refusal = runner.validate_expr(predicate)
                     if refusal:
-                        _refuse(item_id, f"{kind} '{predicate}'", refusal)
+                        _refuse(item_id, f"{kind} '{predicate}'", refusal, predicate, "eval")
 
         return issues
 

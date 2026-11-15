@@ -183,7 +183,8 @@ This test suite verifies the StaticBuilder class which provides:
 - An answered matrix's empty cell (``unanswered@m@r@c``) passes ``!= 9`` and
   fails ``> 2``; a Range cell's ``.low`` raises on it; comprehension indices
   pick their own cell
-- A code-written or scoped matrix gets no new choice and keeps its verdict
+- A scoped matrix gets no new choice and keeps its verdict; a code-written
+  one keeps its whole-answer skip and blank choices, no cell choice (#2256)
 - The witness shows an empty cell, and a matrix read as ``None``, as ``None``
 
 ### An own postcondition is judged on answers (#1839)
@@ -771,6 +772,38 @@ class TestStaticBuilderDependencyGraph(unittest.TestCase):
         graph = builder.get_dependency_graph()
 
         self.assertIn("q1", graph["q2"])
+
+    # Writer → Item Dependencies (via a codeBlock store into an answer)
+
+    def test_a_cell_store_adds_the_edge_a_whole_answer_store_adds(self):
+        """A store into one cell, a row, or with `+=`, makes the writer depend on
+        what the value and the indices read, as `m.outcome = [[..]]` does (#2301):
+        without the edge the walk may ask the writer before the item it reads."""
+        matrix = {
+            "id": "m",
+            "kind": "MatrixQuestion",
+            "rows": ["R1", "R2"],
+            "columns": ["C1", "C2"],
+            "input": {"control": "Radio", "labels": {1: "A", 2: "B"}},
+        }
+        stores = {
+            "whole": "m.outcome = [[q1.outcome, 1], [1, 1]]",
+            "cell": "m.outcome[0][0] = q1.outcome",
+            "row": "m.outcome[0] = [q1.outcome, 1]",
+            "augmented": "m.outcome[0][0] += q1.outcome",
+            "index": "m.outcome[q1.outcome][0] = 1",
+            "widened": "for i in [0]:\n    m.outcome[i][0] = q1.outcome",
+            "widened augmented": "for i in [0]:\n    m.outcome[i][0] += q1.outcome",
+            "whole augmented": "m.outcome += [[q1.outcome, 1]]",
+        }
+        for shape, code in stores.items():
+            with self.subTest(shape):
+                state = create_questionnaire([{"id": "q1"}, matrix, {"id": "w", "codeBlock": code}])
+                graph = StaticBuilder(state).get_dependency_graph()
+                self.assertIn("q1", graph["w"])
+                if "augmented" in shape:
+                    # ``+=`` reads the answer it writes.
+                    self.assertIn("m", graph["w"])
 
     # Item → Variable Dependencies (via precondition)
 
@@ -4328,7 +4361,8 @@ class TestGatedMatrixSkip(unittest.TestCase):
     condition. A gated matrix is ``None`` when skipped, so a cell read raises
     (a precondition fails); an ungated one left blank makes its leaf unknown;
     an answered matrix may hold a ``None`` cell (``unanswered@m@r@c``), read
-    the #1769 way. A scoped or code-written matrix gets no new choice."""
+    the #1769 way. A scoped matrix gets no new choice; a code-written one
+    keeps its whole-answer choices but no cell choice (#2256)."""
 
     def _gate(self, builder: StaticBuilder, predicate: str):
         return builder.compile_conditions("q_c", [{"predicate": predicate}], kind="precondition")
@@ -4431,14 +4465,17 @@ class TestGatedMatrixSkip(unittest.TestCase):
         self.assertTrue(result.satisfiable)
         self.assertIsNone(result.witness["m.outcome"])
 
-    def test_a_code_written_matrix_gets_no_new_choice(self):
+    def test_a_code_written_matrix_keeps_its_whole_answer_choices(self):
+        """#2256: a gated matrix a codeBlock writes is still ``None`` where it
+        was skipped or left blank, so a cell read raises or is unknown there;
+        only the cell keeps no ``None`` of its own (a write can fill it)."""
         predicate = "m.outcome[0][0] != 9"
         builder = _matrix_gated(predicate, gated=True, matrix_code="m.outcome[0][0] = 1")
         self._gate(builder, predicate)
 
-        self.assertEqual(_status(builder), "ALWAYS")
-        self.assertIsNone(builder.skip_choice("m"))
-        self.assertIsNone(builder.blank_choice("m"))
+        self.assertEqual(_status(builder), "CONDITIONAL")
+        self.assertIsNotNone(builder.skip_choice("m"))
+        self.assertIsNotNone(builder.blank_choice("m"))
         self.assertIsNone(builder.slot_choice("m", 0, 0))
 
     def test_a_scoped_matrix_gets_no_new_choice(self):
@@ -5532,13 +5569,15 @@ class TestCompilesAfterTheBuildAreMemoised(unittest.TestCase):
 
     def _lowerings_after_the_build(self, fixture: str) -> tuple[ValidationProcessor, dict, list]:
         processor = ValidationProcessor(self._state(fixture))
-        lowered: dict[tuple[str, str, str, bool, str | None], int] = {}
+        lowered: dict[tuple[str, str, str, bool, str | None, bool], int] = {}
         original = StaticBuilder._lower_predicate
 
         def spy(builder, tree, context, kind, *, blank=True):
             # A blank acceptance lowers an item's postcondition with its own
-            # outcome None (``_own_none``): another lowering, kept apart.
-            key = (context, kind, ast.unparse(tree), blank, builder._own_none)
+            # outcome None (``_own_none``), and a condition read in the state
+            # after its place (``_lowering_late``, #2260) is another lowering
+            # too: each kept apart.
+            key = (context, kind, ast.unparse(tree), blank, builder._own_none, builder._lowering_late)
             lowered[key] = lowered.get(key, 0) + 1
             return original(builder, tree, context, kind, blank=blank)
 

@@ -8,11 +8,15 @@ reached by no run, a postcondition it calls INFEASIBLE must be met by no
 answer, and an item it calls ALWAYS must be skipped by no run unless it says
 the verdict is inexact or skipped. The oracle is the real runtime
 (``FlowProcessor``): it answers each item with every value of a small domain
-(two codes, three numbers, two texts, four matrix fills), branching on a
-copy of the state, so every combination of those answers is walked.
+(two codes, three numbers, two texts, six matrix fills, two of them with
+one cell left unanswered, so a blank cell sits beside one a codeBlock
+writes), branching on a copy of the state, so every combination of those
+answers is walked.
 
-The generator draws what the string model has to get right: Radio, Editbox,
-Textarea and matrix answers; codeInit and codeBlock stores of text, ``None``,
+The generator draws what the string model has to get right, and the walk
+rules the validator follows (D123: variables that start ``None`` or unbound,
+stores into items the walk asks later, gates a later codeBlock makes true):
+Radio, Editbox, Textarea and matrix answers; codeInit and codeBlock stores of text, ``None``,
 numbers, calls (``str``, ``sorted(...)[0]``), aliases, comprehensions and
 ternaries, into variables, answers, matrix cells and rows; and conditions
 comparing them with ``==`` / ``!=``, ``in``, orderings, chains and truth
@@ -43,7 +47,11 @@ _CONTROLS: dict[str, tuple[dict[str, Any], list[Any]]] = {
     "radio": ({"control": "Radio", "labels": {1: "one", 2: "two"}}, [1, 2]),
     "editbox": ({"control": "Editbox", "min": 0, "max": 2}, [0, 1, 2]),
     "textarea": ({"control": "Textarea"}, ["a", "zz"]),
-    "matrix": ({"control": "Radio", "labels": {1: "one", 2: "two"}}, [[[1], [1]], [[1], [2]], [[2], [1]], [[2], [2]]]),
+    # A cell left unanswered is ``None`` beside an answered one (#2300).
+    "matrix": (
+        {"control": "Radio", "labels": {1: "one", 2: "two"}},
+        [[[1], [1]], [[1], [2]], [[2], [1]], [[2], [2]], [[1], [None]], [[None], [2]]],
+    ),
 }
 
 #: The findings that say an ALWAYS verdict is withheld or may not hold: the
@@ -133,7 +141,7 @@ class _Draw:
         shape = self.rng.randrange(10)
         read = self.answer_operand(visible)
         if shape <= 2 or read is None:
-            return self.pick(_LITERALS)
+            return self.pick([*_LITERALS, "None"])
         if shape == 3:
             return f"str({read})"
         if shape == 4:
@@ -149,6 +157,8 @@ class _Draw:
         return f"[k for k in [{read}]][0]"
 
     def target(self, visible: list[str]) -> str:
+        """A store target: a variable, or an answer of ``visible`` (which may
+        hold items the walk asks later: code answers them first, #2259)."""
         stores = [item for item in visible if self.kinds[item] != "textarea"]
         if stores and self.rng.random() < 0.4:
             item = self.pick(stores)
@@ -158,27 +168,30 @@ class _Draw:
         return self.pick(_VARIABLES)
 
     def answer_value(self, item: str, visible: list[str]) -> str:
-        """A value stored into ``item``'s answer that may be text: a string
-        literal, ``None``, a call's result, or a ternary of a string and a
-        number of the item's domain. A store that is only ever a number is
-        left out until the model holds one: the model asserts it on the
-        answer's one Int, against the item's own postcondition and any other
-        write (#2257), and a number outside the domain contradicts it (#2255)."""
-        numbers = ["0", "1", "2"] if self.kinds[item] == "editbox" else ["1", "2"]
+        """A value stored into ``item``'s answer: a string literal, ``None``,
+        a call's result, a ternary of a string and a number, or only ever a
+        number (a literal, another answer, or one plus it). A number may lie
+        outside the item's domain (``0`` on a Radio): the answer a codeBlock
+        writes is a version of its own, read after the write and never by the
+        item's own conditions (#2257, #2255)."""
         read = self.answer_operand(visible)
-        shape = self.rng.randrange(4)
+        shape = self.rng.randrange(6)
         if shape == 0:
             return self.pick([*_TEXTS, "None"])
         if shape == 1 and read is not None:
             return f"str({read})"
         if shape == 2:
             return 'sorted(["a", "b"])[0]'
-        branches = [self.pick(_TEXTS), self.pick(numbers)]
+        if shape == 4:
+            return self.pick(_NUMBERS)
+        if shape == 5 and read is not None:
+            return self.pick([read, f"{read} + 1"])
+        branches = [self.pick(_TEXTS), self.pick(_NUMBERS)]
         self.rng.shuffle(branches)
         return f"{branches[0]} if {self.atom(visible)} else {branches[1]}"
 
-    def store(self, visible: list[str]) -> str:
-        target = self.target(visible)
+    def store(self, visible: list[str], writable: list[str] | None = None) -> str:
+        target = self.target(writable if writable is not None else visible)
         if target in _VARIABLES:
             return f"{target} = {self.value(visible)}"
         value = self.answer_value(target.split(".")[0], visible)
@@ -186,17 +199,17 @@ class _Draw:
             value = f"[{value}]"  # a whole matrix row
         return f"{target} = {value}"
 
-    def code(self, visible: list[str]) -> str:
+    def code(self, visible: list[str], writable: list[str] | None = None) -> str:
         lines: list[str] = []
         for _ in range(self.rng.randint(1, 2)):
             if self.rng.random() < 0.35:
                 lines.append(f"if {self.condition(visible)}:")
-                lines.append(f"    {self.store(visible)}")
+                lines.append(f"    {self.store(visible, writable)}")
                 if self.rng.random() < 0.4:
                     lines.append("else:")
-                    lines.append(f"    {self.store(visible)}")
+                    lines.append(f"    {self.store(visible, writable)}")
             else:
-                lines.append(self.store(visible))
+                lines.append(self.store(visible, writable))
         return "\n".join(lines)
 
 
@@ -214,10 +227,10 @@ def case(seed: int) -> Case:
         kinds[item] = rng.choice(options)
     draw = _Draw(rng, kinds)
     doc: dict[str, Any] = {"title": f"fuzz {seed}", "blocks": [{"id": "b1", "kind": "Group", "title": "B"}], "items": []}
-    # Both variables are bound from the start and never hold ``None``: an
-    # ordering or arithmetic on an unbound or ``None`` variable raises at
-    # runtime, which the model does not hold for numbers either (#2258).
-    init = [f"{var} = {draw.pick(_LITERALS)}" for var in _VARIABLES]
+    # A variable may start ``None`` or unbound (codeInit leaves it out): an
+    # ordering or arithmetic on ``None``, and any read of an unbound name,
+    # raises at runtime, which the model follows by condition kind (#2258).
+    init = [f"{var} = {draw.pick([*_LITERALS, 'None'])}" for var in _VARIABLES if rng.random() < 0.8]
     init += [draw.store([]) for _ in range(rng.randint(0, 1))]
     if init:
         doc["codeInit"] = "\n".join(init)
@@ -230,70 +243,47 @@ def case(seed: int) -> Case:
         else:
             entry["kind"] = "Question"
         earlier = ids[:i]
-        # A matrix is never gated: a cell read of a gated matrix a codeBlock
-        # writes is #2256's, which the model does not hold yet.
-        if i > 0 and kinds[item] != "matrix" and rng.random() < 0.7:
+        if i > 0 and rng.random() < 0.7:
             entry["precondition"] = [{"predicate": draw.condition(earlier)}]
         if kinds[item] != "matrix" and rng.random() < 0.3:
             own = f"{item}.outcome"
             entry["postcondition"] = [{"predicate": draw.pick([f"{own} != {draw.pick(_LITERALS)}", f"{own} == {draw.operand(earlier)}", draw.condition([*earlier, item]).replace(draw.answer_operand([item]) or own, own)])}]
         if kinds[item] != "textarea" and rng.random() < 0.5:
-            entry["codeBlock"] = draw.code(ids[: i + 1])
+            entry["codeBlock"] = draw.code(ids[: i + 1], ids)
         doc["items"].append(entry)
         answers[item] = list(domain)
     _keep_to_the_walk(doc)
     return Case(seed, doc, answers)
 
 
-def _uses(source: str, mode: str) -> tuple[set[str], set[str], set[str], set[str]]:
-    """``(answers read, answers stored, variables read, variables stored)``."""
-    reads, stores, names, assigned = set(), set(), set(), set()
-    for node in ast.walk(ast.parse(source, mode=mode)):
-        if isinstance(node, ast.Attribute) and node.attr == "outcome" and isinstance(node.value, ast.Name):
-            reads.add(node.value.id)
-        if isinstance(node, (ast.Attribute, ast.Subscript)) and isinstance(node.ctx, ast.Store):
-            base = node
-            while isinstance(base, (ast.Attribute, ast.Subscript)):
-                base = base.value
-            if isinstance(base, ast.Name):
-                stores.add(base.id)
-        if isinstance(node, ast.Name):
-            (assigned if isinstance(node.ctx, ast.Store) else names).add(node.id)
-    return reads, stores, names, assigned
+def _answer_reads(source: str) -> set[str]:
+    """The items whose answer the condition ``source`` reads."""
+    return {
+        node.value.id
+        for node in ast.walk(ast.parse(source, mode="eval"))
+        if isinstance(node, ast.Attribute) and node.attr == "outcome" and isinstance(node.value, ast.Name)
+    }
 
 
 def _keep_to_the_walk(doc: dict[str, Any]) -> None:
-    """Drop what makes the walk's order, not text, decide a verdict, until
-    nothing is left to drop: a condition reading an answer asked after its
-    item, or a variable a codeBlock after it writes (the runtime asks a
-    skipped item again once that write makes its gate true, #2260), and a
-    codeBlock that reads or stores an answer asked after it (an answer code
-    stores before the item is reached is never asked, #2259). The order is
-    the runtime's own (``navigation_path``)."""
+    """Drop a condition reading an answer asked after its item, until none is
+    left (dropping one can move the walk's order, ``navigation_path``): the
+    model reads such an answer as given, the runtime as not asked yet. What a
+    later codeBlock writes (#2260) and what code stores before an item is
+    asked (#2259) stay in."""
     for _ in range(6):
         state = QMLState(copy.deepcopy(doc))
         FlowProcessor(state)
         position = {item_id: i for i, item_id in enumerate(state.get_navigation_path())}
-        items = {item["id"]: item for item in doc["items"]}
-        writes = {
-            item_id: _uses(item["codeBlock"], "exec")[3] for item_id, item in items.items() if item.get("codeBlock")
-        }
         changed = False
-        for item_id, item in items.items():
-            later_writes = set().union(*(names for other, names in writes.items() if position[other] > position[item_id]))
+        for item in doc["items"]:
             for kind in ("precondition", "postcondition"):
                 for condition in item.get(kind) or []:
-                    reads, _, names, _ = _uses(condition["predicate"], "eval")
-                    late = any(position.get(r, -1) > position[item_id] for r in reads)
-                    if late or names & later_writes:
+                    reads = _answer_reads(condition["predicate"])
+                    if any(position.get(r, -1) > position[item["id"]] for r in reads):
                         item.pop(kind)
                         changed = True
                         break
-            if item.get("codeBlock"):
-                reads, stores, _, _ = _uses(item["codeBlock"], "exec")
-                if any(position.get(r, -1) > position[item_id] for r in reads | stores):
-                    item.pop("codeBlock")
-                    changed = True
         if not changed:
             return
 

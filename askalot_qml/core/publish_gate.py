@@ -48,6 +48,7 @@ ISSUE_TYPE_LABELS: dict[str, str] = {
     "load_error": N_("The questionnaire could not be loaded"),
     "validation_error": N_("The logic check could not run"),
     "unreachable_item": N_("Item can never be shown"),
+    "code_answered_item": N_("Item answered by code, so never asked"),
     "infeasible_postcondition": N_("Answer check that no answer can pass"),
     "tautological_postcondition": N_("Answer check that every answer passes"),
     "globally_false_postcondition": N_("Answer check that always fails"),

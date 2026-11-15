@@ -33,6 +33,9 @@ msgid_plural "%(num)d more are not listed."
 msgstr[0] "%(num)d weiterer Fehler ist nicht aufgeführt."
 msgstr[1] "%(num)d weitere Fehler sind nicht aufgeführt."
 
+msgid "'pow' passed on as a function"
+msgstr "das als Funktion übergebene 'pow'"
+
 msgid "A 'none' option that can be ticked with others"
 msgstr "Eine „Keine“-Option, die zusammen mit anderen angekreuzt werden kann"
 
@@ -43,6 +46,21 @@ msgid ""
 msgstr ""
 "Eine Anzeigebedingung liest Antworten als nie gegeben, weil eine Änderung"
 " früherer Antworten sie aus dem aktuellen Pfad genommen hat: %(items)s"
+
+#, python-format
+msgid "Access to disallowed attribute: %(attr)s"
+msgstr "Zugriff auf ein nicht erlaubtes Attribut: %(attr)s"
+
+#, python-format
+msgid ""
+"Access to disallowed attribute: %(module)s.%(member)s. This sandbox "
+"declares which members of %(module)s a questionnaire may use, so that an "
+"interpreter upgrade cannot widen it silently."
+msgstr ""
+"Zugriff auf ein nicht erlaubtes Attribut: %(module)s.%(member)s. Diese "
+"Sandbox legt selbst fest, welche Elemente von %(module)s ein Fragebogen "
+"verwenden darf, damit ein Update des Interpreters den Umfang nicht "
+"unbemerkt erweitert."
 
 #, python-format
 msgid ""
@@ -75,6 +93,25 @@ msgstr "Antwortprüfung, die jede Antwort besteht"
 
 msgid "Answer check that no answer can pass"
 msgstr "Antwortprüfung, die keine Antwort bestehen kann"
+
+#, python-format
+msgid "Call to disallowed attribute: %(attr)s"
+msgstr "Aufruf eines nicht erlaubten Attributs: %(attr)s"
+
+#, python-format
+msgid ""
+"Call to disallowed attribute: %(module)s.%(member)s. This sandbox "
+"declares which members of %(module)s a questionnaire may use, so that an "
+"interpreter upgrade cannot widen it silently."
+msgstr ""
+"Aufruf eines nicht erlaubten Attributs: %(module)s.%(member)s. Diese "
+"Sandbox legt selbst fest, welche Elemente von %(module)s ein Fragebogen "
+"verwenden darf, damit ein Update des Interpreters den Umfang nicht "
+"unbemerkt erweitert."
+
+#, python-format
+msgid "Call to disallowed function: %(name)s"
+msgstr "Aufruf einer nicht erlaubten Funktion: %(name)s"
 
 msgid "Cannot navigate to this item"
 msgstr "Zu dieser Frage kann nicht navigiert werden"
@@ -124,6 +161,10 @@ msgstr ""
 " nicht erfüllt (das davon abhängige Item wird übersprungen). Gelesene "
 "Items, die angezeigt und nicht beantwortet wurden oder aus einem solchen "
 "berechnet sind: %(items)s"
+
+#, python-format
+msgid "Disallowed node type: %(node)s"
+msgstr "Nicht erlaubtes Sprachkonstrukt: %(node)s"
 
 msgid "Display condition could not be evaluated"
 msgstr "Anzeigebedingung konnte nicht ausgewertet werden"
@@ -179,6 +220,9 @@ msgstr ""
 #, python-format
 msgid "Item %(item)s not found in questionnaire state"
 msgstr "Item %(item)s im Fragebogenzustand nicht gefunden"
+
+msgid "Item answered by code, so never asked"
+msgstr "Item wird per Code beantwortet und daher nie gefragt"
 
 msgid "Item can never be shown"
 msgstr "Item kann nie angezeigt werden"
@@ -246,6 +290,15 @@ msgstr[1] ""
 "Veröffentlichung abgelehnt: %(num)d Fehler müssen zuerst behoben werden: "
 "%(issues)s."
 
+#, python-format
+msgid ""
+"QML arithmetic is whole numbers: %(construct)s can produce a fraction; "
+"use '//' (floor division) or scale first, for example 100 * a // b"
+msgstr ""
+"QML rechnet nur mit ganzen Zahlen: %(construct)s kann einen Bruch "
+"ergeben; verwenden Sie '//' (ganzzahlige Division) oder skalieren Sie "
+"zuerst hoch, zum Beispiel 100 * a // b"
+
 msgid "Questionnaire-level condition that nothing reads"
 msgstr "Bedingung auf Fragebogenebene, die nie ausgewertet wird"
 
@@ -260,6 +313,11 @@ msgstr "Liste der wiederholten Frage nennt nicht deklarierte Optionen"
 
 msgid "Repeated-question subject that cannot be answered"
 msgstr "Gegenstand einer wiederholten Frage, der nicht beantwortet werden kann"
+
+msgid "Something went wrong on our side. Please try again in a moment."
+msgstr ""
+"Bei uns ist ein Fehler aufgetreten. Bitte versuchen Sie es gleich noch "
+"einmal."
 
 msgid "Supplied value ignored: it fails the answer check"
 msgstr "Übergebener Wert ignoriert: Er besteht die Antwortprüfung nicht"
@@ -293,6 +351,10 @@ msgstr "Umfrage fortgesetzt, aber alle Fragen sind bereits beantwortet"
 
 msgid "Survey resumed successfully"
 msgstr "Umfrage erfolgreich fortgesetzt"
+
+#, python-format
+msgid "Syntax error on line %(line)s"
+msgstr "Syntaxfehler in Zeile %(line)s"
 
 #, python-format
 msgid ""
@@ -414,6 +476,10 @@ msgstr ""
 "(%(error_type)s). Sie gilt als nicht erfüllt (das davon abhängige Item "
 "wird übersprungen)."
 
+#, python-format
+msgid "Validation error (%(error_type)s)"
+msgstr "Prüffehler (%(error_type)s)"
+
 msgid "Variable assigned to itself"
 msgstr "Variable sich selbst zugewiesen"
 
@@ -428,4 +494,11 @@ msgstr "Variable, die nur eine andere kopiert"
 
 msgid "Wording checks not run for this language"
 msgstr "Formulierungsprüfungen für diese Sprache nicht ausgeführt"
+
+msgid "a power by a negative number"
+msgstr "eine Potenz mit negativem Exponenten"
+
+#, python-format
+msgid "the number %(value)s"
+msgstr "die Zahl %(value)s"
 

@@ -25,6 +25,10 @@ A read of a whole matrix answer or a whole row (``m.outcome == 1``,
 ``m.outcome[0] == [1, 2]``) has no variable to lower to and is a coverage gap
 carrying ``matrix_items`` (#1781); a cell read and a None test record none.
 
+A cell read of a matrix a codeBlock writes still raises on the whole answer's
+skip and is unknown on its blank (#2256), so a gate reading it is
+CONDITIONAL, as every walk of the runtime agrees.
+
 Reference:
 - ``shared/modules/askalot_ai/askalot_ai/agents/designer/.claude/skills/qml-syntax/matrix-constraint-patterns.md``
 - ``shared/modules/askalot_qml/askalot_qml/z3/static_builder.py``
@@ -255,6 +259,65 @@ class TestWholeMatrixReadsAreGaps:
         assert len(issues) == 1, issues
         assert "MatrixQuestion 'impossible_budget'" in issues[0]["message"]
         assert "m.outcome[j][k]" in issues[0]["suggestion"]
+
+
+
+@pytest.mark.integration
+@pytest.mark.z3
+class TestCodeWrittenGatedMatrixCellRead:
+    """A gated matrix a codeBlock writes is still ``None`` where its gate
+    skipped it (#2256): a cell read of it raises at runtime (``None[1]``), so
+    a gate reading one is not ALWAYS. Walked through the runtime too."""
+
+    @staticmethod
+    def _judge(matrix_gate: str | None):
+        """``a`` Textarea; ``b`` a 2 x 1 Radio matrix whose codeBlock writes
+        one cell, gated on ``matrix_gate``; ``c`` gated on another cell of
+        ``b``. Checked against every walk of the runtime first."""
+        from askalot_qml.core.validation_processor import ValidationProcessor
+
+        from tests.helpers.soundness_fuzz import unsound
+
+        radio = {"control": "Radio", "labels": {1: "one", 2: "two"}}
+        matrix = {
+            "id": "b",
+            "kind": "MatrixQuestion",
+            "rows": ["r1", "r2"],
+            "columns": ["c1"],
+            "input": radio,
+            "codeBlock": "b.outcome[0][0] = 1",
+        }
+        if matrix_gate is not None:
+            matrix["precondition"] = [{"predicate": matrix_gate}]
+        items = [
+            {"id": "a", "kind": "Question", "input": {"control": "Textarea"}},
+            matrix,
+            {"id": "c", "kind": "Question", "input": radio, "precondition": [{"predicate": "b.outcome[1][0] != 7"}]},
+        ]
+        doc = {
+            "title": "written matrix",
+            "blocks": [{"id": "b1", "kind": "Group", "title": "B"}],
+            "items": [{"blockId": "b1", "title": item["id"], **item} for item in items],
+        }
+        assert unsound(doc) == []
+        processor = ValidationProcessor(QMLState(doc))
+        return processor.get_item_classifications(), processor.engine.static_builder
+
+    def test_a_cell_read_of_a_skipped_written_matrix_is_not_always(self):
+        """Fuzzer seed 5119's shape: ``b``'s gate never holds, so every walk
+        skips ``b`` and then ``c``: the read raises on ``b``'s skip."""
+        classifications, builder = self._judge('a.outcome == "never typed"')
+
+        assert classifications["c"]["precondition"]["status"] == "CONDITIONAL"
+        assert builder.skip_choice("b") is not None
+
+    def test_a_cell_read_of_a_blank_written_matrix_is_not_always(self):
+        """Ungated, ``b`` may be submitted blank: its codeBlock then raises
+        (``None[0]``) and ``c``'s leaf reads it unknown, so ``c`` is skipped."""
+        classifications, builder = self._judge(None)
+
+        assert classifications["c"]["precondition"]["status"] == "CONDITIONAL"
+        assert builder.blank_choice("b") is not None
 
 
 if __name__ == "__main__":

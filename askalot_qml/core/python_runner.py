@@ -1,9 +1,22 @@
+"""The sandbox QML author code runs in: AST validation, then ``exec`` / ``eval``.
+
+Every refusal the AST check returns is a ``Sentence`` (#2194): it IS its
+English text, so the loader's error, the logs, the validation lints and
+``CodeRefused``'s message read exactly what they always read, and it carries a
+msgid, so a survey warning that names the refusal (``flow_processor``) reads in
+the page's language whole, not as a translated sentence around an English
+clause. A refusal is built from the author's code alone, never a value and
+never Python's own error text (English, and for a syntax error a quote of the
+code): a syntax error names its line, any other validation fault its class.
+"""
+
 import ast
 import functools
 import re
 from types import SimpleNamespace
 from typing import Any
 
+from askalot_common.i18n import N_, Sentence
 from askalot_common.profiling import profile_block
 
 
@@ -35,10 +48,11 @@ class CodeRefused(ValueError):
     ``reason`` is the refusal's own wording, built from the author's code alone
     (``_check_ast_safety`` reads the syntax tree, never a value), so a warning
     may carry it where an exception's text, which can quote a respondent's
-    answer, may not (#2190).
+    answer, may not (#2190). It is a ``Sentence``, so that warning translates
+    it too (#2194).
     """
 
-    def __init__(self, what: str, reason: str):
+    def __init__(self, what: str, reason: Sentence):
         super().__init__(f"{what}: {reason}")
         self.reason = reason
 
@@ -62,6 +76,15 @@ _FRACTIONAL_MEMBERS: frozenset[tuple[str, str]] = frozenset(
     )]
 )
 
+#: The refusals a reader tells apart by msgid (the ``unsafe_code`` lint): code
+#: that does not parse, and a call to a name the sandbox does not bind, which a
+#: typo and an escape both are.
+SYNTAX_ERROR_MSGID = N_("Syntax error on line %(line)s")
+UNKNOWN_CALL_MSGID = N_("Call to disallowed function: %(name)s")
+
+#: The rewrite every whole-number refusal names. The sandbox's own refusal
+#: (``_check_ast_safety``) spells it inside its msgid, which must be a literal
+#: for the catalog; the loader's and the runtime's English messages use this.
 WHOLE_NUMBER_FIX = "use '//' (floor division) or scale first, for example 100 * a // b"
 
 
@@ -88,7 +111,9 @@ def _pow_call_argument(node: ast.Call, position: int, keyword: str) -> ast.AST |
 
 def fractional_construct(tree: ast.AST) -> str | None:
     """The first construct in *tree* that can produce a non-integer, described
-    for an author, or None (#1813).
+    for an author, or None (#1813). A description in words is a ``Sentence``,
+    so a refusal naming it translates it (#2194); a code token (``'/'``,
+    ``'float()'``, ``'math.sqrt'``) is plain text, the same in every language.
 
     QML arithmetic is whole numbers: every answer is whole (D90) and the Z3
     model holds every value as an Int, so a fraction is refused where author
@@ -106,19 +131,19 @@ def fractional_construct(tree: ast.AST) -> str | None:
             if isinstance(node.op, ast.Div):
                 return "'/'"
             if isinstance(node.op, ast.Pow) and _negated_exponent(node.right if isinstance(node, ast.BinOp) else node.value):
-                return "a power by a negative number"
+                return Sentence("a power by a negative number")
         elif isinstance(node, ast.Constant) and type(node.value) in (float, complex):
-            return f"the number {node.value!r}"
+            return Sentence("the number %(value)s", value=repr(node.value))
         elif isinstance(node, ast.Name):
             if node.id in ("float", "complex"):
                 return f"'{node.id}()'"
             if node.id == "pow" and id(node) not in callees:
-                return "'pow' passed on as a function"
+                return Sentence("'pow' passed on as a function")
         elif isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id == "pow":
             modulus = _pow_call_argument(node, 2, "mod")
             modular = modulus is not None and not (isinstance(modulus, ast.Constant) and modulus.value is None)
             if not modular and _negated_exponent(_pow_call_argument(node, 1, "exp")):
-                return "a power by a negative number"
+                return Sentence("a power by a negative number")
         elif (
             isinstance(node, ast.Attribute)
             and isinstance(node.value, ast.Name)
@@ -169,8 +194,8 @@ class PythonRunner:
         safe_print(*args, **kwargs): A wrapper around the built-in print function that prefixes output.
         run_code(code: str, **kwargs) -> dict: Safely executes Python code string in restricted environment.
         eval_expr(expr: str, **kwargs) -> bool: Safely evaluates Python expression and returns boolean result.
-        validate_code(code: str) -> Optional[str]: Validates code for safety using AST analysis.
-        validate_expr(expr: str) -> Optional[str]: Validates expression for safety using AST analysis.
+        validate_code(code: str) -> Optional[Sentence]: Validates code for safety using AST analysis.
+        validate_expr(expr: str) -> Optional[Sentence]: Validates expression for safety using AST analysis.
     Example:
         runner = PythonRunner()
         result = runner.run_code("x = 1 + 1")
@@ -375,7 +400,7 @@ class PythonRunner:
         # Also print to console for debugging
         print("print:", output_str, **kwargs)
 
-    def validate_code(self, code: str) -> str | None:
+    def validate_code(self, code: str) -> Sentence | None:
         """
         Validate code for safety using AST analysis.
 
@@ -383,20 +408,11 @@ class PythonRunner:
             code: The Python code to validate
 
         Returns:
-            None if the code is safe, or an error message if unsafe
+            None if the code is safe, or the refusal (a ``Sentence``) if unsafe
         """
-        try:
-            # Parse the code into an AST
-            tree = ast.parse(code)
+        return self._validate(code, "exec")
 
-            # Check for disallowed constructs
-            return self._check_ast_safety(tree)
-        except SyntaxError as e:
-            return f"Syntax error: {e}"
-        except Exception as e:
-            return f"Validation error: {e}"
-
-    def validate_expr(self, expr: str) -> str | None:
+    def validate_expr(self, expr: str) -> Sentence | None:
         """
         Validate expression for safety using AST analysis.
 
@@ -404,20 +420,32 @@ class PythonRunner:
             expr: The Python expression to validate
 
         Returns:
-            None if the expression is safe, or an error message if unsafe
+            None if the expression is safe, or the refusal (a ``Sentence``) if unsafe
+        """
+        return self._validate(expr, "eval")
+
+    def _validate(self, source: str, mode: str) -> Sentence | None:
+        """Parse *source* in *mode* and judge it; the refusal, or None.
+
+        A parse failure names its line, never Python's text: that is English,
+        and it can quote the code, so a warning naming the refusal could not be
+        translated (#2194). The validation lint, whose reader is the author,
+        reads the detail off the code itself (``ValidationProcessor``). A parse
+        failure with no line (a NUL byte, a ``SyntaxError`` without ``lineno``)
+        and any fault in the judging itself name the class instead, so neither
+        validator ever raises.
         """
         try:
-            # Parse the expression into an AST
-            tree = ast.parse(expr, mode="eval")
-
-            # Check for disallowed constructs
-            return self._check_ast_safety(tree)
+            return self._check_ast_safety(ast.parse(source, mode=mode))
         except SyntaxError as e:
-            return f"Syntax error: {e}"
-        except Exception as e:
-            return f"Validation error: {e}"
+            if e.lineno is not None:
+                return Sentence(SYNTAX_ERROR_MSGID, line=e.lineno)
+            error_type = type(e).__name__
+        except Exception as e:  # noqa: BLE001 - a RecursionError, a MemoryError
+            error_type = type(e).__name__
+        return Sentence("Validation error (%(error_type)s)", error_type=error_type)
 
-    def _check_ast_safety(self, tree: ast.AST) -> str | None:
+    def _check_ast_safety(self, tree: ast.AST) -> Sentence | None:
         """
         Check if an AST is safe to execute.
 
@@ -425,18 +453,19 @@ class PythonRunner:
             tree: The AST to check
 
         Returns:
-            None if the tree is safe, or an error message if unsafe
+            None if the tree is safe, or the refusal (a ``Sentence``) if unsafe
         """
         fractional = fractional_construct(tree)
         if fractional:
-            return (
-                f"QML arithmetic is whole numbers: {fractional} can produce a "
-                f"fraction; {WHOLE_NUMBER_FIX}"
+            return Sentence(
+                "QML arithmetic is whole numbers: %(construct)s can produce a fraction; "
+                "use '//' (floor division) or scale first, for example 100 * a // b",
+                construct=fractional,
             )
         for node in ast.walk(tree):
             # Check node type
             if type(node) in self._forbidden_nodes:
-                return f"Disallowed node type: {type(node).__name__}"
+                return Sentence("Disallowed node type: %(node)s", node=type(node).__name__)
 
             # Check for Call nodes
             if isinstance(node, ast.Call):
@@ -444,22 +473,22 @@ class PythonRunner:
                 if isinstance(node.func, ast.Name):
                     func_name = node.func.id
                     if func_name not in self._safe_builtins and func_name not in self._safe_modules:
-                        return f"Call to disallowed function: {func_name}"
+                        return Sentence(UNKNOWN_CALL_MSGID, name=func_name)
                 # Check if it's an attribute call
                 elif isinstance(node.func, ast.Attribute):
-                    refusal = self._refuse_attribute(node.func, "Call to")
+                    refusal = self._refuse_attribute(node.func, called=True)
                     if refusal:
                         return refusal
 
             # Check attribute access
             elif isinstance(node, ast.Attribute):
-                refusal = self._refuse_attribute(node, "Access to")
+                refusal = self._refuse_attribute(node, called=False)
                 if refusal:
                     return refusal
 
         return None  # No issues found
 
-    def _refuse_attribute(self, node: ast.Attribute, verb: str) -> str | None:
+    def _refuse_attribute(self, node: ast.Attribute, *, called: bool) -> Sentence | None:
         """Judge one attribute access, resolving what it sits on.
 
         Two rules, in this order:
@@ -488,20 +517,33 @@ class PythonRunner:
         ``_SAFE_MODULE_MEMBERS`` is judged by rule 2 alone. Nothing in
         production does that; the suite does, to exercise the sandbox's error
         boundary with a probe object.
+
+        *called* picks the wording, "Call to" or "Access to": two whole
+        sentences, never a spliced verb, so each translates as a sentence.
         """
         if isinstance(node.value, ast.Name):
             members = self._SAFE_MODULE_MEMBERS.get(node.value.id)
             if members is not None and node.attr not in members:
-                return (
-                    f"{verb} disallowed attribute: {node.value.id}.{node.attr}. "
-                    f"This sandbox declares which members of {node.value.id} a "
-                    "questionnaire may use, so that an interpreter upgrade "
-                    "cannot widen it silently."
+                names = {"module": node.value.id, "member": node.attr}
+                if called:
+                    return Sentence(
+                        "Call to disallowed attribute: %(module)s.%(member)s. This sandbox "
+                        "declares which members of %(module)s a questionnaire may use, so "
+                        "that an interpreter upgrade cannot widen it silently.",
+                        **names,
+                    )
+                return Sentence(
+                    "Access to disallowed attribute: %(module)s.%(member)s. This sandbox "
+                    "declares which members of %(module)s a questionnaire may use, so "
+                    "that an interpreter upgrade cannot widen it silently.",
+                    **names,
                 )
 
         for pattern in self._forbidden_attrs:
             if re.match(pattern, node.attr):
-                return f"{verb} disallowed attribute: {node.attr}"
+                if called:
+                    return Sentence("Call to disallowed attribute: %(attr)s", attr=node.attr)
+                return Sentence("Access to disallowed attribute: %(attr)s", attr=node.attr)
         return None
 
     @staticmethod

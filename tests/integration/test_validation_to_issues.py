@@ -48,6 +48,31 @@ severity (error/warning), machine type, human message, and suggestion:
   against a value that may hold text, an ordering of what may hold text, a
   name that may be unbound) holds on every walk of the runtime; a compile
   from the compile cache records the gaps a cold one does.
+- Every codeBlock write into an answer is a version of its own (#2257, D122):
+  an item's own postcondition reads the answer as submitted, not what its
+  codeBlock writes; a later gate reads the last of two writes; a written
+  number outside the domain (#2255), into an answer or a matrix cell, is read
+  after the write; a Range write versions both ends; a code-written total
+  keeps its verdicts; ``+=`` versions an answer as ``=`` does; a matrix
+  cell emptied by code or stored through a negative index is read after it;
+  a chained assignment gives every target the one value; a subscript of a
+  blank matrix stops its codeBlock; and on a dependency cycle, where the walk
+  may reorder the writers, a written version is left free.
+- The validator agrees with the runtime walk (D123): a condition's
+  ordering read of a variable that may be ``None``, or any read of one that
+  may be unbound, raises and follows the condition kind (#2258: ``v += 1``
+  reads ``v``, a codeInit raise unbinds what follows it, a codeInit copy of
+  an answer is ``None``, a comprehension's own ``v`` hides no outer one), while a
+  variable that always holds a number keeps its verdicts; an item a codeBlock
+  answers before the walk reaches it is never asked and reported as a
+  ``code_answered_item`` warning, not ``unreachable_item`` (one whose own gate
+  is false stays an error, one code answers on some walks only is CONDITIONAL
+  with no finding, and the diagram draws it as a warning), a ``None`` store
+  answers nothing, nor does one of the value codeInit set or one a later
+  store in the block undoes (#2259); an item skipped at its place is
+  reachable once a later codeBlock makes its gate true, through a variable or
+  a written answer, bounded by what later writers write, and a verdict only
+  that later state withholds is reported (#2260).
 - Language neutrality (#1973 R10, #2106 R5): an ``en`` questionnaire and its
   twin in every other supported locale (same ids, codes and conditions; every
   title and label translated; a missing twin fails) get identical Z3
@@ -2564,6 +2589,621 @@ class TestStringLiteralComparison:
 
 
 @pytest.mark.integration
+class TestCodeWrittenAnswerVersions:
+    """Every codeBlock write into an answer is a version of its own (#2257,
+    D122): the item's own conditions read the answer as submitted, every read
+    after the write the written value, each write a new version, unbound by
+    the answer's domain (#2255). Each questionnaire is also walked through the
+    runtime (``unsound``)."""
+
+    _RADIO = {"control": "Radio", "labels": {1: "one", 2: "two"}}
+
+    @staticmethod
+    def _editbox(low: int, high: int) -> dict[str, Any]:
+        return {"control": "Editbox", "min": low, "max": high}
+
+    def _judge(self, *specs: dict[str, Any], walk: bool = True) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+        """Every item's classification entry and the issues, after checking
+        the questionnaire against every walk of the runtime when ``walk``."""
+        doc = TestStringLiteralComparison._doc(*specs)
+        if walk:
+            assert unsound(copy.deepcopy(doc)) == []
+        processor = ValidationProcessor(QMLState(doc))
+        return processor.get_item_classifications(), processor.to_issues()
+
+    @staticmethod
+    def _errors(issues: list[dict[str, Any]], item_id: str) -> list[str]:
+        return [i["type"] for i in issues if i["item_id"] == item_id and i["severity"] == "error"]
+
+    def test_an_own_postcondition_reads_the_submitted_answer(self):
+        """``a.outcome == 2`` holds on the answer 2 the runtime checks before
+        the codeBlock's ``a.outcome = 1`` runs: not INFEASIBLE."""
+        classes, issues = self._judge(
+            {
+                "id": "a",
+                "input": self._RADIO,
+                "postcondition": [{"predicate": "a.outcome == 2"}],
+                "codeBlock": "a.outcome = 1",
+            },
+        )
+
+        assert classes["a"]["postcondition"]["invariant"] in ("CONSTRAINING", "TAUTOLOGICAL")
+        assert [i for i in issues if i["severity"] == "error"] == []
+
+    def test_a_later_gate_reads_the_last_of_two_writes(self):
+        """``a.outcome = 2`` then ``a.outcome = 1``: two versions, not one Int
+        equal to both, so the model is not vacuous and a later gate is decided
+        on the last value."""
+        classes, issues = self._judge(
+            {"id": "a", "input": self._RADIO, "codeBlock": "a.outcome = 2\na.outcome = 1"},
+            {"id": "b", "input": self._RADIO, "precondition": [{"predicate": "a.outcome == 1"}]},
+            {"id": "c", "input": self._RADIO, "precondition": [{"predicate": "a.outcome == 2"}]},
+        )
+
+        assert classes["c"]["precondition"]["status"] == "NEVER"
+        assert classes["b"]["precondition"]["status"] != "NEVER"
+        assert self._errors(issues, "b") == []
+
+    def test_a_written_number_outside_the_domain_is_read_after_the_write(self):
+        """``a.outcome = 0`` on a Radio of codes 1 and 2 (#2255): the written
+        version is no answer, so a gate asking for 0 is reachable and the
+        questionnaire keeps a valid completion."""
+        classes, issues = self._judge(
+            {"id": "a", "input": self._RADIO, "codeBlock": "a.outcome = 0"},
+            {"id": "b", "input": self._RADIO, "precondition": [{"predicate": "a.outcome == 0"}]},
+        )
+
+        assert classes["b"]["precondition"]["status"] != "NEVER"
+        assert [i for i in issues if i["severity"] == "error"] == []
+
+    def test_a_code_written_total_keeps_its_verdicts(self):
+        """``q_total.outcome = q1.outcome + q2.outcome`` over two answers of at
+        most 5: a later gate above 10 is still NEVER, one above 3 and one at
+        most 10 CONDITIONAL (a blank answer stops the block)."""
+        classes, issues = self._judge(
+            {"id": "q1", "input": self._editbox(0, 5)},
+            {"id": "q2", "input": self._editbox(0, 5)},
+            {"id": "q_total", "input": self._editbox(0, 10), "codeBlock": "q_total.outcome = q1.outcome + q2.outcome"},
+            {"id": "r", "input": self._RADIO, "precondition": [{"predicate": "q_total.outcome > 3"}]},
+            {"id": "s", "input": self._RADIO, "precondition": [{"predicate": "q_total.outcome > 10"}]},
+            {"id": "t", "input": self._RADIO, "precondition": [{"predicate": "q_total.outcome <= 10"}]},
+            walk=False,
+        )
+
+        assert classes["r"]["precondition"]["status"] == "CONDITIONAL"
+        assert classes["s"]["precondition"]["status"] == "NEVER"
+        assert self._errors(issues, "s") == ["unreachable_item"]
+        assert classes["t"]["precondition"]["status"] == "CONDITIONAL"
+
+    def test_a_range_write_is_a_version_of_its_own(self):
+        """``q.outcome = [1, 2]`` on a Range: its own ``q.outcome.low == 5``
+        reads the submitted pair (not INFEASIBLE), a later gate the written one."""
+        range_input = {"control": "Range", "min": 0, "max": 10}
+        classes, issues = self._judge(
+            {
+                "id": "q",
+                "input": range_input,
+                "postcondition": [{"predicate": "q.outcome.low == 5"}],
+                "codeBlock": "q.outcome = [1, 2]",
+            },
+            {"id": "r", "input": self._RADIO, "precondition": [{"predicate": "q.outcome.low == 1"}]},
+            {"id": "s", "input": self._RADIO, "precondition": [{"predicate": "q.outcome.low == 5"}]},
+            walk=False,
+        )
+
+        assert classes["q"]["postcondition"]["invariant"] == "CONSTRAINING"
+        assert self._errors(issues, "q") == []
+        assert classes["r"]["precondition"]["status"] != "NEVER"
+        assert classes["s"]["precondition"]["status"] == "NEVER"
+
+    def test_a_chained_assignment_gives_every_target_the_one_value(self):
+        """``a.outcome = b.outcome = a.outcome + 1``: Python evaluates the
+        value once, so both answers become ``a + 1`` (3 from 2); lowering the
+        value again for ``b`` over ``a``'s new version proved the gate NEVER."""
+        classes, issues = self._judge(
+            {"id": "b", "input": self._RADIO},
+            {"id": "a", "input": self._RADIO, "codeBlock": "a.outcome = b.outcome = a.outcome + 1"},
+            {"id": "g", "input": self._RADIO, "precondition": [{"predicate": "a.outcome == 3 and b.outcome == 3"}]},
+        )
+
+        assert classes["g"]["precondition"]["status"] != "NEVER"
+        assert self._errors(issues, "g") == []
+
+    def test_a_subscript_of_a_blank_matrix_stops_the_block(self):
+        """``m`` submitted blank: its codeBlock's ``m.outcome[0][0] = 1``
+        raises (``None[0]``), so ``a.outcome = 2`` after it never runs and
+        ``a`` keeps its answer 1, which a later gate reads (the fuzzer's
+        oracle submits no blank matrix, so the walk is driven here)."""
+        from askalot_qml.core.flow_processor import FlowProcessor
+        from askalot_qml.models.qml_state import SOURCE_RESPONDENT
+
+        specs = (
+            {"id": "a", "input": self._RADIO},
+            {
+                "id": "m",
+                "kind": "MatrixQuestion",
+                "rows": ["r1", "r2"],
+                "columns": ["c1"],
+                "input": self._RADIO,
+                "codeBlock": "m.outcome[0][0] = 1\na.outcome = 2",
+            },
+            {"id": "g", "input": self._RADIO, "precondition": [{"predicate": "a.outcome == 1"}]},
+        )
+        state = QMLState(TestStringLiteralComparison._doc(*specs))
+        FlowProcessor(state)
+        for item_id, answer in (("a", 1), ("m", None)):
+            assert FlowProcessor.from_cached_state(state).process_item(
+                state, item_id, answer, source=SOURCE_RESPONDENT
+            )["success"]
+        assert FlowProcessor.from_cached_state(state).get_current_item(state, backward=False)["id"] == "g"
+
+        classes, issues = self._judge(*specs)
+
+        assert classes["g"]["precondition"]["status"] != "NEVER"
+        assert self._errors(issues, "g") == []
+
+    def _walk_to(self, specs, answers, expected):
+        """Drive the runtime through ``answers`` and assert the next item."""
+        from askalot_qml.core.flow_processor import FlowProcessor
+        from askalot_qml.models.qml_state import SOURCE_RESPONDENT
+
+        state = QMLState(TestStringLiteralComparison._doc(*specs))
+        FlowProcessor(state)
+        for item_id, answer in answers:
+            assert FlowProcessor.from_cached_state(state).process_item(
+                state, item_id, answer, source=SOURCE_RESPONDENT
+            )["success"]
+        assert FlowProcessor.from_cached_state(state).get_current_item(state, backward=False)["id"] == expected
+
+    def _matrix(self, input_: dict[str, Any] | None = None) -> dict[str, Any]:
+        return {"id": "m", "kind": "MatrixQuestion", "rows": ["r1", "r2"], "columns": ["c1"], "input": input_ or self._RADIO}
+
+    def test_a_raising_read_of_an_unanswered_cell_stops_the_store(self):
+        """#2315 (fuzzer seed 4583): ``m``'s second cell left unanswered reads
+        ``None``, ``+ 1`` raises, so ``c`` is never written and the runtime
+        asks it: not NEVER. ``c``'s gate reads ``m``, keeping only the walks
+        where ``m`` was answered."""
+        specs = (
+            self._matrix(),
+            {"id": "a", "input": self._RADIO, "codeBlock": "c.outcome = m.outcome[1][0] + 1"},
+            {"id": "c", "input": self._RADIO, "precondition": [{"predicate": "m.outcome[0][0] < 2"}]},
+        )
+        self._walk_to(specs, (("m", [[1], [None]]), ("a", 1)), "c")
+
+        classes, _ = self._judge(*specs)
+
+        assert classes["c"]["precondition"]["status"] != "NEVER"
+
+    def test_a_value_compared_on_an_unanswered_cell_is_not_read_in_domain(self):
+        """``None not in [1, 2]`` holds, so the block writes ``a.outcome = 1``
+        where the in-domain cell would give 0: a later gate on ``a.outcome == 1``
+        is reachable."""
+        specs = (
+            self._matrix(),
+            {"id": "a", "input": self._RADIO, "codeBlock": "a.outcome = 1 if m.outcome[1][0] not in [1, 2] else 0"},
+            {"id": "g", "input": self._RADIO, "precondition": [{"predicate": "m.outcome[0][0] < 2 and a.outcome == 1"}]},
+        )
+        self._walk_to(specs, (("m", [[1], [None]]), ("a", 2)), "g")
+
+        classes, _ = self._judge(*specs)
+
+        assert classes["g"]["precondition"]["status"] != "NEVER"
+
+    @pytest.mark.parametrize("code", ["c.outcome = m.outcome[1][0].low + 1", "x = m.outcome[1][0].low\nc.outcome = 2"])
+    def test_a_range_cell_end_read_of_an_unanswered_cell_stops_the_store(self, code):
+        """A Range matrix's unanswered cell: ``.low`` of ``None`` raises however
+        it is read (a copy included), so ``c`` is never written and is asked."""
+        specs = (
+            self._matrix({"control": "Range", "min": 0, "max": 10}),
+            {"id": "a", "input": self._RADIO, "codeBlock": code},
+            {"id": "c", "input": self._RADIO, "precondition": [{"predicate": "m.outcome[0][0].low < 2"}]},
+        )
+        self._walk_to(specs, (("m", [[[1, 2]], [None]]), ("a", 1)), "c")
+
+        classes, _ = self._judge(*specs)
+
+        assert classes["c"]["precondition"]["status"] != "NEVER"
+
+    def test_a_cell_read_after_a_store_keeps_the_store(self):
+        """A copy of a cell that cannot raise, after ``c.outcome = 1`` in the
+        same branch, leaves that store trusted: ``c`` stays NEVER."""
+        classes, _ = self._judge(
+            self._matrix(),
+            {"id": "a", "input": self._RADIO, "codeBlock": "if True:\n    c.outcome = 1\n    x = m.outcome[1][0]"},
+            {"id": "c", "input": self._RADIO},
+        )
+
+        assert classes["c"]["precondition"]["status"] == "NEVER"
+
+    def test_writes_the_walk_reorders_on_a_cycle_are_left_free(self):
+        """A dependency cycle (``p`` / ``q``) keeps the build in file order,
+        where ``w1``'s ``u.outcome = 2`` is lowered before ``w2`` reads ``u``;
+        the walk asks ``w2`` first (``w1`` waits for ``z``), so ``t`` follows
+        the answer to ``u`` and ``t.outcome == 1`` is reached. Equating ``t``'s
+        version with the file-order value proved ``r`` NEVER."""
+        classes, issues = self._judge(
+            {"id": "u", "input": self._RADIO},
+            {"id": "t", "input": self._RADIO},
+            {"id": "w1", "input": self._RADIO, "codeBlock": "u.outcome = 2 if z.outcome else 2"},
+            {"id": "w2", "input": self._RADIO, "codeBlock": "t.outcome = 1 if u.outcome == 1 else 2"},
+            {"id": "r", "input": self._RADIO, "precondition": [{"predicate": "t.outcome == 1"}]},
+            {"id": "z", "input": self._RADIO},
+            {"id": "p", "input": self._RADIO, "precondition": [{"predicate": "q.outcome != 5"}]},
+            {"id": "q", "input": self._RADIO, "precondition": [{"predicate": "p.outcome != 5"}]},
+        )
+
+        assert classes["r"]["precondition"]["status"] != "NEVER"
+        assert self._errors(issues, "r") == []
+
+    def test_a_written_cell_outside_the_domain_is_read_after_the_write(self):
+        """``m.outcome[0][0] = 0`` on a matrix of codes 1 and 2 (fuzzer seed
+        3246): the written cell is a version of its own, so a gate asking for
+        0 there is reachable."""
+        classes, _ = self._judge(
+            {
+                "id": "m",
+                "kind": "MatrixQuestion",
+                "rows": ["r1", "r2"],
+                "columns": ["c1"],
+                "input": self._RADIO,
+                "codeBlock": "m.outcome[0][0] = 0",
+            },
+            {"id": "g", "input": self._RADIO, "precondition": [{"predicate": "not (m.outcome[0][0])"}]},
+        )
+
+        assert classes["g"]["precondition"]["status"] != "NEVER"
+
+    def test_an_augmented_write_is_a_version_of_its_own(self):
+        """``a.outcome += 10`` on an Editbox of at most 5 writes a number
+        outside the domain as ``=`` does: a later gate above 5 is reachable."""
+        classes, issues = self._judge(
+            {"id": "a", "input": self._editbox(0, 5), "codeBlock": "a.outcome += 10"},
+            {"id": "b", "input": self._RADIO, "precondition": [{"predicate": "a.outcome > 5"}]},
+        )
+
+        assert classes["b"]["precondition"]["status"] != "NEVER"
+        assert self._errors(issues, "b") == []
+
+    def _matrix_write(self, code: str, gate: str) -> dict[str, Any]:
+        classes, _ = self._judge(
+            {
+                "id": "m",
+                "kind": "MatrixQuestion",
+                "rows": ["r1", "r2"],
+                "columns": ["c1"],
+                "input": self._RADIO,
+                "codeBlock": code,
+            },
+            {"id": "g", "input": self._RADIO, "precondition": [{"predicate": gate}]},
+        )
+        return classes["g"]["precondition"]
+
+    def test_a_cell_emptied_by_code_reads_none(self):
+        """``m.outcome[0][0] = None`` empties the cell, so ``not in [1, 2]``
+        holds there although every answer lies in the domain."""
+        verdict = self._matrix_write("m.outcome[0][0] = None", "m.outcome[0][0] not in [1, 2]")
+
+        assert verdict["status"] != "NEVER"
+
+    def test_a_negative_index_store_reaches_its_cell(self):
+        """``m.outcome[-1][0] = 0`` writes the last row's cell, so a gate
+        asking for 0 there is reachable."""
+        verdict = self._matrix_write("m.outcome[-1][0] = 0", "not (m.outcome[1][0])")
+
+        assert verdict["status"] != "NEVER"
+
+    def test_a_cell_no_code_writes_may_be_left_unanswered(self):
+        """``m.outcome[0][0] = 1`` writes one cell (#2300): the respondent may
+        leave ``[1][0]`` unanswered, where it reads ``None``, so ``not in
+        [1, 2]`` on it is reached. The written cell keeps its version: a gate
+        asking it not to be 1 or 2 stays NEVER."""
+        unwritten = self._matrix_write("m.outcome[0][0] = 1", "m.outcome[1][0] not in [1, 2]")
+        written = self._matrix_write("m.outcome[0][0] = 1", "m.outcome[0][0] not in [1, 2]")
+
+        assert unwritten["status"] != "NEVER"
+        assert written["status"] == "NEVER"
+
+    def test_a_cell_some_store_may_reach_keeps_no_unanswered_choice(self):
+        """Every store or alias that may reach a cell takes it out of the
+        cells that keep an unanswered choice (``_unwritten_cells``): a row
+        store, an index that does not resolve, a negative one, the whole
+        answer, a ``del``, a row held as a value (it can be mutated in
+        place), and a store through anything but an item id; a None test or
+        ``len`` of a row only inspects it."""
+        for code, unwritten in (
+            ("m.outcome[0][0] = 1", {(1, 0)}),
+            ("m.outcome[0] = [1]", {(1, 0)}),
+            ("if m.outcome is not None and len(m.outcome[1]) == 1:\n    m.outcome[0][0] = 1", {(1, 0)}),
+            ("i = 1\nm.outcome[i][0] = 1", set()),
+            ("m.outcome[-1][0] = 1", set()),
+            ("m.outcome = [[1], [2]]", set()),
+            ("m.outcome[0][0] = 1\ndel m.outcome[0][0]", set()),
+            ("m.outcome[0][0] = 1\nrow = m.outcome[1]", set()),
+            ("m.outcome[0][0] = 1\nm.outcome[1].append(2)", set()),
+            ("m.outcome[0][0] = 1\n[m][0].outcome[1][0] = 2", set()),
+            ("m.outcome[0][0] = 1\n(m if True else m).outcome = [[1], [2]]", set()),
+        ):
+            doc = TestStringLiteralComparison._doc(
+                {
+                    "id": "m",
+                    "kind": "MatrixQuestion",
+                    "rows": ["r1", "r2"],
+                    "columns": ["c1"],
+                    "input": self._RADIO,
+                    "codeBlock": code,
+                }
+            )
+
+            assert StaticBuilder(QMLState(doc))._unwritten_cells("m") == unwritten, code
+
+
+@pytest.mark.integration
+class TestTheWalkIsTheSpecification:
+    """The validator agrees with the runtime walk (D123): a read that raises
+    at runtime follows the condition kind (#2258), an item code answered
+    before the walk reached it is never asked (#2259), and an item skipped at
+    its place is asked later once a later codeBlock makes its gate true
+    (#2260). Each questionnaire is also walked through the runtime
+    (``unsound``)."""
+
+    _RADIO = {"control": "Radio", "labels": {1: "one", 2: "two"}}
+
+    def _judge(self, *specs: dict[str, Any], init: str | None = None) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+        """Every item's classification entry and the issues, after checking
+        the questionnaire against every walk of the runtime."""
+        doc = TestStringLiteralComparison._doc(*specs, init=init)
+        assert unsound(copy.deepcopy(doc)) == []
+        processor = ValidationProcessor(QMLState(doc))
+        return processor.get_item_classifications(), processor.to_issues()
+
+    @staticmethod
+    def _errors(issues: list[dict[str, Any]], item_id: str) -> list[str]:
+        return [i["type"] for i in issues if i["item_id"] == item_id and i["severity"] == "error"]
+
+    def test_a_postcondition_ordering_a_none_variable_is_waived(self):
+        """#2258: ``0 < v and v < 0`` over codeInit ``v = None`` raises
+        ``TypeError``, so the check is waived and every answer is accepted:
+        not INFEASIBLE."""
+        classes, issues = self._judge(
+            {"id": "a", "input": self._RADIO, "postcondition": [{"predicate": "0 < v and v < 0"}]}, init="v = None"
+        )
+
+        assert classes["a"]["postcondition"]["invariant"] != "INFEASIBLE"
+        assert self._errors(issues, "a") == []
+
+    def test_a_variable_a_skipped_writer_binds_may_be_unbound(self):
+        """#2258: only the gated ``w`` assigns ``v``; where ``w`` was skipped
+        any read of ``v`` raises ``NameError``, so ``v >= 0 or v < 0`` is no
+        ALWAYS gate and ``v > 5 and v < 2`` no INFEASIBLE check."""
+        classes, issues = self._judge(
+            {"id": "a", "input": self._RADIO},
+            {"id": "w", "input": self._RADIO, "precondition": [{"predicate": "a.outcome == 1"}], "codeBlock": "v = 3"},
+            {"id": "b", "input": self._RADIO, "precondition": [{"predicate": "v >= 0 or v < 0"}]},
+            {"id": "c", "input": self._RADIO, "postcondition": [{"predicate": "v > 5 and v < 2"}]},
+        )
+
+        assert classes["b"]["precondition"]["status"] == "CONDITIONAL"
+        assert classes["c"]["postcondition"]["invariant"] != "INFEASIBLE"
+        assert self._errors(issues, "c") == []
+
+    def test_a_variable_that_always_holds_a_number_keeps_its_verdicts(self):
+        """#2258's constraint: the ungated ``a`` always assigns ``v = 3``, so
+        no read of ``v`` raises: ``v >= 0 or v < 0`` stays ALWAYS and
+        ``v > 5`` stays INFEASIBLE."""
+        classes, issues = self._judge(
+            {"id": "a", "input": self._RADIO, "codeBlock": "v = 3"},
+            {"id": "b", "input": self._RADIO, "precondition": [{"predicate": "v >= 0 or v < 0"}]},
+            {"id": "c", "input": self._RADIO, "postcondition": [{"predicate": "v > 5"}]},
+        )
+
+        assert classes["b"]["precondition"]["status"] == "ALWAYS"
+        assert classes["c"]["postcondition"]["invariant"] == "INFEASIBLE"
+        assert "infeasible_postcondition" in self._errors(issues, "c")
+
+    def test_an_item_code_answers_before_the_walk_reaches_it_is_never_asked(self):
+        """#2259: ``a``'s codeBlock stores ``b.outcome = 1``, so the runtime
+        marks ``b`` visited and never presents it; ``b`` is NEVER, not ALWAYS."""
+        from askalot_qml.core.flow_processor import FlowProcessor
+        from askalot_qml.models.qml_state import SOURCE_RESPONDENT
+
+        specs = ({"id": "a", "input": self._RADIO, "codeBlock": "b.outcome = 1"}, {"id": "b", "input": self._RADIO})
+        state = QMLState(TestStringLiteralComparison._doc(*specs))
+        FlowProcessor(state)
+        assert FlowProcessor.from_cached_state(state).process_item(state, "a", 2, source=SOURCE_RESPONDENT)["success"]
+        after = FlowProcessor.from_cached_state(state).get_current_item(state, backward=False)
+        assert after is None or after.get("isLast")
+
+        classes, issues = self._judge(*specs)
+
+        assert classes["b"]["precondition"]["status"] == "NEVER"
+        # Its answer exists, so it is not unreachable: a warning, no error.
+        assert [(i["type"], i["severity"]) for i in issues if i["item_id"] == "b"] == [
+            ("code_answered_item", "warning")
+        ]
+
+    def test_a_code_answered_item_whose_gate_is_false_is_still_unreachable(self):
+        """#2259: ``b``'s own gate never holds (``a.outcome == 3`` on codes 1
+        and 2), so it is NEVER whatever code stores: ``unreachable_item``,
+        an error, not the code-answered warning."""
+        _, issues = self._judge(
+            {"id": "a", "input": self._RADIO, "codeBlock": "b.outcome = 1"},
+            {"id": "b", "input": self._RADIO, "precondition": [{"predicate": "a.outcome == 3"}]},
+        )
+
+        assert [i["type"] for i in issues if i["item_id"] == "b"] == ["unreachable_item"]
+
+    def test_an_item_code_answers_in_some_walks_is_conditional_with_no_finding(self):
+        """#2259: ``a`` stores into ``b`` only when it is answered 1, so ``b``
+        is asked on the other walks: CONDITIONAL, and nothing is reported."""
+        classes, issues = self._judge(
+            {"id": "a", "input": self._RADIO, "codeBlock": "if a.outcome == 1:\n    b.outcome = 1"},
+            {"id": "b", "input": self._RADIO},
+        )
+
+        assert classes["b"]["precondition"]["status"] == "CONDITIONAL"
+        assert [i["type"] for i in issues if i["item_id"] == "b"] == []
+
+    def test_a_store_of_none_answers_nothing(self):
+        """#2259: ``b.outcome = None`` changes nothing, so ``b`` is not marked
+        visited and the walk still asks it: ALWAYS."""
+        classes, _ = self._judge(
+            {"id": "a", "input": self._RADIO, "codeBlock": "b.outcome = None"}, {"id": "b", "input": self._RADIO}
+        )
+
+        assert classes["b"]["precondition"]["status"] == "ALWAYS"
+
+    def test_a_store_undone_in_the_same_block_answers_nothing(self):
+        """#2259 (Codex on #2303): ``b.outcome = 1`` then ``b.outcome = None``
+        leaves ``b`` as it was, and the runtime judges the outcome the block
+        leaves, so ``b`` stays unvisited and is asked: not NEVER, no
+        ``code_answered_item``."""
+        classes, issues = self._judge(
+            {"id": "a", "input": self._RADIO, "codeBlock": "b.outcome = 1\nb.outcome = None"},
+            {"id": "b", "input": self._RADIO},
+        )
+
+        assert classes["b"]["precondition"]["status"] != "NEVER"
+        assert [i["type"] for i in issues if i["item_id"] == "b"] == []
+
+    def test_a_comprehension_local_does_not_hide_the_outer_variable(self):
+        """#2258 (Codex on #2303): the ``v`` a comprehension binds is its own;
+        the outer ``v > 5 and v < 2`` still reads codeInit's ``None``, raises
+        and is waived: not INFEASIBLE."""
+        classes, issues = self._judge(
+            {
+                "id": "a",
+                "input": self._RADIO,
+                "postcondition": [{"predicate": "v > 5 and v < 2 and all(v >= 0 for v in range(2))"}],
+            },
+            init="v = None",
+        )
+
+        assert classes["a"]["postcondition"]["invariant"] != "INFEASIBLE"
+        assert self._errors(issues, "a") == []
+
+    def test_a_later_write_bounds_the_answer_it_leaves(self):
+        """#2260 (Codex on #2303): the later ``c`` writes ``a = 2``, so ``a``
+        is 1 or 2 when the walk could ask ``b`` again, never 3: ``b``'s
+        ``a.outcome == 3`` stays NEVER, an ``unreachable_item``."""
+        classes, issues = self._judge(
+            {"id": "a", "input": self._RADIO, "codeBlock": "a.outcome = 1"},
+            {"id": "b", "input": self._RADIO, "precondition": [{"predicate": "a.outcome == 3"}]},
+            {"id": "c", "input": self._RADIO, "codeBlock": "a.outcome = 2"},
+        )
+
+        assert classes["b"]["precondition"]["status"] == "NEVER"
+        assert self._errors(issues, "b") == ["unreachable_item"]
+
+    def test_a_verdict_only_the_later_state_withholds_is_reported(self):
+        """#1815 through #2260: ``b``'s ``mode == "a"`` is decided where the
+        walk first reaches ``b``, but ``c``'s later write leaves ``mode`` free
+        if ``b`` is asked after it, which withholds TAUTOLOGICAL; that is an
+        ``inexact_condition`` on ``b``, never silent."""
+        _, issues = self._judge(
+            {"id": "a", "input": self._RADIO},
+            {
+                "id": "b",
+                "input": self._RADIO,
+                "precondition": [{"predicate": "a.outcome == 1 or v > 2"}],
+                "postcondition": [{"predicate": 'mode == "a"'}],
+            },
+            {"id": "c", "input": self._RADIO, "precondition": [{"predicate": "b.outcome != 5"}],
+             "codeBlock": 'mode = "b"\nv = 3'},
+            init='mode = "a"\nv = 0',
+        )
+
+        assert "inexact_condition" in [i["type"] for i in issues if i["item_id"] == "b"]
+
+    def test_a_code_answered_item_is_drawn_as_a_warning(self):
+        """#2259: the diagram IR names a code-answered item ``code_answered``,
+        not ``never`` (QML Explorer draws that as the warning mustard rim)."""
+        doc = TestStringLiteralComparison._doc(
+            {"id": "a", "input": self._RADIO, "codeBlock": "b.outcome = 1"}, {"id": "b", "input": self._RADIO}
+        )
+        graph = ValidationProcessor(QMLState(doc)).generate_validation_graph()
+
+        assert {item["id"]: item["classification"] for item in graph["items"]}["b"] == "code_answered"
+
+    def test_an_item_a_later_codeblock_makes_reachable_is_not_never(self):
+        """#2260, fuzzer seed 3943's numeric form: ``b`` (``v > 2``) is
+        skipped at its place, and ``c``'s ``v = c.outcome + 1`` makes ``v``
+        3, after which the walk asks ``b``: not NEVER, no ``unreachable_item``."""
+        classes, issues = self._judge(
+            {"id": "a", "input": self._RADIO},
+            {"id": "b", "input": self._RADIO, "precondition": [{"predicate": "v > 2"}],
+             "codeBlock": "if w not in [1, 0]:\n    v = 2"},
+            {"id": "c", "input": self._RADIO,
+             "codeBlock": "if 9 == v:\n    b.outcome = 3 - b.outcome\nelse:\n    w = 2\nv = c.outcome + 1"},
+            {"id": "d", "input": self._RADIO},
+            init="v = 2\nw = 5",
+        )
+
+        assert classes["b"]["precondition"]["status"] != "NEVER"
+        assert self._errors(issues, "b") == []
+
+    def test_a_later_code_written_answer_reasks_the_item(self):
+        """#2260 through an answer (Codex on #2298): ``a`` writes ``a = 1``,
+        ``b`` is gated on ``a == 2``, and the ungated ``c`` writes ``a = 2``,
+        after which the walk asks ``b``: not NEVER."""
+        classes, issues = self._judge(
+            {"id": "a", "input": self._RADIO, "codeBlock": "a.outcome = 1"},
+            {"id": "b", "input": self._RADIO, "precondition": [{"predicate": "a.outcome == 2"}]},
+            {"id": "c", "input": self._RADIO, "codeBlock": "a.outcome = 2"},
+        )
+
+        assert classes["b"]["precondition"]["status"] != "NEVER"
+        assert self._errors(issues, "b") == []
+
+    @pytest.mark.parametrize("init", [None, "v = None"])
+    def test_an_augmented_read_that_raises_stops_the_store_after_it(self, init):
+        """#2258/#2259: ``v += 1`` reads ``v`` first, so unbound or ``None``
+        it raises and the store after it never runs: ``b`` is asked."""
+        classes, issues = self._judge(
+            {"id": "a", "input": self._RADIO, "codeBlock": "v += 1\nb.outcome = 1"},
+            {"id": "b", "input": self._RADIO},
+            init=init,
+        )
+
+        assert classes["b"]["precondition"]["status"] != "NEVER"
+        assert [i["type"] for i in issues if i["item_id"] == "b"] == []
+
+    def test_a_codeinit_raise_leaves_a_later_name_unbound(self):
+        """#2258: codeInit stops at ``int('z')``, so ``v = 0`` never runs and
+        ``v == 0`` raises: no ALWAYS gate."""
+        classes, _ = self._judge(
+            {"id": "a", "input": self._RADIO},
+            {"id": "b", "input": self._RADIO, "precondition": [{"predicate": "v == 0"}]},
+            init="x = int('z')\nv = 0",
+        )
+
+        assert classes["b"]["precondition"]["status"] != "ALWAYS"
+
+    def test_a_codeinit_copy_of_an_answer_is_none(self):
+        """#2258: codeInit runs before any answer, so ``v = a.outcome`` is
+        ``None`` and ``v > 0`` raises: no ALWAYS gate."""
+        classes, _ = self._judge(
+            {"id": "a", "input": self._RADIO},
+            {"id": "b", "input": self._RADIO, "precondition": [{"predicate": "v > 0"}]},
+            init="v = a.outcome",
+        )
+
+        assert classes["b"]["precondition"]["status"] != "ALWAYS"
+
+    def test_a_store_of_the_value_codeinit_set_answers_nothing(self):
+        """#2259: the runtime marks an item visited only when a codeBlock
+        changes its outcome; ``b.outcome = 1`` over codeInit's ``1`` does not,
+        so ``b`` is asked: not NEVER."""
+        classes, issues = self._judge(
+            {"id": "a", "input": self._RADIO, "codeBlock": "b.outcome = 1"},
+            {"id": "b", "input": self._RADIO},
+            init="b.outcome = 1",
+        )
+
+        assert classes["b"]["precondition"]["status"] != "NEVER"
+        assert [i["type"] for i in issues if i["item_id"] == "b"] == []
+
+
+@pytest.mark.integration
 class TestNameCollisionScoping:
     """The lint name oracles must be scope-aware, not a file-wide flattened union.
 
@@ -4306,7 +4946,7 @@ class TestUnsafeCodeLint:
         assert unsafe[0]["severity"] == "error"
 
     def test_a_syntax_error_is_not_reported_as_a_sandbox_refusal(self):
-        """``validate_expr`` returns "Syntax error: ..." for unparseable code.
+        """``validate_expr`` refuses unparseable code as "Syntax error on line N".
 
         The sandbox never got as far as judging what the code DOES, so the
         security wording and "use only the modules the sandbox declares" send

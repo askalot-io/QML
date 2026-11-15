@@ -10,7 +10,7 @@ matrix cells and rows, codeInit and codeBlock stores, conditions comparing them)
 - no item it calls ALWAYS is skipped by a walk, unless it says the verdict is
   withheld (an inexact or skipped condition, an unbound name, a cycle)
 - a fixed CI set of seeds, plus every seed that found a counterexample on an
-  earlier head of #2243
+  earlier head of #2243, or before #2300 (an unanswered cell of a written matrix)
 - ``QML_SOUNDNESS_FUZZ_CASES`` widens the range for a local run
 
 These integration tests walk every combination of a small answer domain per
@@ -32,6 +32,10 @@ from tests.helpers.soundness_fuzz import check
 _FOUND = [
     910, 1122, 1251, 1324, 1650, 3010, 3967, 4277, 5060, 5460, 5483, 5908, 6962, 7330, 7832, 8133, 8888, 9092, 12175,
     12625, 13566, 15392, 15419, 16957, 17539, 17809, 17924, 18106, 18330, 18732, 18905, 18912,
+    # #2300: a cell left unanswered beside one a codeBlock writes.
+    1791, 2142, 3159, 4389,
+    # #2315: a codeBlock reads a matrix cell left unanswered.
+    4583,
 ]
 
 _CASES = int(os.environ.get("QML_SOUNDNESS_FUZZ_CASES", "200"))

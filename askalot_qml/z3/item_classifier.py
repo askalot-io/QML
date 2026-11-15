@@ -209,8 +209,13 @@ class ItemClassifier:
             # fell back to runtime enforcement.
             coverage_gaps = list(self.builder.coverage_gaps.get(item_id, []))
 
+            precondition: dict[str, Any] = {"status": pre_status}
+            if pre_status == "NEVER" and self.builder.answered_by_code_only(item_id):
+                # Never asked because code answers it first on every walk
+                # (#2259): its answer exists, so it is no dead item.
+                precondition["code_answered"] = True
             return {
-                "precondition": {"status": pre_status},
+                "precondition": precondition,
                 "postcondition": {
                     "invariant": post_invariant,
                     "vacuous": vacuous,

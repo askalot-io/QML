@@ -33,6 +33,9 @@ msgid_plural "%(num)d more are not listed."
 msgstr[0] "%(num)d autre n'est pas listée."
 msgstr[1] "%(num)d autres ne sont pas listées."
 
+msgid "'pow' passed on as a function"
+msgstr "'pow' transmis comme fonction"
+
 msgid "A 'none' option that can be ticked with others"
 msgstr "Option « aucun » cochable avec d'autres options"
 
@@ -44,6 +47,21 @@ msgstr ""
 "Une condition d'affichage considère des réponses comme jamais données, "
 "car une modification en arrière les a sorties du parcours actuel : "
 "%(items)s"
+
+#, python-format
+msgid "Access to disallowed attribute: %(attr)s"
+msgstr "Accès à un attribut non autorisé : %(attr)s"
+
+#, python-format
+msgid ""
+"Access to disallowed attribute: %(module)s.%(member)s. This sandbox "
+"declares which members of %(module)s a questionnaire may use, so that an "
+"interpreter upgrade cannot widen it silently."
+msgstr ""
+"Accès à un attribut non autorisé : %(module)s.%(member)s. Cet "
+"environnement isolé fixe lui-même les membres de %(module)s qu'un "
+"questionnaire peut utiliser, pour qu'une mise à jour de l'interpréteur ne"
+" puisse pas en élargir la liste à votre insu."
 
 #, python-format
 msgid ""
@@ -76,6 +94,25 @@ msgstr "Contrôle de réponse que toute réponse satisfait"
 
 msgid "Answer check that no answer can pass"
 msgstr "Contrôle de réponse qu'aucune réponse ne peut satisfaire"
+
+#, python-format
+msgid "Call to disallowed attribute: %(attr)s"
+msgstr "Appel d'un attribut non autorisé : %(attr)s"
+
+#, python-format
+msgid ""
+"Call to disallowed attribute: %(module)s.%(member)s. This sandbox "
+"declares which members of %(module)s a questionnaire may use, so that an "
+"interpreter upgrade cannot widen it silently."
+msgstr ""
+"Appel d'un attribut non autorisé : %(module)s.%(member)s. Cet "
+"environnement isolé fixe lui-même les membres de %(module)s qu'un "
+"questionnaire peut utiliser, pour qu'une mise à jour de l'interpréteur ne"
+" puisse pas en élargir la liste à votre insu."
+
+#, python-format
+msgid "Call to disallowed function: %(name)s"
+msgstr "Appel d'une fonction non autorisée : %(name)s"
 
 msgid "Cannot navigate to this item"
 msgstr "Impossible d'accéder à cet élément"
@@ -125,6 +162,10 @@ msgstr ""
 "considérée comme non satisfaite (l'élément concerné est ignoré). Éléments"
 " lus, affichés et laissés sans réponse ou calculés à partir de l'un d'eux"
 " : %(items)s"
+
+#, python-format
+msgid "Disallowed node type: %(node)s"
+msgstr "Construction non autorisée : %(node)s"
 
 msgid "Display condition could not be evaluated"
 msgstr "Condition d'affichage impossible à évaluer"
@@ -180,6 +221,9 @@ msgstr ""
 #, python-format
 msgid "Item %(item)s not found in questionnaire state"
 msgstr "Élément %(item)s introuvable dans l'état du questionnaire"
+
+msgid "Item answered by code, so never asked"
+msgstr "Élément renseigné par le code, donc jamais posé"
 
 msgid "Item can never be shown"
 msgstr "Élément qui ne peut jamais s'afficher"
@@ -246,6 +290,15 @@ msgstr[1] ""
 "Publication refusée : %(num)d erreurs doivent d'abord être corrigées : "
 "%(issues)s."
 
+#, python-format
+msgid ""
+"QML arithmetic is whole numbers: %(construct)s can produce a fraction; "
+"use '//' (floor division) or scale first, for example 100 * a // b"
+msgstr ""
+"Les calculs QML se font en nombres entiers : %(construct)s peut produire "
+"une fraction ; utilisez '//' (division entière) ou multipliez d'abord, "
+"par exemple 100 * a // b"
+
 msgid "Questionnaire-level condition that nothing reads"
 msgstr "Condition sur le questionnaire lui-même, que rien ne lit"
 
@@ -260,6 +313,11 @@ msgstr "Liste de questions répétées désignant des options non déclarées"
 
 msgid "Repeated-question subject that cannot be answered"
 msgstr "Sujet de questions répétées auquel on ne peut pas répondre"
+
+msgid "Something went wrong on our side. Please try again in a moment."
+msgstr ""
+"Une erreur s'est produite de notre côté. Veuillez réessayer dans un "
+"instant."
 
 msgid "Supplied value ignored: it fails the answer check"
 msgstr "Valeur fournie ignorée : elle ne satisfait pas le contrôle de réponse"
@@ -293,6 +351,10 @@ msgstr "Enquête reprise, mais tous les éléments sont déjà complétés"
 
 msgid "Survey resumed successfully"
 msgstr "Enquête reprise avec succès"
+
+#, python-format
+msgid "Syntax error on line %(line)s"
+msgstr "Erreur de syntaxe à la ligne %(line)s"
 
 #, python-format
 msgid ""
@@ -413,6 +475,10 @@ msgstr ""
 "(%(error_type)s). Elle est considérée comme non satisfaite (l'élément "
 "concerné est ignoré)."
 
+#, python-format
+msgid "Validation error (%(error_type)s)"
+msgstr "Erreur de validation (%(error_type)s)"
+
 msgid "Variable assigned to itself"
 msgstr "Variable affectée à elle-même"
 
@@ -427,4 +493,11 @@ msgstr "Variable qui ne fait que copier une autre"
 
 msgid "Wording checks not run for this language"
 msgstr "Vérifications de formulation non effectuées pour cette langue"
+
+msgid "a power by a negative number"
+msgstr "une puissance à exposant négatif"
+
+#, python-format
+msgid "the number %(value)s"
+msgstr "le nombre %(value)s"
 

@@ -48,6 +48,22 @@ Two key families behave differently:
 
 The translated text is not sanitized here: the save path checks markup before
 storing, so an overlay never fails on what it applies.
+
+**Source-level appliers.** Everything above reads the loaded (flattened)
+document. ``apply_source_translation`` instead rewrites the raw parsed QML file
+(``yaml.safe_load`` of the text, ``questionnaire.blocks[].items[]``), walked
+with the same key scheme, so a translated *file* can be written: the template
+library's build materializes each language's copy of a template this way, and
+``dump_source`` writes it back as YAML. The file's precondition hints, which
+are not text keys, have a pair of their own (``source_precondition_hints``,
+``apply_source_precondition_hints``), keyed like the postcondition hints::
+
+    block:<block id>/precondition/<n>/hint
+    item:<item id>/precondition/<n>/hint
+
+``<n>`` is the condition's position in its ``precondition`` list; a condition
+with no hint has no key. They live beside a translation, never inside one: a
+stored translation holds text keys only.
 """
 
 from __future__ import annotations
@@ -55,9 +71,12 @@ from __future__ import annotations
 import copy
 import logging
 import re
+from collections.abc import Iterable, Iterator
 from dataclasses import dataclass
 from enum import StrEnum
 from typing import Any
+
+import yaml
 
 QUESTIONNAIRE_SCOPE = "questionnaire"
 
@@ -125,6 +144,28 @@ class _Document:
 
 
 def _walk(qml: dict[str, Any]) -> _Document:
+    """The text slots of a loaded (flattened) document."""
+    items_by_block: dict[str, list[dict[str, Any]]] = {}
+    for item in qml.get("items", []):
+        items_by_block.setdefault(item.get("blockId"), []).append(item)
+    return _walk_blocks(
+        qml, ((block, items_by_block.get(block["id"], [])) for block in qml.get("blocks", []))
+    )
+
+
+def _walk_source(document: dict[str, Any]) -> _Document:
+    """The text slots of a raw parsed QML file, whose items sit inside their blocks."""
+    questionnaire = document["questionnaire"]
+    return _walk_blocks(
+        questionnaire,
+        ((block, block.get("items") or []) for block in questionnaire.get("blocks") or []),
+    )
+
+
+def _walk_blocks(
+    qml: dict[str, Any], blocks: Iterable[tuple[dict[str, Any], list[dict[str, Any]]]]
+) -> _Document:
+    """Walk ``qml``'s title, then each block with its items, in document order."""
     doc = _Document(slots={}, positional_groups={}, list_lengths={}, coded_groups={}, scopes=set())
 
     def add(key: str, container: dict | list, field: Any, **kwargs: Any) -> None:
@@ -165,18 +206,14 @@ def _walk(qml: dict[str, Any]) -> _Document:
     if "title" in qml:
         add(f"{QUESTIONNAIRE_SCOPE}/title", qml, "title")
 
-    items_by_block: dict[str, list[dict[str, Any]]] = {}
-    for item in qml.get("items", []):
-        items_by_block.setdefault(item.get("blockId"), []).append(item)
-
-    for block in qml.get("blocks", []):
+    for block, items in blocks:
         scope = f"block:{block['id']}"
         doc.scopes.add(scope)
         if "title" in block:
             add(f"{scope}/title", block, "title")
         add_labels(scope, block.get("labels"))
         add_hints(scope, block)
-        for item in items_by_block.get(block["id"], []):
+        for item in items:
             item_scope = f"item:{item['id']}"
             doc.scopes.add(item_scope)
             if "title" in item:
@@ -350,6 +387,98 @@ def apply_translation(qml: dict[str, Any], texts: dict[str, str]) -> dict[str, A
         if "_roster_block_id" in item:
             item["_roster_labels"] = blocks[item["_roster_block_id"]].get("labels", {})
     return translated
+
+
+def _normalized_copy(document: dict[str, Any]) -> dict[str, Any]:
+    """A deep copy of a raw QML file with each Switch's ``on``/``off`` keys named.
+
+    YAML reads a bare ``on:`` key as ``True``; the loader names it back
+    (``normalize_switch_input``), and so must a source-level walk, or the
+    ``item:<id>/on`` key would find nothing to replace.
+    """
+    # Imported here: qml_loader is not needed by the pure functions above.
+    from askalot_qml.core.qml_loader import normalize_switch_input
+
+    normalized = copy.deepcopy(document)
+    for block in normalized["questionnaire"].get("blocks") or []:
+        for item in block.get("items") or []:
+            normalize_switch_input(item.get("input"))
+    return normalized
+
+
+def apply_source_translation(document: dict[str, Any], texts: dict[str, str]) -> dict[str, Any]:
+    """A copy of the raw QML file ``document`` with every key ``texts`` holds replaced.
+
+    ``document`` is ``yaml.safe_load`` of the file, not the loader's output.
+    The keys are those ``text_keys`` gives the loaded file, and as with
+    ``apply_translation`` only text moves and keys the file lacks are ignored,
+    so validate the map against the loaded file first. ``document`` is not
+    modified.
+    """
+    translated = _normalized_copy(document)
+    for key, slot in _walk_source(translated).slots.items():
+        if key in texts:
+            slot.container[slot.field] = texts[key]
+    return translated
+
+
+def _precondition_hint_slots(document: dict[str, Any]) -> Iterator[tuple[str, dict[str, Any]]]:
+    """Each hinted precondition of a raw QML file: its key and the condition holding the hint."""
+    for block in document["questionnaire"].get("blocks") or []:
+        owners = [(f"block:{block['id']}", block)]
+        owners += [(f"item:{item['id']}", item) for item in block.get("items") or []]
+        for scope, owner in owners:
+            conditions = owner.get("precondition")
+            if not isinstance(conditions, list):
+                continue
+            for index, condition in enumerate(conditions):
+                if isinstance(condition, dict) and isinstance(condition.get("hint"), str):
+                    yield f"{scope}/precondition/{index}/hint", condition
+
+
+def source_precondition_hints(document: dict[str, Any]) -> dict[str, str]:
+    """Every precondition hint of the raw QML file ``document``, key → hint, in document order."""
+    return {key: condition["hint"] for key, condition in _precondition_hint_slots(document)}
+
+
+def apply_source_precondition_hints(
+    document: dict[str, Any], hints: dict[str, str]
+) -> dict[str, Any]:
+    """A copy of the raw QML file ``document`` with every hint ``hints`` keys replaced.
+
+    Keys the file lacks are ignored, so compare the map's keys with
+    ``source_precondition_hints`` first. ``document`` is not modified.
+    """
+    hinted = copy.deepcopy(document)
+    for key, condition in _precondition_hint_slots(hinted):
+        if key in hints:
+            condition["hint"] = hints[key]
+    return hinted
+
+
+class _SourceDumper(yaml.SafeDumper):
+    """The safe dumper, writing a multi-line string (a code block) as a literal block."""
+
+
+def _represent_str(dumper: yaml.SafeDumper, value: str) -> yaml.ScalarNode:
+    return dumper.represent_scalar(
+        "tag:yaml.org,2002:str", value, style="|" if "\n" in value else None
+    )
+
+
+_SourceDumper.add_representer(str, _represent_str)
+
+
+def dump_source(document: dict[str, Any]) -> str:
+    """A raw QML file as YAML text, keys in their own order and text unescaped.
+
+    The comments and quoting of the original file are not kept (PyYAML does
+    not round-trip them); what is kept is every value, so the text loads to the
+    same document. Lines are not folded, so a long title stays one line.
+    """
+    return yaml.dump(
+        document, Dumper=_SourceDumper, sort_keys=False, allow_unicode=True, width=4096
+    )
 
 
 def seed_translations(repository: Any, questionnaire_id: str, version_id: str) -> list[str]:

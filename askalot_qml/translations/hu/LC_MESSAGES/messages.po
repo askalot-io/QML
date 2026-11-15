@@ -28,6 +28,9 @@ msgid_plural "%(num)d more are not listed."
 msgstr[0] "További %(num)d nincs felsorolva."
 msgstr[1] "További %(num)d nincs felsorolva."
 
+msgid "'pow' passed on as a function"
+msgstr "a függvényként továbbadott 'pow'"
+
 msgid "A 'none' option that can be ticked with others"
 msgstr "Más válaszokkal együtt is bejelölhető „egyik sem” lehetőség"
 
@@ -36,24 +39,39 @@ msgid ""
 "A precondition reads answers as never given, because a backward edit took"
 " them off the current path: %(items)s"
 msgstr ""
-"Egy megjelenítési feltétel soha meg nem adottként olvas válaszokat, mert "
-"egy visszalépés utáni módosítás kivette őket a jelenlegi útvonalból: "
-"%(items)s"
+"Egy megjelenítési feltétel úgy olvas válaszokat, mintha soha nem adták "
+"volna meg őket, mert egy visszalépés utáni módosítás kivette őket a "
+"jelenlegi útvonalból: %(items)s"
+
+#, python-format
+msgid "Access to disallowed attribute: %(attr)s"
+msgstr "Nem engedélyezett attribútum elérése: %(attr)s"
+
+#, python-format
+msgid ""
+"Access to disallowed attribute: %(module)s.%(member)s. This sandbox "
+"declares which members of %(module)s a questionnaire may use, so that an "
+"interpreter upgrade cannot widen it silently."
+msgstr ""
+"Nem engedélyezett attribútum elérése: %(module)s.%(member)s. A védett "
+"futtatókörnyezet maga rögzíti, hogy egy kérdőív a(z) %(module)s mely "
+"elemeit használhatja, így egy Python-frissítés sem bővítheti ezt a kört "
+"észrevétlenül."
 
 #, python-format
 msgid ""
 "An answer check reads answers as never given, because a backward edit "
 "took them off the current path: %(items)s"
 msgstr ""
-"Egy válaszellenőrzés soha meg nem adottként olvas válaszokat, mert egy "
-"visszalépés utáni módosítás kivette őket a jelenlegi útvonalból: "
-"%(items)s"
+"Egy válaszellenőrzés úgy olvas válaszokat, mintha soha nem adták volna "
+"meg őket, mert egy visszalépés utáni módosítás kivette őket a jelenlegi "
+"útvonalból: %(items)s"
 
 msgid "Answer check could not be evaluated"
 msgstr "A válaszellenőrzés nem értékelhető ki"
 
 msgid "Answer check reads an answer that is off the path"
-msgstr "A válaszellenőrzés egy útvonalon kívüli választ olvasott"
+msgstr "A válaszellenőrzés egy útvonalon kívüli választ olvas"
 
 msgid "Answer check reads an unanswered item"
 msgstr "A válaszellenőrzés egy megválaszolatlan kérdést olvas"
@@ -72,6 +90,25 @@ msgstr "Válaszellenőrzés, amelyen minden válasz átmegy"
 
 msgid "Answer check that no answer can pass"
 msgstr "Válaszellenőrzés, amelyen egyetlen válasz sem mehet át"
+
+#, python-format
+msgid "Call to disallowed attribute: %(attr)s"
+msgstr "Nem engedélyezett attribútum hívása: %(attr)s"
+
+#, python-format
+msgid ""
+"Call to disallowed attribute: %(module)s.%(member)s. This sandbox "
+"declares which members of %(module)s a questionnaire may use, so that an "
+"interpreter upgrade cannot widen it silently."
+msgstr ""
+"Nem engedélyezett attribútum hívása: %(module)s.%(member)s. A védett "
+"futtatókörnyezet maga rögzíti, hogy egy kérdőív a(z) %(module)s mely "
+"elemeit használhatja, így egy Python-frissítés sem bővítheti ezt a kört "
+"észrevétlenül."
+
+#, python-format
+msgid "Call to disallowed function: %(name)s"
+msgstr "Nem engedélyezett függvény hívása: %(name)s"
 
 msgid "Cannot navigate to this item"
 msgstr "Ehhez a kérdéshez most nem lehet ugrani"
@@ -122,11 +159,15 @@ msgstr ""
 "olvasott, megjelent, de megválaszolatlanul hagyott vagy ilyenből "
 "számított kérdések: %(items)s"
 
+#, python-format
+msgid "Disallowed node type: %(node)s"
+msgstr "Nem engedélyezett nyelvi elem: %(node)s"
+
 msgid "Display condition could not be evaluated"
 msgstr "A megjelenítési feltétel nem értékelhető ki"
 
 msgid "Display condition reads an answer that is off the path"
-msgstr "A megjelenítési feltétel egy útvonalon kívüli választ olvasott"
+msgstr "A megjelenítési feltétel egy útvonalon kívüli választ olvas"
 
 msgid "Display condition reads an unanswered item"
 msgstr "A megjelenítési feltétel egy megválaszolatlan kérdést olvas"
@@ -155,7 +196,7 @@ msgid ""
 " so it is not asked at all."
 msgstr ""
 "A(z) %(item)s külső előtöltése elutasítva: a kérdés megjelenítési "
-"feltétele nem teljesül, így a kérdés egyáltalán nem hangzik el."
+"feltétele nem teljesül, így a kérdés meg sem jelenik."
 
 #, python-format
 msgid ""
@@ -176,6 +217,9 @@ msgstr ""
 #, python-format
 msgid "Item %(item)s not found in questionnaire state"
 msgstr "A(z) %(item)s kérdés nem található a kérdőív állapotában"
+
+msgid "Item answered by code, so never asked"
+msgstr "Kód által megválaszolt, ezért soha fel nem tett kérdés"
 
 msgid "Item can never be shown"
 msgstr "Soha meg nem jeleníthető kérdés"
@@ -238,6 +282,15 @@ msgid_plural "Publishing was refused: %(num)d errors must be fixed first: %(issu
 msgstr[0] "A közzététel elutasítva: előbb %(num)d hibát kell kijavítani: %(issues)s."
 msgstr[1] "A közzététel elutasítva: előbb %(num)d hibát kell kijavítani: %(issues)s."
 
+#, python-format
+msgid ""
+"QML arithmetic is whole numbers: %(construct)s can produce a fraction; "
+"use '//' (floor division) or scale first, for example 100 * a // b"
+msgstr ""
+"A QML csak egész számokkal számol: %(construct)s törtet adhat eredményül;"
+" használja a '//' (egészosztás) műveletet, vagy előbb szorozzon fel, "
+"például 100 * a // b"
+
 msgid "Questionnaire-level condition that nothing reads"
 msgstr "Magára a kérdőívre vonatkozó feltétel, amelyet semmi sem olvas"
 
@@ -252,6 +305,9 @@ msgstr "Az ismétlődő kérdéslista nem deklarált lehetőségekre hivatkozik"
 
 msgid "Repeated-question subject that cannot be answered"
 msgstr "Az ismétlődő blokk megnevezését adó kérdés nem válaszolható meg"
+
+msgid "Something went wrong on our side. Please try again in a moment."
+msgstr "Valami hiba történt nálunk. Kérjük, próbálja újra egy kis idő múlva."
 
 msgid "Supplied value ignored: it fails the answer check"
 msgstr "A megadott érték figyelmen kívül marad: nem megy át a válaszellenőrzésen"
@@ -285,6 +341,10 @@ msgstr "A kérdőív kitöltése folytatható, de minden kérdésre válaszolt m
 
 msgid "Survey resumed successfully"
 msgstr "A kérdőív kitöltése folytatható"
+
+#, python-format
+msgid "Syntax error on line %(line)s"
+msgstr "Szintaktikai hiba a(z) %(line)s. sorban"
 
 #, python-format
 msgid ""
@@ -342,8 +402,8 @@ msgid ""
 "The iterateOver expression %(expr)s failed (%(error_type)s), so the "
 "roster pass is skipped."
 msgstr ""
-"A(z) %(expr)s iterateOver kifejezés nem sikerült (%(error_type)s), ezért "
-"az ismétlődő kérdéslista feldolgozása kimarad."
+"A(z) %(expr)s iterateOver kifejezés kiértékelése nem sikerült "
+"(%(error_type)s), ezért az ismétlődő kérdéslista feldolgozása kimarad."
 
 #, python-format
 msgid ""
@@ -403,6 +463,10 @@ msgstr ""
 "(%(error_type)s). A rendszer nem teljesültnek tekinti (a feltételhez "
 "kötött kérdést kihagyja)."
 
+#, python-format
+msgid "Validation error (%(error_type)s)"
+msgstr "Ellenőrzési hiba (%(error_type)s)"
+
 msgid "Variable assigned to itself"
 msgstr "Önmagának értékül adott változó"
 
@@ -417,4 +481,11 @@ msgstr "Egy másikat csak lemásoló változó"
 
 msgid "Wording checks not run for this language"
 msgstr "Ezen a nyelven a megfogalmazási ellenőrzések nem futottak"
+
+msgid "a power by a negative number"
+msgstr "a negatív kitevős hatványozás"
+
+#, python-format
+msgid "the number %(value)s"
+msgstr "a(z) %(value)s szám"
 

@@ -526,7 +526,7 @@ class QMLDiagramIR:
 
         * ``classification`` – the single semantic label used by the legacy
           renderer and the icon resolver (``always`` / ``conditional`` /
-          ``never`` / ``tautological`` / ``infeasible`` / ``visited`` /
+          ``never`` / ``code_answered`` / ``tautological`` / ``infeasible`` / ``visited`` /
           ``pending`` / ``cycle``).
         * ``precondition_status`` – the raw Z3 reachability axis
           (``ALWAYS`` / ``CONDITIONAL`` / ``NEVER``) or ``None`` when no
@@ -606,7 +606,9 @@ class QMLDiagramIR:
                 return post_invariant.lower()
             return "conditional"
         if pre_status == "NEVER":
-            return "never"
+            # Code answers it before the walk reaches it (#2259): a warning,
+            # not a dead item, so it is not drawn as one.
+            return "code_answered" if precond.get("code_answered") else "never"
         return "pending"
 
     # ------------------------------------------------------------------
