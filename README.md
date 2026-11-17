@@ -1,29 +1,32 @@
 # Questionnaire Markup Language Compiler and Validator
 
 > License & usage posture. This repository is source-available, **not
-> OSI-approved**, and licensed under PolyForm Noncommercial 1.0.0 — a
-> non-commercial license. You may read, run, modify, and cite the code
-> for any non-commercial purpose (research, teaching, evaluation, personal
-> use). Commercial use requires a separate license from Askalot. This
-> replaces the prior CC BY-NC 4.0 statement. See [LICENSE](./LICENSE).
+> OSI-approved**, and licensed under PolyForm Shield 1.0.0. You may use,
+> modify and redistribute the code for any purpose, commercial use
+> included, except to provide a product that competes with this software
+> or with a product Askalot provides using it. See [LICENSE](./LICENSE).
+>
+> The QML language specification and the theory behind its validation are
+> licensed separately under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/):
+> the [QML syntax reference](https://docs.askalot.io/guide/qml-syntax/) and the
+> [theory pages](https://docs.askalot.io/theory/questionnaire-analysis/) on
+> docs.askalot.io.
 
 ## Authorship & Intellectual Property
 
-The **QML language specification** — and the underlying concept of a
-**declarative questionnaire with formal validation by an SMT solver** — are the
-intellectual property of **Peter Saghelyi**, the author and originator of this
-work.
+The **QML language specification** and the method behind it, a
+**declarative questionnaire validated by an SMT solver**, were created by
+**Peter Saghelyi**. The intellectual property is held by **Askalot Survey &
+Research Kft.**
 
-A peer-reviewed scientific paper describing the language and its
-formal-validation model is currently **under review** and will be published
-soon; full citation details will be added here on publication. Until then,
-please attribute the QML language and its SMT-based validation model to the
-author and link back to this repository.
+The language and its formal-validation model are described in a peer-reviewed
+paper presented at ICAI 2026 and published in its conference proceedings
+([doi:10.17048/icai.2026.227](https://doi.org/10.17048/icai.2026.227)). When you
+use or build on the method, cite the paper and link back to this repository.
 
-This authorship/IP notice is distinct from the code license above: the PolyForm
-Noncommercial 1.0.0 license governs use of the source code, while the design of
-the QML language and its formal-validation method remain the author's
-intellectual property.
+The source code is licensed under PolyForm Shield 1.0.0 (see above). The
+specification and the theory pages are licensed under CC BY 4.0, attributed to
+Askalot Survey & Research Kft.
 
 **Author:** Peter Saghelyi · [psaghelyi@askalot.io](mailto:psaghelyi@askalot.io) · [LinkedIn](https://www.linkedin.com/in/psaghelyi/)
 
@@ -125,7 +128,7 @@ askalot_qml/
 
 ## Formal Foundation
 
-The module implements the formal-verification model described in the forthcoming peer-reviewed paper (see [Authorship & Intellectual Property](#authorship--intellectual-property)):
+The module implements the formal-verification model described in the peer-reviewed ICAI 2026 paper ([doi:10.17048/icai.2026.227](https://doi.org/10.17048/icai.2026.227)):
 
 ### Questionnaire Definition
 
