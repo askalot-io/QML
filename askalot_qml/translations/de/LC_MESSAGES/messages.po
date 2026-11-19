@@ -74,7 +74,7 @@ msgid "Answer check could not be evaluated"
 msgstr "Antwortprüfung konnte nicht ausgewertet werden"
 
 msgid "Answer check reads an answer that is off the path"
-msgstr "Antwortprüfung hat eine Antwort außerhalb des Pfads gelesen"
+msgstr "Antwortprüfung liest eine Antwort außerhalb des Pfads"
 
 msgid "Answer check reads an unanswered item"
 msgstr "Antwortprüfung liest ein unbeantwortetes Item"
@@ -129,7 +129,7 @@ msgid "Completion could not be proven"
 msgstr "Abschluss konnte nicht bewiesen werden"
 
 msgid "Condition on a value that never changes"
-msgstr "Bedingung auf einen Wert, der sich nie ändert"
+msgstr "Bedingung für einen Wert, der sich nie ändert"
 
 msgid "Condition reads free text"
 msgstr "Bedingung liest Freitext"
@@ -170,7 +170,7 @@ msgid "Display condition could not be evaluated"
 msgstr "Anzeigebedingung konnte nicht ausgewertet werden"
 
 msgid "Display condition reads an answer that is off the path"
-msgstr "Anzeigebedingung hat eine Antwort außerhalb des Pfads gelesen"
+msgstr "Anzeigebedingung liest eine Antwort außerhalb des Pfads"
 
 msgid "Display condition reads an unanswered item"
 msgstr "Anzeigebedingung liest ein unbeantwortetes Item"

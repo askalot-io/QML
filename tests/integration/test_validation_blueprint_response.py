@@ -28,6 +28,11 @@ body, and ``POST /guard-tree``, the Tree view's on-demand answer for it:
   ``/validate`` and ``/files`` answer 404;
 - ``validation_answer``, called with no Flask app or request, answers the body
   and status the route does, for a verdict and for a refusal;
+- the two routes share one bound per process (#2253): more posts than the bound
+  never run more than N answers at once, the overflow is answered ``503
+  validation_busy`` with ``Retry-After`` within the wait, a validation past its
+  time cap stops at a phase boundary (``503 validation_over_time``) and frees its
+  slot, and a non-positive bound is refused at registration;
 - the validation answer carries no guard tree; ``POST /guard-tree`` answers it
   for the same body, refuses what ``/validation`` refuses, and is what
   ``guard_tree_answer`` answers.
@@ -37,9 +42,12 @@ QMLLoader + ValidationProcessor + IR emission) on content read from the fixture
 directory, so the payload is the one a running server builds.
 """
 
+import threading
+import time
 from pathlib import Path
 
 import pytest
+from askalot_qml.api import validation_blueprint as vb
 from askalot_qml.api.validation_blueprint import (
     create_validation_blueprint,
     guard_tree_answer,
@@ -48,13 +56,16 @@ from askalot_qml.api.validation_blueprint import (
 from flask import Flask
 
 FIXTURES = Path(__file__).resolve().parents[1] / "fixtures"
+
+#: The bound every blueprint in this file is built with, unless a test states its own.
+BOUND = {"max_concurrent": 4, "busy_wait_seconds": 5, "time_cap_seconds": 60}
 ROUTE = "/api/qml/validation"
 TREE_ROUTE = "/api/qml/guard-tree"
 
 
 def _client(posted_content_origin: str = "editor"):
     app = Flask(__name__)
-    app.register_blueprint(create_validation_blueprint(posted_content_origin=posted_content_origin))
+    app.register_blueprint(create_validation_blueprint(posted_content_origin=posted_content_origin, **BOUND))
     return app.test_client()
 
 
@@ -182,7 +193,7 @@ class TestEveryAnswerNamesItsCopy:
 
     def test_the_origin_is_required(self):
         with pytest.raises(TypeError):
-            create_validation_blueprint()
+            create_validation_blueprint(**BOUND)
 
 
 class TestTheHostNamesTheLanguage:
@@ -192,7 +203,7 @@ class TestTheHostNamesTheLanguage:
     def _types(language_of):
         app = Flask(__name__)
         app.register_blueprint(
-            create_validation_blueprint(posted_content_origin="editor", language_of=language_of)
+            create_validation_blueprint(posted_content_origin="editor", language_of=language_of, **BOUND)
         )
         body = {
             "content": (FIXTURES / "language_neutral_en.qml").read_text(),
@@ -365,7 +376,7 @@ class TestNoDirectoryIsRead:
 
     def test_the_blueprint_serves_two_rules(self):
         app = Flask(__name__)
-        app.register_blueprint(create_validation_blueprint(posted_content_origin="editor"))
+        app.register_blueprint(create_validation_blueprint(posted_content_origin="editor", **BOUND))
         rules = {(str(r), tuple(sorted(r.methods - {"OPTIONS", "HEAD"}))) for r in app.url_map.iter_rules()}
         assert rules - {("/static/<path:filename>", ("GET",))} == {
             (ROUTE, ("POST",)),
@@ -412,3 +423,82 @@ class TestTheGuardTreeIsAskedFor:
     def test_a_parse_failure_is_the_ladders_400(self):
         resp = _client().post(TREE_ROUTE, json={"content": "questionnaire: [", "name": "x.qml"})
         assert resp.status_code == 400 and "parse_error" in resp.get_json()
+
+
+class TestConcurrentValidationsAreBounded:
+    """#2253 (D124): one bound per process for both routes, a short wait, then 503."""
+
+    @staticmethod
+    def _app(**bound):
+        app = Flask(__name__)
+        app.register_blueprint(create_validation_blueprint(posted_content_origin="editor", **bound))
+        return app
+
+    def test_more_posts_than_the_bound_never_run_more_than_n_and_the_rest_are_busy(self, monkeypatch):
+        running, peak, lock, release = [0], [0], threading.Lock(), threading.Event()
+
+        def slow_answer(*_args, **_kwargs):
+            with lock:
+                running[0] += 1
+                peak[0] = max(peak[0], running[0])
+            release.wait(5)
+            with lock:
+                running[0] -= 1
+            return {"ok": True}, 200
+
+        monkeypatch.setattr(vb, "validation_answer", slow_answer)
+        monkeypatch.setattr(vb, "guard_tree_answer", slow_answer)
+        app = self._app(max_concurrent=2, busy_wait_seconds=0.3, time_cap_seconds=60)
+        answers: list = []
+
+        def post(route):
+            with app.test_client() as client:
+                started = time.monotonic()
+                resp = client.post(route, json={"content": "x: 1", "name": "doc.qml"})
+                answers.append((resp.status_code, resp.get_json(), resp.headers.get("Retry-After"), time.monotonic() - started))
+
+        threads = [threading.Thread(target=post, args=(ROUTE if i % 2 else TREE_ROUTE,)) for i in range(5)]
+        for t in threads:
+            t.start()
+        time.sleep(1.0)  # the three that found no slot have been answered by now
+        release.set()
+        for t in threads:
+            t.join(10)
+
+        assert peak[0] == 2
+        busy = [a for a in answers if a[0] == 503]
+        assert len(busy) == 3 and len([a for a in answers if a[0] == 200]) == 2
+        for _status, body, retry_after, elapsed in busy:
+            assert body["error"] == "validation_busy" and retry_after == "1"
+            assert elapsed < 1.0, "the overflow is answered within the wait, not after the slow runs"
+
+    def test_a_validation_past_its_cap_stops_at_a_phase_boundary_and_frees_its_slot(self, monkeypatch):
+        class Clock:
+            """The module's own clock: the deadline is set at 0, every phase check reads 100."""
+
+            readings = iter([0.0])
+
+            @classmethod
+            def monotonic(cls):
+                return next(cls.readings, 100.0)
+
+        monkeypatch.setattr(vb, "time", Clock)
+        app = self._app(max_concurrent=1, busy_wait_seconds=0.2, time_cap_seconds=30)
+        with app.test_client() as client:
+            first = client.post(ROUTE, json={"content": (FIXTURES / "defect_unreachable.qml").read_text(), "name": "doc.qml"})
+            assert first.status_code == 503 and first.get_json()["error"] == "validation_over_time"
+            second = client.post(TREE_ROUTE, json={"content": "title: x", "name": "doc.qml"})
+        assert second.status_code != 503, "the over-time run released its slot"
+
+    def test_validation_answer_without_a_deadline_runs_to_the_end(self):
+        body, status = validation_answer((FIXTURES / "defect_unreachable.qml").read_text(), "doc.qml", content_origin="editor")
+        assert status == 200 and "validation_issues" in body
+
+    @pytest.mark.parametrize("bound", [
+        {"max_concurrent": 0, "busy_wait_seconds": 1, "time_cap_seconds": 1},
+        {"max_concurrent": 1, "busy_wait_seconds": 0, "time_cap_seconds": 1},
+        {"max_concurrent": 1, "busy_wait_seconds": 1, "time_cap_seconds": 0},
+    ])
+    def test_a_non_positive_bound_is_refused_at_registration(self, bound):
+        with pytest.raises(ValueError):
+            create_validation_blueprint(posted_content_origin="editor", **bound)

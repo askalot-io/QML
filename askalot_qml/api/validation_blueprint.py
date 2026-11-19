@@ -13,6 +13,19 @@ which copy it judged.
   ``core/qml_guard_tree.py``), which the diagram's Tree view asks for when it
   is shown; its solver checks are paid only then.
 
+Both routes share one bound per process (#2253, D124): at most
+``max_concurrent`` of them run at once; a request that cannot start within
+``busy_wait_seconds`` is answered ``503 validation_busy`` with ``Retry-After``,
+so an editor page sees "busy" at once instead of waiting into its own 45 s
+timeout. A validation also stops at the first phase boundary past
+``time_cap_seconds`` (``503 validation_over_time``): a gthread cannot be killed,
+so the cap is checked between phases (load, graph, report, findings) and an
+over-long phase still runs to its end. The guard tree keeps its own solver
+budget (``core/qml_guard_tree.py``) and shares only the bound. Nothing outside
+the routes is bounded: the template catalog build calls ``validation_answer``
+directly, and Portor's ``validate_qml_file`` and the publish gate drive
+``ValidationProcessor`` themselves.
+
 Each answer is a JSON body and status for one text, with no Flask in it. The
 routes are the HTTP wrappers around them, and a server-rendered page that shows
 the same diagram (Armiger's template diagram) calls them directly, so the
@@ -23,6 +36,8 @@ ladder.
 import ast
 import logging
 import re
+import threading
+import time
 from collections.abc import Callable
 
 import yaml
@@ -38,6 +53,16 @@ from askalot_qml.models.qml_state import QMLState
 #: of kilobytes; the services in front of this blueprint set no limit of their
 #: own, so the route states one.
 MAX_POSTED_BODY_BYTES = 1_048_576
+
+class ValidationOverTime(Exception):
+    """A validation passed its deadline at a phase boundary; answered ``503 validation_over_time``."""
+
+
+def _within(deadline: float | None) -> None:
+    """Raise ``ValidationOverTime`` once ``deadline`` (``time.monotonic``) has passed."""
+    if deadline is not None and time.monotonic() > deadline:
+        raise ValidationOverTime
+
 
 #: A quoted fragment of a PyYAML problem that is not a ``<token class>``: text
 #: the parser copied out of the file (an alias name, a tag, a stray character).
@@ -147,7 +172,11 @@ def _parse_error(
 
 
 def _validation_payload(
-    qml_name: str, questionnaire_data: dict, origin: str, language: str | None = None
+    qml_name: str,
+    questionnaire_data: dict,
+    origin: str,
+    language: str | None = None,
+    deadline: float | None = None,
 ) -> dict:
     """The full validation answer for a loaded questionnaire.
 
@@ -167,6 +196,7 @@ def _validation_payload(
 
     # Initialize ValidationProcessor
     processor = ValidationProcessor(state, language=language)
+    _within(deadline)
 
     # Get topology statistics from the engine
     topology_stats = processor.engine.get_statistics()
@@ -194,6 +224,7 @@ def _validation_payload(
     # Generate positions-free structural IR with classifications inlined.
     # Layout runs client-side in the QML Explorer React webview (ELK.js).
     graph_data = processor.generate_validation_graph(enable_z3_validation=True)
+    _within(deadline)
 
     # Get per-item Z3 classifications (already computed by generate_validation_graph)
     classifications = processor.get_item_classifications()
@@ -207,6 +238,8 @@ def _validation_payload(
 
     # Generate comprehensive validation report
     validation_report = processor.generate_validation_report()
+    # No check past the report: what remains (the findings) is cheap, and an
+    # answer this close to done is worth more than a "not checked".
 
     # The graded findings themselves (#728). The diagram's two Z3 axes
     # colour three of the twenty finding types; without this list the
@@ -255,7 +288,12 @@ def guard_tree_answer(content: str, name: str, *, content_origin: str) -> tuple[
 
 
 def validation_answer(
-    content: str, name: str, *, content_origin: str, language: str | None = None
+    content: str,
+    name: str,
+    *,
+    content_origin: str,
+    language: str | None = None,
+    deadline: float | None = None,
 ) -> tuple[dict, int]:
     """Validate one questionnaire text: the JSON body and HTTP status ``POST /validation`` answers.
 
@@ -268,6 +306,9 @@ def validation_answer(
         language: The questionnaire's language when the host knows it; an
             "other" one reports ``language_not_judged`` in place of the
             word-list lints (``ValidationProcessor``).
+        deadline: A ``time.monotonic`` instant past which the validation
+            stops at its next phase boundary, raising ``ValidationOverTime``;
+            ``None`` runs it to the end.
 
     Returns:
         ``(body, 200)`` with the validation payload (``_validation_payload``:
@@ -280,7 +321,9 @@ def validation_answer(
     loader = QMLLoader(logger=logger)
     try:
         questionnaire_data = loader.load_from_string(content)
-        return _validation_payload(name, questionnaire_data, content_origin, language), 200
+        return _validation_payload(name, questionnaire_data, content_origin, language, deadline), 200
+    except ValidationOverTime:
+        raise
     except Exception as e:
         return _fault(name, e, loader, content_origin)
 
@@ -289,6 +332,9 @@ def create_validation_blueprint(
     url_prefix: str = "/api/qml",
     *,
     posted_content_origin: str,
+    max_concurrent: int,
+    busy_wait_seconds: float,
+    time_cap_seconds: float,
     language_of: Callable[[dict], str | None] | None = None,
 ) -> Blueprint:
     """
@@ -299,6 +345,12 @@ def create_validation_blueprint(
         posted_content_origin: The ``content_origin`` reported for content
                                validated from a request body. Required: a
                                verdict states which copy it judged.
+        max_concurrent: How many validations and guard trees this process
+                        runs at once (one bound for both routes).
+        busy_wait_seconds: How long a request waits for a slot before it is
+                           answered ``503 validation_busy``.
+        time_cap_seconds: How long one validation may run before it stops at
+                          its next phase boundary (``503 validation_over_time``).
         language_of: The host's reading of the questionnaire's language from
                      the posted body (Armiger reads ``questionnaire_id``
                      through its repository), or ``None`` when it states none.
@@ -308,6 +360,31 @@ def create_validation_blueprint(
         Flask blueprint with the validation endpoint
     """
     blueprint = Blueprint("qml_validation", __name__, url_prefix=url_prefix)
+    if max_concurrent < 1 or busy_wait_seconds <= 0 or time_cap_seconds <= 0:
+        raise ValueError("the validation bound, its wait and the time cap must be positive")
+    slots = threading.BoundedSemaphore(max_concurrent)
+    retry_after = str(max(1, round(busy_wait_seconds)))
+
+    def _refusal(code: str, detail: str):
+        """A 503 the editor words as not checked, with ``Retry-After``."""
+        response = jsonify({"error": code, "detail": detail})
+        response.headers["Retry-After"] = retry_after
+        return response, 503
+
+    def _bounded(answer: Callable[[], tuple[dict, int]]):
+        """``answer()`` inside one of the process's slots, or the busy refusal."""
+        if not slots.acquire(timeout=busy_wait_seconds):
+            return _refusal("validation_busy", "Too many validations are running; try again shortly.")
+        try:
+            body, status = answer()
+        except ValidationOverTime:
+            return _refusal(
+                "validation_over_time",
+                f"The validation ran longer than {time_cap_seconds:g} s and was stopped.",
+            )
+        finally:
+            slots.release()
+        return jsonify(body), status
 
     def _posted() -> tuple[dict | None, tuple | None]:
         """The posted ``content`` and ``name``, or the refusal to answer instead."""
@@ -366,13 +443,17 @@ def create_validation_blueprint(
         body, refusal = _posted()
         if refusal is not None:
             return refusal
-        answer, status = validation_answer(
-            body["content"],
-            body["name"],
-            content_origin=posted_content_origin,
-            language=language_of(body) if language_of is not None else None,
+        # The host's language read is a repository query, so it runs inside
+        # the slot: a busy refusal costs no database round trip.
+        return _bounded(
+            lambda: validation_answer(
+                body["content"],
+                body["name"],
+                content_origin=posted_content_origin,
+                language=language_of(body) if language_of is not None else None,
+                deadline=time.monotonic() + time_cap_seconds,
+            )
         )
-        return jsonify(answer), status
 
     @blueprint.route("/guard-tree", methods=["POST"])
     def post_guard_tree():
@@ -384,9 +465,8 @@ def create_validation_blueprint(
         body, refusal = _posted()
         if refusal is not None:
             return refusal
-        answer, status = guard_tree_answer(
-            body["content"], body["name"], content_origin=posted_content_origin
+        return _bounded(
+            lambda: guard_tree_answer(body["content"], body["name"], content_origin=posted_content_origin)
         )
-        return jsonify(answer), status
 
     return blueprint

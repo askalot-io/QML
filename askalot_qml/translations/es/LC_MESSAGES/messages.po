@@ -74,7 +74,7 @@ msgid "Answer check could not be evaluated"
 msgstr "Comprobación de respuesta que no se pudo evaluar"
 
 msgid "Answer check reads an answer that is off the path"
-msgstr "Comprobación de respuesta que leyó una respuesta fuera de la ruta"
+msgstr "Comprobación de respuesta que lee una respuesta fuera de la ruta"
 
 msgid "Answer check reads an unanswered item"
 msgstr "Comprobación de respuesta que lee un elemento sin responder"
@@ -170,7 +170,7 @@ msgid "Display condition could not be evaluated"
 msgstr "Condición de visualización que no se pudo evaluar"
 
 msgid "Display condition reads an answer that is off the path"
-msgstr "Condición de visualización que leyó una respuesta fuera de la ruta"
+msgstr "Condición de visualización que lee una respuesta fuera de la ruta"
 
 msgid "Display condition reads an unanswered item"
 msgstr "Condición de visualización que lee un elemento sin responder"
