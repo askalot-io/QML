@@ -258,7 +258,25 @@ def needs_instrument(walk, *, itemless_counts: bool) -> bool:
     return itemless_counts and not walk.qml_state.get("items")
 
 
-def load_instrument(repository, walk) -> str:
+class Instrument(str):
+    """A walk's QML text together with the language its rating-scale labels are shown in.
+
+    The steps hand the instrument text through the compute phase unchanged, so
+    the language rides on the text itself rather than on every step's
+    signature: ``materialize_walk_state`` loads with it, and a declared scale
+    gets its catalog labels in that language. ``load_instrument`` and a
+    language pick build one; a plain string loads codes only.
+    """
+
+    language: str | None
+
+    def __new__(cls, text: str, language: str | None) -> Instrument:
+        instrument = super().__new__(cls, text)
+        instrument.language = language
+        return instrument
+
+
+def load_instrument(repository, walk) -> Instrument:
     """Read the QML text the walk is fielded on (a repository read).
 
     Content comes from the document store through the campaign's pin
@@ -271,7 +289,9 @@ def load_instrument(repository, walk) -> str:
         message = f"Cannot find questionnaire {walk.questionnaire_id} for survey {walk.id}"
         logger.error(message)
         raise ValueError(message)
-    return load_fielded_qml_content(repository, walk, questionnaire)
+    return Instrument(
+        load_fielded_qml_content(repository, walk, questionnaire), questionnaire.language
+    )
 
 
 def timing_source(walk) -> str:
@@ -312,14 +332,16 @@ def materialize_walk_state(
 ) -> FlowProcessor:
     """Build ``walk.qml_state`` from the instrument text and return a processor.
 
-    Parses the QML, overlays ``translation`` (a translation row's ``texts``)
-    when given, runs the full (Z3) initialization, and applies the
+    Parses the QML in the instrument's language (a declared rating scale takes
+    the catalog's labels in it; a plain string loads codes only), overlays
+    ``translation`` (a translation row's ``texts``) when given, runs the full (Z3) initialization, and applies the
     external-input prefill. The overlay changes text only, so the flow and
     the answer codes are the source's. No write and no audit event: a first
     initialization records ``started``, while a preview's reset (which also
     re-materializes) records ``reset``.
     """
-    parsed = QMLLoader(logger=logger).load_from_string(instrument)
+    language = instrument.language if isinstance(instrument, Instrument) else None
+    parsed = QMLLoader(logger=logger, language=language).load_from_string(instrument)
     logger.info("QML loaded and validated successfully.")
     if translation:
         parsed = apply_translation(parsed, translation)
@@ -383,8 +405,8 @@ class LanguagePick:
 
     locale: str
     version_id: str
-    #: The pinned version's QML content.
-    instrument: str
+    #: The pinned version's QML content, in the picked language.
+    instrument: Instrument
     #: The translation row's texts, ``None`` for the source language.
     texts: dict | None
     #: The translation row's ``updated_at``, ``None`` for the source language.
@@ -407,7 +429,9 @@ def read_language_pick(
         if row is None or row.untranslated:
             return None
         texts, updated_at = row.texts, row.updated_at
-    instrument = load_qml_content(repository, questionnaire, version_id=version_id)
+    instrument = Instrument(
+        load_qml_content(repository, questionnaire, version_id=version_id), locale
+    )
     return LanguagePick(locale, version_id, instrument, texts, updated_at)
 
 

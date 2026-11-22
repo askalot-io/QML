@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "Questionnaire Markup Language",
-  "version": "2.7.0",
+  "version": "2.8.0",
   "type": "object",
   "required": [
     "qmlVersion",
@@ -207,6 +207,9 @@
         "codeBlock": {
           "description": "Code block which is executed after the item is evaluated",
           "$ref": "#/$defs/CodeBlock"
+        },
+        "scale": {
+          "$ref": "#/$defs/Scale"
         }
       },
       "allOf": [
@@ -296,6 +299,73 @@
               "columns",
               "input"
             ]
+          }
+        },
+        {
+          "if": {
+            "required": [
+              "scale"
+            ]
+          },
+          "then": {
+            "required": [
+              "input"
+            ],
+            "properties": {
+              "kind": {
+                "enum": [
+                  "Question",
+                  "QuestionGroup",
+                  "MatrixQuestion"
+                ]
+              },
+              "input": {
+                "properties": {
+                  "control": {
+                    "enum": [
+                      "Radio",
+                      "Dropdown"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "required": [
+              "input"
+            ],
+            "properties": {
+              "input": {
+                "required": [
+                  "control"
+                ],
+                "properties": {
+                  "control": {
+                    "enum": [
+                      "Radio",
+                      "Dropdown"
+                    ]
+                  }
+                }
+              }
+            },
+            "not": {
+              "required": [
+                "scale"
+              ]
+            }
+          },
+          "then": {
+            "properties": {
+              "input": {
+                "required": [
+                  "labels"
+                ]
+              }
+            }
           }
         }
       ],
@@ -426,16 +496,14 @@
           "then": {
             "properties": {
               "labels": {
-                "$ref": "#/$defs/Labels"
+                "$ref": "#/$defs/Labels",
+                "description": "The options' text by code. Required unless the item declares a `scale` (2.8.0+), whose catalog supplies the text; with a scale, any label written here rewords that code."
               },
               "default": {
                 "type": "integer",
                 "description": "Suggested option for the radio control: marked, not selected. Must be one of the keys defined in the labels object. A hint shown to the respondent, never an answer: nothing is recorded for the item until they interact with the control."
               }
-            },
-            "required": [
-              "labels"
-            ]
+            }
           }
         },
         {
@@ -472,7 +540,8 @@
           "then": {
             "properties": {
               "labels": {
-                "$ref": "#/$defs/Labels"
+                "$ref": "#/$defs/Labels",
+                "description": "The options' text by code. Required unless the item declares a `scale` (2.8.0+), whose catalog supplies the text; with a scale, any label written here rewords that code."
               },
               "left": {
                 "type": "string"
@@ -484,10 +553,7 @@
                 "type": "integer",
                 "description": "Suggested option for the dropdown control: named in its empty placeholder. Must be one of the keys defined in the labels object. A hint shown to the respondent, never an answer: nothing is recorded for the item until they interact with the control."
               }
-            },
-            "required": [
-              "labels"
-            ]
+            }
           }
         },
         {
@@ -634,6 +700,57 @@
         }
       ],
       "unevaluatedProperties": false
+    },
+    "Scale": {
+      "type": "object",
+      "description": "A declared rating scale (2.8.0+), on a Question, QuestionGroup or MatrixQuestion whose control is Radio or Dropdown. Codes run 1..points from the most negative or least point to the most positive or greatest, whatever the display order; opt-outs are stored at reserved codes (dontKnow 97, notApplicable 98, preferNotToSay 99) and shown after the points. A bipolar family (Agreement, Satisfaction, Likelihood) has a midpoint exactly when points is odd; a unipolar one (Frequency, Importance, Quality) never has one. The catalog supplies every label in each supported language; `input.labels` may reword the points (all of them or none) and any opt-out.",
+      "required": [
+        "family",
+        "points"
+      ],
+      "properties": {
+        "family": {
+          "type": "string",
+          "enum": [
+            "Agreement",
+            "Satisfaction",
+            "Likelihood",
+            "Frequency",
+            "Importance",
+            "Quality"
+          ]
+        },
+        "points": {
+          "type": "integer",
+          "enum": [
+            4,
+            5,
+            7
+          ]
+        },
+        "order": {
+          "type": "string",
+          "enum": [
+            "ascending",
+            "descending"
+          ],
+          "default": "ascending",
+          "description": "Display order of the points for the whole item. Never changes what a code means."
+        },
+        "optOuts": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "enum": [
+              "dontKnow",
+              "notApplicable",
+              "preferNotToSay"
+            ]
+          }
+        }
+      },
+      "additionalProperties": false
     }
   }
 }

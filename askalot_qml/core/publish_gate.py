@@ -14,8 +14,9 @@ warnings; only *publication* requires soundness.
 
 Severity policy: the gate blocks on ``error``-severity issues only (undefined
 names, frozen-gate dead code, infeasible postconditions, load/schema
-failures). ``warning``-severity hygiene findings (write-only variables,
-pass-through aliases, duplicate input bounds) pass the gate — they are
+failures). ``warning``-severity findings (write-only variables, pass-through
+aliases, duplicate input bounds, a rating scale that could be declared, an
+ordered comparison that includes opt-out codes) pass the gate — they are
 surfaced in the result for the caller to display. The gate fails CLOSED: if
 the content cannot be loaded or the analysis itself crashes, the result is a
 refusal, never a silent pass.
@@ -75,6 +76,8 @@ ISSUE_TYPE_LABELS: dict[str, str] = {
     "mandated_answer_postcondition": N_("Answer check that allows only one choice"),
     "combinable_none_option": N_("A 'none' option that can be ticked with others"),
     "language_not_judged": N_("Wording checks not run for this language"),
+    "rating_scale_not_declared": N_("Rating scale that could be declared"),
+    "ordered_comparison_with_opt_outs": N_("Ordered comparison that includes opt-out answers"),
 }
 
 
@@ -204,8 +207,10 @@ def evaluate_publish_gate_content(
         logger: Optional logger threaded into the loader/processor.
         language: The questionnaire's language when the caller holds its row;
             an "other" one turns the word-list lints into one
-            ``language_not_judged`` warning (``ValidationProcessor``). It never
-            changes ``ok``: every lint it touches is a warning.
+            ``language_not_judged`` warning (``ValidationProcessor``), and the
+            loader refuses a declared rating scale with a code its author left
+            unlabelled, since the scale catalog has no text in that language.
+            ``None`` (a bare file) loads codes only.
 
     Returns:
         PublishGateResult — ``ok=False`` when publication must be refused.
@@ -227,7 +232,7 @@ def evaluate_publish_gate_content(
     try:
         # No qml_dir: a string load does no relative lookups, so the gate is
         # bound to no directory at all.
-        loader = QMLLoader(logger=log)
+        loader = QMLLoader(logger=log, language=language)
         qml_dict = loader.load_from_string(qml_content)
     except Exception as e:
         # YAML syntax, JSON-schema, and qmlVersion failures all land here — a

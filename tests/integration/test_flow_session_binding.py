@@ -98,7 +98,9 @@ class _FakeRepo:
         #: The organization context each survey read ran under.
         self.read_in: list[str | None] = []
         self._questionnaire = type(
-            "Q", (), {"id": "q-1", "name": "Session Binding", "document_id": "doc-1"}
+            "Q",
+            (),
+            {"id": "q-1", "name": "Session Binding", "document_id": "doc-1", "language": "en"},
         )()
 
     def get_survey(self, survey_id):

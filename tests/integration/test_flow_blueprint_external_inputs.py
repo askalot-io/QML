@@ -70,6 +70,7 @@ class _FakeQuestionnaire:
     def __init__(self, document_id="doc-1"):
         self.id = "q-1"
         self.document_id = document_id
+        self.language = "en"
 
 
 class _FakeVersion:

@@ -34,6 +34,10 @@ Decisions:
   written in the same transaction as version 1, whose id does not exist until
   then; the repository records it on the inventory document and its reader
   returns it beside this content.
+- **A declared rating scale is the source's own coding.** A question may carry
+  a ``scale`` declaration (as QML spells it) only when its codes are exactly
+  the scale's codes and it is a single choice, so an inventory can never say a
+  question is a catalog scale while its codes mean something else.
 - **Closed shape.** Unknown keys are refused, so a field renamed by a producer
   fails at the write instead of vanishing.
 """
@@ -41,7 +45,7 @@ Decisions:
 from __future__ import annotations
 
 from collections.abc import Iterator
-from typing import Literal
+from typing import Any, Literal
 
 from askalot_common.i18n import require_questionnaire_language
 from pydantic import (
@@ -54,6 +58,7 @@ from pydantic import (
 )
 
 from askalot_qml.core.qml_loader import QMLLoader, is_readable_item_id
+from askalot_qml.core.scales import ScaleError, parse_scale
 from askalot_qml.inventory.report import ImportReport
 
 #: The schema tag every stored inventory carries.
@@ -119,9 +124,21 @@ class Question(_Closed):
     min: float | None = None
     max: float | None = None
     external: bool = False
+    scale: dict[str, Any] | None = None
     preconditions: list[PresumedPrecondition] = Field(default_factory=list)
     postconditions: list[PresumedPostcondition] = Field(default_factory=list)
     provenance: Provenance | None = None
+
+    @field_validator("scale")
+    @classmethod
+    def _a_catalog_scale(cls, value: dict[str, Any] | None) -> dict[str, Any] | None:
+        """A declaration the catalog knows, stored with every key present."""
+        if value is None:
+            return None
+        try:
+            return parse_scale(value).as_dict()
+        except ScaleError as e:
+            raise ValueError(str(e)) from None
 
     @field_validator("qml_id")
     @classmethod
@@ -135,6 +152,18 @@ class Question(_Closed):
         values = [code.value for code in self.codes]
         if len(values) != len(set(values)):
             raise ValueError(f"question {self.qml_id!r} lists an answer code twice")
+        if self.scale is not None:
+            scale = parse_scale(self.scale)
+            if self.answer_type != "single_choice":
+                raise ValueError(
+                    f"question {self.qml_id!r} declares a rating scale but is not a single choice"
+                )
+            if sorted(values) != list(scale.codes):
+                raise ValueError(
+                    f"question {self.qml_id!r} declares a {scale.points}-point {scale.family} "
+                    f"scale, whose codes are {', '.join(map(str, scale.codes))}, but is coded "
+                    f"{', '.join(map(str, sorted(values)))}"
+                )
         return self
 
 

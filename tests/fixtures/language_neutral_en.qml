@@ -36,6 +36,11 @@
 #   - c_intro: "Please read … carefully." / "Kérjük, figyelmesen olvassa el …" /
 #     "Por favor, lea …" / "Veuillez lire …" / "Bitte lesen Sie … durch."
 #   - c_section: a plain section label
+# rating_scale_not_declared — POSITIVE (an undeclared Radio whose labels are
+# the scale catalog's own text in the fixture's language):
+#   - q_agree: the five Agreement points coded 1..5 and "Don't know" on its
+#     reserved code 97, so every language suggests the same declaration
+#     (Agreement, five points, the dontKnow opt-out)
 #
 # The Z3 side carries a gate, a codeBlock variable, a relational postcondition
 # and an unreachable item, so the verdict comparison is not vacuous.
@@ -141,6 +146,19 @@ questionnaire:
               8: "Not applicable"
               16: "No idea"
               32: "No opinion"
+
+        - id: q_agree
+          kind: Question
+          title: "Most people can be trusted."
+          input:
+            control: Radio
+            labels:
+              1: "Strongly disagree"
+              2: "Disagree"
+              3: "Neither agree nor disagree"
+              4: "Agree"
+              5: "Strongly agree"
+              97: "Don't know"
 
     - id: b_vehicle
       title: "Vehicle use"

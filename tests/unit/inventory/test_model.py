@@ -10,6 +10,9 @@ Tests askalot_qml.inventory.model and the report summary it carries:
 - An OUT unit with no reason is refused
 - An unknown key and a malformed language tag are refused; a well-formed tag
   outside the supported locales is kept in its canonical spelling
+- A question's declared rating scale is stored with every key, and refused when
+  its codes are not the scale's, the scale is not the catalog's, or the
+  question is not a single choice
 - The report summary counts IN and OUT units, lists OUT reasons and invented checks
 
 These unit tests build every case from the stored fixture, so each refusal is a
@@ -153,3 +156,40 @@ def test_the_report_summary_counts_scope_and_lists_invented_checks(audit):
     assert [check["qml_id"] for check in summary["invented_checks"]] == ["Q3"]
     assert summary["import"]["vision_pages"] == [2]
     assert summary["import"]["answers_discarded"] is False
+
+
+_AGREE = ["Strongly disagree", "Disagree", "Neither agree nor disagree", "Agree", "Strongly agree"]
+
+
+def _rate_q1(audit: dict, codes: list[int], scale: dict, answer_type: str = "single_choice") -> None:
+    question = _audit_questions(audit)[0]
+    question["answer_type"] = answer_type
+    labels = [*_AGREE, "Don't know"][: len(codes)]
+    question["codes"] = [{"value": v, "label": label} for v, label in zip(codes, labels, strict=True)]
+    question["scale"] = scale
+
+
+def test_a_declared_scale_is_stored_with_every_key(audit):
+    _rate_q1(audit, [1, 2, 3, 4, 5, 97], {"family": "Agreement", "points": 5, "optOuts": ["dontKnow"]})
+
+    qml_id = _audit_questions(audit)[0]["qml_id"]
+    question = next(q for q in Inventory.model_validate(audit).questions() if q.qml_id == qml_id)
+
+    assert question.scale == {
+        "family": "Agreement", "points": 5, "order": "ascending", "optOuts": ["dontKnow"]
+    }
+
+
+@pytest.mark.parametrize(
+    ("codes", "scale", "answer_type", "message"),
+    [
+        ([0, 1, 2, 3, 4], {"family": "Agreement", "points": 5}, "single_choice", "codes are 1, 2, 3, 4, 5"),
+        ([1, 2, 3, 4, 5], {"family": "Agreement", "points": 6}, "single_choice", "4, 5 or 7 points"),
+        ([1, 2, 3, 4, 5], {"family": "Agreement", "points": 5}, "multiple_choice", "not a single choice"),
+    ],
+)
+def test_a_scale_the_question_does_not_carry_is_refused(audit, codes, scale, answer_type, message):
+    _rate_q1(audit, codes, scale, answer_type)
+
+    with pytest.raises(ValidationError, match=message):
+        Inventory.model_validate(audit)

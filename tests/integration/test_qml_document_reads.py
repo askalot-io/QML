@@ -108,6 +108,7 @@ class _FakeQuestionnaire:
         self.project_id = PROJECT_ID
         self.qml_name = canonical_qml_rel_path(PROJECT_ID, QUESTIONNAIRE_ID)
         self.document_id = document_id
+        self.language = "en"
 
 
 class _FakeCampaign:

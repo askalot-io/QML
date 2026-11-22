@@ -28,6 +28,10 @@ Tests the step functions in ``askalot_qml.api.flow_service`` called directly:
   shown under an earlier pick (another tab picked since) is refused before
   anything is written or frozen, and an answer naming the current pick, or a
   walk no pick re-materialized with no token, is taken (#2127)
+- A walk in ``de`` carries a declared scale's German catalog labels and its
+  options in declared (descending) order, opt-out last; picking another
+  language before the first answer re-materializes the options in it, and a
+  reworded scale's options show the translation's labels
 
 These integration tests drive the real engine (QML parse, Z3 initialization,
 FlowProcessor) over an in-memory repository and a deterministic clock, because
@@ -110,6 +114,7 @@ class _FakeSurvey:
 class _FakeQuestionnaire:
     id = "q-1"
     document_id = "doc-1"
+    language = "en"
 
 
 class _FakeVersion:
@@ -843,3 +848,134 @@ class TestChoosingALanguage:
         assert _answer(store, survey, "q_first", 1, pick_token=None).outcome is FlowOutcome.ACCEPTED
         assert _answer(store, survey, "q_first", 1, pick_token="stale").outcome is FlowOutcome.PICK_CHANGED
 
+
+
+#: A catalog Agreement scale shown highest first with a catalog "Don't know",
+#: then a Satisfaction scale whose points the author reworded.
+_SCALED_QML = """
+qmlVersion: "2.8.0"
+questionnaire:
+  title: Scaled walk
+  blocks:
+    - id: main
+      kind: Group
+      items:
+        - id: q_rate
+          kind: Question
+          title: Taxes should be lower
+          scale:
+            family: Agreement
+            points: 5
+            order: descending
+            optOuts: [dontKnow]
+          input:
+            control: Radio
+        - id: q_mood
+          kind: Question
+          title: How was your stay?
+          scale:
+            family: Satisfaction
+            points: 5
+          input:
+            control: Radio
+            labels:
+              1: Awful
+              2: Poor
+              3: Fine
+              4: Good
+              5: Superb
+"""
+
+#: Complete without a key for any catalog label: only the titles and the
+#: reworded points are the author's text.
+_SCALED_HU = {
+    "questionnaire/title": "Skálás bejárás",
+    "block:main/title": "Fő",
+    "item:q_rate/title": "Az adók legyenek alacsonyabbak",
+    "item:q_mood/title": "Milyen volt az itt-tartózkodása?",
+    **{f"item:q_mood/labels/{code}": f"HU {code}" for code in range(1, 6)},
+}
+
+_DE_AGREEMENT_DESCENDING = [
+    (5, "Stimme voll und ganz zu", False),
+    (4, "Stimme zu", False),
+    (3, "Teils, teils", False),
+    (2, "Stimme nicht zu", False),
+    (1, "Stimme überhaupt nicht zu", False),
+    (97, "Weiß nicht", True),
+]
+
+
+def _options(item):
+    return [(o["code"], o["label"], o["optOut"]) for o in item["input"]["options"]]
+
+
+class _ScaledRepo(_TranslationRepo):
+    """``_TranslationRepo`` over the scaled QML, with ``language`` as the source language."""
+
+    def __init__(self, survey, language="en"):
+        super().__init__(survey)
+        self.language = language
+        self.translations = {
+            "hu": SimpleNamespace(
+                texts=_SCALED_HU, updated_at="2026-11-22T10:00:00+00:00", untranslated=[]
+            ),
+            "de": SimpleNamespace(
+                texts={**_SCALED_HU, "item:q_rate/title": "Steuern sollten sinken"},
+                updated_at="2026-11-22T11:00:00+00:00",
+                untranslated=[],
+            ),
+        }
+
+    def get_questionnaire(self, questionnaire_id):
+        return SimpleNamespace(id="q-1", document_id="doc-1", language=self.language)
+
+    def get_document_content(self, document_id, *, version_id=None):
+        return SimpleNamespace(id=version_id, document_id="doc-1", content=_SCALED_QML)
+
+
+def _scaled_walk(language="en"):
+    survey = _FakeSurvey()
+    survey.language = None
+    survey.modified_at = ""
+    store = FlowStore(_ScaledRepo(survey, language))
+    return store, flow_service.prepare_walk(store.load(survey.id))
+
+
+@pytest.mark.integration
+@pytest.mark.flow
+class TestDeclaredScaleWalk:
+    def test_a_walk_materialized_in_de_shows_german_catalog_options_in_declared_order(self, clock):
+        store, survey = _scaled_walk("de")
+
+        item = _present(store, survey).item
+
+        assert item["id"] == "q_rate"
+        assert _options(item) == _DE_AGREEMENT_DESCENDING
+        assert item["input"]["labels"] == {
+            code: label for code, label, _ in _DE_AGREEMENT_DESCENDING
+        }
+
+    def test_picking_a_language_mid_offer_rematerializes_the_options_in_it(self, clock):
+        store, survey = _scaled_walk("en")
+        assert _options(_present(store, survey).item)[0] == (5, "Strongly agree", False)
+
+        assert _choose(store, survey, "hu").outcome is LanguageChoiceOutcome.CHOSEN
+        hungarian = _present(store, survey).item
+        assert hungarian["title"] == "Az adók legyenek alacsonyabbak"
+        assert _options(hungarian)[0] == (5, "Teljes mértékben egyetértek", False)
+        assert _options(hungarian)[-1] == (97, "Nem tudom", True)
+
+        assert _choose(store, survey, "de").outcome is LanguageChoiceOutcome.CHOSEN
+        assert _options(_present(store, survey).item) == _DE_AGREEMENT_DESCENDING
+
+    def test_a_reworded_scale_shows_the_translations_labels_in_its_options(self, clock):
+        store, survey = _scaled_walk("en")
+        _choose(store, survey, "hu")
+        _present(store, survey)
+        assert _answer(store, survey, "q_rate", 97).outcome is FlowOutcome.ACCEPTED
+
+        mood = _present(store, survey).item
+
+        assert mood["id"] == "q_mood"
+        assert _options(mood) == [(code, f"HU {code}", False) for code in range(1, 6)]

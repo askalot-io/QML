@@ -50,6 +50,7 @@ MatrixQuestionItem ::= "id" ItemId "kind" "MatrixQuestion" ItemMeta
                        "input" Input
 
 ItemMeta           ::= ( "title" String )?
+                       ( "scale" Scale )?
                        ( "precondition" Condition* )?
                        ( "postcondition" Postcondition* )?
                        ( "codeBlock" CodeBlock )?
@@ -66,8 +67,9 @@ SwitchInput   ::= "control" "Switch"
                   ( "right" String )?
                   ( "default" SwitchDefault )?
 
+/* labels may be left out only when the item declares a scale (2.8.0) */
 RadioInput    ::= "control" "Radio"
-                  "labels" Labels
+                  ( "labels" Labels )?
                   ( "default" Integer )?
 
 CheckboxInput ::= "control" "Checkbox"
@@ -75,7 +77,7 @@ CheckboxInput ::= "control" "Checkbox"
                   ( "default" Integer )?
 
 DropdownInput ::= "control" "Dropdown"
-                  "labels" Labels
+                  ( "labels" Labels )?
                   ( "left" String )?
                   ( "right" String )?
                   ( "default" Integer )?
@@ -121,6 +123,19 @@ Postcondition ::= Condition
                   ( "invented" Boolean )?
 
 Labels        ::= ( IntegerKey String )*
+
+/* scale (2.8.0): a declared rating scale, on a Question, QuestionGroup or
+   MatrixQuestion whose control is Radio or Dropdown. Codes run 1..points from
+   the most negative point; opt-outs are stored at 97, 98 and 99. */
+Scale         ::= "family" ScaleFamily
+                  "points" ( "4" | "5" | "7" )
+                  ( "order" ( "ascending" | "descending" ) )?
+                  ( "optOuts" OptOut* )?
+
+ScaleFamily   ::= "Agreement" | "Satisfaction" | "Likelihood"
+                | "Frequency" | "Importance" | "Quality"
+
+OptOut        ::= "dontKnow" | "notApplicable" | "preferNotToSay"
 
 CodeBlock     ::= PythonCode
 

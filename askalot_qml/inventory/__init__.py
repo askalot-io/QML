@@ -24,7 +24,12 @@ from askalot_qml.inventory.model import (
     serialize_inventory,
     validation_problems,
 )
-from askalot_qml.inventory.report import ImportReport, RemainingProblem, report_summary
+from askalot_qml.inventory.report import (
+    ImportReport,
+    RemainingProblem,
+    UndeclaredScale,
+    report_summary,
+)
 
 __all__ = [
     "INVENTORY_SCHEMA",
@@ -39,6 +44,7 @@ __all__ = [
     "RemainingProblem",
     "ScopeEntry",
     "Section",
+    "UndeclaredScale",
     "map_source_ids",
     "parse_inventory",
     "report_summary",

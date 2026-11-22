@@ -107,6 +107,19 @@ questionnaire:
               16: "Aucune idée"
               32: "Sans opinion"
 
+        - id: q_agree
+          kind: Question
+          title: "On peut faire confiance à la plupart des gens."
+          input:
+            control: Radio
+            labels:
+              1: "Pas du tout d'accord"
+              2: "Pas d'accord"
+              3: "Ni d'accord ni pas d'accord"
+              4: "D'accord"
+              5: "Tout à fait d'accord"
+              97: "Je ne sais pas"
+
     - id: b_vehicle
       title: "Utilisation du véhicule"
       precondition:

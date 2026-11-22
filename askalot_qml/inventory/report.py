@@ -6,8 +6,9 @@ report with it. This module holds the two halves:
 
 - :class:`ImportReport` is what only the import run knows and stores: whether
   filled-in answers were discarded, whether a Markdown source was assumed blank,
-  which pages went to vision, the judgement agent's unresolved objections and
-  the problems Z3 still reports.
+  which pages went to vision, the judgement agent's unresolved objections,
+  the catalog rating scales left undeclared because the source codes them
+  otherwise, and the problems Z3 still reports.
 - :func:`report_summary` derives the rest from the inventory itself (the scope
   table's counts and OUT reasons, the invented checks, the source-id mapping),
   so nothing is stored twice and the two can never disagree.
@@ -36,6 +37,23 @@ class RemainingProblem(BaseModel):
     item_id: str | None = None
 
 
+class UndeclaredScale(BaseModel):
+    """A question whose labels are a catalog rating scale that the import left undeclared.
+
+    The source codes it another way (``reason`` says how, naming codes and the
+    catalog's own labels, never the source's text), and the import keeps the
+    source's codes rather than re-code them.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    qml_id: str
+    source_id: str
+    family: str
+    points: int
+    reason: str = Field(min_length=1)
+
+
 class ImportReport(BaseModel):
     """What an import run records about itself."""
 
@@ -45,6 +63,7 @@ class ImportReport(BaseModel):
     markdown_assumed_blank: bool = False
     vision_pages: list[int] = Field(default_factory=list)
     gate_objections: list[str] = Field(default_factory=list)
+    undeclared_scales: list[UndeclaredScale] = Field(default_factory=list)
     remaining_problems: list[RemainingProblem] = Field(default_factory=list)
 
 

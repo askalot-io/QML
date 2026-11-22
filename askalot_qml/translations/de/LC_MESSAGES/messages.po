@@ -62,6 +62,12 @@ msgstr ""
 "verwenden darf, damit ein Update des Interpreters den Umfang nicht "
 "unbemerkt erweitert."
 
+msgid "Agree"
+msgstr "Stimme zu"
+
+msgid "Always"
+msgstr "Immer"
+
 #, python-format
 msgid ""
 "An answer check reads answers as never given, because a backward edit "
@@ -162,6 +168,9 @@ msgstr ""
 "Items, die angezeigt und nicht beantwortet wurden oder aus einem solchen "
 "berechnet sind: %(items)s"
 
+msgid "Disagree"
+msgstr "Stimme nicht zu"
+
 #, python-format
 msgid "Disallowed node type: %(node)s"
 msgstr "Nicht erlaubtes Sprachkonstrukt: %(node)s"
@@ -174,6 +183,18 @@ msgstr "Anzeigebedingung liest eine Antwort außerhalb des Pfads"
 
 msgid "Display condition reads an unanswered item"
 msgstr "Anzeigebedingung liest ein unbeantwortetes Item"
+
+msgid "Dissatisfied"
+msgstr "Unzufrieden"
+
+msgid "Does not apply to me"
+msgstr "Trifft nicht zu"
+
+msgid "Don't know"
+msgstr "Weiß nicht"
+
+msgid "Excellent"
+msgstr "Ausgezeichnet"
 
 #, python-format
 msgid ""
@@ -217,6 +238,15 @@ msgstr ""
 "Externe Vorbelegung für %(item)s abgelehnt: Der übergebene Wert liegt "
 "außerhalb des deklarierten Wertebereichs des Items."
 
+msgid "Extremely important"
+msgstr "Äußerst wichtig"
+
+msgid "Fair"
+msgstr "Ausreichend"
+
+msgid "Good"
+msgstr "Gut"
+
 #, python-format
 msgid "Item %(item)s not found in questionnaire state"
 msgstr "Item %(item)s im Fragebogenzustand nicht gefunden"
@@ -239,14 +269,32 @@ msgstr "Items hängen zyklisch voneinander ab"
 msgid "Items in a capped group depend on each other"
 msgstr "Items in einer begrenzten Gruppe hängen voneinander ab"
 
+msgid "Likely"
+msgstr "Wahrscheinlich"
+
+msgid "Moderately important"
+msgstr "Mäßig wichtig"
+
 msgid "Name that refers to nothing"
 msgstr "Name, der auf nichts verweist"
+
+msgid "Neither agree nor disagree"
+msgstr "Teils, teils"
+
+msgid "Neither likely nor unlikely"
+msgstr "Weder wahrscheinlich noch unwahrscheinlich"
+
+msgid "Neither satisfied nor dissatisfied"
+msgstr "Weder zufrieden noch unzufrieden"
 
 msgid "No previous item available"
 msgstr "Keine vorherige Frage vorhanden"
 
 msgid "No respondent can complete the questionnaire"
 msgstr "Keine befragte Person kann den Fragebogen abschließen"
+
+msgid "Not at all important"
+msgstr "Überhaupt nicht wichtig"
 
 msgid "Not graded: the logic check classified no items."
 msgstr "Nicht bewertet: Die Logikprüfung hat keine Items klassifiziert."
@@ -256,12 +304,24 @@ msgstr ""
 "Nicht bewertet: Es gibt keine Items mit numerischer Eingabe, die begrenzt"
 " werden könnten."
 
+msgid "Often"
+msgstr "Oft"
+
 msgid ""
 "Open the questionnaire in the editor for the full report, fix it, then "
 "publish again."
 msgstr ""
 "Öffnen Sie den Fragebogen im Editor, um den vollständigen Bericht zu "
 "sehen, beheben Sie die Fehler und veröffentlichen Sie dann erneut."
+
+msgid "Ordered comparison that includes opt-out answers"
+msgstr "Größenvergleich, der Antworten außerhalb der Skala einschließt"
+
+msgid "Outstanding"
+msgstr "Hervorragend"
+
+msgid "Poor"
+msgstr "Schlecht"
 
 #, python-format
 msgid ""
@@ -279,6 +339,9 @@ msgstr ""
 "Die Anzeigebedingung „%(expr)s“ wurde abgelehnt (%(reason)s) und daher "
 "nie ausgeführt. Sie gilt als nicht erfüllt (das davon abhängige Item wird"
 " übersprungen)."
+
+msgid "Prefer not to say"
+msgstr "Keine Angabe"
 
 #, python-format
 msgid "Publishing was refused: %(num)d error must be fixed first: %(issues)s."
@@ -302,6 +365,15 @@ msgstr ""
 msgid "Questionnaire-level condition that nothing reads"
 msgstr "Bedingung auf Fragebogenebene, die nie ausgewertet wird"
 
+msgid "Quite important"
+msgstr "Ziemlich wichtig"
+
+msgid "Rarely"
+msgstr "Selten"
+
+msgid "Rating scale that could be declared"
+msgstr "Bewertungsskala, die deklariert werden könnte"
+
 msgid "Reads an answer that may be missing"
 msgstr "Liest eine möglicherweise fehlende Antwort"
 
@@ -314,10 +386,43 @@ msgstr "Liste der wiederholten Frage nennt nicht deklarierte Optionen"
 msgid "Repeated-question subject that cannot be answered"
 msgstr "Gegenstand einer wiederholten Frage, der nicht beantwortet werden kann"
 
+msgid "Satisfied"
+msgstr "Zufrieden"
+
+msgid "Slightly important"
+msgstr "Etwas wichtig"
+
 msgid "Something went wrong on our side. Please try again in a moment."
 msgstr ""
 "Bei uns ist ein Fehler aufgetreten. Bitte versuchen Sie es gleich noch "
 "einmal."
+
+msgid "Sometimes"
+msgstr "Manchmal"
+
+msgid "Somewhat agree"
+msgstr "Stimme eher zu"
+
+msgid "Somewhat disagree"
+msgstr "Stimme eher nicht zu"
+
+msgid "Somewhat dissatisfied"
+msgstr "Eher unzufrieden"
+
+msgid "Somewhat likely"
+msgstr "Eher wahrscheinlich"
+
+msgid "Somewhat satisfied"
+msgstr "Eher zufrieden"
+
+msgid "Somewhat unlikely"
+msgstr "Eher unwahrscheinlich"
+
+msgid "Strongly agree"
+msgstr "Stimme voll und ganz zu"
+
+msgid "Strongly disagree"
+msgstr "Stimme überhaupt nicht zu"
 
 msgid "Supplied value ignored: it fails the answer check"
 msgstr "Übergebener Wert ignoriert: Er besteht die Antwortprüfung nicht"
@@ -476,6 +581,9 @@ msgstr ""
 "(%(error_type)s). Sie gilt als nicht erfüllt (das davon abhängige Item "
 "wird übersprungen)."
 
+msgid "Unlikely"
+msgstr "Unwahrscheinlich"
+
 #, python-format
 msgid "Validation error (%(error_type)s)"
 msgstr "Prüffehler (%(error_type)s)"
@@ -491,6 +599,36 @@ msgstr "Variable gesetzt, aber nie gelesen"
 
 msgid "Variable that only copies another"
 msgstr "Variable, die nur eine andere kopiert"
+
+msgid "Very dissatisfied"
+msgstr "Sehr unzufrieden"
+
+msgid "Very good"
+msgstr "Sehr gut"
+
+msgid "Very important"
+msgstr "Sehr wichtig"
+
+msgid "Very likely"
+msgstr "Sehr wahrscheinlich"
+
+msgid "Very often"
+msgstr "Sehr oft"
+
+msgid "Very poor"
+msgstr "Sehr schlecht"
+
+msgid "Very rarely"
+msgstr "Sehr selten"
+
+msgid "Very satisfied"
+msgstr "Sehr zufrieden"
+
+msgid "Very slightly important"
+msgstr "Kaum wichtig"
+
+msgid "Very unlikely"
+msgstr "Sehr unwahrscheinlich"
 
 msgid "Wording checks not run for this language"
 msgstr "Formulierungsprüfungen für diese Sprache nicht ausgeführt"

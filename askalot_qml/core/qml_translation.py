@@ -24,7 +24,8 @@ Key format (a plain string, so a map serializes into JSONB as is)::
     block:<block id>/postcondition/<n>/hint
     item:<item id>/title
     item:<item id>/labels/<code>                option labels (Radio, Checkbox,
-                                                Dropdown, Slider, Range)
+                                                Dropdown, Slider, Range); of a
+                                                declared scale, authored ones only
     item:<item id>/on | off | left | right | placeholder
     item:<item id>/questions/<n>                QuestionGroup statements
     item:<item id>/rows/<n> | columns/<n>       MatrixQuestion
@@ -45,6 +46,19 @@ Two key families behave differently:
   keyed by index, which an insertion shifts. Such a list is translated whole or
   not at all, so a partial list is refused as a length mismatch, and
   carry-forward copies it only when the whole source list is unchanged.
+
+**Declared rating scales.** An item that declares a scale holds, after
+loading, a label for every code of the scale, but only the codes in its
+``_scale_authored_codes`` carry the author's text; the rest are the scale
+catalog's, in the language the document was loaded in (empty in a codes-only
+load). Only an authored label is a ``labels/<code>`` key: a catalog label is
+already translated by the catalog, so requiring it of every translation would
+make each existing translation incomplete the moment a scale is declared, and
+a key for one is refused (``catalog_label``). The key set reads the record,
+never the label text, so it is the same whatever language the document was
+loaded in. A walk in another language takes its catalog labels by being
+loaded in that language; ``apply_translation`` then lays the authored labels
+on top and copies every label into the item's ordered ``input.options``.
 
 The translated text is not sanitized here: the save path checks markup before
 storing, so an overlay never fails on what it applies.
@@ -100,6 +114,7 @@ class RefusalKind(StrEnum):
     INDEX_OUT_OF_RANGE = "index_out_of_range"
     LIST_LENGTH_MISMATCH = "list_length_mismatch"
     NON_STRING_VALUE = "non_string_value"
+    CATALOG_LABEL = "catalog_label"
 
 
 @dataclass(frozen=True)
@@ -140,6 +155,9 @@ class _Document:
     list_lengths: dict[str, int]
     #: Coded map prefix → the source's codes as key strings.
     coded_groups: dict[str, list[str]]
+    #: Coded map prefix of a declared scale → (its family, the codes whose
+    #: label the scale catalog supplies, as key strings).
+    catalog_groups: dict[str, tuple[str, set[str]]]
     scopes: set[str]
 
 
@@ -166,19 +184,36 @@ def _walk_blocks(
     qml: dict[str, Any], blocks: Iterable[tuple[dict[str, Any], list[dict[str, Any]]]]
 ) -> _Document:
     """Walk ``qml``'s title, then each block with its items, in document order."""
-    doc = _Document(slots={}, positional_groups={}, list_lengths={}, coded_groups={}, scopes=set())
+    doc = _Document(
+        slots={},
+        positional_groups={},
+        list_lengths={},
+        coded_groups={},
+        catalog_groups={},
+        scopes=set(),
+    )
 
     def add(key: str, container: dict | list, field: Any, **kwargs: Any) -> None:
         value = container[field]
         if isinstance(value, str):
             doc.slots[key] = _Slot(key, value, container, field, **kwargs)
 
-    def add_labels(scope: str, labels: Any) -> None:
+    def add_labels(scope: str, labels: Any, owner: dict[str, Any] | None = None) -> None:
         if not isinstance(labels, dict):
             return
         group = f"{scope}/labels"
-        doc.coded_groups[group] = [str(code) for code in labels]
-        for code in labels:
+        codes = list(labels)
+        authored = owner.get("_scale_authored_codes") if owner is not None else None
+        if authored is not None:
+            # A declared scale: only the author's labels are text keys.
+            written = {str(code) for code in authored}
+            doc.catalog_groups[group] = (
+                owner["scale"]["family"],
+                {str(code) for code in codes if str(code) not in written},
+            )
+            codes = [code for code in codes if str(code) in written]
+        doc.coded_groups[group] = [str(code) for code in codes]
+        for code in codes:
             add(f"{group}/{code}", labels, code, group=group)
 
     def add_list(group: str, values: Any) -> None:
@@ -222,7 +257,7 @@ def _walk_blocks(
                 add_list(f"{item_scope}/{field}", item.get(field))
             spec = item.get("input")
             if isinstance(spec, dict):
-                add_labels(item_scope, spec.get("labels"))
+                add_labels(item_scope, spec.get("labels"), item)
                 for field in _INPUT_TEXT_FIELDS:
                     if field in spec:
                         add(f"{item_scope}/{field}", spec, field)
@@ -258,6 +293,15 @@ def _unknown_key_refusal(doc: _Document, key: str) -> TranslationRefusal:
     parts = match["rest"].split("/")
     group = f"{scope}/{parts[0]}"
     name = _scope_name(scope)
+    if group in doc.catalog_groups and len(parts) == 2 and parts[1] in doc.catalog_groups[group][1]:
+        family = doc.catalog_groups[group][0]
+        return TranslationRefusal(
+            RefusalKind.CATALOG_LABEL,
+            key,
+            f"{name} code {parts[1]} shows the {family} scale catalog's label, which is "
+            "already in every supported language; a translation translates only labels "
+            "the questionnaire words itself.",
+        )
     if group in doc.coded_groups and len(parts) == 2 and re.fullmatch(r"-?\d+", parts[1]):
         return TranslationRefusal(
             RefusalKind.UNKNOWN_CODE,
@@ -376,7 +420,10 @@ def apply_translation(qml: dict[str, Any], texts: dict[str, str]) -> dict[str, A
     Only text moves: ids, codes, conditions, code blocks and bounds are those of
     ``qml``. Keys the document lacks are ignored, so call ``validate_translation``
     before storing a map. A Roster's inner items carry a copy of its labels
-    (``_roster_labels``), which takes the translated labels too.
+    (``_roster_labels``), and a declared scale's ordered ``input.options`` a
+    copy of each label, so both take the translated labels too. A declared
+    scale's catalog labels are not keys: they stay the text of the language
+    ``qml`` was loaded in, so a walk in another language loads in it first.
     """
     translated = copy.deepcopy(qml)
     for key, slot in _walk(translated).slots.items():
@@ -386,6 +433,10 @@ def apply_translation(qml: dict[str, Any], texts: dict[str, str]) -> dict[str, A
     for item in translated.get("items", []):
         if "_roster_block_id" in item:
             item["_roster_labels"] = blocks[item["_roster_block_id"]].get("labels", {})
+        spec = item.get("input")
+        if isinstance(spec, dict) and isinstance(spec.get("options"), list):
+            for option in spec["options"]:
+                option["label"] = spec["labels"][option["code"]]
     return translated
 
 

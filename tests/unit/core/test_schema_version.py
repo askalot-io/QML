@@ -6,7 +6,7 @@ Tests the decoupled Major.Minor.Patch schema-version signal:
 - `version` is valid three-part semver
 - `QML_SCHEMA_VERSION` is read from (never hardcoded apart from) the schema
   file — the single-source-of-truth / no-drift guarantee
-- the current contract version is 2.7.0 (the 2.0.0 breaking collapse of block
+- the current contract version is 2.8.0 (the 2.0.0 breaking collapse of block
   kinds to Group + Roster, the 2.1.0 backward-compatible addition of the optional
   Roster `subjectFrom` key, the 2.1.1 PATCH tightening that closes the
   Item and Condition objects with `unevaluatedProperties: false`, the 2.2.0
@@ -15,7 +15,8 @@ Tests the decoupled Major.Minor.Patch schema-version signal:
   text controls, the 2.4.0 removal of that same key, the 2.6.0 closing
   of `Input`, and the 2.6.1–2.6.4 PATCH tightenings: identifier item ids,
   whole-number arithmetic, whole-number Range defaults, in-domain defaults,
-  and the 2.7.0 backward-compatible optional `invented` postcondition marker)
+  the 2.7.0 backward-compatible optional `invented` postcondition marker, and
+  the 2.8.0 backward-compatible optional Item `scale`)
 - the schema version is independent of the askalot_qml package version
 - `$defs.Input` is closed (2.6.0): a misspelt or retired key is refused, while
   the keys stored documents carry (Textarea `minLength`, Switch `left` /
@@ -87,7 +88,7 @@ class TestSchemaVersionContract:
         # sourced from the schema and cannot drift from a hardcoded copy.
         assert QML_SCHEMA_VERSION == self._schema()["version"]
 
-    def test_current_contract_version_is_2_7_0(self):
+    def test_current_contract_version_is_2_8_0(self):
         # 2.0.0 was the first breaking (MAJOR) change: block kinds collapse to
         # Group + Roster (Sequence/Sample removed, is_random dropped, kind made
         # optional). 2.1.0 is a backward-compatible (MINOR) addition: the
@@ -153,7 +154,14 @@ class TestSchemaVersionContract:
         # invisible to evaluation: Z3, the walk and the publish gate read a
         # marked check as the same check unmarked, and it is no translation key.
         # A precondition still takes no such key.
-        assert QML_SCHEMA_VERSION == "2.7.0"
+        # 2.8.0 is a backward-compatible (MINOR) addition (#2493): the optional
+        # Item `scale` (a declared rating scale on a Radio or Dropdown Question,
+        # QuestionGroup or MatrixQuestion). The "labels required" rule moves
+        # from the Radio and Dropdown input branches to the Item, where it holds
+        # unless a scale is declared, so every 2.7.0 document still validates;
+        # the loader lowers a declaration into ordinary label keys, so Z3 and
+        # the walk read a declared item as they read any Radio.
+        assert QML_SCHEMA_VERSION == "2.8.0"
 
     def test_schema_version_decoupled_from_package_version(self):
         # Decoupled by policy: a code-only release moves the package version

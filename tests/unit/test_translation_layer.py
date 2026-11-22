@@ -14,6 +14,11 @@ Tests the pure functions in askalot_qml.core.qml_translation:
 - The source-level appliers rewrite a raw parsed QML file: the dumped file loads with exactly the
   translation's text keys, its non-text structure is the source's, and precondition hints are
   keyed, replaced and re-read like the other texts
+- A declared rating scale's catalog labels are no keys (the same key set whatever language the
+  document loaded in), a key for one is refused as a catalog label, and every reworded label
+  stays a key; the overlay copies labels into the ordered options, leaving catalog text in the
+  load's language, so a walk loaded in another language changes the opt-out with no key for it;
+  a version that declared a scale seeds a complete row
 
 These unit tests run on documents parsed by the real QMLLoader (the flattened
 shape the flow service materializes) and on the real ValidationProcessor, so the
@@ -516,3 +521,229 @@ class TestSourceLevelAppliers:
 
         assert "codeBlock: |" in dumped
         assert _load(dumped) == _load(HINTED_QML)
+
+
+#: Three rating items: a catalog scale shown highest first, a scale whose
+#: points the author reworded beside a catalog "Don't know", and an undeclared
+#: item whose every label is the author's.
+SCALED_QML = """
+qmlVersion: "2.8.0"
+questionnaire:
+  title: "Scaled survey"
+  blocks:
+    - id: b_main
+      title: "Main"
+      items:
+        - id: q_agree
+          kind: Question
+          title: "Taxes should be lower"
+          scale:
+            family: Agreement
+            points: 5
+            order: descending
+          input:
+            control: Radio
+        - id: q_mood
+          kind: Question
+          title: "How was your stay?"
+          scale:
+            family: Satisfaction
+            points: 5
+            optOuts: [dontKnow]
+          input:
+            control: Radio
+            labels:
+              1: "Awful"
+              2: "Poor"
+              3: "Fine"
+              4: "Good"
+              5: "Superb"
+        - id: q_plain
+          kind: Question
+          title: "Pick one"
+          input:
+            control: Radio
+            labels:
+              1: "Left"
+              2: "Right"
+"""
+
+_MOOD_LABEL_KEYS = [f"item:q_mood/labels/{code}" for code in (1, 2, 3, 4, 5)]
+
+
+def _load_in(content: str, language: str | None) -> dict:
+    return QMLLoader(language=language).load_from_string(content)
+
+
+def _item(qml: dict, item_id: str) -> dict:
+    return next(item for item in qml["items"] if item["id"] == item_id)
+
+
+class TestDeclaredScaleKeys:
+    """Catalog labels are no translation keys; labels the author wrote are."""
+
+    def test_only_authored_labels_are_keys(self):
+        keys = list(text_keys(_load_in(SCALED_QML, "en")))
+
+        assert not [key for key in keys if key.startswith("item:q_agree/labels/")]
+        assert [key for key in keys if key.startswith("item:q_mood/labels/")] == _MOOD_LABEL_KEYS
+        assert "item:q_plain/labels/1" in keys and "item:q_plain/labels/2" in keys
+
+    def test_the_key_set_is_the_same_whatever_language_the_document_was_loaded_in(self):
+        """A codes-only load carries empty catalog text and still yields the same keys."""
+        expected = text_keys(_load_in(SCALED_QML, "en"))
+
+        for language in (None, "de", "hu"):
+            assert text_keys(_load_in(SCALED_QML, language)) == expected
+
+    def test_a_translation_with_no_key_for_catalog_labels_is_complete(self):
+        qml = _load_in(SCALED_QML, None)
+        texts = _hungarian(qml)
+
+        assert validate_translation(qml, texts) == []
+        assert untranslated(qml, texts) == []
+
+    def test_a_key_for_a_catalog_label_is_refused(self):
+        qml = _load_in(SCALED_QML, "en")
+        texts = {
+            **_hungarian(qml),
+            "item:q_agree/labels/5": "Teljesen egyetértek",
+            "item:q_mood/labels/97": "Nem tudom",
+        }
+
+        refusals = validate_translation(qml, texts)
+
+        assert _kinds_and_keys(refusals) == {
+            (RefusalKind.CATALOG_LABEL, "item:q_agree/labels/5"),
+            (RefusalKind.CATALOG_LABEL, "item:q_mood/labels/97"),
+        }
+        assert "catalog" in refusals[0].message
+
+    def test_a_reworded_scale_needs_a_key_for_every_authored_label(self):
+        qml = _load_in(SCALED_QML, "en")
+        texts = _hungarian(qml)
+        del texts["item:q_mood/labels/3"]
+
+        assert untranslated(qml, texts) == ["item:q_mood/labels/3"]
+
+    def test_declaring_a_catalog_scale_carries_the_rest_forward_complete(self):
+        """An undeclared item's label keys drop out once it declares a catalog scale."""
+        undeclared = SCALED_QML.replace(
+            """          scale:
+            family: Agreement
+            points: 5
+            order: descending
+          input:
+            control: Radio
+""",
+            """          input:
+            control: Radio
+            labels:
+              1: "No"
+              2: "Yes"
+""",
+        )
+        old, new = _load_in(undeclared, None), _load_in(SCALED_QML, None)
+
+        carried = carry_forward(old, _hungarian(old), new)
+
+        assert "item:q_agree/labels/1" not in carried
+        assert untranslated(new, carried) == []
+
+
+class TestDeclaredScaleOverlay:
+    """The overlay writes authored labels into options too; the rest is the load's locale."""
+
+    def test_authored_labels_reach_the_options_and_catalog_text_is_the_loads_locale(self):
+        qml = _load_in(SCALED_QML, "de")
+
+        translated = apply_translation(qml, _hungarian(qml))
+
+        mood = _item(translated, "q_mood")["input"]
+        assert mood["labels"] == {
+            1: "HU Awful",
+            2: "HU Poor",
+            3: "HU Fine",
+            4: "HU Good",
+            5: "HU Superb",
+            97: "Weiß nicht",
+        }
+        assert [(o["code"], o["label"]) for o in mood["options"]] == [
+            (1, "HU Awful"),
+            (2, "HU Poor"),
+            (3, "HU Fine"),
+            (4, "HU Good"),
+            (5, "HU Superb"),
+            (97, "Weiß nicht"),
+        ]
+        agree = _item(translated, "q_agree")["input"]
+        assert [(o["code"], o["label"]) for o in agree["options"]] == [
+            (5, "Stimme voll und ganz zu"),
+            (4, "Stimme zu"),
+            (3, "Teils, teils"),
+            (2, "Stimme nicht zu"),
+            (1, "Stimme überhaupt nicht zu"),
+        ]
+
+    def test_switching_language_changes_the_opt_out_with_no_key_for_it(self):
+        texts = _hungarian(_load_in(SCALED_QML, None))
+
+        def opt_out(language):
+            options = _item(apply_translation(_load_in(SCALED_QML, language), texts), "q_mood")[
+                "input"
+            ]["options"]
+            return [o["label"] for o in options if o["optOut"]]
+
+        assert "item:q_mood/labels/97" not in texts
+        assert opt_out("de") == ["Weiß nicht"]
+        assert opt_out("hu") == ["Nem tudom"]
+
+    def test_the_source_applier_leaves_catalog_labels_to_the_catalog(self):
+        """A translated file keeps no catalog text, so it loads in its own locale's catalog."""
+        hungarian = _hungarian(_load_in(SCALED_QML, None))
+
+        dumped = dump_source(apply_source_translation(yaml.safe_load(SCALED_QML), hungarian))
+
+        assert (
+            "labels"
+            not in yaml.safe_load(dumped)["questionnaire"]["blocks"][0]["items"][0]["input"]
+        )
+        reloaded = _load_in(dumped, "hu")
+        assert text_keys(reloaded) == hungarian
+        assert _item(reloaded, "q_agree")["input"]["options"][0]["label"] == (
+            "Teljes mértékben egyetértek"
+        )
+
+
+class TestSeedingADeclaredScale:
+    """Seeding computes the untranslated list against the declared key set."""
+
+    def test_a_seeded_row_of_a_version_that_declared_a_scale_is_complete(self):
+        from types import SimpleNamespace
+
+        from askalot_qml.core.qml_translation import seed_translations
+
+        old_content = SCALED_QML.replace("            optOuts: [dontKnow]\n", "")
+        old_qml = _load_in(old_content, None)
+        inserted = []
+        repository = SimpleNamespace(
+            qml_translation_seed_plan=lambda questionnaire_id, version_id: SimpleNamespace(
+                version_content=SCALED_QML,
+                sources=[
+                    SimpleNamespace(
+                        locale="hu",
+                        ancestor_version_id="v1",
+                        ancestor_content=old_content,
+                        texts=_hungarian(old_qml),
+                        human_edited_at=None,
+                    )
+                ],
+            ),
+            insert_seeded_translations=lambda questionnaire_id, version_id, rows: (
+                inserted.extend(rows) or [row.locale for row in rows]
+            ),
+        )
+
+        assert seed_translations(repository, "q-1", "v2") == ["hu"]
+        assert inserted[0].untranslated == []
+        assert inserted[0].texts == _hungarian(old_qml)
