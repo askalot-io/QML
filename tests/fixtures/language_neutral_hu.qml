@@ -107,19 +107,6 @@ questionnaire:
               16: "Fogalmam sincs"
               32: "Nincs véleményem"
 
-        - id: q_agree
-          kind: Question
-          title: "A legtöbb emberben meg lehet bízni."
-          input:
-            control: Radio
-            labels:
-              1: "Egyáltalán nem értek egyet"
-              2: "Nem értek egyet"
-              3: "Egyet is értek, meg nem is"
-              4: "Egyetértek"
-              5: "Teljes mértékben egyetértek"
-              97: "Nem tudom"
-
     - id: b_vehicle
       title: "Járműhasználat"
       precondition:

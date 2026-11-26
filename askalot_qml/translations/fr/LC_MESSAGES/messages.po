@@ -63,12 +63,6 @@ msgstr ""
 "questionnaire peut utiliser, pour qu'une mise à jour de l'interpréteur ne"
 " puisse pas en élargir la liste à votre insu."
 
-msgid "Agree"
-msgstr "D'accord"
-
-msgid "Always"
-msgstr "Toujours"
-
 #, python-format
 msgid ""
 "An answer check reads answers as never given, because a backward edit "
@@ -169,9 +163,6 @@ msgstr ""
 " lus, affichés et laissés sans réponse ou calculés à partir de l'un d'eux"
 " : %(items)s"
 
-msgid "Disagree"
-msgstr "Pas d'accord"
-
 #, python-format
 msgid "Disallowed node type: %(node)s"
 msgstr "Construction non autorisée : %(node)s"
@@ -184,18 +175,6 @@ msgstr "Condition d'affichage ayant lu une réponse hors du parcours"
 
 msgid "Display condition reads an unanswered item"
 msgstr "Condition d'affichage lisant un élément sans réponse"
-
-msgid "Dissatisfied"
-msgstr "Insatisfait"
-
-msgid "Does not apply to me"
-msgstr "Non applicable"
-
-msgid "Don't know"
-msgstr "Je ne sais pas"
-
-msgid "Excellent"
-msgstr "Excellent"
 
 #, python-format
 msgid ""
@@ -239,14 +218,16 @@ msgstr ""
 "Préremplissage externe refusé pour %(item)s : la valeur fournie est hors "
 "du domaine déclaré de l'élément."
 
-msgid "Extremely important"
-msgstr "Extrêmement important"
+msgid "Inventory entry for something the questionnaire does not ask"
+msgstr ""
+"Entrée de l'inventaire pour quelque chose que le questionnaire ne demande"
+" pas"
 
-msgid "Fair"
-msgstr "Passable"
+msgid "Inventory entry names a KPI the paper does not number"
+msgstr "Entrée de l'inventaire qui nomme un KPI que l'article ne numérote pas"
 
-msgid "Good"
-msgstr "Bon"
+msgid "Inventory entry that does not say what the item measures"
+msgstr "Entrée de l'inventaire qui ne dit pas ce que l'élément mesure"
 
 #, python-format
 msgid "Item %(item)s not found in questionnaire state"
@@ -264,29 +245,17 @@ msgstr "Élément introuvable"
 msgid "Item unreachable once earlier answers are given"
 msgstr "Élément inaccessible une fois les réponses précédentes données"
 
+msgid "Item with no inventory entry"
+msgstr "Élément sans entrée dans l'inventaire"
+
 msgid "Items depend on each other in a cycle"
 msgstr "Éléments dépendant les uns des autres en boucle"
 
 msgid "Items in a capped group depend on each other"
 msgstr "Éléments interdépendants dans un groupe plafonné"
 
-msgid "Likely"
-msgstr "Probable"
-
-msgid "Moderately important"
-msgstr "Moyennement important"
-
 msgid "Name that refers to nothing"
 msgstr "Nom qui ne désigne rien"
-
-msgid "Neither agree nor disagree"
-msgstr "Ni d'accord ni pas d'accord"
-
-msgid "Neither likely nor unlikely"
-msgstr "Ni probable ni improbable"
-
-msgid "Neither satisfied nor dissatisfied"
-msgstr "Ni satisfait ni insatisfait"
 
 msgid "No previous item available"
 msgstr "Aucun élément précédent disponible"
@@ -294,17 +263,11 @@ msgstr "Aucun élément précédent disponible"
 msgid "No respondent can complete the questionnaire"
 msgstr "Aucun répondant ne peut terminer le questionnaire"
 
-msgid "Not at all important"
-msgstr "Pas du tout important"
-
 msgid "Not graded: the logic check classified no items."
 msgstr "Non noté : la vérification logique n'a classé aucun élément."
 
 msgid "Not graded: there are no numeric-input items to bound."
 msgstr "Non noté : aucun élément à saisie numérique n'est à borner."
-
-msgid "Often"
-msgstr "Souvent"
 
 msgid ""
 "Open the questionnaire in the editor for the full report, fix it, then "
@@ -313,14 +276,8 @@ msgstr ""
 "Ouvrez le questionnaire dans l'éditeur pour consulter le rapport complet,"
 " corrigez-le, puis publiez-le à nouveau."
 
-msgid "Ordered comparison that includes opt-out answers"
+msgid "Ordered comparison that includes out-of-scale answers"
 msgstr "Comparaison d'ordre qui inclut des réponses hors échelle"
-
-msgid "Outstanding"
-msgstr "Exceptionnel"
-
-msgid "Poor"
-msgstr "Médiocre"
 
 #, python-format
 msgid ""
@@ -339,9 +296,6 @@ msgstr ""
 "La condition d'affichage « %(expr)s » a été refusée (%(reason)s) et n'a "
 "donc jamais été exécutée. Elle est considérée comme non satisfaite "
 "(l'élément concerné est ignoré)."
-
-msgid "Prefer not to say"
-msgstr "Je préfère ne pas répondre"
 
 #, python-format
 msgid "Publishing was refused: %(num)d error must be fixed first: %(issues)s."
@@ -365,15 +319,6 @@ msgstr ""
 msgid "Questionnaire-level condition that nothing reads"
 msgstr "Condition sur le questionnaire lui-même, que rien ne lit"
 
-msgid "Quite important"
-msgstr "Assez important"
-
-msgid "Rarely"
-msgstr "Rarement"
-
-msgid "Rating scale that could be declared"
-msgstr "Échelle d'évaluation qui pourrait être déclarée"
-
 msgid "Reads an answer that may be missing"
 msgstr "Lecture d'une réponse qui peut manquer"
 
@@ -386,43 +331,13 @@ msgstr "Liste de questions répétées désignant des options non déclarées"
 msgid "Repeated-question subject that cannot be answered"
 msgstr "Sujet de questions répétées auquel on ne peut pas répondre"
 
-msgid "Satisfied"
-msgstr "Satisfait"
-
-msgid "Slightly important"
-msgstr "Peu important"
+msgid "Rows changed since the inventory described them"
+msgstr "Lignes modifiées depuis que l'inventaire les a décrites"
 
 msgid "Something went wrong on our side. Please try again in a moment."
 msgstr ""
 "Une erreur s'est produite de notre côté. Veuillez réessayer dans un "
 "instant."
-
-msgid "Sometimes"
-msgstr "Parfois"
-
-msgid "Somewhat agree"
-msgstr "Plutôt d'accord"
-
-msgid "Somewhat disagree"
-msgstr "Plutôt pas d'accord"
-
-msgid "Somewhat dissatisfied"
-msgstr "Plutôt insatisfait"
-
-msgid "Somewhat likely"
-msgstr "Plutôt probable"
-
-msgid "Somewhat satisfied"
-msgstr "Plutôt satisfait"
-
-msgid "Somewhat unlikely"
-msgstr "Plutôt improbable"
-
-msgid "Strongly agree"
-msgstr "Tout à fait d'accord"
-
-msgid "Strongly disagree"
-msgstr "Pas du tout d'accord"
 
 msgid "Supplied value ignored: it fails the answer check"
 msgstr "Valeur fournie ignorée : elle ne satisfait pas le contrôle de réponse"
@@ -543,6 +458,9 @@ msgstr "La vérification logique n'a pas pu s'exécuter"
 msgid "The questionnaire could not be loaded"
 msgstr "Le questionnaire n'a pas pu être chargé"
 
+msgid "The questionnaire has no item inventory"
+msgstr "Le questionnaire n'a pas d'inventaire des éléments"
+
 msgid "This survey changed in another window. Reload to continue."
 msgstr ""
 "Cette enquête a été modifiée dans une autre fenêtre. Rechargez la page "
@@ -580,9 +498,6 @@ msgstr ""
 "(%(error_type)s). Elle est considérée comme non satisfaite (l'élément "
 "concerné est ignoré)."
 
-msgid "Unlikely"
-msgstr "Improbable"
-
 #, python-format
 msgid "Validation error (%(error_type)s)"
 msgstr "Erreur de validation (%(error_type)s)"
@@ -598,36 +513,6 @@ msgstr "Variable définie mais jamais lue"
 
 msgid "Variable that only copies another"
 msgstr "Variable qui ne fait que copier une autre"
-
-msgid "Very dissatisfied"
-msgstr "Très insatisfait"
-
-msgid "Very good"
-msgstr "Très bon"
-
-msgid "Very important"
-msgstr "Très important"
-
-msgid "Very likely"
-msgstr "Très probable"
-
-msgid "Very often"
-msgstr "Très souvent"
-
-msgid "Very poor"
-msgstr "Très médiocre"
-
-msgid "Very rarely"
-msgstr "Très rarement"
-
-msgid "Very satisfied"
-msgstr "Très satisfait"
-
-msgid "Very slightly important"
-msgstr "Très peu important"
-
-msgid "Very unlikely"
-msgstr "Très improbable"
 
 msgid "Wording checks not run for this language"
 msgstr "Vérifications de formulation non effectuées pour cette langue"

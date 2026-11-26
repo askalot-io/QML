@@ -107,19 +107,6 @@ questionnaire:
               16: "No lo sé"
               32: "Sin opinión"
 
-        - id: q_agree
-          kind: Question
-          title: "Se puede confiar en la mayoría de la gente."
-          input:
-            control: Radio
-            labels:
-              1: "Muy en desacuerdo"
-              2: "En desacuerdo"
-              3: "Ni de acuerdo ni en desacuerdo"
-              4: "De acuerdo"
-              5: "Muy de acuerdo"
-              97: "No sé"
-
     - id: b_vehicle
       title: "Uso del vehículo"
       precondition:

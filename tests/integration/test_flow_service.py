@@ -28,10 +28,11 @@ Tests the step functions in ``askalot_qml.api.flow_service`` called directly:
   shown under an earlier pick (another tab picked since) is refused before
   anything is written or frozen, and an answer naming the current pick, or a
   walk no pick re-materialized with no token, is taken (#2127)
-- A walk in ``de`` carries a declared scale's German catalog labels and its
-  options in declared (descending) order, opt-out last; picking another
-  language before the first answer re-materializes the options in it, and a
-  reworded scale's options show the translation's labels
+- A walk shows a declared scale's authored labels in declared (descending)
+  order with the out-of-scale answer last, whatever the source language;
+  picking another language before the first answer re-materializes the options
+  with that translation's labels, order and flags kept, and an out-of-scale
+  answer is taken
 
 These integration tests drive the real engine (QML parse, Z3 initialization,
 FlowProcessor) over an in-memory repository and a deterministic clock, because
@@ -850,10 +851,10 @@ class TestChoosingALanguage:
 
 
 
-#: A catalog Agreement scale shown highest first with a catalog "Don't know",
-#: then a Satisfaction scale whose points the author reworded.
+#: A declared scale shown highest first with one out-of-scale answer, then a
+#: second declared item.
 _SCALED_QML = """
-qmlVersion: "2.8.0"
+qmlVersion: "2.9.0"
 questionnaire:
   title: Scaled walk
   blocks:
@@ -864,50 +865,55 @@ questionnaire:
           kind: Question
           title: Taxes should be lower
           scale:
-            family: Agreement
-            points: 5
+            polarity: bipolar
+            points: 3
             order: descending
-            optOuts: [dontKnow]
           input:
             control: Radio
+            labels:
+              1: Disagree
+              2: Neither
+              3: Agree
+              8: No opinion
         - id: q_mood
           kind: Question
           title: How was your stay?
           scale:
-            family: Satisfaction
-            points: 5
+            polarity: unipolar
+            points: 3
+            start: 0
           input:
             control: Radio
             labels:
-              1: Awful
-              2: Poor
-              3: Fine
-              4: Good
-              5: Superb
+              0: Awful
+              1: Fine
+              2: Superb
 """
 
-#: Complete without a key for any catalog label: only the titles and the
-#: reworded points are the author's text.
-_SCALED_HU = {
-    "questionnaire/title": "Skálás bejárás",
-    "block:main/title": "Fő",
-    "item:q_rate/title": "Az adók legyenek alacsonyabbak",
-    "item:q_mood/title": "Milyen volt az itt-tartózkodása?",
-    **{f"item:q_mood/labels/{code}": f"HU {code}" for code in range(1, 6)},
-}
-
-_DE_AGREEMENT_DESCENDING = [
-    (5, "Stimme voll und ganz zu", False),
-    (4, "Stimme zu", False),
-    (3, "Teils, teils", False),
-    (2, "Stimme nicht zu", False),
-    (1, "Stimme überhaupt nicht zu", False),
-    (97, "Weiß nicht", True),
+_SCALED_KEYS = [
+    "questionnaire/title",
+    "block:main/title",
+    "item:q_rate/title",
+    *(f"item:q_rate/labels/{code}" for code in (1, 2, 3, 8)),
+    "item:q_mood/title",
+    *(f"item:q_mood/labels/{code}" for code in (0, 1, 2)),
 ]
 
 
+def _scaled_texts(locale):
+    """A complete translation of the scaled QML: every text is its locale and key."""
+    return {key: f"{locale} {key}" for key in _SCALED_KEYS}
+
+
 def _options(item):
-    return [(o["code"], o["label"], o["optOut"]) for o in item["input"]["options"]]
+    return [(o["code"], o["label"], o["outOfScale"]) for o in item["input"]["options"]]
+
+
+def _rate_options(locale):
+    """``q_rate``'s options under ``locale``'s translation: descending points, then out of scale."""
+    return [
+        (code, f"{locale} item:q_rate/labels/{code}", code == 8) for code in (3, 2, 1, 8)
+    ]
 
 
 class _ScaledRepo(_TranslationRepo):
@@ -918,12 +924,10 @@ class _ScaledRepo(_TranslationRepo):
         self.language = language
         self.translations = {
             "hu": SimpleNamespace(
-                texts=_SCALED_HU, updated_at="2026-11-22T10:00:00+00:00", untranslated=[]
+                texts=_scaled_texts("hu"), updated_at="2026-11-22T10:00:00+00:00", untranslated=[]
             ),
             "de": SimpleNamespace(
-                texts={**_SCALED_HU, "item:q_rate/title": "Steuern sollten sinken"},
-                updated_at="2026-11-22T11:00:00+00:00",
-                untranslated=[],
+                texts=_scaled_texts("de"), updated_at="2026-11-22T11:00:00+00:00", untranslated=[]
             ),
         }
 
@@ -945,37 +949,48 @@ def _scaled_walk(language="en"):
 @pytest.mark.integration
 @pytest.mark.flow
 class TestDeclaredScaleWalk:
-    def test_a_walk_materialized_in_de_shows_german_catalog_options_in_declared_order(self, clock):
-        store, survey = _scaled_walk("de")
+    _SOURCE = [(3, "Agree", False), (2, "Neither", False), (1, "Disagree", False), (8, "No opinion", True)]
+
+    @pytest.mark.parametrize("language", ["en", "de", "pl"])
+    def test_a_walk_shows_the_authored_labels_whatever_the_source_language(self, clock, language):
+        """The load reads no language: the options are the author's text in declared order."""
+        store, survey = _scaled_walk(language)
 
         item = _present(store, survey).item
 
         assert item["id"] == "q_rate"
-        assert _options(item) == _DE_AGREEMENT_DESCENDING
-        assert item["input"]["labels"] == {
-            code: label for code, label, _ in _DE_AGREEMENT_DESCENDING
+        assert _options(item) == self._SOURCE
+        assert item["scale"] == {
+            "polarity": "bipolar",
+            "points": 3,
+            "start": 1,
+            "order": "descending",
         }
 
-    def test_picking_a_language_mid_offer_rematerializes_the_options_in_it(self, clock):
+    def test_picking_a_language_before_the_first_answer_rematerializes_the_options_in_it(self, clock):
         store, survey = _scaled_walk("en")
-        assert _options(_present(store, survey).item)[0] == (5, "Strongly agree", False)
+        assert _options(_present(store, survey).item) == self._SOURCE
 
         assert _choose(store, survey, "hu").outcome is LanguageChoiceOutcome.CHOSEN
         hungarian = _present(store, survey).item
-        assert hungarian["title"] == "Az adók legyenek alacsonyabbak"
-        assert _options(hungarian)[0] == (5, "Teljes mértékben egyetértek", False)
-        assert _options(hungarian)[-1] == (97, "Nem tudom", True)
+        assert hungarian["title"] == "hu item:q_rate/title"
+        assert _options(hungarian) == _rate_options("hu")
 
         assert _choose(store, survey, "de").outcome is LanguageChoiceOutcome.CHOSEN
-        assert _options(_present(store, survey).item) == _DE_AGREEMENT_DESCENDING
+        assert _options(_present(store, survey).item) == _rate_options("de")
 
-    def test_a_reworded_scale_shows_the_translations_labels_in_its_options(self, clock):
+        assert _choose(store, survey, "en").outcome is LanguageChoiceOutcome.CHOSEN
+        assert _options(_present(store, survey).item) == self._SOURCE
+
+    def test_an_out_of_scale_answer_is_taken_and_the_next_item_shows_translated_options(self, clock):
         store, survey = _scaled_walk("en")
         _choose(store, survey, "hu")
         _present(store, survey)
-        assert _answer(store, survey, "q_rate", 97).outcome is FlowOutcome.ACCEPTED
+        assert _answer(store, survey, "q_rate", 8).outcome is FlowOutcome.ACCEPTED
 
         mood = _present(store, survey).item
 
         assert mood["id"] == "q_mood"
-        assert _options(mood) == [(code, f"HU {code}", False) for code in range(1, 6)]
+        assert _options(mood) == [
+            (code, f"hu item:q_mood/labels/{code}", False) for code in (0, 1, 2)
+        ]

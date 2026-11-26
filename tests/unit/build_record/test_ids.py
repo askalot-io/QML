@@ -1,7 +1,7 @@
 """
-The source-id to QML item-id mapper an imported questionnaire's inventory records.
+The source-id to QML item-id mapper an imported questionnaire's build record records.
 
-Tests askalot_qml.inventory.ids.map_source_ids:
+Tests askalot_qml.build_record.ids.map_source_ids:
 - A printed question number becomes an item id (`1` -> `Q1`, `Q1a.` -> `Q1a`)
 - Source ids that would map to one id, or to ids equal in lower case, get distinct ids
 - A source id that is a sandbox name or a reserved id (`len`, `codeInit`, `if`) maps to a safe id
@@ -16,8 +16,8 @@ copy of the rule accepts.
 
 import pytest
 import yaml
+from askalot_qml.build_record import map_source_ids
 from askalot_qml.core.qml_loader import QMLLoader, is_readable_item_id
-from askalot_qml.inventory import map_source_ids
 
 #: Source ids as printed questionnaires spell them, including the awkward ones.
 AWKWARD_SOURCE_IDS = [

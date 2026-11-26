@@ -318,7 +318,7 @@ def validation_answer(
         body and status from the one ladder (``_fault``): a 400 for content
         the author can fix, a 500 that quotes nothing for anything else.
     """
-    loader = QMLLoader(logger=logger, language=language)
+    loader = QMLLoader(logger=logger)
     try:
         questionnaire_data = loader.load_from_string(content)
         return _validation_payload(name, questionnaire_data, content_origin, language, deadline), 200

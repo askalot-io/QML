@@ -58,12 +58,6 @@ msgstr ""
 "elemeit használhatja, így egy Python-frissítés sem bővítheti ezt a kört "
 "észrevétlenül."
 
-msgid "Agree"
-msgstr "Egyetértek"
-
-msgid "Always"
-msgstr "Mindig"
-
 #, python-format
 msgid ""
 "An answer check reads answers as never given, because a backward edit "
@@ -165,9 +159,6 @@ msgstr ""
 "olvasott, megjelent, de megválaszolatlanul hagyott vagy ilyenből "
 "számított kérdések: %(items)s"
 
-msgid "Disagree"
-msgstr "Nem értek egyet"
-
 #, python-format
 msgid "Disallowed node type: %(node)s"
 msgstr "Nem engedélyezett nyelvi elem: %(node)s"
@@ -180,18 +171,6 @@ msgstr "A megjelenítési feltétel egy útvonalon kívüli választ olvas"
 
 msgid "Display condition reads an unanswered item"
 msgstr "A megjelenítési feltétel egy megválaszolatlan kérdést olvas"
-
-msgid "Dissatisfied"
-msgstr "Elégedetlen"
-
-msgid "Does not apply to me"
-msgstr "Nem vonatkozik rám"
-
-msgid "Don't know"
-msgstr "Nem tudom"
-
-msgid "Excellent"
-msgstr "Kiváló"
 
 #, python-format
 msgid ""
@@ -235,14 +214,14 @@ msgstr ""
 "A(z) %(item)s külső előtöltése elutasítva: a megadott érték kívül esik a "
 "kérdés deklarált értékkészletén."
 
-msgid "Extremely important"
-msgstr "Rendkívül fontos"
+msgid "Inventory entry for something the questionnaire does not ask"
+msgstr "Leltárbejegyzés olyasmiről, amit a kérdőív nem kérdez"
 
-msgid "Fair"
-msgstr "Elfogadható"
+msgid "Inventory entry names a KPI the paper does not number"
+msgstr "A leltárbejegyzés olyan KPI-t nevez meg, amelyet a tanulmány nem számoz"
 
-msgid "Good"
-msgstr "Jó"
+msgid "Inventory entry that does not say what the item measures"
+msgstr "Leltárbejegyzés, amely nem mondja meg, mit mér a kérdés"
 
 #, python-format
 msgid "Item %(item)s not found in questionnaire state"
@@ -260,29 +239,17 @@ msgstr "A kérdés nem található"
 msgid "Item unreachable once earlier answers are given"
 msgstr "A korábbi válaszok után elérhetetlen kérdés"
 
+msgid "Item with no inventory entry"
+msgstr "Kérdés leltárbejegyzés nélkül"
+
 msgid "Items depend on each other in a cycle"
 msgstr "Körkörösen egymástól függő kérdések"
 
 msgid "Items in a capped group depend on each other"
 msgstr "Egymástól függő kérdések egy darabszámkorlátos csoportban"
 
-msgid "Likely"
-msgstr "Valószínű"
-
-msgid "Moderately important"
-msgstr "Közepesen fontos"
-
 msgid "Name that refers to nothing"
 msgstr "Semmire sem hivatkozó név"
-
-msgid "Neither agree nor disagree"
-msgstr "Egyet is értek, meg nem is"
-
-msgid "Neither likely nor unlikely"
-msgstr "Sem nem valószínű, sem nem valószínűtlen"
-
-msgid "Neither satisfied nor dissatisfied"
-msgstr "Sem nem elégedett, sem nem elégedetlen"
 
 msgid "No previous item available"
 msgstr "Nincs előző kérdés"
@@ -290,17 +257,11 @@ msgstr "Nincs előző kérdés"
 msgid "No respondent can complete the questionnaire"
 msgstr "Egyetlen válaszadó sem tudja kitölteni a kérdőívet"
 
-msgid "Not at all important"
-msgstr "Egyáltalán nem fontos"
-
 msgid "Not graded: the logic check classified no items."
 msgstr "Nincs értékelve: a logikai ellenőrzés egyetlen kérdést sem sorolt be."
 
 msgid "Not graded: there are no numeric-input items to bound."
 msgstr "Nincs értékelve: nincsenek korlátozható numerikus beviteli kérdések."
-
-msgid "Often"
-msgstr "Gyakran"
 
 msgid ""
 "Open the questionnaire in the editor for the full report, fix it, then "
@@ -309,14 +270,8 @@ msgstr ""
 "A teljes jelentésért nyissa meg a kérdőívet a szerkesztőben, javítsa ki, "
 "majd tegye közzé újra."
 
-msgid "Ordered comparison that includes opt-out answers"
+msgid "Ordered comparison that includes out-of-scale answers"
 msgstr "Sorrendi összehasonlítás, amely a skálán kívüli válaszokat is tartalmazza"
-
-msgid "Outstanding"
-msgstr "Kiemelkedő"
-
-msgid "Poor"
-msgstr "Gyenge"
 
 #, python-format
 msgid ""
@@ -336,9 +291,6 @@ msgstr ""
 "(%(reason)s), így le sem futott. A rendszer nem teljesültnek tekinti (a "
 "feltételhez kötött kérdést kihagyja)."
 
-msgid "Prefer not to say"
-msgstr "Nem kívánok válaszolni"
-
 #, python-format
 msgid "Publishing was refused: %(num)d error must be fixed first: %(issues)s."
 msgid_plural "Publishing was refused: %(num)d errors must be fixed first: %(issues)s."
@@ -357,15 +309,6 @@ msgstr ""
 msgid "Questionnaire-level condition that nothing reads"
 msgstr "Magára a kérdőívre vonatkozó feltétel, amelyet semmi sem olvas"
 
-msgid "Quite important"
-msgstr "Eléggé fontos"
-
-msgid "Rarely"
-msgstr "Ritkán"
-
-msgid "Rating scale that could be declared"
-msgstr "Deklarálható értékelési skála"
-
 msgid "Reads an answer that may be missing"
 msgstr "Esetleg hiányzó választ olvas"
 
@@ -378,41 +321,11 @@ msgstr "Az ismétlődő kérdéslista nem deklarált lehetőségekre hivatkozik"
 msgid "Repeated-question subject that cannot be answered"
 msgstr "Az ismétlődő blokk megnevezését adó kérdés nem válaszolható meg"
 
-msgid "Satisfied"
-msgstr "Elégedett"
-
-msgid "Slightly important"
-msgstr "Kissé fontos"
+msgid "Rows changed since the inventory described them"
+msgstr "A sorok megváltoztak, mióta a leltár leírta őket"
 
 msgid "Something went wrong on our side. Please try again in a moment."
 msgstr "Valami hiba történt nálunk. Kérjük, próbálja újra egy kis idő múlva."
-
-msgid "Sometimes"
-msgstr "Néha"
-
-msgid "Somewhat agree"
-msgstr "Inkább egyetértek"
-
-msgid "Somewhat disagree"
-msgstr "Inkább nem értek egyet"
-
-msgid "Somewhat dissatisfied"
-msgstr "Inkább elégedetlen"
-
-msgid "Somewhat likely"
-msgstr "Inkább valószínű"
-
-msgid "Somewhat satisfied"
-msgstr "Inkább elégedett"
-
-msgid "Somewhat unlikely"
-msgstr "Inkább valószínűtlen"
-
-msgid "Strongly agree"
-msgstr "Teljes mértékben egyetértek"
-
-msgid "Strongly disagree"
-msgstr "Egyáltalán nem értek egyet"
 
 msgid "Supplied value ignored: it fails the answer check"
 msgstr "A megadott érték figyelmen kívül marad: nem megy át a válaszellenőrzésen"
@@ -532,6 +445,9 @@ msgstr "A logikai ellenőrzés nem futtatható"
 msgid "The questionnaire could not be loaded"
 msgstr "A kérdőív nem tölthető be"
 
+msgid "The questionnaire has no item inventory"
+msgstr "A kérdőívnek nincs kérdésleltára"
+
 msgid "This survey changed in another window. Reload to continue."
 msgstr ""
 "A kérdőív egy másik ablakban megváltozott. A folytatáshoz töltse be újra "
@@ -568,9 +484,6 @@ msgstr ""
 "(%(error_type)s). A rendszer nem teljesültnek tekinti (a feltételhez "
 "kötött kérdést kihagyja)."
 
-msgid "Unlikely"
-msgstr "Valószínűtlen"
-
 #, python-format
 msgid "Validation error (%(error_type)s)"
 msgstr "Ellenőrzési hiba (%(error_type)s)"
@@ -586,36 +499,6 @@ msgstr "Beállított, de soha nem olvasott változó"
 
 msgid "Variable that only copies another"
 msgstr "Egy másikat csak lemásoló változó"
-
-msgid "Very dissatisfied"
-msgstr "Nagyon elégedetlen"
-
-msgid "Very good"
-msgstr "Nagyon jó"
-
-msgid "Very important"
-msgstr "Nagyon fontos"
-
-msgid "Very likely"
-msgstr "Nagyon valószínű"
-
-msgid "Very often"
-msgstr "Nagyon gyakran"
-
-msgid "Very poor"
-msgstr "Nagyon gyenge"
-
-msgid "Very rarely"
-msgstr "Nagyon ritkán"
-
-msgid "Very satisfied"
-msgstr "Nagyon elégedett"
-
-msgid "Very slightly important"
-msgstr "Csak egy kicsit fontos"
-
-msgid "Very unlikely"
-msgstr "Nagyon valószínűtlen"
 
 msgid "Wording checks not run for this language"
 msgstr "Ezen a nyelven a megfogalmazási ellenőrzések nem futottak"

@@ -17,6 +17,15 @@ Tests the complete pipeline from QML files to Z3 constraints:
   Dropdown default that is no label key and a Checkbox default with an
   undeclared bit are refused naming the item and the domain; in-domain
   defaults load unchanged
+- A declared rating scale (structure only, #2493): a Question, QuestionGroup
+  and MatrixQuestion load with `input.options` in display order and the
+  `outOfScale` flag; a missing point label, a label below `start` and a
+  default on an out-of-scale code are refused naming item and codes and no
+  label text; a point count above the maximum and a `start` written as a
+  float are refused, a refusal names a few codes and counts the rest, and
+  items sharing an anchored `labels` mapping each get their own; the removed `family` / `optOuts` keys, a scale on another
+  control and a Radio without labels are refused by the schema; an undeclared
+  Radio is untouched, and the loader takes no language
 - A postcondition marked `invented: true` loads, gets the twin's Z3 verdict and
   walk refusals, a non-boolean marker is refused, and a precondition takes none
 - QMLState is initialized with correct flat structure and blockId references
@@ -29,6 +38,7 @@ that block precondition inheritance works correctly through the entire pipeline,
 YAML parsing through Z3 constraint generation to item classification.
 """
 
+import json
 import re
 import unittest
 from pathlib import Path
@@ -36,6 +46,7 @@ from pathlib import Path
 import pytest
 from askalot_qml.core.qml_loader import QMLLoader
 from askalot_qml.core.qml_topology import QMLTopology
+from askalot_qml.core.scales import MAX_POINTS
 from askalot_qml.core.validation_processor import ValidationProcessor
 from askalot_qml.models.qml_state import QMLState
 from askalot_qml.z3.item_classifier import ItemClassifier
@@ -1398,7 +1409,7 @@ if __name__ == "__main__":
 def _scale_doc(item_yaml: str) -> str:
     """One block holding ``item_yaml`` (indented as a block item) and a closing Comment."""
     return (
-        'qmlVersion: "2.8.0"\n'
+        'qmlVersion: "2.9.0"\n'
         "questionnaire:\n"
         "  title: Scales\n"
         "  blocks:\n"
@@ -1409,201 +1420,319 @@ def _scale_doc(item_yaml: str) -> str:
     )
 
 
-_AGREE_ITEM = """        - id: q
-          kind: Question
-          title: "Work is meaningful"
-          scale: {family: Agreement, points: 5, optOuts: [dontKnow]}
-          input:
-            control: Radio
-"""
+def _scale_item(scale: str, labels: str, extra: str = "", control: str = "Radio") -> str:
+    """One Question ``q`` declaring ``scale`` over ``labels`` (both YAML flow mappings)."""
+    return (
+        "        - id: q\n"
+        "          kind: Question\n"
+        '          title: "Work is meaningful"\n'
+        f"          scale: {scale}\n"
+        "          input:\n"
+        f"            control: {control}\n"
+        f"            labels: {labels}\n" + extra
+    )
+
+
+_FIVE = "{1: Nem, 2: Inkább nem, 3: Is-is, 4: Inkább igen, 5: Igen}"
+_FIVE_AND_DK = "{1: Nem, 2: Inkább nem, 3: Is-is, 4: Inkább igen, 5: Igen, 8: Nem tudom}"
+_BIPOLAR_5 = "{polarity: bipolar, points: 5}"
+
+
+def _load_items(doc: str) -> dict:
+    return {i["id"]: i for i in QMLLoader().load_from_string(doc)["items"]}
 
 
 @pytest.mark.integration
 class TestDeclaredRatingScale(unittest.TestCase):
-    """A Radio or Dropdown item may declare a rating scale (schema 2.8.0).
+    """A Radio or Dropdown item may declare the structure of its rating scale (schema 2.9.0).
 
-    The loader lowers the declaration into ``input.labels`` (codes 1..N plus the
-    reserved opt-out codes) and ``input.options`` (display order), so the answer
-    check and Z3 read the scale's codes as any other label keys.
+    The author writes every label. The loader checks the labels against the
+    declared range and writes ``input.options`` (display order, out-of-scale
+    answers last), so the answer check and Z3 read the label keys as for any
+    Radio or Dropdown.
     """
 
-    def test_question_group_and_matrix_load_with_the_scale_codes(self):
-        item = """        - id: g
+    def test_a_question_a_group_and_a_matrix_load_with_ordered_options(self):
+        more = """        - id: g
           kind: QuestionGroup
-          title: Agree?
+          title: Satisfied?
           questions: [A, B]
-          scale: {family: Satisfaction, points: 4}
-          input: {control: Dropdown}
+          scale: {polarity: bipolar, points: 4}
+          input:
+            control: Dropdown
+            labels: {1: a, 2: b, 3: c, 4: d}
         - id: m
           kind: MatrixQuestion
-          title: Rate
+          title: How often
           rows: [r1]
           columns: [c1]
-          scale: {family: Frequency, points: 7, order: descending}
-          input: {control: Radio}
+          scale: {polarity: unipolar, points: 3, start: 0, order: descending}
+          input:
+            control: Radio
+            labels: {0: never, 1: sometimes, 2: always, 7: no answer}
 """
-        items = {
-            i["id"]: i
-            for i in QMLLoader(language="en").load_from_string(_scale_doc(_AGREE_ITEM + item))[
-                "items"
-            ]
-        }
+        items = _load_items(_scale_doc(_scale_item(_BIPOLAR_5, _FIVE_AND_DK) + more))
 
-        self.assertEqual(list(items["q"]["input"]["labels"]), [1, 2, 3, 4, 5, 97])
-        self.assertEqual(items["q"]["input"]["labels"][1], "Strongly disagree")
         self.assertEqual(
-            items["q"]["input"]["options"][-1], {"code": 97, "label": "Don't know", "optOut": True}
+            items["q"]["scale"],
+            {"polarity": "bipolar", "points": 5, "start": 1, "order": "ascending"},
         )
-        self.assertEqual(list(items["g"]["input"]["labels"]), [1, 2, 3, 4])
-        self.assertEqual([o["code"] for o in items["m"]["input"]["options"]], [7, 6, 5, 4, 3, 2, 1])
+        self.assertEqual(
+            items["q"]["input"]["options"],
+            [
+                {"code": 1, "label": "Nem", "outOfScale": False},
+                {"code": 2, "label": "Inkább nem", "outOfScale": False},
+                {"code": 3, "label": "Is-is", "outOfScale": False},
+                {"code": 4, "label": "Inkább igen", "outOfScale": False},
+                {"code": 5, "label": "Igen", "outOfScale": False},
+                {"code": 8, "label": "Nem tudom", "outOfScale": True},
+            ],
+        )
+        self.assertEqual([o["code"] for o in items["g"]["input"]["options"]], [1, 2, 3, 4])
+        self.assertEqual(
+            [(o["code"], o["outOfScale"]) for o in items["m"]["input"]["options"]],
+            [(2, False), (1, False), (0, False), (7, True)],
+        )
         self.assertEqual(items["m"]["scale"]["order"], "descending")
-        self.assertEqual(items["q"]["_scale_authored_codes"], [])
+        self.assertEqual(items["m"]["scale"]["start"], 0)
 
-    def test_items_sharing_an_aliased_input_each_get_their_own_scale(self):
-        """A YAML alias shares one ``input`` mapping; lowering one item must not
-        hand its labels to the next as authored ones."""
-        item = """        - id: a
+    def test_the_authored_labels_are_left_as_written(self):
+        item = _load_items(_scale_doc(_scale_item(_BIPOLAR_5, _FIVE_AND_DK)))["q"]
+
+        self.assertEqual(
+            item["input"]["labels"],
+            {1: "Nem", 2: "Inkább nem", 3: "Is-is", 4: "Inkább igen", 5: "Igen", 8: "Nem tudom"},
+        )
+        self.assertNotIn("_scale_authored_codes", item)
+
+    def test_eleven_points_from_zero_load_and_bound_the_answers(self):
+        from askalot_qml.core.domain_validator import answer_refusal
+
+        labels = "{" + ", ".join(f"{code}: l{code}" for code in range(11)) + "}"
+        item = _load_items(
+            _scale_doc(_scale_item("{polarity: unipolar, points: 11, start: 0}", labels))
+        )["q"]
+
+        self.assertEqual([o["code"] for o in item["input"]["options"]], list(range(11)))
+        self.assertIsNone(answer_refusal(item, 0))
+        self.assertIsNone(answer_refusal(item, 10))
+        self.assertIsNotNone(answer_refusal(item, 11))
+
+    def test_a_descending_item_shows_points_high_to_low_then_out_of_scale_ascending(self):
+        labels = _FIVE_AND_DK.replace("}", ", 9: Nem válaszol}")
+        item = _load_items(
+            _scale_doc(
+                _scale_item("{polarity: bipolar, points: 5, order: descending}", labels)
+            )
+        )["q"]
+
+        self.assertEqual([o["code"] for o in item["input"]["options"]], [5, 4, 3, 2, 1, 8, 9])
+        self.assertEqual(
+            [o["outOfScale"] for o in item["input"]["options"]], [False] * 5 + [True] * 2
+        )
+
+    def test_items_sharing_an_aliased_input_each_get_their_own_options(self):
+        """A YAML alias shares one ``input`` mapping; the options written for
+        one item's display order must not be the other's."""
+        doc = """        - id: a
           kind: Question
           title: Agree
-          scale: {family: Agreement, points: 5}
-          input: &radio {control: Radio}
+          scale: {polarity: bipolar, points: 3}
+          input: &radio
+            control: Radio
+            labels: {1: x, 2: y, 3: z}
         - id: f
           kind: Question
           title: How often
-          scale: {family: Frequency, points: 5}
+          scale: {polarity: unipolar, points: 3, order: descending}
           input: *radio
 """
-        items = {
-            i["id"]: i for i in QMLLoader(language="en").load_from_string(_scale_doc(item))["items"]
-        }
+        items = _load_items(_scale_doc(doc))
 
-        self.assertEqual(items["a"]["input"]["labels"][1], "Strongly disagree")
-        self.assertEqual(items["f"]["input"]["labels"][1], "Never")
-        self.assertEqual(items["f"]["_scale_authored_codes"], [])
+        self.assertEqual([o["code"] for o in items["a"]["input"]["options"]], [1, 2, 3])
+        self.assertEqual([o["code"] for o in items["f"]["input"]["options"]], [3, 2, 1])
 
-    def test_an_opt_out_label_on_a_point_is_refused_even_when_not_declared(self):
-        item = """        - id: q
-          kind: Question
-          title: Agree
-          scale: {family: Agreement, points: 5}
-          input:
-            control: Radio
-            labels: {1: "Strongly disagree", 2: "Disagree", 3: "Neither", 4: "Agree", 5: "Don't know"}
-"""
-        with self.assertRaisesRegex(ValueError, "an opt-out, on a point"):
-            QMLLoader(language="en").load_from_string(_scale_doc(item))
-
-    def test_a_scale_on_a_slider_or_a_comment_is_refused(self):
-        slider = """        - id: s
-          kind: Question
-          title: How much
-          scale: {family: Agreement, points: 5}
-          input: {control: Slider, min: 1, max: 5}
-"""
-        comment = """        - id: c
-          kind: Comment
-          title: Note
-          scale: {family: Agreement, points: 5}
-"""
-        for doc in (slider, comment):
-            with self.assertRaises(ValidationError):
-                QMLLoader().load_from_string(_scale_doc(doc))
-
-    def test_six_points_is_refused_naming_the_allowed_counts(self):
-        with self.assertRaises(ValidationError) as ctx:
-            QMLLoader().load_from_string(_scale_doc(_AGREE_ITEM.replace("points: 5", "points: 6")))
-        self.assertIn("[4, 5, 7]", str(ctx.exception))
-
-    def test_rewording_only_some_points_is_refused_naming_the_missing_code(self):
-        doc = _AGREE_ITEM + "            labels: {1: Not at all, 2: Hardly, 3: Partly, 4: Mostly}\n"
-        with self.assertRaises(ValueError) as ctx:
-            QMLLoader().load_from_string(_scale_doc(doc))
-        self.assertIn("not code 5", str(ctx.exception))
-
-    def test_the_answer_check_and_z3_read_the_scale_codes(self):
+    def test_the_answer_check_and_z3_read_the_label_keys(self):
         from askalot_qml.core.domain_validator import answer_refusal
 
         doc = _scale_doc(
-            _AGREE_ITEM + '          postcondition:\n            - predicate: "q.outcome == 6"\n'
+            _scale_item(
+                _BIPOLAR_5,
+                _FIVE_AND_DK,
+                '          postcondition:\n            - predicate: "q.outcome == 6"\n',
+            )
         )
         data = QMLLoader().load_from_string(doc)
         item = data["items"][0]
         self.assertIsNotNone(answer_refusal(item, 6))
-        self.assertIsNone(answer_refusal(item, 97))
+        self.assertIsNone(answer_refusal(item, 8))
         self.assertIsNone(answer_refusal(item, 3))
         issues = ValidationProcessor(QMLState(data)).to_issues()
         self.assertIn(
             ("q", "infeasible_postcondition"), [(i["item_id"], i["type"]) for i in issues]
         )
 
-        accepts_opt_out = ValidationProcessor(
-            QMLState(QMLLoader().load_from_string(doc.replace("== 6", "== 97")))
+        accepts_out_of_scale = ValidationProcessor(
+            QMLState(QMLLoader().load_from_string(doc.replace("== 6", "== 8")))
         ).to_issues()
         self.assertNotIn(
-            ("q", "infeasible_postcondition"), [(i["item_id"], i["type"]) for i in accepts_opt_out]
+            ("q", "infeasible_postcondition"),
+            [(i["item_id"], i["type"]) for i in accepts_out_of_scale],
         )
 
-    def test_hungarian_text_and_an_uncatalogued_language(self):
-        data = QMLLoader(language="hu").load_from_string(_scale_doc(_AGREE_ITEM))
-        self.assertEqual(data["items"][0]["input"]["labels"][5], "Teljes mértékben egyetértek")
-
+    def test_a_point_with_no_label_is_refused_naming_every_missing_code(self):
         with self.assertRaises(ValueError) as ctx:
-            QMLLoader(language="pl").load_from_string(_scale_doc(_AGREE_ITEM))
-        self.assertIn("1, 2, 3, 4, 5, 97", str(ctx.exception))
-
-        points_only = _AGREE_ITEM + "            labels: {1: a, 2: b, 3: c, 4: d, 5: e}\n"
-        with self.assertRaises(ValueError) as ctx:
-            QMLLoader(language="pl").load_from_string(_scale_doc(points_only))
-        self.assertIn("codes 97 have none", str(ctx.exception))
-
-        everything = points_only.replace("5: e}", "5: e, 97: f}")
-        labels = QMLLoader(language="pl").load_from_string(_scale_doc(everything))["items"][0][
-            "input"
-        ]["labels"]
-        self.assertEqual(labels[97], "f")
-
-    def test_the_same_label_free_radio_needs_the_declaration(self):
-        QMLLoader().load_from_string(_scale_doc(_AGREE_ITEM))
-        with self.assertRaises(ValidationError):
             QMLLoader().load_from_string(
-                _scale_doc(
-                    _AGREE_ITEM.replace(
-                        "          scale: {family: Agreement, points: 5, optOuts: [dontKnow]}\n", ""
-                    )
+                _scale_doc(_scale_item(_BIPOLAR_5, "{1: Nem, 2: Inkább nem, 3: Is-is, 8: Nem tudom}"))
+            )
+        message = str(ctx.exception)
+        self.assertIn("'q'", message)
+        self.assertIn("code 4, 5 has no label", message)
+        self.assertNotIn("Nem", message)
+
+    def test_a_wide_scale_with_few_labels_is_refused_naming_a_few_codes_and_a_count(self):
+        with self.assertRaises(ValueError) as ctx:
+            QMLLoader().load_from_string(
+                _scale_doc(_scale_item("{polarity: unipolar, points: 101, start: 0}", "{0: Semmi, 100: Minden}"))
+            )
+        message = str(ctx.exception)
+        self.assertIn("code 1, 2, 3, 4, 5, 6, 7, 8 and 91 more has no label", message)
+        self.assertLess(len(message), 300)
+
+    def test_a_point_count_above_the_maximum_is_refused_before_any_code_is_built(self):
+        schema = json.loads(QMLLoader().schema_path.read_text())
+        self.assertEqual(schema["$defs"]["Scale"]["properties"]["points"]["maximum"], MAX_POINTS)
+        for points in (MAX_POINTS + 1, 2_000_000_000):
+            with self.assertRaises(ValidationError) as ctx:
+                QMLLoader().load_from_string(
+                    _scale_doc(_scale_item(f"{{polarity: bipolar, points: {points}}}", "{1: Nem, 2: Igen}"))
                 )
-            )
+            self.assertIn("greater than the maximum of 101", ctx.exception.message)
 
-    def test_a_label_that_contradicts_the_direction_is_refused(self):
-        for text in ("Strongly agree", "Teljes mértékben egyetértek"):
-            doc = _AGREE_ITEM + f"            labels: {{1: {text}, 2: b, 3: c, 4: d, 5: e}}\n"
-            with self.assertRaises(ValueError) as ctx:
-                QMLLoader().load_from_string(_scale_doc(doc))
-            self.assertIn("label 1", str(ctx.exception))
-            self.assertIn("code 5", str(ctx.exception))
-
-    def test_a_default_naming_an_opt_out_is_refused(self):
-        with self.assertRaises(ValueError) as ctx:
-            QMLLoader().load_from_string(_scale_doc(_AGREE_ITEM + "            default: 97\n"))
-        self.assertIn("opt-out", str(ctx.exception))
-
-    def test_a_codes_only_load_carries_the_domain_and_no_text(self):
-        labels = QMLLoader().load_from_string(_scale_doc(_AGREE_ITEM))["items"][0]["input"][
-            "labels"
-        ]
-
-        self.assertEqual(labels, {1: "", 2: "", 3: "", 4: "", 5: "", 97: ""})
-
-    def test_publishing_an_unlabelled_scale_in_an_uncatalogued_language_is_refused(self):
-        from askalot_qml.core.publish_gate import evaluate_publish_gate_content
-
-        self.assertTrue(evaluate_publish_gate_content(_scale_doc(_AGREE_ITEM), language="hu").ok)
-        gate = evaluate_publish_gate_content(_scale_doc(_AGREE_ITEM), language="pl")
-        self.assertFalse(gate.ok)
-        self.assertIn("no 'pl' labels", gate.issues[0]["message"])
-
-    def test_a_label_for_a_code_the_scale_does_not_have_is_refused(self):
+    def test_a_start_written_as_a_float_is_refused_as_a_declaration(self):
         with self.assertRaises(ValueError) as ctx:
             QMLLoader().load_from_string(
-                _scale_doc(_AGREE_ITEM + "            labels: {98: Not for me}\n")
+                _scale_doc(_scale_item("{polarity: bipolar, points: 2, start: 1.0}", "{1: Nem, 2: Igen}"))
             )
-        self.assertIn("label 98 is not a code", str(ctx.exception))
+        self.assertIn("scale start is 0 or 1", str(ctx.exception))
+
+    def test_items_sharing_an_anchored_labels_mapping_each_get_their_own(self):
+        doc = _scale_doc(
+            "        - id: q\n"
+            "          kind: Question\n"
+            "          title: One\n"
+            f"          scale: {_BIPOLAR_5}\n"
+            "          input:\n"
+            "            control: Radio\n"
+            f"            labels: &five {_FIVE}\n"
+            "        - id: r\n"
+            "          kind: Question\n"
+            "          title: Two\n"
+            f"          scale: {_BIPOLAR_5}\n"
+            "          input:\n"
+            "            control: Radio\n"
+            "            labels: *five\n"
+        )
+        items = _load_items(doc)
+        self.assertEqual(items["q"]["input"]["labels"], items["r"]["input"]["labels"])
+        self.assertIsNot(items["q"]["input"]["labels"], items["r"]["input"]["labels"])
+
+    def test_a_label_below_the_first_code_is_refused_naming_the_code(self):
+        with self.assertRaises(ValueError) as ctx:
+            QMLLoader().load_from_string(
+                _scale_doc(_scale_item(_BIPOLAR_5, _FIVE.replace("{", "{0: Semmi, ")))
+            )
+        message = str(ctx.exception)
+        self.assertIn("'q'", message)
+        self.assertIn("label code 0 is below 1", message)
+        self.assertNotIn("Semmi", message)
+
+    def test_a_default_on_an_out_of_scale_code_is_refused(self):
+        with self.assertRaises(ValueError) as ctx:
+            QMLLoader().load_from_string(
+                _scale_doc(_scale_item(_BIPOLAR_5, _FIVE_AND_DK, "            default: 8\n"))
+            )
+        message = str(ctx.exception)
+        self.assertIn("'q'", message)
+        self.assertIn("default 8 is not a point", message)
+        self.assertNotIn("Nem tudom", message)
+
+        item = _load_items(
+            _scale_doc(_scale_item(_BIPOLAR_5, _FIVE_AND_DK, "            default: 5\n"))
+        )["q"]
+        self.assertEqual(item["input"]["default"], 5)
+
+    def test_the_removed_catalog_keys_are_refused_by_the_schema(self):
+        for scale in (
+            "{family: Agreement, points: 5}",
+            "{polarity: bipolar, points: 5, optOuts: [dontKnow]}",
+        ):
+            with self.assertRaises(ValidationError):
+                QMLLoader().load_from_string(_scale_doc(_scale_item(scale, _FIVE)))
+
+    def test_a_structure_outside_the_schema_is_refused(self):
+        for scale in (
+            "{polarity: neutral, points: 5}",
+            "{polarity: bipolar, points: 1}",
+            "{polarity: bipolar, points: 5, start: 2}",
+            "{polarity: bipolar}",
+            "{points: 5}",
+        ):
+            with self.assertRaises(ValidationError):
+                QMLLoader().load_from_string(_scale_doc(_scale_item(scale, _FIVE)))
+
+    def test_a_radio_without_labels_is_refused_declared_or_not(self):
+        declared = """        - id: q
+          kind: Question
+          title: Agree
+          scale: {polarity: bipolar, points: 5}
+          input: {control: Radio}
+"""
+        for doc in (declared, declared.replace("          scale: {polarity: bipolar, points: 5}\n", "")):
+            with self.assertRaises(ValidationError):
+                QMLLoader().load_from_string(_scale_doc(doc))
+
+    def test_a_scale_on_a_slider_a_checkbox_or_a_comment_is_refused(self):
+        slider = """        - id: s
+          kind: Question
+          title: How much
+          scale: {polarity: bipolar, points: 5}
+          input: {control: Slider, min: 1, max: 5}
+"""
+        checkbox = _scale_item(_BIPOLAR_5, "{1: a, 2: b, 4: c}", control="Checkbox")
+        comment = """        - id: c
+          kind: Comment
+          title: Note
+          scale: {polarity: bipolar, points: 5}
+"""
+        for doc in (slider, checkbox, comment):
+            with self.assertRaises(ValidationError):
+                QMLLoader().load_from_string(_scale_doc(doc))
+
+    def test_without_the_schema_the_loader_still_refuses_what_it_cannot_lower(self):
+        loader = QMLLoader(schema_path=None)
+        cases = {
+            "'family'": _scale_item("{family: Agreement, points: 5}", _FIVE),
+            "not on 'Checkbox'": _scale_item(_BIPOLAR_5, "{1: a, 2: b, 4: c}", control="Checkbox"),
+            "is not a whole number": _scale_item(_BIPOLAR_5, _FIVE.replace("5:", "five:")),
+        }
+        for needle, doc in cases.items():
+            with self.assertRaisesRegex(ValueError, needle):
+                loader.load_from_string(_scale_doc(doc))
+
+    def test_an_undeclared_radio_carries_no_scale_and_no_options(self):
+        doc = _scale_item(_BIPOLAR_5, _FIVE_AND_DK).replace(f"          scale: {_BIPOLAR_5}\n", "")
+        item = _load_items(_scale_doc(doc))["q"]
+
+        self.assertNotIn("scale", item)
+        self.assertNotIn("options", item["input"])
+        self.assertEqual(list(item["input"]["labels"]), [1, 2, 3, 4, 5, 8])
+
+    def test_two_loads_of_one_document_give_equal_state(self):
+        doc = _scale_doc(_scale_item(_BIPOLAR_5, _FIVE_AND_DK))
+
+        self.assertEqual(QMLLoader().load_from_string(doc), QMLLoader().load_from_string(doc))
+
+    def test_the_loader_takes_no_language(self):
+        with self.assertRaises(TypeError):
+            QMLLoader(**{"language": "hu"})

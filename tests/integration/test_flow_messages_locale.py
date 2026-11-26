@@ -16,6 +16,8 @@ Tests the respondent-facing messages of ``create_flow_blueprint``:
 - every engine word a page shows (warning types, grading reasons, issue types)
   has a msgid with a Hungarian translation, and every issue type the validator
   can emit and every warning type the flow engine records has a label (#2166)
+- every issue type the item inventory raises (they are raised outside the
+  validator's files) has a label in each supported language
 - every warning the flow engine records stores a catalog msgid and its
   variables, and reads in the page's language, or as its stored English when
   it has none (#2177); ``add_warning`` takes only a singular ``Sentence`` with
@@ -556,6 +558,37 @@ class TestEngineWordsAreTranslated:
             emitted |= set(re.findall(r'_load_failure\(\s*"([a-z_]+)"', source))
         assert emitted, "the pattern found no issue types: the source moved"
         assert sorted(emitted - set(ISSUE_TYPE_LABELS)) == []
+
+    @pytest.mark.parametrize("locale", ["es", "fr", "de", "hu"])
+    def test_every_inventory_issue_type_has_a_label_in_each_language(self, locale):
+        """The inventory's issue types are raised outside the validator's two
+        files, so they are named here and read off their own source."""
+        import re
+        from pathlib import Path
+
+        import askalot_qml
+        from askalot_common.i18n import gettext
+        from askalot_qml.core.publish_gate import ISSUE_TYPE_LABELS, issue_type_label
+
+        types = {
+            "item_without_entry",
+            "entry_without_item",
+            "intent_missing",
+            "rows_changed",
+            "unknown_kpi",
+            "no_inventory",
+        }
+        source = (Path(askalot_qml.__file__).parent / "inventory/warnings.py").read_text(
+            encoding="utf-8"
+        )
+        raised = set(re.findall(r'_issue\(\s*[^,()]+,\s*"([a-z_]+)"', source))
+        assert raised == types, "the inventory raises other issue types than the ones named here"
+        assert sorted(types - set(ISSUE_TYPE_LABELS)) == []
+        untranslated = sorted(
+            code for code in types if gettext(locale, ISSUE_TYPE_LABELS[code]) == ISSUE_TYPE_LABELS[code]
+        )
+        assert untranslated == []
+        assert issue_type_label(locale, "no_inventory") != issue_type_label("en", "no_inventory")
 
     def test_every_warning_type_the_engine_records_has_a_label(self):
         """Read off the source: ``add_warning`` raises on an unlabelled type, and

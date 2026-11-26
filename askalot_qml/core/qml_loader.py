@@ -11,12 +11,11 @@ from pathlib import Path
 from typing import Any
 
 import yaml
-from askalot_common.i18n import SUPPORTED_LOCALES
 from jsonschema.validators import validator_for
 
 from askalot_qml.core.domain_validator import default_refusal
 from askalot_qml.core.python_runner import WHOLE_NUMBER_FIX, fractional_construct, sandbox_names
-from askalot_qml.core.scales import OPT_OUTS, Option, Scale, ScaleError, parse_scale
+from askalot_qml.core.scales import ScaleError, name_codes, parse_scale
 from askalot_qml.schema import schema_refusal
 
 
@@ -76,7 +75,7 @@ def is_readable_item_id(item_id: Any) -> bool:
     The rule ``QMLLoader._validate_reserved_item_ids`` enforces, apart from the
     reserved sentinels (``QMLLoader.RESERVED_ITEM_IDS``), which it refuses
     with their own message: a Python identifier in NFKC form that is neither a
-    keyword nor a sandbox builtin or module name. The inventory's source-id
+    keyword nor a sandbox builtin or module name. The build record's source-id
     mapper builds its ids against this same function, so a mapped id is one
     the loader accepts.
     """
@@ -189,7 +188,6 @@ class QMLLoader:
         schema_path: str | Path | None = _UNSET,
         logger: logging.Logger | None = None,
         content_source: Any | None = None,
-        language: str | None = None,
     ):
         """
         Initialize QML loader.
@@ -206,19 +204,10 @@ class QMLLoader:
             content_source: Optional name→content resolver. When set, it — not
                 the filesystem — answers ``load_from_file`` and
                 ``list_available_files``.
-            language: The language whose text a declared rating scale's labels
-                take: the questionnaire's language (or the survey's) for any
-                caller that shows or stores option text. Omitted, the load is
-                codes only: a declared scale gives every reader its codes and
-                carries no catalog text, never English in place of the
-                questionnaire's language. A language outside the catalog
-                (an "other" questionnaire language) requires every declared
-                code to carry an authored label.
         """
         self.logger = logger or logging.getLogger(__name__)
         self.content_source = content_source
         self.qml_dir = Path(qml_dir) if qml_dir else None
-        self.language = language
 
         if schema_path is _UNSET:
             from askalot_qml.schema import SCHEMA_PATH
@@ -346,10 +335,9 @@ class QMLLoader:
            item-id rejection (``__init__`` / ``codeInit`` collide with Z3
            static-builder sentinels) + whole-number arithmetic (#1813)
         6. Roster/Checkbox power-of-2 label keys + Group ``count`` positivity +
-           iterateOver self-cycle, then every declared rating scale lowered
-           into its item's ``input.labels`` and ``input.options``, then every
-           control ``default`` inside its answer domain (#1823; after the label
-           keys it is judged against, which a declared scale supplies)
+           iterateOver self-cycle, then every declared rating scale checked
+           against its item's labels and lowered into ``input.options``, then
+           every control ``default`` inside its answer domain (#1823)
         7. capped-Group inner-item independence (direct sibling references)
         8. flatten the nested structure
 
@@ -570,40 +558,32 @@ class QMLLoader:
                 )
 
     def _lower_declared_scales(self, questionnaire: dict[str, Any]) -> None:
-        """Give every item that declares a rating scale its codes, labels and ordered options.
+        """Check every declared rating scale against its item's labels and write its ordered options.
 
-        A declaration is lowered once, here, so every reader after the loader
-        (the answer check, Z3, the default check, external items, the walk,
-        extraction) sees an ordinary Radio or Dropdown with ``labels`` keyed by
-        the scale's codes and opt-out codes. Without it Z3 would see an item
-        with no domain and verify nothing.
+        A declaration states structure only; the author writes every label.
+        The item is an ordinary Radio or Dropdown to every later reader (the
+        answer check, Z3, external items, the walk, extraction): its answer
+        codes are its label keys, declared or not. Lowering happens once,
+        here, and adds two things to the item:
 
-        The item afterwards carries:
+        - ``scale``: the declaration with every key spelled out (``start`` and
+          ``order`` defaulted);
+        - ``input.options``: ``{code, label, outOfScale}`` in display order,
+          the points as declared and then the out-of-scale answers ascending,
+          because a JSON object cannot carry an order of integer keys.
 
-        - ``scale``: the declaration with every key spelled out (order and
-          opt-outs defaulted);
-        - ``input.labels``: code -> text, ascending by code; the author's text
-          where written, else the catalog's in ``self.language``, else (a codes
-          only load) an empty string;
-        - ``input.options``: ``{code, label, optOut}`` in display order, opt-outs
-          last, because a JSON object cannot carry an order of integer keys;
-        - ``_scale_authored_codes``: the codes whose label the author wrote,
-          recorded before the catalog fills the rest. Translations require keys
-          only for these, and the validator reads them.
+        ``input.labels`` stays as written.
 
-        Refused, naming the item: a malformed declaration; a label for a code
-        the scale does not have; reworded scale points that leave some point
-        unworded (the points are reworded all or none, opt-outs one by one); a
-        label that is the catalog's label of another code of the declared
-        family in any supported language, which would declare an item coded
-        1 = "Strongly agree" and make every measure read it backwards; a
-        ``default`` naming an opt-out (a hint is a scale point); and, in a
-        language the catalog does not cover, a declared code with no label.
+        Refused, naming the item and the codes (the first few, then a count)
+        and never a label's text, in this order: a malformed declaration; a control other than Radio or
+        Dropdown; a label key that is not a whole number; a label coded below
+        the scale's first code; a point of the scale with no label; a
+        ``default`` that is not a point (a hint suggests a point, never an
+        out-of-scale answer).
 
         Raises:
             ValueError: for any of the above.
         """
-        catalogued = self.language in SUPPORTED_LOCALES
         for block in questionnaire.get("blocks", []):
             for item in block.get("items", []):
                 raw = item.get("scale")
@@ -614,94 +594,54 @@ class QMLLoader:
                     scale = parse_scale(raw)
                 except ScaleError as e:
                     raise ValueError(f"Item {item_id!r}: {e}.") from e
-                # A fresh mapping: a YAML alias shares one ``input`` between
-                # items, and lowering one must not write labels the next reads
-                # as authored.
-                input_spec = dict(item["input"])
-                item["input"] = input_spec
-                authored = {
-                    int(code): text for code, text in (input_spec.get("labels") or {}).items()
-                }
-                self._refuse_scale_labels(item_id, scale, authored)
-                default = input_spec.get("default")
-                if default in scale.opt_out_codes:
+                declared_input = item.get("input")
+                control = declared_input.get("control") if isinstance(declared_input, dict) else None
+                if control not in ("Radio", "Dropdown"):
                     raise ValueError(
-                        f"Item {item_id!r}: its default {default} is an opt-out. A default "
-                        f"suggests a point of the scale ({scale.point_codes[0]} to "
-                        f"{scale.point_codes[-1]}); remove it or name a point."
+                        f"Item {item_id!r}: a rating scale is declared on a Radio or Dropdown "
+                        f"control, not on {control!r}."
                     )
-                if self.language is not None and not catalogued:
-                    unlabelled = [code for code in scale.codes if code not in authored]
-                    if unlabelled:
-                        raise ValueError(
-                            f"Item {item_id!r}: the scale catalog has no {self.language!r} "
-                            f"labels, so every code of its declared {scale.family} scale "
-                            f"needs a label written in the questionnaire; codes "
-                            f"{', '.join(map(str, unlabelled))} have none."
-                        )
-                if catalogued:
-                    options = scale.options(self.language, authored)
-                else:
-                    options = [
-                        Option(code, authored.get(code, ""), opt_out)
-                        for code, opt_out in scale.display_order()
-                    ]
-                input_spec["labels"] = {
-                    option.code: option.label for option in sorted(options, key=lambda o: o.code)
-                }
+                # Fresh mappings: a YAML alias shares one ``input``, or one
+                # ``labels``, between items, and neither the options written
+                # for one item nor a translation of its labels is another's.
+                input_spec = dict(declared_input)
+                item["input"] = input_spec
+                labels = input_spec.get("labels") or {}
+                if isinstance(labels, dict):
+                    labels = dict(labels)
+                    input_spec["labels"] = labels
+                not_whole = [key for key in labels if isinstance(key, bool) or not isinstance(key, int)]
+                if not_whole:
+                    raise ValueError(
+                        f"Item {item_id!r}: label key {name_codes(repr(key) for key in not_whole)} "
+                        f"is not a whole number. Every label of a declared scale is keyed by its code."
+                    )
+                first, last = scale.start, scale.top
+                below = sorted(code for code in labels if code < first)
+                if below:
+                    raise ValueError(
+                        f"Item {item_id!r}: label code {name_codes(below)} is below "
+                        f"{first}, the first code of its declared scale. The points are coded "
+                        f"{first} to {last}, and an answer outside the scale takes a code above {last}."
+                    )
+                missing = [code for code in scale.point_codes if code not in labels]
+                if missing:
+                    raise ValueError(
+                        f"Item {item_id!r}: its declared scale has {scale.points} points coded "
+                        f"{first} to {last}, and code {name_codes(missing)} has no label. "
+                        f"Write one label for each point."
+                    )
+                default = input_spec.get("default")
+                if default is not None and default not in scale.point_codes:
+                    raise ValueError(
+                        f"Item {item_id!r}: its default {default!r} is not a point of its declared "
+                        f"scale ({first} to {last}). A default suggests a point; remove it or name one."
+                    )
                 input_spec["options"] = [
-                    {"code": option.code, "label": option.label, "optOut": option.opt_out}
-                    for option in options
+                    {"code": code, "label": labels[code], "outOfScale": out_of_scale}
+                    for code, out_of_scale in scale.display_order(labels)
                 ]
                 item["scale"] = scale.as_dict()
-                item["_scale_authored_codes"] = sorted(authored)
-
-    @staticmethod
-    def _refuse_scale_labels(item_id: Any, scale: Scale, authored: dict[int, str]) -> None:
-        """Refuse authored labels that do not fit the declared scale (see ``_lower_declared_scales``)."""
-        if not authored:
-            return
-        foreign = sorted(set(authored) - set(scale.codes))
-        if foreign:
-            raise ValueError(
-                f"Item {item_id!r}: label {', '.join(map(str, foreign))} is not a code of "
-                f"its {scale.points}-point {scale.family} scale, whose codes are "
-                f"{', '.join(map(str, scale.codes))}."
-            )
-        reworded = set(authored) & set(scale.point_codes)
-        if reworded and reworded != set(scale.point_codes):
-            missing = sorted(set(scale.point_codes) - reworded)
-            raise ValueError(
-                f"Item {item_id!r}: it rewords some points of its {scale.family} scale "
-                f"but not code {', '.join(map(str, missing))}. Reword every point or none."
-            )
-        # Every opt-out's label is known, declared or not: "Don't know" on a
-        # point code would otherwise publish as a scale point.
-        every_opt_out = Scale(scale.family, scale.points, opt_outs=tuple(OPT_OUTS))
-        catalog: dict[str, int] = {}
-        for code in every_opt_out.codes:
-            for locale in SUPPORTED_LOCALES:
-                catalog.setdefault(
-                    every_opt_out.catalog_label(code, locale).casefold().strip(), code
-                )
-        for code, text in authored.items():
-            meant = catalog.get(str(text).casefold().strip())
-            if meant is not None and meant != code and meant in every_opt_out.opt_out_codes:
-                raise ValueError(
-                    f"Item {item_id!r}: label {code} reads {text!r}, an opt-out, on a point "
-                    f"of its {scale.family} scale. An opt-out is never a scale point: "
-                    f"declare it in optOuts (stored as {meant}) and give code {code} its "
-                    f"point's label."
-                )
-            if meant is not None and meant != code:
-                raise ValueError(
-                    f"Item {item_id!r}: label {code} reads {text!r}, which is code {meant} "
-                    f"of a {scale.family} scale. A declared scale codes its points from "
-                    f"{scale.catalog_label(1, 'en')!r} as 1 to "
-                    f"{scale.catalog_label(scale.points, 'en')!r} as {scale.points}, "
-                    f"whatever the display order; re-code the item (and every condition "
-                    f"reading it) before declaring the scale."
-                )
 
     def _validate_defaults_in_domain(self, questionnaire: dict[str, Any]) -> None:
         """Refuse a control ``default`` no answer to the item could match (#1823).

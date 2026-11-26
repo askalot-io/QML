@@ -1,9 +1,9 @@
 """Map a printed questionnaire's question ids to QML item ids (#1972).
 
 An imported questionnaire keeps every source question's id verbatim in its
-inventory and asks it under a QML item id. A source id is rarely one the loader
+build record and asks it under a QML item id. A source id is rarely one the loader
 accepts (``1``, ``Q1a.``, ``2.3 (b)``), so this module derives one, and the
-inventory records the pair.
+build record records the pair.
 
 Decisions:
 
@@ -22,7 +22,7 @@ Decisions:
   refuses names equal under ``str.lower``). The later source gets the
   smallest free ``_<n>`` suffix, ``n`` from 2.
 - **Deterministic.** The result depends only on the source ids and their
-  order: the same inventory maps to the same ids on every call.
+  order: the same build record maps to the same ids on every call.
 """
 
 from __future__ import annotations

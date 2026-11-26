@@ -107,19 +107,6 @@ questionnaire:
               16: "Keine Ahnung"
               32: "Keine Meinung"
 
-        - id: q_agree
-          kind: Question
-          title: "Den meisten Menschen kann man vertrauen."
-          input:
-            control: Radio
-            labels:
-              1: "Stimme überhaupt nicht zu"
-              2: "Stimme nicht zu"
-              3: "Teils, teils"
-              4: "Stimme zu"
-              5: "Stimme voll und ganz zu"
-              97: "Weiß nicht"
-
     - id: b_vehicle
       title: "Fahrzeugnutzung"
       precondition:

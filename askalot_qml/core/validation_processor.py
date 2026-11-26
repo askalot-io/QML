@@ -12,14 +12,12 @@ Uses the common QMLEngine pipeline then adds Z3-based item classification.
 """
 
 import ast
-import functools
 import logging
 import operator
 import re
 from typing import Any
 
 from askalot_common.i18n import (
-    SUPPORTED_LOCALES,
     Sentence,
     is_supported_locale,
     require_questionnaire_language,
@@ -30,7 +28,6 @@ from z3 import And, Not, Solver, sat, unsat
 
 from askalot_qml.core.controls import label_keys
 from askalot_qml.core.qml_engine import QMLEngine
-from askalot_qml.core.scales import FAMILIES, OPT_OUTS, Scale, parse_scale
 from askalot_qml.models.qml_state import Condition, QMLState, QuestionnaireItem
 from askalot_qml.predicate_ast import (
     name_reads,
@@ -265,96 +262,6 @@ def _none_unsafe_item_references(predicate: str) -> set[str]:
     return found - none_tested_outcomes(tree)
 
 
-#: Item kinds and controls that may declare a rating scale; the only ones the
-#: declaration suggestion reads.
-_SCALE_KINDS = ("Question", "QuestionGroup", "MatrixQuestion")
-_SCALE_CONTROLS = ("Radio", "Dropdown")
-
-
-def _label_text(text: Any) -> str:
-    """A label as the catalog match compares it: case-folded, outer space stripped."""
-    return str(text).casefold().strip()
-
-
-@functools.cache
-def _catalog_label_sets() -> tuple[tuple[Scale, tuple[str, ...], dict[str, str]], ...]:
-    """Every family and point count's labels, codes 1..N, in every supported locale.
-
-    Each row is ``(scale, point texts, {opt-out text: opt-out name})`` in one
-    locale. The suggestion matches an item against every row, so an item
-    written in any supported language gets the same verdict as its English
-    twin without the validator knowing which language it is in. Built once:
-    the catalog is fixed for the life of the process.
-    """
-    rows = []
-    for locale in SUPPORTED_LOCALES:
-        for family, definition in FAMILIES.items():
-            for points in definition.labels:
-                scale = Scale(family=family, points=points, opt_outs=tuple(OPT_OUTS))
-                point_texts = tuple(
-                    _label_text(scale.catalog_label(code, locale)) for code in scale.point_codes
-                )
-                opt_out_texts = {
-                    _label_text(scale.catalog_label(code, locale)): name
-                    for name, (code, _) in OPT_OUTS.items()
-                }
-                rows.append((scale, point_texts, opt_out_texts))
-    return tuple(rows)
-
-
-def _catalog_fit(labels: dict[int, str]) -> tuple[Scale, bool, bool] | None:
-    """The catalog scale whose labels ``labels`` carries, or None.
-
-    Returns ``(scale, reversed, coded_as_declared)``. Every label must be a
-    point of one family at one point count in one locale, in code order or in
-    reverse, or one of that locale's opt-out labels; one label more (an "Other")
-    or less fits nothing. ``coded_as_declared`` holds when the codes already are
-    the declared scale's (points 1..N from the most negative, opt-outs on their
-    reserved codes), so declaring changes no stored answer.
-    """
-    entries = sorted((code, _label_text(text)) for code, text in labels.items())
-    for catalog, point_texts, opt_out_texts in _catalog_label_sets():
-        opt_out_codes = {code: opt_out_texts[text] for code, text in entries if text in opt_out_texts}
-        points = [(code, text) for code, text in entries if code not in opt_out_codes]
-        texts = tuple(text for _, text in points)
-        if texts == point_texts:
-            backwards = False
-        elif texts == point_texts[::-1]:
-            backwards = True
-        else:
-            continue
-        names = set(opt_out_codes.values())
-        if len(names) != len(opt_out_codes):
-            # The same opt-out offered twice is no declaration's shape.
-            continue
-        scale = Scale(
-            family=catalog.family,
-            points=catalog.points,
-            opt_outs=tuple(name for name in OPT_OUTS if name in names),
-        )
-        coded_as_declared = (
-            not backwards
-            and [code for code, _ in points] == list(scale.point_codes)
-            and all(OPT_OUTS[name][0] == code for code, name in opt_out_codes.items())
-        )
-        return scale, backwards, coded_as_declared
-    return None
-
-
-def _scale_spelling(scale: Scale) -> str:
-    """The declaration as an author writes it, opt-outs only when offered."""
-    opt_outs = f", optOuts: [{', '.join(scale.opt_outs)}]" if scale.opt_outs else ""
-    return f"scale: {{family: {scale.family}, points: {scale.points}{opt_outs}}}"
-
-
-def _reads_outcome(source: str, mode: str, item_id: str) -> bool:
-    """Whether a predicate (``mode="eval"``) or codeBlock (``"exec"``) reads ``item_id.outcome``."""
-    try:
-        return item_id in outcome_reads(ast.parse(source, mode=mode))
-    except SyntaxError:
-        return False
-
-
 _ORDER_OPS = {
     ast.Lt: operator.lt,
     ast.LtE: operator.le,
@@ -379,15 +286,15 @@ def _int_literal(node: ast.AST) -> int | None:
     return value if isinstance(value, int) and not isinstance(value, bool) else None
 
 
-def _opt_outs_excluded(leaf: ast.AST, opt_outs: dict[str, tuple[int, ...]]) -> set[str]:
-    """Answer reads whose every opt-out code ``leaf`` refuses, read as one conjunct of an ``and``.
+def _out_of_scale_excluded(leaf: ast.AST, out_of_scale: dict[str, tuple[int, ...]]) -> set[str]:
+    """Answer reads whose every out-of-scale code ``leaf`` refuses, read as one conjunct of an ``and``.
 
     A read is named by its source text (``q.outcome``, ``g.outcome[1]``), so a
     bound on one slot or cell leaves another slot of the same item unbounded.
 
-    ``q.outcome <= 5``, ``5 >= q.outcome``, ``q.outcome not in (97,)``,
+    ``q.outcome <= 5``, ``5 >= q.outcome``, ``q.outcome not in (8,)``,
     ``q.outcome in (4, 5)``, and a chain ``4 <= q.outcome <= 5`` all leave the
-    opt-outs out of the conjunction they stand in.
+    out-of-scale codes out of the conjunction they stand in.
     """
     if not isinstance(leaf, ast.Compare):
         return set()
@@ -397,9 +304,9 @@ def _opt_outs_excluded(leaf: ast.AST, opt_outs: dict[str, tuple[int, ...]]) -> s
         left, right = chain[index], chain[index + 1]
         for target, other, flipped in ((left, right, False), (right, left, True)):
             owner = _outcome_owner(target)
-            if owner not in opt_outs:
+            if owner not in out_of_scale:
                 continue
-            codes = opt_outs[owner]
+            codes = out_of_scale[owner]
             if type(op) in _ORDER_OPS:
                 bound = _int_literal(other)
                 compare = _ORDER_OPS[type(op)]
@@ -422,32 +329,41 @@ def _opt_outs_excluded(leaf: ast.AST, opt_outs: dict[str, tuple[int, ...]]) -> s
     return excluded
 
 
-def _orderings_admitting_opt_outs(
-    predicate: str, opt_outs: dict[str, tuple[int, ...]]
-) -> list[str]:
-    """Item ids whose answer ``predicate`` orders in a way an opt-out code can satisfy.
+_ORDER_SYMBOLS = {ast.Lt: "<", ast.LtE: "<=", ast.Gt: ">", ast.GtE: ">="}
+_FLIPPED_SYMBOLS = {"<": ">", "<=": ">=", ">": "<", ">=": "<="}
+
+
+def _orderings_admitting_out_of_scale(
+    predicate: str, out_of_scale: dict[str, tuple[int, ...]]
+) -> list[tuple[str, str, str]]:
+    """``(item id, answer read, operator)`` for each answer read ``predicate`` orders in a way an out-of-scale code can satisfy.
 
     An ordered comparison (``<``, ``<=``, ``>``, ``>=``) of ``X.outcome`` (or
-    ``X.outcome[i]``) is reported when some opt-out code of ``X`` satisfies it
-    (``q.outcome >= 4`` admits 97, ``q.outcome <= 2`` does not) or its other
-    side is not a whole-number literal, unless a sibling conjunct of an
-    enclosing ``and`` refuses every opt-out code (``q.outcome >= 4 and
+    ``X.outcome[i]``) is reported when some out-of-scale code of ``X``
+    satisfies it (``q.outcome >= 4`` admits 8, ``q.outcome <= 2`` does not) or
+    its other side is not a whole-number literal, unless a sibling conjunct of
+    an enclosing ``and`` refuses every out-of-scale code (``q.outcome >= 4 and
     q.outcome <= 5``). A chained comparison is walked operator by operator, so
     ``4 <= q.outcome <= 5`` bounds itself. Inside a ``not`` every ordering
-    counts, since negation turns a refusal into an admission. An unparseable
-    predicate yields nothing: its syntax error is another lint's.
+    counts, since negation turns a refusal into an admission. A read is the
+    exact operand as written (``q.outcome``, a QuestionGroup slot
+    ``g.outcome[1]``, a MatrixQuestion cell ``m.outcome[0][0]``): a bound
+    holds for that slot or cell only, so each is listed once, with the
+    operator as read with the answer on its left (``4 <= q.outcome`` is
+    ``>=``). An unparseable predicate yields nothing: its syntax error is
+    another lint's.
     """
     try:
         tree = ast.parse(predicate, mode="eval")
     except SyntaxError:
         return []
-    found: list[str] = []
+    found: dict[str, tuple[str, str]] = {}
 
     def visit(node: ast.AST, excluded: frozenset[str], negated: bool) -> None:
         if isinstance(node, ast.BoolOp) and isinstance(node.op, ast.And) and not negated:
             bounds = set(excluded)
             for value in node.values:
-                bounds |= _opt_outs_excluded(value, opt_outs)
+                bounds |= _out_of_scale_excluded(value, out_of_scale)
             for value in node.values:
                 visit(value, frozenset(bounds), negated)
             return
@@ -458,30 +374,29 @@ def _orderings_admitting_opt_outs(
             reads = {
                 ast.unparse(n)
                 for n in [node.left, *node.comparators]
-                if _outcome_owner(n) in opt_outs
+                if _outcome_owner(n) in out_of_scale
             }
-            if not negated and _opt_outs_excluded(node, opt_outs) >= reads:
+            if not negated and _out_of_scale_excluded(node, out_of_scale) >= reads:
                 return
             chain = [node.left, *node.comparators]
             for index, op in enumerate(node.ops):
                 if type(op) not in _ORDER_OPS:
                     continue
                 left, right = chain[index], chain[index + 1]
-                # Past the early return, an ordering of an opt-out item admits
-                # an opt-out: its bound is no literal, or some code satisfies it.
-                for target in (left, right):
+                symbol = _ORDER_SYMBOLS[type(op)]
+                # Past the early return, an ordering of such an item admits an
+                # out-of-scale code: its bound is no literal, or some code
+                # satisfies it.
+                for target, as_read in ((left, symbol), (right, _FLIPPED_SYMBOLS[symbol])):
                     owner = _outcome_owner(target)
-                    if (
-                        owner in opt_outs
-                        and ast.unparse(target) not in excluded
-                        and owner not in found
-                    ):
-                        found.append(owner)
+                    read = ast.unparse(target)
+                    if owner in out_of_scale and read not in excluded and read not in found:
+                        found[read] = (owner, as_read)
         for child in ast.iter_child_nodes(node):
             visit(child, excluded if not isinstance(node, ast.Compare) else frozenset(), negated)
 
     visit(tree.body, frozenset(), False)
-    return found
+    return [(owner, read, op) for read, (owner, op) in found.items()]
 
 
 #: A Checkbox label that denies every other option: "None of the above", "No
@@ -2280,9 +2195,8 @@ class ValidationProcessor:
         questionnaire-level condition nothing will ever evaluate, and the three
         per-item shapes the Demo-instrument review found by reading (#559): a
         self-assignment, a mandated-answer postcondition and a combinable
-        "none of the above" option; and the two rating-scale findings: an
-        undeclared item whose labels are a catalog scale's, and a condition
-        ordering the answer of an item that offers opt-outs.
+        "none of the above" option; and a condition ordering the answer of an
+        item that has out-of-scale answers.
 
         All read the AUTHORED tree (item ``kind``/``title``/``input``, the
         conditions and codeBlocks as written, block metadata) rather than the Z3
@@ -2449,8 +2363,7 @@ class ValidationProcessor:
             if self._words_judged:
                 issues.extend(self._combinable_none_option_issues(item, postconditions))
 
-        issues.extend(self._undeclared_rating_scale_issues())
-        issues.extend(self._opt_out_ordering_issues())
+        issues.extend(self._out_of_scale_ordering_issues())
         return issues
 
     def _conditions(self) -> list[tuple[str, str, str]]:
@@ -2469,179 +2382,55 @@ class ValidationProcessor:
                         found.append((owner.get("id"), kind, predicate))
         return found
 
-    def _undeclared_rating_scale_issues(self) -> list[dict[str, Any]]:
-        """An undeclared Radio or Dropdown whose labels are a catalog scale's.
+    def _out_of_scale_ordering_issues(self) -> list[dict[str, Any]]:
+        """A condition ordering the answer of an item that has out-of-scale answers.
 
-        Declaring the scale is what lets the measures, the exports and Gold
-        read the item as a rating scale in any language, so the author is told
-        which declaration fits. The labels are matched against the catalog in
-        every supported language, so a questionnaire and its translated twin
-        get the same verdict.
-
-        An item whose labels fit but whose codes are not the scale's (coded
-        from the most positive point, or opt-outs on other codes) cannot be
-        declared as it stands: the loader refuses a declaration whose labels
-        contradict its codes. The warning then says it must be re-coded first
-        and names what a re-code touches: the stored answers, every condition
-        and codeBlock reading the answer, and the default.
+        An out-of-scale answer ("Don't know") is coded above every point of
+        its item's declared scale, so ``q.outcome >= 4`` admits it. The codes
+        are read from the item's lowered ``input.options``. Only an ordering an
+        out-of-scale code can satisfy is reported
+        (``_orderings_admitting_out_of_scale``): ``q.outcome <= 2`` and
+        ``q.outcome >= 4 and q.outcome <= 5`` leave them out and are silent.
+        Equality reads one code and is silent, as is ordering an item with no
+        out-of-scale answer or no declared scale. The suggested bound names
+        the exact read (a QuestionGroup slot, a MatrixQuestion cell), since
+        bounding the whole answer would compare a list with a number. A block
+        condition is reported once, against the block.
         """
-        issues: list[dict[str, Any]] = []
+        out_of_scale: dict[str, tuple[int, ...]] = {}
+        top: dict[str, int] = {}
         for item in self.state.get_all_items():
-            input_spec = item.get("input") or {}
-            if (
-                item.get("kind") not in _SCALE_KINDS
-                or input_spec.get("control") not in _SCALE_CONTROLS
-                or "scale" in item
-            ):
+            options = (item.get("input") or {}).get("options")
+            if not isinstance(options, list):
                 continue
-            labels = {
-                code: input_spec["labels"].get(code, input_spec["labels"].get(str(code)))
-                for code in label_keys(input_spec)
-            }
-            fit = _catalog_fit(labels)
-            if fit is None:
-                continue
-            scale, backwards, coded_as_declared = fit
-            item_id = item.get("id")
-            declaration = _scale_spelling(scale)
-            named = f"a {scale.points}-point {scale.family} scale"
-            if coded_as_declared:
-                issues.append(
-                    {
-                        "item_id": item_id,
-                        "severity": "warning",
-                        "type": "rating_scale_not_declared",
-                        "message": (
-                            f"'{item_id}' offers the labels of {named} but does not declare "
-                            f"it. Declaring it lets the quality measures, the exports and "
-                            f"scale scores read it as that scale in any language."
-                        ),
-                        "suggestion": (
-                            f"Add '{declaration}' to '{item_id}'. Its codes already are the "
-                            f"scale's, so no stored answer changes; remove its labels to use "
-                            f"the catalog's text in every supported language, or keep them "
-                            f"to reword it."
-                        ),
-                    }
+            codes = tuple(option["code"] for option in options if option["outOfScale"])
+            if codes:
+                out_of_scale[item.get("id")] = codes
+                top[item.get("id")] = max(
+                    option["code"] for option in options if not option["outOfScale"]
                 )
-                continue
-            issues.append(
-                {
-                    "item_id": item_id,
-                    "severity": "warning",
-                    "type": "rating_scale_not_declared",
-                    "message": (
-                        f"'{item_id}' offers the labels of {named}, "
-                        + (
-                            f"coded from {labels[min(labels)]!r} as {min(labels)}, "
-                            f"the reverse of a declared scale's codes"
-                            if backwards
-                            else "under other codes than a declared scale's"
-                        )
-                        + f". It must be re-coded before it can declare the scale: a "
-                        f"declared scale codes {scale.catalog_label(1, 'en')!r} as 1 to "
-                        f"{scale.catalog_label(scale.points, 'en')!r} as {scale.points}"
-                        + (
-                            ", and its opt-outs as "
-                            + ", ".join(
-                                f"{scale.catalog_label(code, 'en')!r} = {code}"
-                                for code in scale.opt_out_codes
-                            )
-                            if scale.opt_outs
-                            else ""
-                        )
-                        + "."
-                    ),
-                    "suggestion": self._re_code_suggestion(
-                        item, scale, labels[min(labels)] if backwards else None, declaration
-                    ),
-                }
-            )
-        return issues
-
-    def _re_code_suggestion(
-        self, item: QuestionnaireItem, scale: Scale, shown_first: str | None, declaration: str
-    ) -> str:
-        """What re-coding ``item`` to ``scale``'s codes touches, named for this questionnaire.
-
-        ``shown_first`` is the label a reversed item shows first today, which
-        ``order: descending`` keeps first after the re-code; None otherwise.
-        """
-        item_id = item.get("id")
-        readers = [
-            owner
-            for owner, _, predicate in self._conditions()
-            if _reads_outcome(predicate, "eval", item_id)
-        ]
-        for other in self.state.get_all_items():
-            code = other.get("codeBlock")
-            if code and _reads_outcome(code, "exec", item_id):
-                readers.append(other.get("id"))
-        readers = list(dict.fromkeys(readers))
-        touches = [f"the stored answers of '{item_id}' (their meaning changes)"]
-        if readers:
-            touches.append(
-                f"every condition and codeBlock reading '{item_id}.outcome' "
-                f"({', '.join(map(str, readers))})"
-            )
-        else:
-            touches.append(f"any condition or codeBlock that comes to read '{item_id}.outcome'")
-        if (item.get("input") or {}).get("default") is not None:
-            touches.append("its default")
-        keep_order = (
-            f" (with 'order: descending' to keep showing {shown_first!r} first)"
-            if shown_first is not None
-            else ""
-        )
-        return (
-            f"Re-code '{item_id}' to the scale's codes, then declare '{declaration}'"
-            f"{keep_order}. A re-code touches: {'; '.join(touches)}."
-        )
-
-    def _opt_out_ordering_issues(self) -> list[dict[str, Any]]:
-        """A condition ordering the answer of an item that offers opt-outs.
-
-        Opt-outs are stored under reserved codes (97, 98, 99) above every scale
-        point, so ``q.outcome >= 4`` admits a "Don't know". Only an ordering an
-        opt-out code can satisfy is reported (``_orderings_admitting_opt_outs``):
-        ``q.outcome <= 2`` and ``q.outcome >= 4 and q.outcome <= 5`` leave the
-        opt-outs out and are silent. Equality reads one code and is silent, as
-        is ordering an item that offers no opt-out. A block condition is
-        reported once, against the block.
-        """
-        offering = {
-            item.get("id"): item["scale"]
-            for item in self.state.get_all_items()
-            if (item.get("scale") or {}).get("optOuts")
-        }
-        if not offering:
+        if not out_of_scale:
             return []
         issues: list[dict[str, Any]] = []
-        scales = {item_id: parse_scale(declared) for item_id, declared in offering.items()}
-        opt_out_codes_of = {item_id: scale.opt_out_codes for item_id, scale in scales.items()}
         for owner, kind, predicate in self._conditions():
-            for target in _orderings_admitting_opt_outs(predicate, opt_out_codes_of):
-                scale = scales[target]
-                named = ", ".join(f"{scale.msgid(code)!r} = {code}" for code in scale.opt_out_codes)
-                points = ", ".join(map(str, scale.point_codes))
-                opt_out_tuple = ", ".join(map(str, scale.opt_out_codes)) + (
-                    "," if len(scale.opt_out_codes) == 1 else ""
-                )
+            for target, read, op in _orderings_admitting_out_of_scale(predicate, out_of_scale):
+                codes = ", ".join(map(str, out_of_scale[target]))
                 issues.append(
                     {
                         "item_id": owner,
                         "severity": "warning",
-                        "type": "ordered_comparison_with_opt_outs",
+                        "type": "ordered_comparison_with_out_of_scale",
                         "message": (
                             f"The {kind} '{predicate}' on '{owner}' compares "
-                            f"'{target}.outcome' by order, but '{target}' offers opt-outs "
-                            f"({named}). Their codes sit above every scale point, so the "
-                            f"comparison includes them as if they were the scale's top."
+                            f"'{read}' with '{op}', but '{target}' has answers "
+                            f"outside its scale (codes {codes}). They are coded above every "
+                            f"point, so the comparison includes them as if they were the "
+                            f"scale's top."
                         ),
                         "suggestion": (
-                            f"Name the points the condition means with 'in' (the scale's "
-                            f"points are {points}), or leave the opt-outs out by adding "
-                            f"'and {target}.outcome not in ({opt_out_tuple})'."
+                            f"Bound the comparison at the scale's top code by adding "
+                            f"'and {read} <= {top[target]}', or name the points "
+                            f"the condition means with 'in'."
                         ),
                     }
                 )

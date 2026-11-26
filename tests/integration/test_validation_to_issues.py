@@ -88,15 +88,13 @@ severity (error/warning), machine type, human message, and suggestion:
   ``comment_titled_as_question`` still flags, Z3 is unchanged, a supported
   language or none keeps the word lists, a malformed language is refused, and
   the publish gate passes the language on without changing ``ok``.
-- Two rating-scale authoring warnings: an undeclared Radio or Dropdown whose
-  labels are a catalog family's in any supported language (English and
-  Hungarian agree/disagree both) is told the declaration that fits, opt-outs
-  included, while labels that fit no family produce nothing and a declared
-  item is silent; one coded from "Strongly agree" as 1 is told to re-code
-  first, naming its stored answers, the conditions reading it and its
-  default. Ordering the answer of an item that offers opt-outs warns, once
-  against a block; equality, and the same ordering without opt-outs, do not;
-  neither blocks the publish gate.
+- One rating-scale authoring warning: ordering the answer of a declared item
+  that has out-of-scale answers warns, naming the operator and the codes and
+  never a label, once against a block, and suggesting a bound on the exact
+  read (a QuestionGroup slot, a MatrixQuestion cell) that silences it; equality, an ordering no out-of-scale
+  code satisfies, the same ordering on an item with none or with no declared
+  scale do not; undeclared agree/disagree labels in English or Hungarian
+  produce no finding; the warning alone does not block the publish gate.
 - Three Demo-instrument authoring warnings (#559): a codeBlock statement that
   assigns something to itself, a postcondition admitting exactly one answer of
   a choice control, and a Checkbox "none of the above" option that can be
@@ -1111,8 +1109,7 @@ class TestLanguageNeutralVerdicts:
     def test_the_text_lints_fire_on_each_language(self, language):
         """The comparison above is not vacuous: each language flags exactly the
         fixture's positives and leaves its negatives (the non-substantive
-        options of q_channels and q_trust among them) alone, and its
-        agree/disagree item is told to declare the scale whatever its language."""
+        options of q_channels and q_trust among them) alone."""
         _, issues = self._verdicts(language)
         flagged = {(item_id, kind) for item_id, _, kind in issues}
         assert {item_id for item_id, kind in flagged if kind == "combinable_none_option"} == {
@@ -1124,9 +1121,6 @@ class TestLanguageNeutralVerdicts:
             "c_postcode",
             "c_contact",
             "c_list",
-        }
-        assert {item_id for item_id, kind in flagged if kind == "rating_scale_not_declared"} == {
-            "q_agree"
         }
 
     @pytest.mark.parametrize(
@@ -1411,7 +1405,7 @@ class TestDemoInstrumentAuthoringLints:
 def _scale_doc(items_yaml: str, *, block_yaml: str = "") -> str:
     """One block of ``items_yaml`` (indented as block items), then ``block_yaml`` (whole blocks)."""
     return (
-        'qmlVersion: "2.8.0"\n'
+        'qmlVersion: "2.9.0"\n'
         "questionnaire:\n"
         "  title: Scales\n"
         "  blocks:\n"
@@ -1420,29 +1414,18 @@ def _scale_doc(items_yaml: str, *, block_yaml: str = "") -> str:
     )
 
 
-def _rated(item_id: str, labels: list[str], *, codes: list[int] | None = None) -> str:
-    """An undeclared Radio Question offering ``labels`` under ``codes`` (1..N by default)."""
+def _rated(item_id: str, labels: list[str], *, codes: list[int] | None = None, scale: str | None = None) -> str:
+    """A Radio Question offering ``labels`` under ``codes`` (1..N by default), declaring ``scale`` if given."""
     codes = codes or list(range(1, len(labels) + 1))
     entries = "".join(f'              {code}: "{label}"\n' for code, label in zip(codes, labels, strict=True))
     return (
         f"        - id: {item_id}\n"
         "          kind: Question\n"
         f'          title: "Rate {item_id}"\n'
-        "          input:\n"
+        + (f"          scale: {scale}\n" if scale else "")
+        + "          input:\n"
         "            control: Radio\n"
         "            labels:\n" + entries
-    )
-
-
-def _declared(item_id: str, scale: str) -> str:
-    """A Radio Question declaring ``scale`` (a QML flow mapping)."""
-    return (
-        f"        - id: {item_id}\n"
-        "          kind: Question\n"
-        f'          title: "Rate {item_id}"\n'
-        f"          scale: {scale}\n"
-        "          input:\n"
-        "            control: Radio\n"
     )
 
 
@@ -1460,10 +1443,14 @@ def _gated(item_id: str, condition: str, predicate: str) -> str:
     )
 
 
-def _scale_issues(items_yaml: str, issue_type: str, *, block_yaml: str = "") -> list[dict[str, Any]]:
-    """The issues of one type on a document loaded with English catalog text."""
-    data = QMLLoader(language="en").load_from_string(_scale_doc(items_yaml, block_yaml=block_yaml))
-    return [i for i in ValidationProcessor(QMLState(data)).to_issues() if i["type"] == issue_type]
+_OUT_OF_SCALE = "ordered_comparison_with_out_of_scale"
+_BIPOLAR_5 = "{polarity: bipolar, points: 5}"
+
+
+def _scale_issues(items_yaml: str, *, block_yaml: str = "") -> list[dict[str, Any]]:
+    """The out-of-scale ordering findings of a document."""
+    data = QMLLoader().load_from_string(_scale_doc(items_yaml, block_yaml=block_yaml))
+    return [i for i in ValidationProcessor(QMLState(data)).to_issues() if i["type"] == _OUT_OF_SCALE]
 
 
 AGREE_EN = ["Strongly disagree", "Disagree", "Neither agree nor disagree", "Agree", "Strongly agree"]
@@ -1476,81 +1463,46 @@ AGREE_HU = [
 ]
 
 
+def _with_dont_know(item_id: str = "q") -> str:
+    """A declared five-point item with one out-of-scale answer at code 8."""
+    return _rated(item_id, [*AGREE_EN, "Don't know"], codes=[1, 2, 3, 4, 5, 8], scale=_BIPOLAR_5)
+
+
 @pytest.mark.integration
 class TestRatingScaleAuthoringLints:
-    """Two advisory findings about declared rating scales.
+    """The one advisory finding about a declared rating scale.
 
-    ``rating_scale_not_declared``: an undeclared Radio or Dropdown whose labels
-    are a catalog family's, in any supported language, is told which
-    declaration fits; one coded the other way round is told to re-code first.
-    ``ordered_comparison_with_opt_outs``: ordering an answer that offers
-    opt-outs counts their reserved codes as scale points.
+    ``ordered_comparison_with_out_of_scale``: ordering the answer of an item
+    that has out-of-scale answers admits their codes, which sit above every
+    point. The validator reads the codes from the lowered options and never a
+    label, so it suggests no declaration from wording.
     """
 
-    @pytest.mark.parametrize("labels", [AGREE_EN, AGREE_HU], ids=["en", "hu"])
-    def test_agree_disagree_labels_suggest_the_agreement_declaration(self, labels):
-        (issue,) = _scale_issues(_rated("q", labels), "rating_scale_not_declared")
-        assert issue["item_id"] == "q"
-        assert issue["severity"] == "warning"
-        assert "5-point Agreement" in issue["message"]
-        assert "scale: {family: Agreement, points: 5}" in issue["suggestion"]
-
-    def test_an_opt_out_label_is_named_in_the_declaration(self):
-        items = _rated("q", [*AGREE_EN, "Don't know"], codes=[1, 2, 3, 4, 5, 97])
-        (issue,) = _scale_issues(items, "rating_scale_not_declared")
-        assert "scale: {family: Agreement, points: 5, optOuts: [dontKnow]}" in issue["suggestion"]
-
-    @pytest.mark.parametrize(
-        "labels",
-        [
-            ["Red", "Green", "Blue", "Yellow"],
-            ["Yes", "No"],
-            # An agree/disagree set with an option the catalog does not have.
-            [*AGREE_EN, "Other"],
-            # Five of the seven-point set.
-            ["Strongly disagree", "Disagree", "Somewhat disagree", "Agree", "Strongly agree"],
-        ],
-    )
-    def test_labels_that_fit_no_family_produce_nothing(self, labels):
-        assert _scale_issues(_rated("q", labels), "rating_scale_not_declared") == []
-
-    def test_a_declared_item_is_not_told_to_declare(self):
-        items = _declared("q", "{family: Agreement, points: 5}")
-        assert _scale_issues(items, "rating_scale_not_declared") == []
-
-    def test_labels_coded_from_strongly_agree_ask_for_a_re_code(self):
-        items = _rated("q", list(reversed(AGREE_EN))).replace(
-            "            control: Radio\n", "            control: Radio\n            default: 2\n"
-        )
-        items += _gated("q_next", "precondition", "q.outcome == 1")
-        (issue,) = _scale_issues(items, "rating_scale_not_declared")
-        text = issue["message"] + " " + issue["suggestion"]
-        assert "must be re-coded before it can declare the scale" in issue["message"]
-        assert "'Strongly agree' as 1" in issue["message"]
-        assert "order: descending" in issue["suggestion"]
-        # What a re-code touches, named for this item.
-        assert "stored answers" in text
-        assert "q_next" in text
-        assert "default" in text
-
-    def test_ordering_an_answer_with_an_opt_out_warns(self):
-        items = _declared("q", "{family: Agreement, points: 5, optOuts: [dontKnow]}")
-        items += _gated("q_next", "precondition", "q.outcome >= 4")
-        (issue,) = _scale_issues(items, "ordered_comparison_with_opt_outs")
+    def test_ordering_an_answer_with_an_out_of_scale_code_warns(self):
+        items = _with_dont_know() + _gated("q_next", "precondition", "q.outcome >= 4")
+        (issue,) = _scale_issues(items)
         assert issue["item_id"] == "q_next"
         assert issue["severity"] == "warning"
-        assert "97" in issue["message"]
         assert "q.outcome >= 4" in issue["message"]
+        assert "with '>='" in issue["message"]
+        assert "codes 8" in issue["message"]
+        assert "Don't know" not in issue["message"] + issue["suggestion"]
+        assert "q.outcome <= 5" in issue["suggestion"]
 
     @pytest.mark.parametrize(
-        "predicate",
-        ["q.outcome > 3", "3 < q.outcome", "q.outcome >= 4 or q.outcome <= 1", "q.outcome >= r.outcome"],
+        ("predicate", "operator"),
+        [
+            ("q.outcome > 3", ">"),
+            ("3 < q.outcome", ">"),
+            ("q.outcome >= 4 or q.outcome <= 1", ">="),
+            ("q.outcome >= r.outcome", ">="),
+        ],
         ids=["greater", "reversed-sides", "either-side", "against-another-answer"],
     )
-    def test_an_ordering_an_opt_out_can_satisfy_warns(self, predicate):
-        items = _declared("q", "{family: Agreement, points: 5, optOuts: [dontKnow]}")
-        items += _gated("q_next", "precondition", predicate)
-        assert len(_scale_issues(items, "ordered_comparison_with_opt_outs")) == 1
+    def test_an_ordering_an_out_of_scale_code_can_satisfy_warns(self, predicate, operator):
+        items = _with_dont_know() + _gated("q_next", "precondition", predicate)
+        (issue,) = _scale_issues(items)
+        assert f"with '{operator}'" in issue["message"]
 
     @pytest.mark.parametrize(
         "predicate",
@@ -1564,64 +1516,97 @@ class TestRatingScaleAuthoringLints:
             '          title: "Rate"\n'
             "          rows: [r1]\n"
             "          columns: [c1, c2]\n"
-            "          scale: {family: Agreement, points: 5, optOuts: [dontKnow]}\n"
+            "          scale: {polarity: bipolar, points: 5}\n"
             "          input:\n"
             "            control: Radio\n"
+            "            labels: {1: a, 2: b, 3: c, 4: d, 5: e, 8: f}\n"
         )
         items += _gated("q_next", "precondition", predicate)
-        assert len(_scale_issues(items, "ordered_comparison_with_opt_outs")) == 1
+        (issue,) = _scale_issues(items)
+        # The bound names the cell: bounding the whole answer would compare a
+        # matrix with a number.
+        assert "'m.outcome[0][1]' with '>='" in issue["message"]
+        assert "'and m.outcome[0][1] <= 5'" in issue["suggestion"]
+
+    def test_following_the_suggested_bound_silences_the_warning(self):
+        items = (
+            "        - id: g\n"
+            "          kind: QuestionGroup\n"
+            '          title: "Rate"\n'
+            "          questions: [one, two]\n"
+            "          scale: {polarity: bipolar, points: 5}\n"
+            "          input:\n"
+            "            control: Radio\n"
+            "            labels: {1: a, 2: b, 3: c, 4: d, 5: e, 8: f}\n"
+        )
+        predicate = "g.outcome[1] >= 4"
+        (issue,) = _scale_issues(items + _gated("q_next", "precondition", predicate))
+        bound = re.search(r"'and (.+?)'", issue["suggestion"]).group(1)
+        assert bound == "g.outcome[1] <= 5"
+        assert _scale_issues(items + _gated("q_next", "precondition", f"{predicate} and {bound}")) == []
 
     @pytest.mark.parametrize(
         "predicate",
         [
             "q.outcome >= 4 and q.outcome <= 5",
-            "q.outcome >= 4 and q.outcome not in (97,)",
+            "q.outcome >= 4 and q.outcome not in (8,)",
             "q.outcome <= 2",
+            "q.outcome < 5",
             "4 <= q.outcome <= 5",
+            "q.outcome == 4",
+            "q.outcome != 8",
         ],
-        ids=["bounded-above", "opt-outs-excluded", "below-the-points", "chained-bound"],
+        ids=[
+            "bounded-above",
+            "out-of-scale-excluded",
+            "below-the-points",
+            "below-the-top",
+            "chained-bound",
+            "equality",
+            "inequality",
+        ],
     )
-    def test_an_ordering_that_leaves_the_opt_outs_out_is_silent(self, predicate):
-        items = _declared("q", "{family: Agreement, points: 5, optOuts: [dontKnow]}")
-        items += _gated("q_next", "precondition", predicate)
-        assert _scale_issues(items, "ordered_comparison_with_opt_outs") == []
+    def test_a_condition_that_admits_no_out_of_scale_code_is_silent(self, predicate):
+        items = _with_dont_know() + _gated("q_next", "precondition", predicate)
+        assert _scale_issues(items) == []
+
+    def test_every_out_of_scale_code_is_named_and_must_be_left_out(self):
+        item = _rated(
+            "q", [*AGREE_EN, "Don't know", "Refused"], codes=[1, 2, 3, 4, 5, 8, 9], scale=_BIPOLAR_5
+        )
+        (issue,) = _scale_issues(item + _gated("q_next", "precondition", "q.outcome >= 4 and q.outcome != 8"))
+        assert "codes 8, 9" in issue["message"]
 
     def test_a_block_condition_warns_once_against_the_block(self):
-        items = _declared("q", "{family: Agreement, points: 5, optOuts: [dontKnow]}")
         block = (
             "    - id: b_follow\n"
             "      precondition:\n"
             '        - predicate: "4 <= q.outcome"\n'
             "      items:\n" + _gated("q_a", "precondition", "True") + _gated("q_b", "precondition", "True")
         )
-        issues = _scale_issues(items, "ordered_comparison_with_opt_outs", block_yaml=block)
+        issues = _scale_issues(_with_dont_know(), block_yaml=block)
         assert [i["item_id"] for i in issues] == ["b_follow"]
 
-    @pytest.mark.parametrize(
-        ("scale", "predicate"),
-        [
-            ("{family: Agreement, points: 5, optOuts: [dontKnow]}", "q.outcome == 4"),
-            ("{family: Agreement, points: 5, optOuts: [dontKnow]}", "q.outcome != 97"),
-            ("{family: Agreement, points: 5}", "q.outcome >= 4"),
-        ],
-        ids=["equality", "inequality", "no-opt-outs"],
-    )
-    def test_equality_or_a_scale_without_opt_outs_is_silent(self, scale, predicate):
-        items = _declared("q", scale) + _gated("q_next", "precondition", predicate)
-        assert _scale_issues(items, "ordered_comparison_with_opt_outs") == []
+    def test_a_declared_item_with_no_out_of_scale_code_is_silent(self):
+        items = _rated("q", AGREE_EN, scale=_BIPOLAR_5) + _gated("q_next", "precondition", "q.outcome >= 4")
+        assert _scale_issues(items) == []
 
-    def test_neither_blocks_the_publish_gate(self):
+    def test_an_undeclared_item_is_silent_even_with_a_high_code(self):
+        items = _rated("q", [*AGREE_EN, "Don't know"], codes=[1, 2, 3, 4, 5, 8])
+        assert _scale_issues(items + _gated("q_next", "precondition", "q.outcome >= 4")) == []
+
+    @pytest.mark.parametrize("labels", [AGREE_EN, AGREE_HU], ids=["en", "hu"])
+    def test_undeclared_agree_disagree_labels_produce_no_finding(self, labels):
+        data = QMLLoader().load_from_string(_scale_doc(_rated("q", labels)))
+        assert ValidationProcessor(QMLState(data)).to_issues() == []
+
+    def test_the_warning_alone_does_not_block_the_publish_gate(self):
         from askalot_qml.core import evaluate_publish_gate_content
 
-        items = (
-            _rated("q_plain", AGREE_EN)
-            + _declared("q", "{family: Agreement, points: 5, optOuts: [dontKnow]}")
-            + _gated("q_next", "precondition", "q.outcome >= 4")
-        )
+        items = _with_dont_know() + _gated("q_next", "precondition", "q.outcome >= 4")
         result = evaluate_publish_gate_content(_scale_doc(items))
         assert result.ok, result.errors
-        types = {i["type"] for i in result.issues}
-        assert {"rating_scale_not_declared", "ordered_comparison_with_opt_outs"} <= types
+        assert {i["type"] for i in result.issues} == {_OUT_OF_SCALE}
 
 
 _CHECKBOX_GATE_QML = """

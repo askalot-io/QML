@@ -67,9 +67,8 @@ SwitchInput   ::= "control" "Switch"
                   ( "right" String )?
                   ( "default" SwitchDefault )?
 
-/* labels may be left out only when the item declares a scale (2.8.0) */
 RadioInput    ::= "control" "Radio"
-                  ( "labels" Labels )?
+                  "labels" Labels
                   ( "default" Integer )?
 
 CheckboxInput ::= "control" "Checkbox"
@@ -77,7 +76,7 @@ CheckboxInput ::= "control" "Checkbox"
                   ( "default" Integer )?
 
 DropdownInput ::= "control" "Dropdown"
-                  ( "labels" Labels )?
+                  "labels" Labels
                   ( "left" String )?
                   ( "right" String )?
                   ( "default" Integer )?
@@ -124,18 +123,15 @@ Postcondition ::= Condition
 
 Labels        ::= ( IntegerKey String )*
 
-/* scale (2.8.0): a declared rating scale, on a Question, QuestionGroup or
-   MatrixQuestion whose control is Radio or Dropdown. Codes run 1..points from
-   the most negative point; opt-outs are stored at 97, 98 and 99. */
-Scale         ::= "family" ScaleFamily
-                  "points" ( "4" | "5" | "7" )
+/* scale (2.9.0): the structure of a declared rating scale, on a Question,
+   QuestionGroup or MatrixQuestion whose control is Radio or Dropdown. The
+   points are coded start..start+points-1 from the negative or low end, each
+   with a label in the input's Labels; a label coded above that range is an
+   out-of-scale answer. points is a whole number from 2 to 101. */
+Scale         ::= "polarity" ( "bipolar" | "unipolar" )
+                  "points" Integer
+                  ( "start" ( "0" | "1" ) )?
                   ( "order" ( "ascending" | "descending" ) )?
-                  ( "optOuts" OptOut* )?
-
-ScaleFamily   ::= "Agreement" | "Satisfaction" | "Likelihood"
-                | "Frequency" | "Importance" | "Quality"
-
-OptOut        ::= "dontKnow" | "notApplicable" | "preferNotToSay"
 
 CodeBlock     ::= PythonCode
 

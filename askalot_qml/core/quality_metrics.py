@@ -26,10 +26,10 @@ Architectural constraints (plan 2026-07-06-002):
   (self-only accumulators, two-producer consolidations) stay single-sited in
   the issue policy rather than being re-implemented here.
 
-Dimension ids D2–D8 match the plan's numbering. D1 (KPI coverage) is
-deliberately absent: it comes from the answerability chain, which needs
-LLM-supplied goal association and therefore lives with the calling agent,
-not in this LLM-free layer. D9/D10 are reviewer judgment, also not here.
+Dimension ids run D2–D8. D1 (KPI coverage) is deliberately absent: it is
+read from the item inventory's KPI links against the project's paper
+(``askalot_qml.inventory.goal_coverage`` and the answerability chain), and this
+scorecard sees the QML alone. D9/D10 are reviewer judgment, also not here.
 
 Grade bands are module-level constants calibrated against the 12-file
 conversion corpus (plan U2); each band records its rationale beside it.
